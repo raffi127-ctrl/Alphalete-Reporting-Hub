@@ -320,24 +320,45 @@ def _office_last_start(st: dict, oid: str, single: bool) -> Optional[str]:
     return ((st.get("by_office") or {}).get(oid) or {}).get("last_start")
 
 
+# BIGGEST PILE FIRST (Megan 2026-11-15, after the weekend left Raf's 11280
+# at 313 waiting while 24065 had 40: "yes build the biggest pile first").
+# Among the offices that are due, the one with the most applicants left on
+# its last run goes next -- but nobody waits longer than MAX_WAIT_MINUTES,
+# so a small office is never starved while a big one drains.
+MAX_WAIT_MINUTES = 45
+
+
+def _office_queue(st: dict, oid: str) -> int:
+    try:
+        return int(((st.get("by_office") or {}).get(oid) or {}).get("queue") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 def pick_office(now: Optional[dt.datetime] = None,
                 record: Optional[dict] = None) -> Optional[str]:
-    """The office to push now: due (EVERY_MINUTES since ITS last start) and
-    not past its own stop; the longest-waiting first. None = nobody is due."""
+    """The office to push now, among those due (EVERY_MINUTES since ITS last
+    start) and not past their own stop. Anyone waiting MAX_WAIT_MINUTES or
+    more goes first (longest wait); otherwise the biggest pile left on its
+    last run, ties to the longest wait. None = nobody is due."""
     now = now or dt.datetime.now()
     ids = office_ids(record)
     st = _state()
-    best, best_wait = None, None
+    due_now = []
     for oid in ids:
         if _past_stop(now, oid):
             continue
         gap = _since(_office_last_start(st, oid, len(ids) == 1), now)
         if gap is not None and gap < dt.timedelta(minutes=EVERY_MINUTES):
             continue
-        wait = gap if gap is not None else dt.timedelta(days=999)
-        if best_wait is None or wait > best_wait:
-            best, best_wait = oid, wait
-    return best
+        due_now.append((oid, gap if gap is not None else dt.timedelta(days=999)))
+    if not due_now:
+        return None
+    overdue = [d for d in due_now
+               if d[1] >= dt.timedelta(minutes=MAX_WAIT_MINUTES)]
+    if overdue:
+        return max(overdue, key=lambda d: d[1])[0]
+    return max(due_now, key=lambda d: (_office_queue(st, d[0]), d[1]))[0]
 
 
 def due(now: Optional[dt.datetime] = None) -> bool:
@@ -1593,6 +1614,8 @@ def push(live: bool, scheduled: bool = False) -> int:
                 osent[day] = int(osent.get(day, 0)) + int(out.get("sent", 0))
                 ob["sent_by_day"] = osent
                 sent_office_today = int(osent[day])
+                if isinstance(out.get("queue_end"), int):
+                    ob["queue"] = out["queue_end"]   # for biggest-pile-first
             if out.get("reached") and out.get("office"):
                 _file_stats(out, live, sent_office_today, result)
         if result == "ok":

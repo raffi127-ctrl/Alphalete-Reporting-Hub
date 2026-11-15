@@ -47,6 +47,24 @@ class MultiOffice(unittest.TestCase):
         self.started(**{"11280": 20, "23965": 30, "24065": 16})
         self.assertEqual(RP.pick_office(NOW, RAF), "23965")
 
+    def test_biggest_pile_goes_first(self):
+        RP._save_state({"by_office": {
+            "11280": {"last_start": (NOW - dt.timedelta(minutes=16)).isoformat(), "queue": 302},
+            "23965": {"last_start": (NOW - dt.timedelta(minutes=30)).isoformat(), "queue": 51},
+            "24065": {"last_start": (NOW - dt.timedelta(minutes=20)).isoformat(), "queue": 35}}})
+        self.assertEqual(RP.pick_office(NOW, RAF), "11280")
+
+    def test_nobody_waits_past_the_cap(self):
+        RP._save_state({"by_office": {
+            "11280": {"last_start": (NOW - dt.timedelta(minutes=16)).isoformat(), "queue": 302},
+            "23965": {"last_start": (NOW - dt.timedelta(minutes=46)).isoformat(), "queue": 2},
+            "24065": {"last_start": (NOW - dt.timedelta(minutes=20)).isoformat(), "queue": 35}}})
+        self.assertEqual(RP.pick_office(NOW, RAF), "23965")
+
+    def test_no_queue_known_falls_back_to_longest_wait(self):
+        self.started(**{"11280": 20, "23965": 30, "24065": 16})
+        self.assertEqual(RP.pick_office(NOW, RAF), "23965")
+
     def test_nobody_due_inside_fifteen_minutes(self):
         self.started(**{"11280": 1, "23965": 5, "24065": 14})
         self.assertIsNone(RP.pick_office(NOW, RAF))
