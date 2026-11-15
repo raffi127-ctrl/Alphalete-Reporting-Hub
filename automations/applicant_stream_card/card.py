@@ -272,27 +272,28 @@ DELIVERY_OK, DELIVERY_BAD = 3.0, 6.0
 # What to do about each reason a text didn't arrive (Megan 2026-11-13:
 # "Idk what held back by carrier is - can we give ways to fix this?").
 # (what it means, what to do, who does it). No STOP line: not house practice.
+# Megan 2026-11-15: "app stream controls the settings here for this phone
+# number". The number's registration, sending limit and credits are set on
+# ApplicantStream's side (Megan: "app stream not aptel for the phone
+# number"), so ApplicantStream fixes those; the office only owns
+# the wording of its texts.
+# Megan 2026-11-15: say what the issue is, not what exactly to ask for -
+# "reach out to app stream to see if there's anything we can do to
+# decrease this number".
+REACH_OUT = ("Reach out to ApplicantStream to see if there's anything that "
+             "can be done to bring this number down.")
 DELIVERY_FIX = {
     "Blocked by the phone carrier": (
         "The carrier (AT&T, T-Mobile, Verizon) refused the text, usually "
         "because it looks like spam or the number isn't fully registered.",
-        "Check the number's texting registration (10DLC) is approved and "
-        "lists this office. Keep texts sounding personal: the office name, "
-        "no ALL CAPS, no shortened links, not the same text to hundreds of "
-        "people at once.",
-        "Aptel team for the registration; you for the wording"),
+        REACH_OUT, "ApplicantStream"),
     "Held by the carrier, never delivered": (
         "The carrier slowed this number down and AppStream queued the text "
         "to try again. Almost none get through later.",
-        "Too many texts too fast from one number. Ask Aptel to check the "
-        "number's daily limit, and spread big sends out (or add a second "
-        "number).",
-        "Aptel team"),
+        REACH_OUT, "ApplicantStream"),
     "The account ran out of text credits": (
         "AppStream didn't send it because the account had no credits left.",
-        "Add text credits in AppStream, or turn on auto-refill so it can't "
-        "run out.",
-        "You or your admin, or Aptel"),
+        REACH_OUT, "ApplicantStream"),
     "Applicant gave a fake number": (
         "The applicant typed in a made-up number.",
         "Nothing to fix on your side.", ""),
@@ -644,6 +645,7 @@ ol.replies li{margin:.45em 0}
      grid-template-columns:minmax(0,1fr) auto 6.5em;gap:.7em;
      align-items:center}
 .vitals details.vital>summary:after{display:none}
+label.go{color:#1a56c4;font-weight:bold;cursor:pointer;text-decoration:underline}
 .vn{font-weight:bold}
 .vv{text-align:right;display:flex;flex-direction:column;line-height:1.2}
 .vv b{font-size:1.2em}
@@ -820,6 +822,47 @@ def trend_html(vitals):
     return "".join(out)
 
 
+# Which tab holds each kind of fix (Megan 2026-11-15: "wouldn't these be on
+# the templates section"). A <label> for the tab's radio switches tabs with
+# no script and no #link.
+TAB_OF = {"Templates": ("pg3", "Templates"), "AI Settings": ("pg2", "AI Settings"),
+          "AI replies": ("pg2", "AI Settings")}
+
+
+def _todo_html(card):
+    """The 'Fix these first' tab (Megan 2026-11-15: "we should have like a
+    fix these first tab")."""
+    if not card["todo"]:
+        return ("<h2 class='k'>Fix these first</h2><p class='s'>Nothing "
+                "urgent this week.</p>")
+    out = ["<h2 class='k'>Fix these first</h2><p class='s'>The few things "
+           "that will help most this week. Tap one to see why and how.</p>"
+           "<div class='top'>"]
+    lines = {ln["key"]: ln for ln in card["lines"]}
+    for n, t in enumerate(card["todo"], start=1):
+        out.append("<details><summary><span class='num'>{}</span>"
+                   "<span class='t'>{}</span></summary><div class='body'>"
+                   .format(n, _e(t["text"])))
+        if t["item"]:
+            out.append(_fix_body(t["item"]) + _tab_link(t["item"]))
+        else:
+            ln = lines.get(t["line"]) or {}
+            out.append("<p class='why'>{}</p>{}{}".format(
+                _e(ln.get("text", "")), _facts(ln.get("facts")),
+                _fixes_html(ln.get("fixes"))))
+        out.append("</div></details>")
+    out.append("</div>")
+    return "".join(out)
+
+
+def _tab_link(i):
+    tab = TAB_OF.get(i.get("source"))
+    if not tab:
+        return ""
+    return ("<p><label class='go' for='{}'>See it on the {} tab \u2192</label>"
+            "</p>".format(*tab))
+
+
 def _fix_body(i):
     out = []
     if i.get("found"):
@@ -911,18 +954,24 @@ def render(card, scorecard_css=""):
         "<input type='radio' name='pg' id='pg1'>"
         "<input type='radio' name='pg' id='pg2'>"
         "<input type='radio' name='pg' id='pg3'>"
+        "<input type='radio' name='pg' id='pg4'>"
         "<div class='tabs'><label for='pg0'>Vitals</label>"
+        "<label for='pg4'>Fix these first{}</label>"
         "<label for='pg1'>Grade card</label>"
         "<label for='pg2'>AI Settings{}{}</label>"
         "<label for='pg3'>Templates{}</label></div>"
         "<div class='page0'>{}</div>"
+        "<div class='page4'>{}</div>"
         "<div class='page1'>".format(
+            " <span class='fl'>{}</span>".format(len(card["todo"]))
+            if card["todo"] else "",
             _tab(SP.flag_total(setup, SP.AI_PARTS)),
             " <span class='fl'>not set up</span>" if SP.no_ai(setup)
             else "",
             _tab(SP.flag_total(setup, SP.TEMPLATE_PARTS)),
             trend_html(card.get("vitals")) + CH.html(
-                card.get("changes"), card.get("vitals"))))
+                card.get("changes"), card.get("vitals")),
+            _todo_html(card)))
 
     if card.get("grading"):
         add("<div class='truth'><b>Make sure these are correct.</b> This is "
@@ -932,23 +981,6 @@ def render(card, scorecard_css=""):
             add("<tr><td>{}</td><td>{}</td></tr>".format(
                 _e(label), _e(value) if value else "<i>not on file</i>"))
         add("</table></div>")
-
-    if card["todo"]:
-        add("<h2 class='k'>Fix these first</h2><div class='top'>")
-        lines = {ln["key"]: ln for ln in card["lines"]}
-        for n, t in enumerate(card["todo"], start=1):
-            add("<details><summary><span class='num'>{}</span>"
-                "<span class='t'>{}</span></summary><div class='body'>"
-                .format(n, _e(t["text"])))
-            if t["item"]:
-                add(_fix_body(t["item"]))
-            else:
-                ln = lines.get(t["line"]) or {}
-                add("<p class='why'>{}</p>{}{}".format(
-                    _e(ln.get("text", "")), _facts(ln.get("facts")),
-                    _fixes_html(ln.get("fixes"))))
-            add("</div></details>")
-        add("</div>")
 
     add("<h2 class='k'>Your scorecard</h2>")
     for ln in card["lines"]:
@@ -968,7 +1000,7 @@ def render(card, scorecard_css=""):
             for i in sorted(ln["items"], key=_rank):
                 add("<li><details><summary>{}</summary><div class='body'>"
                     "{}</div></details></li>".format(
-                        _e(i["action"]), _fix_body(i)))
+                        _e(i["action"]), _fix_body(i) + _tab_link(i)))
             add("</ul>")
         add("</div></details>")
 

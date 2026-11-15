@@ -213,6 +213,7 @@ def marked(body, spans, warn=()):
 # Plain one-liners for the template flags people see most.
 PLAIN_FIX = {
     "CALL CHECK": "Do you actually call after this one, or only text?",
+    "CHECK ROOM": "Is this Zoom room the one you use for 2nd rounds?",
     "WHO WE HIRE": "Take out the red word: it says who we hire",
     "LOW PAY": "Change the pay to $1,000-$1,500 a week",
     "TYPED ADDRESS": "Use the address fields instead of typing the address",
@@ -431,6 +432,40 @@ def _templates(bodies, states):
 _EMAIL_ROW = re.compile(r"^(?P<name>.+?)\s*\((?P<state>Activated|Not Activated)\)")
 
 
+EMAIL_LINE = re.compile(r"^\[EMAIL (?P<head>.*?) / (?P<name>[^\]]+)\] "
+                        r"(?P<field>subject|from|link|body|read failed):"
+                        r"\s?(?P<val>.*)$")
+
+
+def parse_email_bodies(text):
+    """[{head, name, subject, from, links, body}] for the switched-on emails
+    the pull opened (phase 3), or [] when it didn't."""
+    out, cur, in_body = [], None, False
+    for raw in (text or "").splitlines():
+        m = EMAIL_LINE.match(raw.strip())
+        if m:
+            key = (m.group("head"), m.group("name").strip())
+            if cur is None or (cur["head"], cur["name"]) != key:
+                cur = {"head": key[0], "name": key[1], "subject": "",
+                       "from": "", "links": [], "body": ""}
+                out.append(cur)
+            f, v = m.group("field"), m.group("val")
+            in_body = f == "body"
+            if f == "link":
+                cur["links"].append(v)
+            elif f in ("subject", "from"):
+                cur[f] = v
+            continue
+        if raw.startswith("=====") or raw.startswith("opening Edit #"):
+            in_body = False
+            continue
+        if in_body and cur is not None:
+            cur["body"] += ("\n" if cur["body"] else "") + raw
+    for e in out:
+        e["body"] = e["body"].strip()
+    return out
+
+
 def parse_email_list(text):
     """[(section, state, [(name, "")])] off the Email Templates page (p=325)
     in the template pull. Names and on/off only: the pull opens SMS
@@ -464,7 +499,7 @@ def parse_email_list(text):
 
 
 def gather(sinfo=None, prefs=None, esc_rows=None, bodies=None, states=None,
-           pulled=None, emails=None, items=()):
+           pulled=None, emails=None, items=(), email_bodies=None):
     """Everything page 2 shows, as data. Any part may be None = not pulled.
     `pulled` is {"ai": date|None, "templates": date|None}."""
     """`items` are page 1's findings (fixes.py items); each is shown again
@@ -587,6 +622,24 @@ def gather(sinfo=None, prefs=None, esc_rows=None, bodies=None, states=None,
             out["sms"].append((sec, state, full, flags))
     if emails is not None:
         out["email"] = [(sec, state, tpls, []) for sec, state, tpls in emails]
+        # The wording of each switched-on email, with its flags, keyed by
+        # the email's name (unique in practice; the section heading the
+        # pull saw can differ from the list's).
+        by_name = {}
+        for e in email_bodies or []:
+            flags = []
+            where = F.email_where(e["head"], e["name"])
+            for i in items:
+                if i["source"] != "Templates" or \
+                        (i["where"] or "").strip() != where:
+                    continue
+                f = _flag(i["title"], "", i["why"], YOU)
+                f.update(rec=_rec(i), kind=i["kind"], detail=i["found"],
+                         warn=i["kind"] in F.WARN_KINDS)
+                f["spans"] = _spans(i["kind"], e["body"], i["found"])
+                flags.append(f)
+            by_name[e["name"].strip()] = dict(e, flags=flags)
+        out["email_bodies"] = by_name
     out["flags"] = count(out)
     return out
 
@@ -602,7 +655,8 @@ def count(setup):
         + len(s.get("replies_missing", [])),
         "sms": sum(len(r[3]) + sum(len(t[2]) for t in r[2])
                    for r in s.get("sms", [])),
-        "email": sum(len(r[3]) for r in s.get("email", [])),
+        "email": sum(len(r[3]) for r in s.get("email", []))
+        + sum(len(e["flags"]) for e in (s.get("email_bodies") or {}).values()),
     }
 
 
@@ -744,6 +798,41 @@ def _head(title, n, when=None, checked=False):
 # ApplicantStream's short step names, spelled out next to the name
 # (Megan 2026-11-15: FDOT = "first day of training").
 ABBREV = {"FDOT": "First Day of Training"}
+
+
+def _email_html(e):
+    """One switched-on email: subject, what it says, our version, flags."""
+    flags = e.get("flags") or []
+    spans = [sp for f in flags if not f.get("warn")
+             for sp in f.get("spans", [])]
+    warn = [sp for f in flags if f.get("warn") for sp in f.get("spans", [])]
+    out = ["<div class='tpl'><p class='tn'>Email: {}</p>".format(
+        _e(e["name"]))]
+    if e.get("subject"):
+        out.append("<p><b>Subject:</b> {}</p>".format(_e(e["subject"])))
+    out.append("<p class='lbl'>What it says now:</p><div class='says mail'>"
+               "{}</div>".format(marked(e["body"], spans, warn)))
+    # Only real fixes get a recommended version; an orange question has
+    # nothing to rewrite.
+    fixes = [f for f in flags if not f.get("warn")]
+    fixed = suggest(e["body"], fixes) if fixes else e["body"]
+    if fixed != e["body"]:
+        out.append("<p class='lbl'>Here's what we'd recommend:</p>"
+                   "<div class='opt rec'><span class='says ok mail'>{}</span>"
+                   "<button type='button' onclick='cp(this)'>Copy</button>"
+                   "</div>".format(_changed(e["body"], fixed)))
+    for f in flags:
+        out.append("<details class='flag{}'><summary>\u2691 {}</summary>"
+                   "<p class='why'><b>Why:</b> {}</p><p class='who'><b>Who "
+                   "fixes it:</b> {}</p></details>".format(
+                       " warn" if f.get("warn") else "",
+                       _e(grammar_says(f.get("detail"))
+                          if f.get("kind") == "GRAMMAR" else
+                          PLAIN_FIX.get(f.get("kind")) or f["rec"]),
+                       _e(PLAIN_WHY.get(f.get("kind")) or f["why"]),
+                       _e(f["owner"])))
+    out.append("</div>")
+    return "".join(out)
 
 
 def _sec_label(section):
@@ -975,7 +1064,8 @@ def render_templates(setup):
                     "<p class='lbl'>What it says now:</p>"
                     "<div class='says'>{}</div>".format(
                         _e(name), marked(body, spans, warn)))
-                fixed = suggest(body, tflags) if tflags else body
+                fixes = [f for f in tflags if not f.get("warn")]
+                fixed = suggest(body, fixes) if fixes else (body or "")
                 if fixed != (body or ""):
                     add("<p class='lbl'>Here's what we'd recommend:</p>"
                         "<div class='opt rec'><span class='says ok'>{}</span>"
@@ -1000,21 +1090,32 @@ def render_templates(setup):
     if not s.get("email"):
         add("<p class='s'>Not pulled yet.</p>")
     else:
-        add("<p class='s'>Which email is switched on in each step, and the "
-            "emails saved there. The wording itself isn't pulled yet.</p>")
+        add("<p class='s'>Each step's emails. Tap a step to read what the "
+            "switched-on email says.</p>")
+        bodies = s.get("email_bodies") or {}
         for section, state, tpls, flags in sorted(
                 s["email"], key=lambda r: (not r[3], STATE_ORDER.get(r[1], 3))):
             live = [nm[:-5] for nm, _b in tpls if nm.endswith(" (ON)")]
+            shown = [bodies[n.strip()] for n in live if n.strip() in bodies]
+            nflags = len(flags) + sum(len(e["flags"]) for e in shown)
             add("<details><summary>{}<span class='t'>{}</span>"
                 "<span class='s'>{}</span> {}</summary><div class='body'>"
-                "{}<p class='lbl'>Emails saved in this step:</p><ul>{}</ul>"
-                "</div></details>".format(
-                    _onoff(state), _sec_label(section),
-                    _e(", ".join(live)) if live else
-                    "{} saved, none on".format(len(tpls)),
-                    _badge(len(flags)), _flags_html(flags),
-                    "".join("<li>{}</li>".format(_e(nm)) for nm, _b in tpls)
-                    or "<li class='s'>none saved</li>"))
+                .format(_onoff(state), _sec_label(section),
+                        _e(", ".join(live)) if live else
+                        "{} saved, none on".format(len(tpls)),
+                        _badge(nflags)))
+            add(_flags_html(flags))
+            for e in shown:
+                add(_email_html(e))
+            if live and not shown:
+                add("<p class='s'>The wording of this email wasn't pulled "
+                    "yet.</p>")
+            off = [nm for nm, _b in tpls if not nm.endswith(" (ON)")]
+            if off:
+                add("<p class='lbl'>Also saved here, switched off:</p><ul>{}"
+                    "</ul>".format("".join("<li>{}</li>".format(_e(nm))
+                                           for nm in off)))
+            add("</div></details>")
     return "\n".join(L)
 
 
@@ -1023,13 +1124,14 @@ CSS = """
 .tabs label{flex:1;text-align:center;padding:.55em .4em;border-radius:8px;
      border:2px solid var(--ink);cursor:pointer;font-weight:bold;
      background:#fff}
-#pg0,#pg1,#pg2,#pg3{display:none}
+#pg0,#pg1,#pg2,#pg3,#pg4{display:none}
 #pg0:checked~.tabs label[for=pg0],#pg1:checked~.tabs label[for=pg1],
-#pg2:checked~.tabs label[for=pg2],#pg3:checked~.tabs label[for=pg3]{
+#pg2:checked~.tabs label[for=pg2],#pg3:checked~.tabs label[for=pg3],
+#pg4:checked~.tabs label[for=pg4]{
      background:var(--ink);color:#fff}
-.page0,.page1,.page2,.page3{display:none}
+.page0,.page1,.page2,.page3,.page4{display:none}
 #pg0:checked~.page0,#pg1:checked~.page1,#pg2:checked~.page2,
-#pg3:checked~.page3{display:block}
+#pg3:checked~.page3,#pg4:checked~.page4{display:block}
 .tabs .fl{font-size:.8em;margin-left:.3em}
 .okay{color:#156E46;font-weight:bold}
 .noai{background:#fff8e6;border-color:#e0b85c}
@@ -1058,6 +1160,7 @@ details.flag.warn{background:#fff4e0;border-left-color:#e08a00}
 details.flag.warn>summary,details.flag.warn>summary::after{color:#a35f00}
 details.flag.warn:not([open]){background:transparent}
 .says mark.warn{background:#ffe1a8;color:#7a4a00;outline-color:#e08a00}
+.says.mail{white-space:pre-line;max-height:22em;overflow:auto}
 .opt.rec{display:flex;gap:.5em;align-items:flex-start}
 .opt.rec .says{flex:1;background:#f1faf4;border:1px solid #9fd3b5}
 .says ins{background:#cdebd8;color:#0f5a36;text-decoration:none;

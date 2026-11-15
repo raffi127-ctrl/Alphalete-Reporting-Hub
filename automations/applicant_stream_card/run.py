@@ -282,6 +282,11 @@ def gather(oid, use_sheets=True):
         found, _personas = T.lint(bodies, states, office)
         found = list(found) + F.reply_rule_findings(
             bodies, city=(sinfo or {}).get("office_city"))
+        from automations.applicant_stream_card import setup_page as SP
+        email_bodies = SP.parse_email_bodies(
+            getattr(_template_bodies, "text", None))
+        found += F.email_findings(email_bodies, office,
+                                  city=(sinfo or {}).get("office_city"))
         z2 = (office.get("zoom2") or "").strip()
         for kind, text in found:
             # One word in capitals ("available TODAY") is emphasis on
@@ -378,6 +383,8 @@ def gather(oid, use_sheets=True):
     setup = SP.gather(
         sinfo, prefs, rows if src else None, bodies, states,
         pulled={"ai": when},
+        email_bodies=SP.parse_email_bodies(
+            getattr(_template_bodies, "text", None)),
         emails=SP.parse_email_list(getattr(_template_bodies, "text", None))
         if bodies is not None else None,
         items=info + words + ai + checks)

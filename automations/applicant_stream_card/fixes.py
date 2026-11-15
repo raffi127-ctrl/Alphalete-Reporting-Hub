@@ -409,7 +409,7 @@ REPLY_RULES = ("GRAMMAR",)
 # 3rd left message promising a call at all: "for second and third, we don't
 # always call ... are you making a promise you're not going to keep?" That
 # is an orange question, not a red fault, so it is never graded.
-WARN_KINDS = {"CALL CHECK", "TYPED ADDRESS"}
+WARN_KINDS = {"CALL CHECK", "TYPED ADDRESS", "CHECK ROOM"}
 
 # Megan 2026-07-09: never an age, gender or "who we hire" preference in
 # anything public (feedback_recruiting_copy_compliance).
@@ -448,6 +448,11 @@ EXTRA_WHY = {
         "Address typed in by hand",
         "A typed address goes stale when the office moves or changes suite. "
         "The address fields always send what's on file."),
+    "CHECK ROOM": (
+        "Is this your 2nd-round Zoom room?",
+        "This sends a different Zoom room than the one on file. If 2nd "
+        "rounds use their own room, that's fine; if not, applicants are "
+        "sent to the wrong meeting."),
     "WRONG CITY": (
         "Names the wrong city",
         "The text tells applicants the office is somewhere it isn't, so "
@@ -515,4 +520,55 @@ def reply_rule_findings(bodies, city=None):
         for kind, detail in A.proofread(msg):
             out.append(("GRAMMAR", "{}: {} — “{}”".format(
                 where, kind, detail)))
+    return out
+
+
+# --- emails ---------------------------------------------------------------
+# Megan 2026-11-15: the emails "aren't showing what's being sent". The pull
+# now reads each switched-on email; these are the checks that matter in an
+# email. Curly quotes, length, capitals and the typed address are text-only
+# costs (an email signature is SUPPOSED to carry the address), and a second
+# office number in a signature is not a wrong one, so those are left out.
+EMAIL_TPL_KINDS = {"WRONG ROOM", "WRONG MEETING ID", "WRONG ADDRESS",
+                   "BASE PAY", "DEAD LINK", "MERGE"}
+EMAIL_RULE_KINDS = {"GRAMMAR", "WHO WE HIRE", "LOW PAY", "WRONG CITY"}
+
+
+def email_where(head, name):
+    # No colon: split_where cuts a finding at the first ": ", and
+    # "Email: ..." came out as just "Email".
+    # The heading the pull saw is not reliable (11280: a page notice), so
+    # the email's own name is the label.
+    return "Email \u2014 {}".format(name.strip())
+
+
+def email_findings(emails, office, city=None):
+    """[(kind, text)] for the switched-on emails, `where` = email_where()."""
+    out = []
+    for e in emails or []:
+        body = e.get("body") or ""
+        lint_body = body + "\n" + "\n".join(e.get("links") or [])
+        where = email_where(e["head"], e["name"])
+        plain = (e["name"] if e["name"].startswith(e["head"])
+                 else "{} / {}".format(e["head"], e["name"]))
+        found, _p = T.lint([(e["head"], e["name"], lint_body)], {}, office)
+        second = re.search(r"\b(2nd|second)\b", "{} {}".format(
+            e["head"], e["name"]), re.I)
+        asked = False
+        for kind, text in found:
+            if kind not in EMAIL_TPL_KINDS:
+                continue
+            # No 2nd-round room on file: a different room in a 2nd-round
+            # email may be right, so ask instead of calling it wrong.
+            if kind in ("WRONG ROOM", "WRONG MEETING ID") and second and \
+                    not (office or {}).get("zoom2"):
+                if asked:
+                    continue
+                asked = True
+                kind = "CHECK ROOM"
+            out.append((kind, text.replace(plain, where, 1)))
+        for kind, text in reply_rule_findings(
+                [(e["head"], e["name"], body)], city=city):
+            if kind in EMAIL_RULE_KINDS:
+                out.append((kind, text.replace(plain, where, 1)))
     return out

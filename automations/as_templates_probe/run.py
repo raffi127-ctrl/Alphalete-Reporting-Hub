@@ -144,6 +144,72 @@ def _dump_template_bodies(page, rqst, rows, want=None):
         _reload()
 
 
+def _dump_email_bodies(page, rqst, rows):
+    """On the Email Templates page (p=325), open each SWITCHED-ON email's
+    edit page (p=326&emailId=N, a plain GET) and dump its subject, sender
+    and body text. Read-only: the row's other links (delete, deactivate,
+    set default) are never followed, and nothing is saved (Megan
+    2026-11-15: the emails "aren't showing what's being sent")."""
+    base = "https://applicantstream.com/index.cfm?rqst={}".format(rqst)
+    page.goto(base + "&p=325", wait_until="domcontentloaded", timeout=30000)
+    page.wait_for_timeout(3000)
+    found = page.evaluate(
+        """() => {
+          const heads = [...document.querySelectorAll('b,strong,h1,h2,h3,h4,td,div,span,label')]
+            .filter(e => e.children.length === 0 &&
+                         /:\\s*$/.test((e.innerText||'').trim()) &&
+                         (e.innerText||'').length < 60);
+          const out = [];
+          document.querySelectorAll('a[href*="p=326"][href*="emailId="]').forEach(a => {
+            const tr = a.closest('tr');
+            if (!tr) return;
+            const cells = [...tr.querySelectorAll('td')];
+            const name = cells.length ? (cells[0].innerText||'').trim() : '';
+            const on = /\\(Activated\\)/.test(tr.innerText||'');
+            const id = (a.getAttribute('href').match(/emailId=(\\d+)/)||[])[1];
+            const pos = tr.getBoundingClientRect().top + window.scrollY;
+            let best = '', bestPos = -1;
+            heads.forEach(h => {
+              const hp = h.getBoundingClientRect().top + window.scrollY;
+              if (hp <= pos && hp > bestPos) { bestPos = hp; best = (h.innerText||'').trim(); }
+            });
+            out.push({id, name, on, head: best.replace(/:\\s*$/, '')});
+          });
+          return out;
+        }""")
+    on = [f for f in found if f["on"] and f["id"]]
+    _emit(rows, f"===== phase 3: {len(found)} emails, {len(on)} switched on =====")
+    for f in on:
+        try:
+            page.goto(base + "&p=326&emailId=" + f["id"],
+                      wait_until="domcontentloaded", timeout=30000)
+            page.wait_for_timeout(2500)
+            got = page.evaluate(
+                """() => {
+                  const v = n => { const e = document.querySelector('[name="' + n + '"]');
+                                   return e ? (e.value||'').trim() : ''; };
+                  const ta = document.querySelector('textarea[name="emailBody"]');
+                  const tmp = document.createElement('div');
+                  tmp.innerHTML = ta ? ta.value : '';
+                  tmp.querySelectorAll('br').forEach(b => b.replaceWith('\\n'));
+                  tmp.querySelectorAll('p,div,tr,h1,h2,h3,li').forEach(b => b.append('\\n'));
+                  const links = [...tmp.querySelectorAll('a[href]')].map(a => a.getAttribute('href'));
+                  return {subject: v('emailSubject'), from: v('fromAddress'),
+                          body: (tmp.textContent||'').replace(/\\u00a0/g, ' '), links};
+                }""")
+            tag = "[EMAIL {} / {}]".format(f["head"], f["name"])
+            _emit(rows, "{} subject: {}".format(tag, got["subject"]))
+            _emit(rows, "{} from: {}".format(tag, got["from"]))
+            for ln in got["links"]:
+                _emit(rows, "{} link: {}".format(tag, ln))
+            body = re.sub(r"[ \t]+", " ", got["body"])
+            body = re.sub(r"\n\s*\n+", "\n\n", body).strip()
+            _emit(rows, "{} body:\n{}".format(tag, body[:8000]))
+        except Exception as e:  # noqa: BLE001
+            _emit(rows, "[EMAIL {} / {}] read failed: {}".format(
+                f["head"], f["name"], e.__class__.__name__))
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="as_templates_probe")
     ap.add_argument("--office", default="11280")
@@ -209,6 +275,8 @@ def main(argv=None):
             # actual message bodies (p=332 lists names only).
             _dump_template_bodies(page, rqst, rows,
                                   want=[] if args.all else None)
+            if args.all:
+                _dump_email_bodies(page, rqst, rows)
 
     # One tab per office. Probing a second office used to clear the first
     # one's dump, which made a two-office comparison impossible to hold.

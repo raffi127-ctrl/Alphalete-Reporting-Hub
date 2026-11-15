@@ -578,6 +578,28 @@ class SetupPageTest(unittest.TestCase):
         self.assertEqual(fixed, "Orientation at officeAddress1, officeCity, "
                                 "officeState officeZip.")
 
+    def test_email_wording_is_read_and_checked(self):
+        from automations.applicant_stream_card import setup_page as P
+        from automations.applicant_stream_card import fixes as F
+        text = ("[EMAIL Second Interview Confirmation / Alphalete 2ND ZOOM] "
+                "subject: Your 2ND ZOOM Interview\n"
+                "[EMAIL Second Interview Confirmation / Alphalete 2ND ZOOM] "
+                "link: https://us02web.zoom.us/j/111\n"
+                "[EMAIL Second Interview Confirmation / Alphalete 2ND ZOOM] "
+                "body:\nHi applicantFirstName,\nSee you in Irving, TX soon.\n"
+                "===== end =====\n")
+        got = P.parse_email_bodies(text)
+        self.assertEqual(len(got), 1)
+        self.assertEqual(got[0]["subject"], "Your 2ND ZOOM Interview")
+        self.assertIn("Irving, TX", got[0]["body"])
+        found = F.email_findings(got, {"zoom": "https://us02web.zoom.us/j/222"},
+                                 city="Plano")
+        kinds = sorted(k for k, _t in found)
+        # a 2nd-round email with no 2nd-round room on file: ask, don't fail
+        self.assertEqual(kinds, ["CHECK ROOM", "WRONG CITY"])
+        self.assertTrue(all(t.startswith("Email \u2014 ") for _k, t in found))
+        self.assertTrue(F.split_where(found[0][1])[0].startswith("Email \u2014 "))
+
     def test_page_two_says_not_pulled(self):
         out = C.render(C.build("1"))
         self.assertIn("Not pulled yet", out[out.index("<div class='page2'>"):])
@@ -662,7 +684,7 @@ class CardTest(unittest.TestCase):
         # each reason says what to do and who does it
         fixes = {f[0]: f for f in line["fixes"]}
         self.assertIn("Blocked by the phone carrier", fixes)
-        self.assertIn("10DLC", fixes["Blocked by the phone carrier"][2][1])
+        self.assertIn("Reach out to ApplicantStream", fixes["Blocked by the phone carrier"][2][1])
         self.assertNotIn("Applicant gave a fake number", fixes)
         self.assertIn("never reach", line["action"])
         self.assertEqual(dv["numbers"][0][0], "+1469")
