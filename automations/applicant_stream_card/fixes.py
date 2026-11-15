@@ -357,22 +357,61 @@ def routing_summary(rows, approved=None):
     return item
 
 
+def slip_mark(kind, detail):
+    """The exact characters to mark red in the text, or ''."""
+    d = (detail or "").strip()
+    if kind in ("spelling", "verb form"):
+        return d.split(" \u2192 ")[0]
+    if kind == "grammar":
+        return re.sub(r" \(.*\)$", "", d)
+    if kind == "lowercase i":
+        return ""
+    return d
+
+
+def slip_fix(kind, detail):
+    """The fix in plain words (Megan 2026-11-15: no "(on!La)" codes)."""
+    d = (detail or "").strip()
+    if kind == "missing space":
+        return "add a space after the punctuation marked in red"
+    if kind == "doubled word":
+        return "take out the repeated word marked in red"
+    if kind == "spelling" and " \u2192 " in d:
+        a, b = d.split(" \u2192 ", 1)
+        return "change \u201c{}\u201d to \u201c{}\u201d".format(a, b)
+    if kind == "verb form" and " \u2192 " in d:
+        a, b = d.split(" \u2192 ", 1)
+        return "change \u201c{}\u201d to \u201c{}\u201d".format(a, b)
+    if kind == "grammar":
+        m = re.search(r"\((.+?) \u2192 (.+?)\)", d)
+        if m:
+            return "change \u201c{}\u201d to \u201c{}\u201d".format(
+                m.group(1), m.group(2))
+    if kind == "lowercase i":
+        return "make the lone \u201ci\u201d a capital \u201cI\u201d"
+    if kind == "capital mid-sentence":
+        return "make the capital letter marked in red lowercase"
+    if kind == "comma splice":
+        return "split the sentence marked in red with a period"
+    return "fix the part marked in red"
+
+
 def recruiter_text(entry):
     """A typing slip in a recruiter's own text — coached, not edited."""
     sent = entry.get("sent") or 1
     who = entry.get("sender") or "a recruiter"
     saved = sent > 1
+    fix = slip_fix(entry.get("kind"), entry.get("detail"))
     steps = (["This exact wording went to {} people, so it is a saved "
               "reply. In any applicant's text box click Load Template, "
-              "find it, fix it ({}), then Save Template over it.".format(
-                  sent, entry.get("detail") or entry.get("kind"))]
+              "find it, {}, then Save Template over it.".format(sent, fix)]
              if saved else
-             ["Show {} the text below and the fix: {}.".format(
-                 who, entry.get("detail") or entry.get("kind"))])
+             ["Show {} the text above: {}.".format(who, fix)])
     return {"source": "Recruiter texts", "kind": "TYPO",
             "title": "{} — {}".format(
                 (entry.get("kind") or "mistake").capitalize(), who),
-            "where": who, "found": (entry.get("body") or "")[:220],
+            "where": who, "found": entry.get("body") or "",
+            "mark": slip_mark(entry.get("kind"), entry.get("detail")),
             "why": "Applicants read typos as a careless or fake company.",
             "steps": steps}
 
@@ -386,8 +425,16 @@ def house_rule(entry):
             "found": "{} text{} — e.g. {}".format(
                 entry.get("count"), "" if entry.get("count") == 1 else "s",
                 (entry.get("example") or "")[:180]),
-            "why": "It goes against our house rules for what goes out to "
-                   "applicants.",
+            # Megan 2026-11-15: not "Raf/Megan's rulings" - a wrong link or
+            # address is checked against the office's saved profile.
+            "why": ("It doesn't match this office's saved profile, so "
+                    "applicants get the wrong {}.".format(
+                        "Zoom link" if "zoom" in (entry.get("issue") or "")
+                        .lower() else "address")
+                    if re.search(r"zoom|address|suite|link",
+                                 entry.get("issue") or "", re.I)
+                    else "It goes against our house rules for what goes out "
+                         "to applicants."),
             "steps": ["If it came from a saved reply, click Load Template "
                       "in the text box, fix the saved copy once, and Save "
                       "Template over it.",

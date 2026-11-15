@@ -1069,10 +1069,24 @@ def _tab_link(i):
             "</p>".format(*tab))
 
 
+def _marked_text(text, mark):
+    """`text` escaped, with the first `mark` in red (Megan 2026-11-15:
+    "this should highlight red what the issue is")."""
+    if not mark or mark not in text:
+        return _e(text)
+    a = text.index(mark)
+    return "{}<mark>{}</mark>{}".format(
+        _e(text[:a]), _e(mark), _e(text[a + len(mark):]))
+
+
 def _fix_body(i):
     out = []
     if i.get("found"):
-        out.append("<div class='found'>{}</div>".format(_e(i["found"])))
+        if i.get("source") == "Recruiter texts":
+            out.append("<div class='says'>{}</div>".format(
+                _marked_text(i["found"], i.get("mark"))))
+        else:
+            out.append("<div class='found'>{}</div>".format(_e(i["found"])))
     if i.get("why"):
         out.append("<p class='why'><b>Why:</b> {}</p>".format(_e(i["why"])))
     if i.get("owner"):
