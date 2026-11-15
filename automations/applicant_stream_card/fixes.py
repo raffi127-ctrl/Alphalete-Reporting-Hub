@@ -173,7 +173,8 @@ def _is_email(where):
 
 def template(kind, text, office):
     where, detail = split_where(text)
-    title, why = T.WHY.get(kind) or ESC.WHY.get(kind, (kind.title(), ""))
+    title, why = (T.WHY.get(kind) or EXTRA_WHY.get(kind)
+                  or ESC.WHY.get(kind, (kind.title(), "")))
     ctx = dict(context(office), where="“{}”".format(where))
     steps = (EMAIL_TPL if _is_email(where) else SMS_TPL) \
         + [TEMPLATE_HOW.get(kind, "Fix what is shown.")] + SAVE_TPL
@@ -401,7 +402,30 @@ def house_rule(entry):
 # the weekly SMS audit) already covers curly quotes, length, block capitals,
 # base pay and wrong links; these are the reply rules it doesn't run, added
 # here so the shared audit is not changed under other reports.
-REPLY_RULES = ("GRAMMAR", "PROMISES A CALL")
+REPLY_RULES = ("GRAMMAR",)
+
+# Megan 2026-11-15: a promised call TIME in a template ("I'll call you
+# shortly") is fine, too nitpicky to flag. What's worth a look is a 2nd or
+# 3rd left message promising a call at all: "for second and third, we don't
+# always call ... are you making a promise you're not going to keep?" That
+# is an orange question, not a red fault, so it is never graded.
+WARN_KINDS = {"CALL CHECK"}
+CALL_SAID = re.compile(
+    r"\b(i'?ll|i will|we'?ll|we will|someone will|we are going to|i'?m going "
+    r"to)\b[^.!?]{0,25}\b(call|give you a (quick )?call|ring)\b", re.I)
+LATER_LEFT_MESSAGE = re.compile(r"^(2nd|3rd|second|third) left message", re.I)
+CITY_ST = re.compile(r"\b([A-Z][a-z]+(?: [A-Z][a-z]+)?), ?(TX|Texas)\b")
+EXTRA_WHY = {
+    "CALL CHECK": (
+        "Do you actually call after this message?",
+        "This text promises a call. On a 2nd or 3rd left message, offices "
+        "often only follow up by text. If nobody calls, the applicant is "
+        "left waiting on a call that won't come."),
+    "WRONG CITY": (
+        "Names the wrong city",
+        "The text tells applicants the office is somewhere it isn't, so "
+        "some will plan for the wrong place."),
+}
 
 
 def template_where(bodies):
@@ -421,8 +445,9 @@ def template_where(bodies):
     return out
 
 
-def reply_rule_findings(bodies):
-    """[(kind, text)] in templates.lint's shape for the reply rules."""
+def reply_rule_findings(bodies, city=None):
+    """[(kind, text)] in templates.lint's shape for the reply rules, plus
+    the wrong-city check (`city` = where this office is)."""
     from automations.sms_audit import analyze as A
     from automations.sms_audit import rebuttals as R
     out = []
@@ -436,9 +461,17 @@ def reply_rule_findings(bodies):
         # No DEFLECTS here: a template is a message the office sends, not
         # an answer to a question (Megan 2026-11-15, on a 1st interview
         # confirmation: "This isn't answering a question").
-        if ESC.ESC_CALL_PROMISE.search(msg):
-            out.append(("PROMISES A CALL", "{}: “{}”".format(
-                where, msg[:130])))
+        if LATER_LEFT_MESSAGE.match(_sec or "") and CALL_SAID.search(msg):
+            out.append(("CALL CHECK", "{}: \u201c{}\u201d".format(
+                where, CALL_SAID.search(msg).group(0))))
+        want = (city or "").strip().lower()
+        if want:
+            for m in CITY_ST.finditer(msg):
+                if m.group(1).lower() != want:
+                    out.append(("WRONG CITY",
+                                "{}: says \u201c{}\u201d \u2014 this office is "
+                                "in {}.".format(where, m.group(0),
+                                                city.strip())))
         for kind, detail in A.proofread(msg):
             out.append(("GRAMMAR", "{}: {} — “{}”".format(
                 where, kind, detail)))

@@ -372,9 +372,8 @@ class SetupPageTest(unittest.TestCase):
         self.assertTrue(setup["prefs"][1][4])             # 5 is too soon
         self.assertFalse(setup["prefs"][2][4])            # ghosting = 60
         sms = {r[0]: r[3] for r in setup["sms"]}
-        self.assertFalse(sms["Await Call"])               # not on Raf's list
-        self.assertIn("Directions AI", sms)               # recommended, missing
-        self.assertTrue(sms["Directions AI"])
+        self.assertFalse(sms["Await Call"])               # no "turn on" flags
+        self.assertNotIn("Directions AI", sms)            # nor missing steps
         # Compensation is already Don't Escalate: no flag; the other 30
         # approved replies are listed as not set up
         self.assertFalse(setup["replies"][0][3])
@@ -524,9 +523,22 @@ class SetupPageTest(unittest.TestCase):
 
     def test_reply_rules_run_on_templates(self):
         from automations.applicant_stream_card import fixes as F
-        got = F.reply_rule_findings([("No Answer", "No Answer #1",
-                                      "We will call you shortly.")])
-        self.assertIn("PROMISES A CALL", [k for k, _t in got])
+        # A call time is fine (Megan 2026-11-15: too nitpicky) ...
+        self.assertEqual(F.reply_rule_findings(
+            [("No Answer", "No Answer #1", "We will call you shortly.")]), [])
+        # ... a 2nd/3rd left message promising a call is an orange check,
+        got = F.reply_rule_findings([("3rd Left Message - Call List", "x",
+                                      "I'll call you shortly!")])
+        self.assertEqual([k for k, _t in got], ["CALL CHECK"])
+        self.assertIn("CALL CHECK", F.WARN_KINDS)
+        # ... and a city that isn't this office's is flagged.
+        got = F.reply_rule_findings([("1st Left Message", "x",
+            "Alphalete Marketing in Irving, TX. Call us.")], city="Plano")
+        self.assertEqual([k for k, _t in got], ["WRONG CITY"])
+        from automations.applicant_stream_card import setup_page as P
+        self.assertEqual(P.suggest("in Irving, TX.", [{
+            "kind": "WRONG CITY", "detail": "says \u201cIrving, TX\u201d "
+            "\u2014 this office is in Plano."}]), "in Plano, TX.")
 
     def test_grammar_flag_explains_and_fixes(self):
         from automations.applicant_stream_card import setup_page as P

@@ -255,6 +255,14 @@ def gather(oid, use_sheets=True):
     sinfo, prefs = AIS.load(oid)
     got, tmpl_why = _template_bodies(oid, use_sheets)
     bodies, states = got if got else (None, {})
+    # The pull adds "[Section / Name] input 0: <name>" lines: the NAME box,
+    # not the message. Left in, every check read the name too ("BOB" as
+    # shouting, "Friendly Reminder 1 1" as a doubled word). Drop them once,
+    # here, so every check reads only what applicants get.
+    if bodies:
+        bodies = [(sec, name, "\n".join(
+            ln for ln in (body or "").splitlines()
+            if not ln.startswith("[")).strip()) for sec, name, body in bodies]
     grading = grading_facts(office, sinfo, zoom_in_use(bodies, states))
     try:
         IA.apply_address_history(office)
@@ -262,6 +270,7 @@ def gather(oid, use_sheets=True):
         print("[card] address history not applied: {}".format(e))
 
     info, info_skip, words, words_skip, ai, ai_skip = [], [], [], [], [], []
+    checks = []
     for gap in O.missing_fields(office):
         (words_skip if "pay" in gap else info_skip).append(gap)
 
@@ -271,7 +280,8 @@ def gather(oid, use_sheets=True):
         words_skip.append(tmpl_why)
     else:
         found, _personas = T.lint(bodies, states, office)
-        found = list(found) + F.reply_rule_findings(bodies)
+        found = list(found) + F.reply_rule_findings(
+            bodies, city=(sinfo or {}).get("office_city"))
         z2 = (office.get("zoom2") or "").strip()
         for kind, text in found:
             if kind in NOT_GRADED:
@@ -279,6 +289,9 @@ def gather(oid, use_sheets=True):
             if kind == "WRONG ROOM" and z2 and z2 in text:
                 continue          # the office's second room, not a wrong one
             item = F.template(kind, text, office)
+            if kind in F.WARN_KINDS:
+                checks.append(item)        # a question, not graded
+                continue
             (info if kind in C.WRONG_INFO else words).append(item)
 
     # --- the booking records + texts ----------------------------------
@@ -361,7 +374,7 @@ def gather(oid, use_sheets=True):
         pulled={"ai": when},
         emails=SP.parse_email_list(getattr(_template_bodies, "text", None))
         if bodies is not None else None,
-        items=info + words + ai)
+        items=info + words + ai + checks)
 
     hours, _hw = AIS.load_hours(oid)
     slots = S.slots(hours, recs) if hours else None

@@ -63,6 +63,11 @@ PREFS = [
 # Raf's ARS doc, Auditing Process -> Templates: the texts and emails that
 # should be live at every office (resources/recruiting-context/
 # ars-processes-2026.md). Names as ApplicantStream spells the steps.
+# The call cycle we recommend (Megan 2026-11-15: "we should just say we
+# recommend that your call cycle be this ... let's follow back up on that
+# one"). Empty until Megan gives it; then it shows at the top of Templates.
+RECOMMENDED_CYCLE = []
+
 RECOMMENDED_SMS = [
     "Await Call AI", "2nd Left Message - Call List", "No Answer - Call List",
     "On Hold", "Directions", "Directions AI", "2nd Interview Invite",
@@ -188,14 +193,18 @@ def _spans(kind, body, detail):
     return out
 
 
-def marked(body, spans):
-    """Escaped body with the spans wrapped in <mark>."""
+def marked(body, spans, warn=()):
+    """Escaped body with the spans wrapped in <mark> (orange for `warn`
+    spans: a question to check, not a fault)."""
     body = body or ""
+    warn = set(warn)
     out, at = [], 0
-    for a, b in sorted(set(spans)):
+    for a, b in sorted(set(spans) | warn):
         if a < at:
             continue
-        out += [_e(body[at:a]), "<mark>", _e(body[a:b]), "</mark>"]
+        tag = "<mark class='warn'>" if (a, b) in warn and (a, b) not in \
+            set(spans) else "<mark>"
+        out += [_e(body[at:a]), tag, _e(body[a:b]), "</mark>"]
         at = b
     out.append(_e(body[at:]))
     return "".join(out)
@@ -203,6 +212,8 @@ def marked(body, spans):
 
 # Plain one-liners for the template flags people see most.
 PLAIN_FIX = {
+    "CALL CHECK": "Do you actually call after this one, or only text?",
+    "WRONG CITY": "Change the city in the red part to where you are",
     "NOT PLAIN TEXT": "Retype the red mark with your keyboard's plain ' or -",
     "PROMISES A CALL": "Take out the time you promise to call by",
     "GRAMMAR": "Fix the grammar in the red part",
@@ -246,6 +257,13 @@ def suggest(body, flags):
                 out = out.replace(m.group(1), m.group(1).capitalize())
         elif kind == "GRAMMAR":
             out = _fix_grammar(out, detail)
+        elif kind == "WRONG CITY":
+            m = re.search("says \u201c(.+?)\u201d \u2014 this office is in "
+                          "(.+?)\\.?$", detail)
+            if m and m.group(1) in out:
+                wrong = m.group(1).split(",")[0]
+                out = out.replace(m.group(1), m.group(1).replace(
+                    wrong, m.group(2)))
         elif kind in ("WRONG ROOM", "WRONG ADDRESS", "CHECK PHONE",
                       "WRONG MEETING ID"):
             pat = {"WRONG ROOM": r"sends (\S+) \u2014 this office\u2019s "
@@ -333,12 +351,15 @@ def _fix_grammar(out, detail):
 def _changed(old, new):
     """`new`, escaped, with what differs from `old` marked green."""
     import difflib
-    sm = difflib.SequenceMatcher(None, old, new, autojunk=False)
+    # Whole words, so "Irving" -> "Plano" marks Plano, not "Pla" + "o".
+    tok = re.compile(r"\s+|[\w']+|[^\w\s]")
+    a, b = tok.findall(old), tok.findall(new)
+    sm = difflib.SequenceMatcher(None, a, b, autojunk=False)
     out = []
-    for op, _a, _b, c, d in sm.get_opcodes():
-        piece = _e(new[c:d])
-        out.append(piece if op == "equal" or not new[c:d].strip()
-                   else "<ins>{}</ins>".format(piece))
+    for op, _i, _j, c, d in sm.get_opcodes():
+        piece = "".join(b[c:d])
+        out.append(_e(piece) if op == "equal" or not piece.strip()
+                   else "<ins>{}</ins>".format(_e(piece)))
     return "".join(out)
 
 
@@ -540,37 +561,24 @@ def gather(sinfo=None, prefs=None, esc_rows=None, bodies=None, states=None,
             f["rec"] = _rec(i)
             f["kind"] = i["kind"]
             f["detail"] = i["found"]
+            f["warn"] = i["kind"] in F.WARN_KINDS
             if n is None:
                 f["found"] = i["found"]
                 by.setdefault(sec, []).append(f)
             else:
                 f["spans"] = _spans(i["kind"], tpls[n][1], i["found"])
                 per.setdefault((sec, n), []).append(f)
-        rec = {_k(n) for n in RECOMMENDED_SMS}
+        # Megan 2026-11-15: Raf doesn't have a list of what every office
+        # should have on, so no "turn this on" flags. A recommended call
+        # cycle replaces them once Megan sets one (RECOMMENDED_CYCLE).
         out["sms"] = []
         for sec, state, tpls in tpl:
             flags = list(by.get(sec, []))
-            if _k(sec) in rec and state != "Activated":
-                flags.insert(0, _flag(
-                    "Recommend turning this text on" if tpls else
-                    "Recommend writing this text and turning it on", "",
-                    WHY_ON.format("texts"), YOU))
             full = [(name, body, per.get((sec, n), []))
                     for n, (name, body) in enumerate(tpls)]
             out["sms"].append((sec, state, full, flags))
-        have = {_k(sec) for sec in names}
-        for sec in RECOMMENDED_SMS:
-            if _k(sec) not in have:
-                out["sms"].append((sec, "None Created", [], [_flag(
-                    "Recommend writing this text and turning it on", "",
-                    WHY_ON.format("texts"), YOU)]))
     if emails is not None:
-        rec = {_k(n) for n in RECOMMENDED_EMAIL}
-        out["email"] = [(sec, state, tpls, [_flag(
-            "Recommend turning an email on here", "",
-            WHY_ON.format("emails"), YOU)] if _k(sec) in rec and
-            state != "Activated" else [])
-            for sec, state, tpls in emails]
+        out["email"] = [(sec, state, tpls, []) for sec, state, tpls in emails]
     out["flags"] = count(out)
     return out
 
@@ -918,6 +926,10 @@ def render_templates(setup):
     add = L.append
     when = s.get("pulled") or {}
 
+    if RECOMMENDED_CYCLE:
+        add("<div class='truth'><b>We recommend your call cycle be:</b><ol>"
+            "{}</ol></div>".format("".join(
+                "<li>{}</li>".format(_e(x)) for x in RECOMMENDED_CYCLE)))
     add(_head("SMS templates", n.get("sms"), when.get("templates")))
     if "sms" not in s:
         add("<p class='s'>Not pulled yet.</p>")
@@ -933,11 +945,14 @@ def render_templates(setup):
                             len(flags) + sum(len(t[2]) for t in tpls))))
             add(_flags_html(flags))
             for name, body, tflags in tpls:
-                spans = [sp for f in tflags for sp in f.get("spans", [])]
+                spans = [sp for f in tflags if not f.get("warn")
+                         for sp in f.get("spans", [])]
+                warn = [sp for f in tflags if f.get("warn")
+                        for sp in f.get("spans", [])]
                 add("<div class='tpl'><p class='tn'>Template name: {}</p>"
                     "<p class='lbl'>What it says now:</p>"
                     "<div class='says'>{}</div>".format(
-                        _e(name), marked(body, spans)))
+                        _e(name), marked(body, spans, warn)))
                 fixed = suggest(body, tflags) if tflags else body
                 if fixed != (body or ""):
                     add("<p class='lbl'>Here's what we'd recommend:</p>"
@@ -945,10 +960,11 @@ def render_templates(setup):
                         "<button type='button' onclick='cp(this)'>Copy"
                         "</button></div>".format(_changed(body or "", fixed)))
                 for f in tflags:
-                    add("<details class='flag'><summary>\u2691 {}</summary>"
+                    add("<details class='flag{}'><summary>\u2691 {}</summary>"
                         "<p class='why'><b>Why:</b> {}</p>"
                         "<p class='who'><b>Who fixes it:</b> {}</p></details>"
-                        .format(_e(grammar_says(f.get("detail"))
+                        .format(" warn" if f.get("warn") else "",
+                                _e(grammar_says(f.get("detail"))
                                    if f.get("kind") == "GRAMMAR" else
                                    PLAIN_FIX.get(f.get("kind")) or f["rec"]),
                                 _e(PLAIN_WHY.get(f.get("kind")) or f["why"]),
@@ -962,14 +978,15 @@ def render_templates(setup):
     if not s.get("email"):
         add("<p class='s'>Not pulled yet.</p>")
     else:
-        add("<p class='s'>Which email is switched on in each step. The "
-            "wording itself isn't pulled yet.</p>")
+        add("<p class='s'>Which email is switched on in each step, and the "
+            "emails saved there. The wording itself isn't pulled yet.</p>")
         for section, state, tpls, flags in sorted(
                 s["email"], key=lambda r: (not r[3], STATE_ORDER.get(r[1], 3))):
             live = [nm[:-5] for nm, _b in tpls if nm.endswith(" (ON)")]
             add("<details><summary>{}<span class='t'>{}</span>"
                 "<span class='s'>{}</span> {}</summary><div class='body'>"
-                "{}<ul>{}</ul></div></details>".format(
+                "{}<p class='lbl'>Emails saved in this step:</p><ul>{}</ul>"
+                "</div></details>".format(
                     _onoff(state), _e(section),
                     _e(", ".join(live)) if live else
                     "{} saved, none on".format(len(tpls)),
@@ -1015,6 +1032,10 @@ table.list td{text-align:left;white-space:normal}
      padding:.4em .6em;margin:.4em 0;font-size:.95em;text-align:left;
      white-space:normal}
 .flag .found{background:#fff}
+details.flag.warn{background:#fff4e0;border-left-color:#e08a00}
+details.flag.warn>summary,details.flag.warn>summary::after{color:#a35f00}
+details.flag.warn:not([open]){background:transparent}
+.says mark.warn{background:#ffe1a8;color:#7a4a00;outline-color:#e08a00}
 .opt.rec{display:flex;gap:.5em;align-items:flex-start}
 .opt.rec .says{flex:1;background:#f1faf4;border:1px solid #9fd3b5}
 .says ins{background:#cdebd8;color:#0f5a36;text-decoration:none;

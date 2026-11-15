@@ -36,7 +36,7 @@ GREEN, YELLOW, RED, GREY = "green", "yellow", "red", "grey"
 DOT = {GREEN: "#22A35A", YELLOW: "#E8A317", RED: "#D93A3A", GREY: "#9AA0A6"}
 
 # Findings that put wrong information in front of an applicant.
-WRONG_INFO = {"WRONG ROOM", "WRONG MEETING ID", "WRONG ADDRESS",
+WRONG_INFO = {"WRONG ROOM", "WRONG MEETING ID", "WRONG ADDRESS", "WRONG CITY",
               "CHECK PHONE", "DEAD LINK", "MERGE", "ADDRESS"}
 # A live template whose whole body is "test" is wording, not wrong info,
 # but it reaches applicants today, so it ranks with the AI faults.
@@ -85,6 +85,7 @@ ACTION = {
     "WRONG ROOM": "Fix the Zoom link in {w}",
     "WRONG MEETING ID": "Fix the Zoom meeting ID in {w}",
     "WRONG ADDRESS": "Fix the address in {w}",
+    "WRONG CITY": "Fix the city in {w}",
     "CHECK PHONE": "Check the phone number in {w}",
     "DEAD LINK": "Retype the broken link in {w}",
     "MERGE": "Fix the blank fill-in field in {w}",
