@@ -614,6 +614,75 @@ def _write_fetch_manifest(week_label, saturday_label, results):
         print(f"⚠ couldn't write the run manifest ({e})", flush=True)
 
 
+SCREENS = ("office-dashboard", "agent-management", "sales-management", "resource-center", "reporting-center")
+
+
+def discover_screens(account="murrugarra", screens=SCREENS, verbose=True):
+    """Walk ARC's top menu under one saved login and dump what each screen
+    offers -- links, buttons, selects, table headers, and whether any cell
+    text looks like a phone number (counted, never written). READ-ONLY: no
+    Load, no download, no click on anything that is not a nav link.
+
+    Carlos 2026-11-15: "there's got to be somewhere where we can see the
+    customer's phone number before it hits the ARC file" -- the pay files
+    are two weeks behind, so this looks at the live screens (Reporting
+    Center, Agent Management ...) under Nico's own login, which is the only
+    one that sees his Verizon campaign."""
+    import re
+    rows = [["WHAT", "SCREEN", "VALUE"], ["account", account, "ARC top-menu walk, read-only"]]
+    phone = re.compile(r"\b\(?\d{3}\)?[-. ]?\d{3}[-. ]?\d{4}\b")
+
+    def grab(pg, tag):
+        try:
+            body = pg.inner_text("body")
+        except Exception:  # noqa: BLE001
+            body = ""
+        rows.append(["url", tag, (pg.url or "")[:160]])
+        rows.append(["body-head", tag, " ".join(body.split())[:400]])
+        n_phone = len(phone.findall(body))
+        rows.append(["phone-like-values", tag, str(n_phone)])
+        for what, sel in (("link", "a"), ("button", "button"), ("select", "select"), ("input", "input"), ("tab", "[role=tab], .nav-tabs li")):
+            for el in pg.query_selector_all(sel)[:60]:
+                try:
+                    txt = " ".join((el.inner_text() or "").split())[:80] or el.get_attribute("placeholder") or el.get_attribute("name") or el.get_attribute("type") or ""
+                    if txt:
+                        rows.append([what, tag, txt + " ~ " + (el.get_attribute("href") or el.get_attribute("ng-click") or el.get_attribute("class") or "")[:80]])
+                except Exception:  # noqa: BLE001
+                    continue
+        for t in pg.query_selector_all("table")[:6]:
+            hdr = [" ".join((h.inner_text() or "").split()) for h in t.query_selector_all("th")[:20]]
+            if hdr:
+                rows.append(["table-headers", tag, " | ".join(hdr)[:300]])
+                cells = " ".join((t.inner_text() or "").split())
+                rows.append(["table-phone-like-values", tag, str(len(phone.findall(cells)))])
+
+    with credico_session(headless=True, account=account) as page:
+        for slug in screens:
+            try:
+                page.goto(f"{BASE}/#/dashboard/{slug}", wait_until="domcontentloaded")
+                page.wait_for_timeout(6000)
+                grab(page, slug)
+                for fr in page.frames[1:4]:
+                    try:
+                        grab(fr, f"{slug} frame:{(fr.url or '')[:40]}")
+                    except Exception:  # noqa: BLE001
+                        continue
+            except Exception as e:  # noqa: BLE001
+                rows.append(["error", slug, f"{type(e).__name__}: {str(e)[:160]}"])
+    if verbose:
+        for r in rows:
+            print("  ".join(str(c)[:70].ljust(24) for c in r))
+    OUT.mkdir(parents=True, exist_ok=True)
+    (OUT / f"discover_screens_{account}.tsv").write_text(
+        "\n".join("\t".join(str(c) for c in r) for r in rows), encoding="utf-8")
+    try:
+        _dump_to_sheet(rows)
+        print(f"\n✓ {len(rows)} row(s) → '{DUMP_TAB}' tab")
+    except Exception as e:  # noqa: BLE001
+        print(f"\n⚠ couldn't write the '{DUMP_TAB}' tab ({e})")
+    return rows
+
+
 def inspect(verbose=True):
     """Dump EVERY sheet of the downloaded file(s) — the summary sheet is a
     per-campaign pivot, so the per-person rows (if any) are on another tab.
@@ -947,7 +1016,13 @@ def main(argv=None):
                     help="EVERY CommissionDetail + StatusChanges row of the file(s) whose "
                          "name carries NEEDLE (default High-Value) -> the dump tab (local only)")
     ap.add_argument("--week", help="sheet week label, e.g. 7.19.26")
+    ap.add_argument("--screens", action="store_true",
+                    help="walk ARC's top menu under --account and dump each screen (read-only)")
+    ap.add_argument("--account", default="murrugarra", help="saved Credico login for --screens")
     a = ap.parse_args(argv)
+    if a.screens:               # before --discover: `lucy rerun credico_discover --screens` carries both
+        discover_screens(a.account)
+        return 0
     if a.reconcile:
         reconcile(a.week or current_week())
         return 0
