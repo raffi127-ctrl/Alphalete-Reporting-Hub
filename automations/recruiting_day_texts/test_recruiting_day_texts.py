@@ -161,26 +161,25 @@ class RedAlert(unittest.TestCase):
         self.assertEqual(RD.average([52, 63, 72, 0]), 62.333333333333336)
         self.assertEqual(RD.average([0, 0]), 0.0)
 
-    def test_past_cache_keeps_only_final_days(self):
-        import importlib
+    def test_alert_compares_mornings_never_full_days(self):
+        # 2026-11-15: Raf's Monday read 27 the day before vs a 210 final --
+        # the * must only ever weigh a morning against earlier mornings.
         with tempfile.TemporaryDirectory() as t:
-            old = RD.PAST_CACHE
-            RD.PAST_CACHE = Path(t) / "c.json"
+            old = RD.MORNINGS
+            RD.MORNINGS = Path(t) / "m.json"
             try:
                 o = C.OFFICES["raf"]
-                past = dt.date.today() - dt.timedelta(days=7)
-                RD.past_cache_put(o, "first", past, 115)
-                RD.past_cache_put(o, "first", dt.date.today(), 76)
-                self.assertEqual(RD.past_cache_get(o, "first", past), 115)
-                self.assertIsNone(RD.past_cache_get(o, "first", dt.date.today()))
+                today = dt.date.today()
+                day = lambda n: RD.Day(day=today - dt.timedelta(days=7 * n), owner="x",
+                                       first=[(dt.time(8), "a")] * n * 10)
+                self.assertEqual(RD.morning_usual(o, today), {})   # no history: no *
+                RD.morning_record(o, day(1))                       # 10
+                self.assertEqual(RD.morning_usual(o, today), {})   # 1 morning: still no *
+                RD.morning_record(o, day(2))                       # 20
+                RD.morning_record(o, day(2))                       # a resend never doubles
+                self.assertEqual(RD.morning_usual(o, today), {"first": 15.0})
             finally:
-                RD.PAST_CACHE = old
-
-    def test_retarget_day(self):
-        h = "index.cfm?p=715&count=76&dt=46339&id=Total_First_Interviews"
-        self.assertIn("dt=46332&", RD.retarget_day(h, dt.date(2026, 11, 6)))
-        with self.assertRaises(RuntimeError):
-            RD.retarget_day("index.cfm?p=715", DAY)
+                RD.MORNINGS = old
 
     def test_red_note_drawn(self):
         d = RD.Day(day=DAY, owner="Rafael Hidalgo", first=[(dt.time(8), "a")] * 10)

@@ -11,12 +11,12 @@ one) each morning"):
   2. dispatch queues `rerun recruiting_day_texts --due --send` with NO machine,
      so mini_control's routing hands it to the least-loaded Lucy that has
      AppStream (day_orchestrator/routing.py).
-  3. That Lucy reads every due office's Retention Details (+ the last 4
-     same weekdays, for the red alert).
+  3. That Lucy reads every due office's Retention Details for today.
   4. The SEND always leaves from Lucy 1: Lucy 3's iMessages miss some phones
      ([[reference_lucy3_imessage_partial_delivery]]) and Lucy 1 is the number in
      the office groups. The reader queues `rerun recruiting_day_texts
-     --deliver <data>` on Lucy 1, which draws the picture and sends it. If the
+     --deliver <data>` on Lucy 1, which decides the red * (vs its record of the office's earlier
+     7am counts), draws the picture and sends it. If the
      reader IS Lucy 1 it just sends.
 
 --send only ever texts offices whose config `mode` is "live"; everything else
@@ -152,6 +152,10 @@ def deliver(payload: dict, force: bool = False) -> None:
     if k in _state() and not force:
         _log("%s: already texted %s today -- skipping" % (o.owner, mode))
         return
+    if mode == "morning":
+        from automations.recruiting_day_texts import read as RD
+        avg = RD.morning_usual(o, d.day)       # 7am vs earlier 7ams, never a full day
+        RD.morning_record(o, d)
     text, images = build(o, mode, d, avg)
     if not text:
         _log("%s: nothing to send" % o.owner)
@@ -195,10 +199,9 @@ def one(app, o: C.Office, mode: str, day: dt.date, send: bool) -> None:
         except Exception as e:  # noqa: BLE001 -- names without times, never guessed
             _log("  new-start times unreadable (%s) -- names only" % e)
     if mode == "morning" and T.has_anything(d):
-        try:
-            avg = RD.usual(app, o, day, log=_log)
-        except Exception as e:  # noqa: BLE001 -- no alert beats a wrong alert
-            _log("  usual numbers unreadable (%s) -- picture goes without an alert" % e)
+        # Preview only: the real alert is decided on Lucy 1 at send time,
+        # off its record of this office's earlier mornings (deliver()).
+        avg = RD.morning_usual(o, day)
     text, images = build(o, mode, d, avg)
     if not text:
         _log("%s: nothing to send (%s)" % (o.owner, "empty calendar" if

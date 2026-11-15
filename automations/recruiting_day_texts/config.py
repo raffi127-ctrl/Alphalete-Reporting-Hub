@@ -47,13 +47,15 @@ SHOWED_LOCAL = (15, 45)      # trigger; text lands ~4:00
 DUE_WINDOW_MIN = 45          # a trigger this late still counts (never reaches the next zone)
 
 # RED ALERT: today's 1st or 2nd rounds below this share of the same weekday's
-# average over the last LOOKBACK_WEEKS weeks (Megan 2026-11-13: "lower than your
+# 7am count over the last LOOKBACK_WEEKS weeks (morning vs morning -- see
+# read.morning_usual for why never vs a full day) (Megan 2026-11-13: "lower than your
 # typical number scheduled ... reach out to your recruiting team"). Past days are
 # FINAL counts and the morning read is before same-day bookings land, so the bar
 # is set below 100% on purpose.
 LOW_SHARE = 0.75
 LOW_MIN_AVG = 5              # an office that usually has <5 is never "low"
 LOOKBACK_WEEKS = 4
+MIN_HISTORY = 2              # mornings on record before the * can show
 
 # Every ECO office with an approved iMessage group AND an AppStream account
 # Lucy's login can see (mapped 2026-11-13 from the relay's Office Channels tab

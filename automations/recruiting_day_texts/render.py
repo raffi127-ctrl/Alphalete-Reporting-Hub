@@ -115,7 +115,7 @@ def morning_png(day, out: Path, low: Optional[dict] = None) -> Path:
     if low:
         wd = day.day.strftime("%A")
         lines = ["* Lower than usual: " + ",  ".join(
-                    "%s %d today vs about %.0f on a normal %s"
+                    "%s %d today vs about %.0f by this time on a normal %s"
                     % ({"first": "1st rounds", "second": "2nd rounds"}[k],
                        len(getattr(day, k)), a, wd)
                     for k, a in sorted(low.items())),

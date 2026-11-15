@@ -135,98 +135,7 @@ def read_day(app, office: C.Office, day: dt.date, labels=C.LABELS,
     return out
 
 
-# ------------------------------------------------------------ the usual ----
-
-def _serial(d: dt.date) -> int:
-    """AppStream's dt= value: the Excel day serial (46339 = 2026-11-13)."""
-    return (d - dt.date(1899, 12, 30)).days
-
-
-def retarget_day(href: str, d: dt.date) -> str:
-    """A single-day detail link pointed at another day. The report itself only
-    renders this week, but its detail page answers any date -- checked
-    2026-11-13 on Raf's office: four past Fridays, each banner naming its own
-    date and listing exactly its 'Total Apps'."""
-    if not re.search(r"[?&]dt=\d+", href or ""):
-        raise RuntimeError("detail link has no dt= day: %r" % (href or "")[:120])
-    return re.sub(r"([?&]dt=)\d+", r"\g<1>%d" % _serial(d), href)
-
-
-def _banner_total(app, want: dt.date) -> int:
-    got = app.page.evaluate(
-        "() => (document.body.innerText.match(/For Date[^\\n]*/)||[''])[0]")
-    m = re.search(r"Total Apps:\s*(\d+)", got or "")
-    day = want.strftime("%b %d, %Y")
-    if not m or day not in got:
-        raise RuntimeError("past-day page did not show %s (%r)" % (day, got[:80]))
-    return int(m.group(1))
-
-
-def usual(app, office: C.Office, day: dt.date, weeks: int = C.LOOKBACK_WEEKS,
-          log=print) -> Dict[str, float]:
-    """{'first': avg, 'second': avg} over the same weekday of the last `weeks`
-    weeks. Reads the report (current week) for today's links, then one detail
-    page per past day. Raises if anything is off -- the caller then sends the
-    picture WITHOUT an alert, never with a made-up one."""
-    from automations.linkedin_2nd_round_contacts.run import date_header
-    app.select_office(office.appstream_id)
-    app.open_retention_details()
-    # BOTH links off the report first: visiting a past day leaves the report,
-    # and the second lookup would then search a detail page (bug 2026-11-13).
-    hrefs = {}
-    for key, lbl in (("first", C.L_FIRST), ("second", C.L_SECOND)):
-        h = app.detail_href(lbl, date_header(day))
-        if not h:
-            raise RuntimeError("no %r cell for today" % lbl)
-        hrefs[key] = h
-    out = {}
-    for key, h in hrefs.items():
-        vals = []
-        for w in range(1, weeks + 1):
-            d = day - dt.timedelta(days=7 * w)
-            got = past_cache_get(office, key, d)
-            if got is None:
-                app._goto_detail(retarget_day(h, d))
-                got = _banner_total(app, d)
-                past_cache_put(office, key, d, got)
-            vals.append(got)
-        out[key] = average(vals)
-        log("  usual %s (%s, last %d): %s -> %.0f"
-            % (key, day.strftime("%a"), weeks, vals, out[key]))
-    return out
-
-
-# A past day's count is FINAL, so it is read once and kept -- after the first
-# morning each office opens 2 past-day pages (last week's), not 8. Kept per
-# machine; a Lucy that has not seen an office yet simply reads all 4 weeks.
-PAST_CACHE = Path.home() / ".config" / "recruiting-report" / "recruiting_day_texts_past.json"
-
-
-def _past_load() -> Dict[str, int]:
-    try:
-        return json.loads(PAST_CACHE.read_text(encoding="utf-8"))
-    except Exception:  # noqa: BLE001
-        return {}
-
-
-def past_cache_get(office: C.Office, key: str, d: dt.date) -> Optional[int]:
-    v = _past_load().get("%s|%s|%s" % (office.appstream_id, key, d.isoformat()))
-    return int(v) if v is not None else None
-
-
-def past_cache_put(office: C.Office, key: str, d: dt.date, n: int) -> None:
-    if d >= dt.date.today() - dt.timedelta(days=2):
-        return                      # not final yet -- never keep it
-    c = _past_load()
-    c["%s|%s|%s" % (office.appstream_id, key, d.isoformat())] = int(n)
-    cut = (dt.date.today() - dt.timedelta(days=60)).isoformat()
-    c = {k: v for k, v in c.items() if k.rsplit("|", 1)[-1] >= cut}
-    try:
-        PAST_CACHE.parent.mkdir(parents=True, exist_ok=True)
-        PAST_CACHE.write_text(json.dumps(c), encoding="utf-8")
-    except Exception:  # noqa: BLE001 -- only costs a re-read tomorrow
-        pass
-
+# ---------------------------------------------------------- the usual ----
 
 def average(vals: List[int]) -> float:
     """Mean of the days the office was OPEN. A 0 on a past weekday is a closed
@@ -234,6 +143,58 @@ def average(vals: List[int]) -> float:
     normal day look high and hide a real drop."""
     open_days = [v for v in vals if v > 0]
     return sum(open_days) / float(len(open_days)) if open_days else 0.0
+
+
+# ------------------------------------------------- 7am-vs-7am history ----
+# WHY NOT THE FINAL COUNTS (checked 2026-11-15, Raf's office): 1st rounds are
+# mostly booked THE SAME DAY -- last Monday ended at 210, while the Monday
+# calendar the day before held 27. AppStream's detail page has no "booked at"
+# time, so a past day's 7am count cannot be rebuilt. A morning read compared
+# with a full day's total would turn red every day. So the alert compares this
+# morning with this office's own EARLIER MORNINGS, recorded on Lucy 1 (it sends
+# every text, so it sees every morning). No alert until MIN_HISTORY mornings.
+MORNINGS = Path.home() / ".config" / "recruiting-report" / "recruiting_day_texts_mornings.json"
+
+
+def _mornings_load() -> Dict[str, Dict[str, int]]:
+    try:
+        return json.loads(MORNINGS.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def morning_record(office: C.Office, d: "Day") -> None:
+    """Keep today's 7am counts (one entry per office per day; a resend
+    overwrites, never doubles)."""
+    m = _mornings_load()
+    m["%s|%s" % (office.appstream_id, d.day.isoformat())] = {
+        "first": len(d.first), "second": len(d.second)}
+    cut = (dt.date.today() - dt.timedelta(days=90)).isoformat()
+    m = {k: v for k, v in m.items() if k.rsplit("|", 1)[-1] >= cut}
+    try:
+        MORNINGS.parent.mkdir(parents=True, exist_ok=True)
+        MORNINGS.write_text(json.dumps(m), encoding="utf-8")
+    except Exception:  # noqa: BLE001 -- costs one day of history, never a text
+        pass
+
+
+def morning_usual(office: C.Office, day: dt.date,
+                  weeks: int = C.LOOKBACK_WEEKS) -> Dict[str, float]:
+    """{'first': avg, 'second': avg} of this office's 7am counts on the same
+    weekday over the last `weeks` weeks. A count with fewer than MIN_HISTORY
+    open mornings behind it is left out -- no alert beats a guessed one."""
+    m = _mornings_load()
+    out = {}
+    for key in ("first", "second"):
+        vals = []
+        for w in range(1, weeks + 1):
+            e = m.get("%s|%s" % (office.appstream_id,
+                                 (day - dt.timedelta(days=7 * w)).isoformat()))
+            if e is not None:
+                vals.append(int(e.get(key) or 0))
+        if len([v for v in vals if v > 0]) >= C.MIN_HISTORY:
+            out[key] = average(vals)
+    return out
 
 
 def low_flags(d: Day, avg: Optional[Dict[str, float]]) -> Dict[str, float]:
