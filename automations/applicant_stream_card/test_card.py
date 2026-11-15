@@ -600,6 +600,16 @@ class SetupPageTest(unittest.TestCase):
         self.assertTrue(all(t.startswith("Email \u2014 ") for _k, t in found))
         self.assertTrue(F.split_where(found[0][1])[0].startswith("Email \u2014 "))
 
+    def test_same_slip_to_many_people_is_one(self):
+        from automations.applicant_stream_card import run as R
+        errs = [{"kind": "missing space", "sender": "Chris",
+                 "body": "Hi, {0}. Call you soon!{0}".format(n),
+                 "detail": "on!" + n[:2], "name": n + " Smith"}
+                for n in ("Bertha", "Bruno", "Maya")]
+        got = R.merge_slips(errs)
+        self.assertEqual(len(got), 1)
+        self.assertEqual(got[0]["sent"], 3)
+
     def test_page_two_says_not_pulled(self):
         out = C.render(C.build("1"))
         self.assertIn("Not pulled yet", out[out.index("<div class='page2'>"):])

@@ -242,6 +242,34 @@ def scorecard_css():
     return SC.CSS
 
 
+def merge_slips(errs):
+    """One entry per slip, however many applicants got it. A mass text or
+    saved reply with one mistake came back once per applicant, each with
+    its own name in it (11280: "...job application!Bertha", "!Bruno", ...),
+    and the card listed them all (Megan 2026-11-15: "are these all the
+    same?"). Same sender + same slip + same text once the name is taken
+    out = the same mistake; `sent` counts the people who got it."""
+    groups, order = {}, []
+    for e in errs:
+        body = e.get("body") or ""
+        for part in (e.get("name") or "").split():
+            if len(part) > 1:
+                body = re.sub(r"\b{}\b".format(re.escape(part)), "{name}",
+                              body)
+        # The applicant's name also sits in the greeting and glued to the
+        # end ("...application!Bertha"), and the name on file doesn't
+        # always match the one typed in.
+        body = re.sub(r"^(Hi|Hey|Hello)[, ]+[A-Z][a-z]+", r"\1 {name}", body)
+        body = re.sub(r"([!?.])[A-Z][a-z]+\s*$", r"\1{name}", body)
+        detail = re.sub(r"[!?.][A-Z][a-z]$", "", e.get("detail") or "")
+        key = (e.get("sender"), e.get("kind"), detail, body)
+        if key not in groups:
+            groups[key] = dict(e, sent=0)
+            order.append(key)
+        groups[key]["sent"] += e.get("sent") or 1
+    return [groups[k] for k in order]
+
+
 def gather(oid, use_sheets=True):
     from automations.sms_audit import analyze as A
     from automations.sms_audit import ai_settings as AIS
@@ -316,7 +344,7 @@ def gather(oid, use_sheets=True):
         msgs = IA.message_findings(office) or {}
         median_reply = msgs.get("median_reply")
         humans = msgs.get("human_senders")
-        errs = sorted(msgs.get("errors") or [],
+        errs = sorted(merge_slips(msgs.get("errors") or []),
                       key=lambda e: -(e.get("sent") or 1))
         for e in errs[:TYPO_LIMIT]:
             words.append(F.recruiter_text(e))

@@ -239,12 +239,17 @@ def speed(st, ttb=None):
                                _tone(p["median_h"], 4, 12, False))]),
         ("Booked the same day", [(_pct(d["same_day_share"]),
                                   _tone(d["same_day_share"], 70, 50))]),
-        ("Booked a day or more later", [(_pct(d["late_share"]),
-                                         _tone(d["late_share"], 10, 20,
-                                               False))]),
+        # Megan 2026-11-15: same day + a day or more was only 70%. The rest
+        # were booked the next calendar day but inside 24 hours; shown on
+        # their own line so the three add up.
+        ("Booked the next day, within 24 hours",
+         [(_pct(max(0.0, 100 - d["same_day_share"] - d["late_share"])),
+           None)]),
+        ("Booked a day or more later (24+ hours)",
+         [(_pct(d["late_share"]), _tone(d["late_share"], 10, 20, False))]),
         ("Show-up rate — within a day / later",
          [show(d["under_show"]), (" / ", None), show(d["late_show"])]),
-        ("Texts sent before the 1st round was set",
+        ("Number of texts sent before the 1st round was set",
          [("{:.1f} average".format(ttb["average"]),
            _tone(ttb["average"], 3, 6, False))] if ttb
          else "not checked"),
@@ -256,7 +261,7 @@ def speed(st, ttb=None):
     if ttb:
         short += " · {:.1f} texts".format(ttb["average"])
     text = ("People booked a day or more after processing show up {} vs "
-            "{}. Clear the call list the same day.".format(
+            "{}.".format(
                 _pct(d["late_show"]), _pct(d["under_show"])))
     action = None if dot == GREEN else (
         "Book everyone within 24 hours — {:.0f}% wait longer and show "
