@@ -1787,6 +1787,28 @@
    "timeout_minutes": 10,
    "verify": null
   },
+  "consumer_tally": {
+   "on_scheduler": false,
+   "_note": "READ-ONLY: one office's OwnerVille consumer tallies (CRU/IRU Engagement -> getConsumerTally) for one day, printed as CONSUMER_TALLY_JSON for logdump. Builds the consumer-tally preview for Jamis's B2B knocks board (2026-11-15). Lucy 2: its login opens Midspire. `lucy rerun consumer_tally --date YYYY-MM-DD`.",
+   "display_name": "Consumer Tally pull (read-only)",
+   "source_type": "ownerville",
+   "data_sources": [],
+   "command": [
+    "automations.b2b_metrics.consumer_tally"
+   ],
+   "base_args": [
+    "--json"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 10,
+   "machine": "Lucy 2"
+  },
   "consumer_tally_probe": {
    "on_scheduler": false,
    "_note": "READ-ONLY probe of OwnerVille Reports -> CRU/IRU Engagement (p=164) for one office: switches, tabs, table headers, first rows and the page's data calls, with 'Include consumer tallies' on (Jamis 2026-11-14 wants consumer tallies on his B2B knocks board). Changes nothing in OwnerVille. Lucy 2 only: its login is the one that can open Midspire. `lucy rerun consumer_tally_probe` (default office Jamis Garay, yesterday).",

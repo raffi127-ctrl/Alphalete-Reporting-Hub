@@ -43,7 +43,9 @@ V2_HOST = "https://v2.ownerville.com"
 
 def _mask(url: str) -> str:
     """Never print the session token."""
-    return re.sub(r"(rqst=)[^&]+", r"\1…", url or "")
+    s = re.sub(r"(rqst=)[^&\s]+", r"\1…", url or "")
+    # multipart bodies carry it as its own form field, not rqst=…
+    return re.sub(r'(name="rqst"\s+)\S+', r"\1…", s)
 
 
 def _snapshot(page, label: str, shots: Path) -> dict:
