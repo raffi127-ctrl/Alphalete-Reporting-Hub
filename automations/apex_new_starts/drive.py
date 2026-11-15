@@ -218,19 +218,30 @@ def keep_loaded(page, people=None, week: str = "", log=print) -> bool:
 
 
 def on_roster(page) -> bool:
-    """Are we actually looking at a roster with people in it?
+    """Can we actually SEE a roster right now?
 
-    THE GUARD THAT WAS MISSING. On 2026-11-14 the roster page came up as
-    Apex's change-password page with no nav at all, so the Pending lookup
-    found nobody and the All-Employees check found nobody -- and triage
-    called that "not in Apex at all" for somebody whose employment record it
-    had saved twenty minutes earlier. Absence routes to the CREATE form, and
-    a create on an existing person is a second payroll record for a real
-    employee.
+    THE GUARD THAT WAS MISSING. On 2026-11-14 the roster came up as Apex's
+    change-password page with no nav at all, so the Pending lookup found
+    nobody and the All-Employees check found nobody -- and triage called that
+    "not in Apex at all" for somebody whose employment record it had saved
+    twenty minutes earlier. Absence routes to the CREATE form, and a create
+    on an existing person is a second payroll record for a real employee.
 
     A lookup that could not run is not a lookup that found nothing
-    (feedback_empty_means_proven_zero). So: the tabs have to be on screen and
-    the list has to have rows in it before any "not found" is believed.
+    ([[feedback_empty_means_proven_zero]]).
+
+    IT IS THE TAB STRIP THAT SAYS SO, NOT THE ROWS. Apex's roster shows no
+    rows at all until a filter is applied: `tbody tr` is 0 on a perfectly
+    good page, and the 8 `tr` it does have are the headings and the filter
+    line (probe_roster, 2026-11-15). Requiring rows made this refuse the LIVE
+    roster. The four tabs are rendered DOM and a page that never loaded has
+    none of them, so the guard keeps its teeth.
+
+    THE SCRIPT CARRIES NO COMMENTS. With an explanatory /* */ block inside
+    it this returned False against a page where the very same expressions,
+    run from a probe moments earlier, returned True (2026-11-15). Whatever
+    the cause, the fix is to keep injected scripts bare and put the
+    reasoning here, where it belongs.
     """
     try:
         return bool(page.evaluate(
@@ -238,12 +249,34 @@ def on_roster(page) -> bool:
                  const t = (document.body.innerText || '');
                  if (/change your password/i.test(t) && !/Pending/i.test(t))
                    return false;
-                 const tabs = /Pending/i.test(t) && /All Employees/i.test(t);
-                 const rows = document.querySelectorAll(
-                   'table tbody tr, .k-grid-content tr').length;
-                 return tabs && rows > 0; }"""))
-    except Exception:      # noqa: BLE001 -- mid-navigation is not proof either
+                 return /Active/i.test(t) && /Pending/i.test(t)
+                     && /All Employees/i.test(t); }"""))
+    except Exception as e:  # noqa: BLE001 -- mid-navigation is not proof either
+        # NEVER SILENT. A swallowed error here looks exactly like "this is
+        # not the roster", and the guard then refuses every real person with
+        # no way to tell why (2026-11-15).
+        on_roster.last_error = "%s: %s" % (type(e).__name__, str(e)[:160])
         return False
+
+
+def wait_for_roster(page, *, seconds: int = 25, log=print) -> bool:
+    """Wait for the roster to finish arriving, THEN judge it.
+
+    on_roster was right to refuse a page it could not read, and wrong to ask
+    only once: the first run after it shipped landed on /roster -- the right
+    URL -- and checked before the rows had rendered, so a real employee came
+    back "UNKNOWN" and the run stopped (2026-11-15).
+
+    Refusing is still the answer when the page never arrives. This only stops
+    it being the answer when the page was merely slow.
+    """
+    for i in range(max(1, seconds * 2)):
+        if on_roster(page):
+            if i:
+                log("    (the roster finished arriving after %.1fs)" % (i * 0.5))
+            return True
+        page.wait_for_timeout(500)
+    return False
 
 
 def triage(page, people, log=print) -> Dict[str, dict]:
@@ -268,7 +301,9 @@ def triage(page, people, log=print) -> Dict[str, dict]:
     cannot read the All Employees tab, and that string becomes BY_HAND.
     """
     # NOTHING IS DECIDED FROM A PAGE THAT IS NOT THE ROSTER -- see on_roster.
-    if not on_roster(page):
+    if not wait_for_roster(page, log=log):
+        if getattr(on_roster, "last_error", ""):
+            log("  (the roster check itself failed: %s)" % on_roster.last_error)
         log("  NOT ON THE ROSTER (%s) -- nobody is triaged from this page."
             % (getattr(page, "url", None) or "?"))
         return {str((p or {}).get("name") or "").strip():
@@ -282,13 +317,21 @@ def triage(page, people, log=print) -> Dict[str, dict]:
         name = str((p or {}).get("name") or "").strip()
         if not name:
             continue
+        # THE ENGINE FINDS PEOPLE ON PENDING, because it does. Kyle, Stacy
+        # and Alexandria were all found and completed this way. Replacing it
+        # with a roster search of my own broke what worked and sent a real
+        # employee down the create path four times (2026-11-15) -- the search
+        # is the unproven thing here, not the lookup.
+        surname = str(p.get("find") or name.split()[-1])
+        given = name.split()[0] if name.split() else ""
         try:
             found = page.evaluate(
                 "async (p) => { const id = await window.__ansOpen(p);"
                 " return id ? String(id) : ''; }", p)
         except Exception as e:      # noqa: BLE001
             out[name] = {"need": BY_HAND,
-                         "why": "could not look on Pending (%s)" % type(e).__name__}
+                         "why": "could not look on Pending (%s)"
+                                % type(e).__name__}
             continue
         if found:
             # KEEP THE ID. Completing somebody means going to
@@ -298,16 +341,24 @@ def triage(page, people, log=print) -> Dict[str, dict]:
             # filled nothing, on the roster).
             out[name] = {"need": COMPLETE, "why": "on Pending", "id": found}
             continue
-        try:
-            there = page.evaluate(
-                "async (p) => await window.__ansExistsAnywhere(p)", p)
-        except Exception as e:      # noqa: BLE001
+        # NOT ON PENDING -- so before ever offering to CREATE them, search
+        # All Employees for real. "Not on Pending" has never meant "not in
+        # Apex", and a create on somebody already there is a second payroll
+        # record. This search is run from out here with real clicks: the
+        # roster lists nobody until Apply Filters is pressed, and the engine
+        # cannot press it (probe_filter, 2026-11-15).
+        if not open_roster_tab(page, "All Employees", log=log):
             out[name] = {"need": BY_HAND,
-                         "why": "could not check All Employees (%s)" % type(e).__name__}
+                         "why": "could not open All Employees, so whether "
+                                "they are in Apex is UNKNOWN"}
             continue
-        if isinstance(there, str):
-            out[name] = {"need": BY_HAND, "why": there[:160]}
-        elif there:
+        there = search_roster(page, surname, given, log=log)
+        if there is None:
+            out[name] = {"need": BY_HAND,
+                         "why": "the All Employees search could not be run, "
+                                "so whether they are in Apex is UNKNOWN"}
+            continue
+        if there:
             out[name] = {"need": BY_HAND,
                          "why": "in Apex but not on Pending — find them on "
                                 "All Employees"}
@@ -1438,3 +1489,135 @@ def save_tab(page, apex_id, got=None, *, log=print, seconds: int = 60) -> bool:
         return False
     log("    saved (%r)" % which)
     return True
+
+
+# ------------------------------------------------- searching the roster
+ROSTER_TABS = ("Pending", "All Employees")
+
+
+def _roster_rows(page) -> int:
+    try:
+        return int(page.evaluate(
+            "() => document.querySelectorAll('table tr').length"))
+    except Exception:      # noqa: BLE001
+        return 0
+
+
+def open_roster_tab(page, label: str, log=print) -> bool:
+    """Click one of the roster's own tabs, for real.
+
+    The engine clicks these from inside the page, and this rewrite ignores
+    events JavaScript makes -- the same finding as the dropdowns. From out
+    here the click is trusted.
+    """
+    # MARK IT IN JS, THEN CLICK THE MARK. Playwright's :text-is() would not
+    # click these tabs in any shape -- a/li/[role=tab] all timed out, and a
+    # selector naming two of them is refused as ambiguous anyway
+    # (2026-11-15). Finding the element by its own text and clicking the mark
+    # is what every other control in this file does, and it sidesteps
+    # selector-text semantics entirely.
+    found = page.evaluate(
+        r"""(want) => {
+             document.querySelectorAll('[data-ans-tabmark]')
+               .forEach(e => e.removeAttribute('data-ans-tabmark'));
+             const w = String(want).toLowerCase();
+             const all = [...document.querySelectorAll(
+               'a, li, button, [role=tab]')];
+             const hit = all.filter(e => {
+               const t = (e.innerText || '').replace(/\s+/g, ' ').trim()
+                         .toLowerCase();
+               return t === w && e.offsetParent;
+             }).sort((a, b) => (a.innerText || '').length
+                             - (b.innerText || '').length)[0];
+             if (!hit) return '';
+             hit.setAttribute('data-ans-tabmark', '1');
+             return hit.tagName.toLowerCase(); }""", label)
+    if not found:
+        log("    no %r tab on this page" % label)
+        return False
+    try:
+        page.click("[data-ans-tabmark]", timeout=6000)
+        page.wait_for_timeout(1000)
+        return True
+    except Exception as e:     # noqa: BLE001
+        log("    could not click the %r tab, a <%s> (%s)"
+            % (label, found, type(e).__name__))
+        return False
+
+
+def search_roster(page, surname: str, given: str = "", *, log=print):
+    """Filter the roster to one person and say how many rows came back.
+
+    WHY THIS EXISTS. Apex's roster lists NOBODY until a filter is applied,
+    and the engine applies its filter with an in-page click -- which the Beta
+    rewrite ignores. So the table stayed empty, both lookups searched nothing,
+    and a real employee came back "not in Apex at all", which routes to the
+    CREATE form and a second payroll record (2026-11-15).
+
+    Returns the number of matching rows, or None when the search could not be
+    performed at all. None is NOT zero: the caller must never read it as an
+    absence.
+    """
+    boxes = page.evaluate(
+        r"""() => {
+             document.querySelectorAll('[data-ans-f]')
+               .forEach(e => e.removeAttribute('data-ans-f'));
+             const ins = [...document.querySelectorAll('input')]
+               .filter(i => i.offsetParent && i.type !== 'hidden');
+             const by = w => ins.find(i => (
+               (i.getAttribute('placeholder') || '') + ' ' +
+               (i.getAttribute('name') || '') + ' ' +
+               (i.getAttribute('ng-model') || '')).toLowerCase().includes(w));
+             const last = by('last'), first = by('first');
+             if (last) last.setAttribute('data-ans-f', 'last');
+             if (first) first.setAttribute('data-ans-f', 'first');
+             return {last: !!last, first: !!first}; }""")
+    if not isinstance(boxes, dict) or not boxes.get("last"):
+        log("    no Last Name filter box on this page")
+        return None
+
+    try:
+        page.fill("[data-ans-f='last']", "")
+        page.type("[data-ans-f='last']", surname, delay=25)
+        if boxes.get("first"):
+            page.fill("[data-ans-f='first']", "")
+            if given:
+                page.type("[data-ans-f='first']", given, delay=25)
+        # APPLY, FOR REAL -- and found the way the tabs are found. The button
+        # is <button ng-click="vm.onChangeFilters()">Apply Filters</button>,
+        # and Playwright's :text-is() would not click it any more than it
+        # would the tabs; Enter does not search either, so the table simply
+        # stayed empty and every lookup found nobody (probe_filter,
+        # 2026-11-15).
+        hit = page.evaluate(
+            r"""() => {
+                 document.querySelectorAll('[data-ans-apply]')
+                   .forEach(e => e.removeAttribute('data-ans-apply'));
+                 const all = [...document.querySelectorAll(
+                   'button, a, input[type=submit], [ng-click]')];
+                 const b = all.find(e => {
+                   if (!e.offsetParent) return false;
+                   const t = ((e.innerText || e.value || '')
+                     .replace(/\s+/g, ' ').trim()).toLowerCase();
+                   const c = (e.getAttribute('ng-click') || '').toLowerCase();
+                   return t === 'apply filters' || c.includes('onchangefilters');
+                 });
+                 if (!b) return '';
+                 b.setAttribute('data-ans-apply', '1');
+                 return 'ok'; }""")
+        if not hit:
+            log("    no Apply Filters control on this page")
+            return None
+        page.click("[data-ans-apply]", timeout=5000)
+        page.wait_for_timeout(2000)
+    except Exception as e:     # noqa: BLE001
+        log("    could not run the search (%s)" % type(e).__name__)
+        return None
+
+    hits = page.evaluate(
+        r"""(s) => {
+             const want = String(s || '').toLowerCase();
+             return [...document.querySelectorAll('table tr')]
+               .filter(r => (r.innerText || '').toLowerCase().includes(want))
+               .length; }""", surname)
+    return int(hits)

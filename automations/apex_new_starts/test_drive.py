@@ -92,33 +92,82 @@ def test_a_blank_gender_is_not_handed_over_as_a_guess():
 # ------------------------------- which of the two each person actually needs
 
 class _Triage:
-    """A page that answers the two lookups from a script it was given.
+    """A page that answers the roster search the way Apex does.
 
-    It reports itself AS A ROSTER WITH ROWS, because that is the state these
-    tests are about -- triage refuses to decide anything from a page that is
-    not one (see test_a_lookup_that_could_not_run_is_never_an_absence).
+    It reports itself AS A ROSTER (triage refuses to decide anything from a
+    page that is not one), remembers which tab was clicked, and answers the
+    filter search from the sets it was given.
     """
 
     url = "https://apex.example/roster"
 
-    def __init__(self, pending=(), anywhere=(), raises=None, says=None):
+    def __init__(self, pending=(), anywhere=(), raises=None, says=None,
+                 no_search=False, no_tab=False):
         self.pending = set(pending)
         self.anywhere = set(anywhere)
         self.raises = raises or set()
         self.says = says or {}
+        self.no_search, self.no_tab = no_search, no_tab
+        self.tab, self.looked_for, self._marking = "Pending", "", "Pending"
+
+    # --- what the driver does to it ------------------------------------
+    def locator(self, sel):
+        """Playwright's locator, enough of it: .first.click()."""
+        page = self
+
+        class _Loc:
+            @property
+            def first(self):
+                return self
+
+            def click(self, timeout=None):
+                page.click(sel, timeout=timeout)
+
+        return _Loc()
+
+    def click(self, sel, timeout=None):
+        if "data-ans-apply" in sel:
+            return
+        if "data-ans-tabmark" in sel:
+            if self.no_tab:
+                raise RuntimeError("no such tab")
+            self.tab = self._marking
+            return
+
+    def fill(self, sel, val):
+        pass
+
+    def type(self, sel, val, delay=None):
+        if "last" in sel:
+            self.looked_for = val
+
+    def press(self, sel, key):
+        pass
+
+    def wait_for_timeout(self, ms):
+        pass
 
     def evaluate(self, js, arg=None):
-        if "All Employees" in js:               # on_roster
+        if "All Employees" in js and "innerText" in js:      # on_roster
             return True
+        if "data-ans-tabmark" in js:                         # finding a tab
+            self._marking = arg
+            return "" if self.no_tab else "li"
+        if "data-ans-apply" in js:                           # finding Apply
+            return "" if self.no_search else "ok"
+        if "data-ans-f" in js:                               # the filter boxes
+            return {} if self.no_search else {"last": True, "first": True}
+        if "includes(want)" in js:                           # the row count
+            who = self.anywhere if self.tab == "All Employees" else self.pending
+            if self.looked_for in self.says:
+                return 0
+            return sum(1 for n in who
+                       if self.looked_for.lower() in n.lower())
         name = (arg or {}).get("name", "")
         if name in self.raises:
             raise RuntimeError("the page gave up")
         if "__ansOpen" in js:
             return "id-%s" % name if name in self.pending else ""
-        if "__ansExistsAnywhere" in js:
-            if name in self.says:
-                return self.says[name]          # a string: could not tell
-            return name in self.anywhere
         return None
 
 
@@ -147,16 +196,18 @@ def test_in_apex_but_not_on_pending_goes_to_a_person():
 
 
 def test_could_not_tell_is_never_read_as_not_there():
-    """The engine returns a STRING when it cannot read All Employees. Taking
-    that as "not in Apex" would create a second record for a real employee."""
-    page = _Triage(says={"X Y": "no All Employees tab on this page"})
+    """A search that could not be run is not a search that found nobody.
+    Taking it as "not in Apex" would create a second record for a real
+    employee."""
+    page = _Triage(no_search=True)
     got = drive.triage(page, [{"name": "X Y"}], log=lambda *a: None)
     assert got["X Y"]["need"] == drive.BY_HAND
-    assert "All Employees" in got["X Y"]["why"]
+    assert "UNKNOWN" in got["X Y"]["why"]
+    assert "could not be run" in got["X Y"]["why"]
 
 
 def test_a_lookup_that_throws_is_by_hand_not_a_create():
-    page = _Triage(raises={"X Y"})
+    page = _Triage(no_tab=True)
     got = drive.triage(page, [{"name": "X Y"}], log=lambda *a: None)
     assert got["X Y"]["need"] == drive.BY_HAND
 
@@ -820,23 +871,27 @@ def test_arrived_is_not_the_same_as_settled():
     assert "never arrived" in src, "and it says so when they do not"
 
 
-class _Roster:
-    """A page that says whether it is a roster, and finds nobody on it."""
+class _Roster(_Triage):
+    """A roster that can be told whether it looks like one, and holds nobody.
 
-    url = "https://apex.example/roster"
+    Everything the driver does to a page -- the tab clicks, the filter typing,
+    the Apply click -- comes from _Triage, so these tests exercise the same
+    search the real triage runs.
+    """
 
     def __init__(self, *, is_roster=True, drifts=False):
+        super().__init__()
         self.is_roster, self.drifts, self.asked = is_roster, drifts, 0
 
     def evaluate(self, js, arg=None):
-        if "All Employees" in js:              # on_roster
+        if "All Employees" in js and "innerText" in js:      # on_roster
             self.asked += 1
             if self.drifts and self.asked > 1:
                 return False
             return self.is_roster
         if "__ansExistsAnywhere" in js:
-            return False                        # checked, genuinely absent
-        return ""                               # not on Pending
+            return False
+        return super().evaluate(js, arg)
 
 
 def test_a_lookup_that_could_not_run_is_never_an_absence():
@@ -848,6 +903,7 @@ def test_a_lookup_that_could_not_run_is_never_an_absence():
     Absence routes to the CREATE form, and a create on an existing person is
     a second payroll record for a real employee."""
     page = _Roster(is_roster=False)
+    page.wait_for_timeout = lambda ms: None
     said = []
     got = drive.triage(page, [{"name": "Ada Fournier"}], log=said.append)
     assert got["Ada Fournier"]["need"] == drive.BY_HAND, got
@@ -860,14 +916,158 @@ def test_the_roster_drifting_mid_check_is_not_an_absence_either():
     """It was the roster when we started looking and something else by the
     time we had an answer. That answer proves nothing."""
     page = _Roster(drifts=True)
+    page.wait_for_timeout = lambda ms: None
     got = drive.triage(page, [{"name": "Ada Fournier"}], log=lambda *a: None)
     assert got["Ada Fournier"]["need"] == drive.BY_HAND, got
-    assert "went away" in got["Ada Fournier"]["why"]
+    assert "UNKNOWN" in got["Ada Fournier"]["why"]
 
 
 def test_a_real_roster_that_really_has_nobody_still_says_add():
     """The guard must not swallow the genuine case: a roster with rows on
     screen, searched properly, that does not hold this person."""
     page = _Roster(is_roster=True)
+    page.wait_for_timeout = lambda ms: None
     got = drive.triage(page, [{"name": "Ada Fournier"}], log=lambda *a: None)
     assert got["Ada Fournier"]["need"] == drive.ADD, got
+
+
+def test_the_roster_is_given_time_to_arrive_before_it_is_judged():
+    """on_roster was right to refuse a page it could not read, and wrong to
+    ask only once: the first run after it shipped landed on /roster -- the
+    right URL -- and checked before the rows had rendered, so a real employee
+    came back UNKNOWN and the run stopped (2026-11-15)."""
+    import inspect
+    src = inspect.getsource(drive.triage)
+    assert "wait_for_roster(" in src, "wait, then judge"
+    # and the refusal still stands when it genuinely never arrives
+    waiter = inspect.getsource(drive.wait_for_roster)
+    assert "return False" in waiter
+
+
+def test_a_roster_that_never_arrives_is_still_refused():
+    class _Never(_Roster):
+        def evaluate(self, js, arg=None):
+            if "All Employees" in js:
+                return False
+            return ""
+
+    page = _Never()
+    page.wait_for_timeout = lambda ms: None
+    got = drive.triage(page, [{"name": "Ada Fournier"}], log=lambda *a: None)
+    assert got["Ada Fournier"]["need"] == drive.BY_HAND
+    assert "UNKNOWN" in got["Ada Fournier"]["why"]
+
+
+def test_a_slow_roster_is_waited_for_and_then_used():
+    class _Slow(_Roster):
+        def __init__(self):
+            super().__init__()
+            self.looks = 0
+
+        def evaluate(self, js, arg=None):
+            if "All Employees" in js and "innerText" in js:   # on_roster only
+                self.looks += 1
+                return self.looks > 3          # arrives on the fourth look
+            return _Triage.evaluate(self, js, arg)
+
+    page = _Slow()
+    page.wait_for_timeout = lambda ms: None
+    got = drive.triage(page, [{"name": "Ada Fournier"}], log=lambda *a: None)
+    assert got["Ada Fournier"]["need"] == drive.ADD, got
+
+
+def test_the_roster_is_recognised_by_its_tabs_not_by_its_rows():
+    """Apex's roster shows NO rows until a filter is applied: `tbody tr` is 0
+    on a perfectly good page, and the 8 `tr` it has are the headings and the
+    filter line (probe_roster, 2026-11-15). Requiring rows made the guard
+    refuse the LIVE roster and report a real employee as UNKNOWN.
+
+    The four tabs are rendered DOM, and a page that never loaded has none of
+    them -- so this is still "I can see a roster", not "the URL looks
+    right"."""
+    import inspect
+    src = inspect.getsource(drive.on_roster)
+    assert "All Employees" in src and "Pending" in src and "Active" in src
+    # THE SELECTOR, not the note explaining why there isn't one. The comment
+    # names `tbody tr` while saying it is the wrong signal -- an explanation
+    # of a rule is not a breach of it (this keeps catching me out).
+    code = [l for l in src.splitlines()
+            if "querySelectorAll" in l or "querySelector(" in l]
+    assert not any("tbody tr" in l for l in code), \
+        "rows are not a readiness signal here"
+    assert "change your password" in src
+
+
+def test_the_roster_search_is_run_from_out_here_not_by_the_engine():
+    """Apex's roster lists nobody until a filter is applied, and the engine
+    applies its filter with an IN-PAGE click, which this rewrite ignores --
+    the same untrusted-event problem as the dropdowns. So both lookups
+    searched an empty table and a real employee came back "not in Apex at
+    all", which routes to the create form (2026-11-15)."""
+    import inspect
+    src = inspect.getsource(drive.triage)
+    assert "search_roster(" in src, "the create guard searches from Python"
+    assert "__ansExistsAnywhere" not in src, "the engine cannot apply a filter"
+    assert "open_roster_tab(" in src, "and the tab is clicked for real"
+    # the PENDING lookup stays with the engine: it is the part that works
+    assert "__ansOpen" in src, "the engine finds people on Pending"
+
+
+def test_a_search_that_could_not_run_is_not_an_empty_result():
+    """None is not zero. Returning 0 here would route a real employee to the
+    create form and a second payroll record."""
+    import inspect
+    src = inspect.getsource(drive.search_roster)
+    assert "return None" in src
+    assert "None is NOT zero" in src, "and it says so where it is written"
+    # the caller keeps them apart
+    tri = inspect.getsource(drive.triage)
+    assert "if there is None:" in tri, "the All Employees search keeps them apart"
+
+
+def test_both_tabs_are_searched_pending_then_all_employees():
+    """"Not on Pending" has never meant "not in Apex", and creating somebody
+    already there is a second payroll record for a real employee."""
+    page = _Triage(pending=set(), anywhere={"Ada Fournier"})
+    got = drive.triage(page, [{"name": "Ada Fournier", "find": "Fournier"}],
+                       log=lambda *a: None)
+    assert got["Ada Fournier"]["need"] == drive.BY_HAND, got
+    assert "not on Pending" in got["Ada Fournier"]["why"]
+
+
+def test_somebody_the_search_finds_on_pending_is_completed():
+    page = _Triage(pending={"Ada Fournier"})
+    got = drive.triage(page, [{"name": "Ada Fournier", "find": "Fournier"}],
+                       log=lambda *a: None)
+    assert got["Ada Fournier"]["need"] == drive.COMPLETE, got
+    assert got["Ada Fournier"]["id"] == "id-Ada Fournier"
+
+
+def test_a_roster_tab_is_clicked_unambiguously():
+    """Each tab is an <a> inside an <li>, so a selector naming both matches
+    TWO elements and the click is refused for being ambiguous -- which read
+    as "could not open the 'Pending' tab" (2026-11-15)."""
+    import inspect
+    src = inspect.getsource(drive.open_roster_tab)
+    assert "data-ans-tabmark" in src, "found in js, clicked by its mark"
+    code = [l for l in src.splitlines() if not l.strip().startswith("#")]
+    assert not any("text-is" in l for l in code), \
+        "playwright text matching would not click these"
+
+
+def test_apply_filters_is_found_in_js_and_clicked_for_real():
+    """The roster lists nobody until Apply Filters is pressed. The button is
+    <button ng-click="vm.onChangeFilters()">Apply Filters</button>, and
+    Playwright's :text-is() would not click it any more than it would the
+    tabs -- Enter does not search either, so the table stayed empty at
+    tr=8/tbody=0 before AND after, and every lookup found nobody
+    (probe_filter, 2026-11-15)."""
+    import inspect
+    src = inspect.getsource(drive.search_roster)
+    code = [l for l in src.splitlines() if not l.strip().startswith("#")]
+    assert any("data-ans-apply" in l for l in code), "marked, then clicked"
+    assert any("onchangefilters" in l.lower() for l in code), \
+        "its own handler names it when the label does not"
+    assert not any("text-is" in l for l in code), "that did not click it"
+    # and a page with no Apply control is UNKNOWN, never an empty result
+    assert any("return None" in l for l in code)
