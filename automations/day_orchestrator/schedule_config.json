@@ -18072,6 +18072,33 @@
    },
    "timeout_minutes": 20
   },
+  "verizon_inbox_probe": {
+   "on_scheduler": false,
+   "_off_scheduler_note": "READ-ONLY probe (Carlos 2026-11-15: 'there's got to be somewhere where we can see the customer's phone number before it hits the ARC file'): lists every Credico attachment in the Hub inbox for the office over the last 21 days, each xlsx's sheets + headers, and flags columns whose values look like phone numbers -- names and counts only -> control sheet tab 'VZ Inbox Probe'. Lucy 4: it has the Hub inbox login. `lucy rerun verizon_inbox_probe` (-- --days 45 for more).",
+   "machine": "Lucy 4",
+   "display_name": "Verizon inbox probe (what Credico mails, phone columns)",
+   "source_type": "email",
+   "data_sources": [
+    "Credico mail in the Hub inbox"
+   ],
+   "command": [
+    "automations.verizon_office.inbox_probe"
+   ],
+   "base_args": [
+    "--office",
+    "nicolas"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": {
+    "type": "not_configured"
+   },
+   "timeout_minutes": 15
+  },
   "verizon_review_post": {
    "on_scheduler": false,
    "_off_scheduler_note": "HAND-RUN ONLY. Posts Nico's Verizon report EXAMPLES (resources/verizon_review/, built on Megan's laptop with `python -m automations.verizon_office.review --build`) to the review group DM C0CFN3SBFCM (Alphalete GP, Carlos, Evelyn, Lucy, Lucy Reporting, Megan, Nico): an intro explaining the reactions, then one post per report. A checkmark from Carlos or Nico = approved; an X = reply in the thread with what to change (Megan 2026-11-07). Lucy 4 so the posts come from Lucy, and pinned there because output/verizon_review_posted.json (what already went out) lives on that box: a retry posts only what is missing. Default (no --send) prints only.",
