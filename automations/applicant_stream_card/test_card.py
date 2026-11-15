@@ -610,6 +610,19 @@ class SetupPageTest(unittest.TestCase):
         self.assertEqual(len(got), 1)
         self.assertEqual(got[0]["sent"], 3)
 
+    def test_advice_only_says_what_is_real(self):
+        st = {"drivers": [
+            {"key": "processed", "best": ("same day", 64, 900),
+             "worst": ("2+ days", 42, 900), "real": True},
+            {"key": "board", "best": ("Indeed", 52, 3881),
+             "worst": ("LinkedIn", 41, 34), "real": False}],
+            "times": {"best_slot": ("9am", 55.0, 400)}}
+        got = C.advice(st, 6)
+        self.assertTrue(got.startswith("Based on the last 6 weeks: book"))
+        self.assertIn("vs 42% at 2+ days", got)
+        self.assertIn("9am", got)
+        self.assertNotIn("Indeed", got)            # too few to be sure
+
     def test_page_two_says_not_pulled(self):
         out = C.render(C.build("1"))
         self.assertIn("Not pulled yet", out[out.index("<div class='page2'>"):])

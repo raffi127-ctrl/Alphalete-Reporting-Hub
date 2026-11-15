@@ -447,6 +447,61 @@ def _driver_html(d):
                 "" if d["real"] else " ({})".format(CHANCE), rows))
 
 
+# Megan 2026-11-15: open Bookings and show-ups with a plain summary - "based
+# on the last 6 weeks you should aim to book ... your best show rate is from
+# ...". Only gaps big enough to trust go in: a summary that sells noise is
+# worse than a short one.
+FULL_DAY = {"Mon": "Monday", "Tue": "Tuesday", "Wed": "Wednesday",
+            "Thu": "Thursday", "Fri": "Friday", "Sat": "Saturday",
+            "Sun": "Sunday"}
+ADVICE = {
+    "processed": lambda b: {
+        "same day": "book the 1st round for the same day the resume is "
+                    "processed",
+        "next day": "book the 1st round for the day after the resume is "
+                    "processed"}.get(b),
+    "part": lambda b: "book {} time slots".format(b),
+    "weekday": lambda b: "{} interviews show up best".format(
+        FULL_DAY.get(b, b)),
+    "board": lambda b: "candidates from {} show up best".format(b),
+    "booker": lambda b: "people booked by {} show up best".format(b),
+}
+
+
+def _weeks_in(st):
+    span = (st or {}).get("span")
+    if not span:
+        return None
+    return max(1, round(((span[1] - span[0]).days + 1) / 7.0))
+
+
+def advice(st, weeks=None):
+    """One plain summary sentence for Bookings and show-ups, or None."""
+    dr = [d for d in (st or {}).get("drivers") or [] if d["real"]]
+    bits = []
+    for d in dr:
+        fn = ADVICE.get(d["key"])
+        say = fn(d["best"][0]) if fn else None
+        if say:
+            bits.append("{} ({:.0f}% show up vs {:.0f}% {})".format(
+                say, d["best"][1], d["worst"][1],
+                "for " + FULL_DAY[d["worst"][0]] if d["worst"][0] in FULL_DAY
+                else "at " + d["worst"][0]))
+    best = ((st or {}).get("times") or {}).get("best_slot")
+    if best:
+        bits.append("your best show-up time is {} ({:.0f}%)".format(
+            best[0], best[1]))
+    if not bits:
+        return None
+    head = "Based on the last {} weeks".format(weeks) if weeks else \
+        "Based on these weeks"
+    if len(bits) == 1:
+        body = bits[0]
+    else:
+        body = "; ".join(bits[:-1]) + "; and " + bits[-1]
+    return "{}: {}.".format(head, body[0].lower() + body[1:])
+
+
 def drivers(st):
     dr = list((st or {}).get("drivers") or [])
     title = "What moves show-ups most"
@@ -601,6 +656,7 @@ def build(office, stats=None, ttb=None, recruiter_rows=None,
             "todo": todo(lines), "sources": fresh,
             "grading": list(grading), "setup": setup, "vitals": vitals,
             "changes": changes,
+            "advice": advice(stats, _weeks_in(stats)),
             "stale": [f for f in fresh if f["stale"]]}
 
 
@@ -678,6 +734,7 @@ ol.replies li{margin:.45em 0}
 .vitals details.vital>summary:after{display:none}
 details.drv{margin:.3em 0}
 details.drv>summary{flex-wrap:wrap;gap:.2em .6em}
+.advice{background:#f1faf4;border:1px solid #9fd3b5;border-radius:10px;padding:.7em .9em;margin:.4em 0 .6em}
 label.go{color:#1a56c4;font-weight:bold;cursor:pointer;text-decoration:underline}
 .vn{font-weight:bold}
 .vv{text-align:right;display:flex;flex-direction:column;line-height:1.2}
@@ -892,13 +949,14 @@ def _line_html(ln):
     return "".join(out)
 
 
-def _lines_html(card, keys, title):
+def _lines_html(card, keys, title, lead=None):
     lines = {ln["key"]: ln for ln in card["lines"]}
     got = [lines[k] for k in keys if k in lines]
     if not got:
         return ""
-    return "<h2 class='k'>{}</h2>{}".format(
-        _e(title), "".join(_line_html(ln) for ln in got))
+    return "<h2 class='k'>{}</h2>{}{}".format(
+        _e(title), "<p class='advice'>{}</p>".format(_e(lead)) if lead
+        else "", "".join(_line_html(ln) for ln in got))
 
 
 def _todo_html(card):
@@ -1042,7 +1100,8 @@ def render(card, scorecard_css=""):
             else "",
             _tab(SP.flag_total(setup, SP.TEMPLATE_PARTS)),
             trend_html(card.get("vitals"))
-            + _lines_html(card, VITALS_KEYS, "Bookings and show-ups")
+            + _lines_html(card, VITALS_KEYS, "Bookings and show-ups",
+                          card.get("advice"))
             + CH.html(card.get("changes"), card.get("vitals")),
             _todo_html(card)))
 
