@@ -440,6 +440,11 @@ def _render_html(rows, office, monday: dt.date, upto: dt.date, dest: Path,
     extra_hdrs = list((extra or {}).get("headers") or [])
     n_extra = len(extra_hdrs)
     show_next = tiered and not (extra or {}).get("no_next")     # the NEXT TIER column
+    # `extra["tier_chip"]` (NDS, Carlos 2026-11-15: "I like how the Verizon
+    # one shows what tier they're on right next to the rep's week total"):
+    # the TIER chip column on a base-comp board too -- row["tier"] is the
+    # chip text (_TIER_CHIP colours it), no bonus math behind it.
+    show_chip = tiered or bool((extra or {}).get("tier_chip"))
     # The label over the title and in the footer, by board name. NDS since
     # 2026-11-14 (Carlos: "at the bottom it says b2b leaders idk why. were
     # nds now").
@@ -474,7 +479,7 @@ def _render_html(rows, office, monday: dt.date, upto: dt.date, dest: Path,
         nxt = row.get("next", "")
         nxt_cls = "max" if nxt == "MAX" else ""
         chip = (f'<td><span class="chip" style="background:{chip_bg};'
-                f'color:{chip_fg}">{row["tier"]}</span></td>' if tiered
+                f'color:{chip_fg}">{row["tier"]}</span></td>' if show_chip
                 else "")
         xcells = "".join(
             f'<td class="xt"><span class="{c.get("cls", "")}">{c.get("text", "")}</span></td>'
@@ -498,7 +503,7 @@ def _render_html(rows, office, monday: dt.date, upto: dt.date, dest: Path,
         '<tr class="totrow"><td class="rk"></td>'
         '<td class="rep">OFFICE TOTAL</td>'
         f'<td class="tot">{money(week_total)}</td>'
-        + ('<td></td>' if tiered else '')
+        + ('<td></td>' if show_chip else '')
         + tot_days + ('<td class="nxt"></td>' if show_next else '')
         + ('<td class="xt"></td>' * n_extra) + '</tr>')
 
@@ -523,7 +528,7 @@ def _render_html(rows, office, monday: dt.date, upto: dt.date, dest: Path,
                      f'</div><div class="cval">{money(next_total)}</div></div>'
                      if tiered else "")
     show_next = tiered and not (extra or {}).get("no_next")
-    tier_th = '<th style="text-align:left">TIER</th>' if tiered else ""
+    tier_th = '<th style="text-align:left">TIER</th>' if show_chip else ""
     next_th = "<th>NEXT TIER</th>" if show_next else ""
     extra_th = "".join(f'<th class="xh">{h}</th>' for h in extra_hdrs)
     wrap_w = 1240 + 112 * n_extra            # the page grows a column at a time
@@ -598,7 +603,7 @@ def _render_html(rows, office, monday: dt.date, upto: dt.date, dest: Path,
  {tier_th}{day_ths}{next_th}{extra_th}</tr>
  {''.join(trs)}</table>
  <div class="foot"><div><span class="lab">{kick}</span>{note_html}</div>
- <div style="color:#cfd6dc;font-size:13px">{len(rows)} reps on the board</div>
+ <div style="color:#cfd6dc;font-size:13px;white-space:nowrap;margin-left:16px">{len(rows)} reps on the board</div>
  </div></div></body></html>"""
 
     dest.parent.mkdir(parents=True, exist_ok=True)

@@ -1676,22 +1676,31 @@ def build_revenue_board(cols, crew, today, log=print) -> Path:
         # way to the far right ... multiple columns that show tier bonus
         # potential revenue while showing how many more orders they need to
         # get to that tier" -- one column per rep-tier band, far right.
+        # Carlos 2026-11-15, after the Verizon board ("I like how the Verizon
+        # one shows what tier they're on right next to the rep's week total
+        # ... shows the rep how many lines they have activated this week"):
+        # the TIER chip beside the week total, LINES ACTIVATED this week
+        # ($ activated) as the first right-side column, the port-lines count
+        # beside the order count after the name, the 4-week activation rate
+        # + 0-30 day wireless non-BYOD churn cards top right, sales per rep
+        # on the reps card -- revenue_extras.
+        from automations.nds_metrics import revenue_extras as RX
         i_spm = cols.find("sp.spm number", "spm number")
         headers, cells, counts = revenue_tier_columns(cols, lines, monday, i_od, i_rep,
                                                       i_port, i_tn, i_spm, log=log)
+        ex = RX.gather(cols, lines, today, log=log)
         for row in rows:
-            row["extra"] = cells.get(row["rep"]) or tier_cells(0, 0)
-            # Carlos 2026-11-14: "next to the reps name can you have how many
-            # current orders the rep is at" -- the tier-week order count as a
-            # badge after the name; the far-right column keeps the port lines.
-            n = counts.get(row["rep"], (0, 0))[0]
-            row["rep_badge"] = f"{n} order{'' if n == 1 else 's'}"
-        extra = {"headers": headers}
-        note = ("Tier columns: orders with a port line this Sun–Sat week; "
-                "green ✓ = the tier you're on; yellow = one order away; "
-                "+N = orders still needed; $ = that tier's rate × the rep's port "
-                "lines (+1 line per order still needed), paid as those lines "
-                "activate. DNQ rule not applied.")
+            n, plines = counts.get(row["rep"], (0, 0))
+            row["extra"], row["rep_badge"], row["tier"] = RX.row_extras(
+                n, plines, RX.activated_for(row["rep"], ex["activated"]))
+        sales = RX.board_sales(cols, lines, monday, today, i_od, i_rep, i_spm)
+        extra = {"headers": [RX.ACTIVATED_HEADER] + headers[1:],
+                 "cards": RX.cards(ex["weeks"], ex["churn"]),
+                 "tier_chip": True,
+                 "reps_extra": RX.reps_extra(len(rows), sales)}
+        note = RX.NOTE
+        log(f"[nds] revenue board: {sales} order(s) Mon-today on his owner, "
+            f"{len(rows)} rep(s) on the board")
     out = render(rows, office, monday, today,
                  OUT_DIR / "nds_revenue_board.png",
                  board_name="NDS Revenue Board", tiered=False, extra=extra, note=note)
