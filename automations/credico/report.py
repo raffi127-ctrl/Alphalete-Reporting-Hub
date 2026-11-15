@@ -645,6 +645,49 @@ def inspect(verbose=True):
     return rows
 
 
+FULL_SHEETS = ("CommissionDetail", "StatusChanges")
+
+
+def inspect_full(needle="High-Value", sheets=FULL_SHEETS, max_cols=16, verbose=True):
+    """EVERY row of the per-line sheets of the downloaded file(s) whose name
+    carries `needle` -> the '_credico_discover' tab. `inspect` stops at 40 rows
+    a sheet, which is a peek; this is the whole CommissionDetail (one row per
+    paid line: AgentName, TransAmt, CommissionItem, SaleWeek) and StatusChanges
+    (chargebacks), so a rep-by-rep check of a board against Credico's statement
+    can be done from any machine. Carlos 2026-11-15: "can you confirm this
+    information is accurate?" on Nico's Activation Revenue Overview. Local
+    only: reads output/credico/*.xlsx, never touches Credico. Customer names
+    are not on these two sheets (they sit on BonusApps, which this skips)."""
+    import openpyxl
+    rows = [["FILE", "SHEET/CELL", "VALUE"]]
+    files = sorted(f for f in OUT.glob("*.xlsx") if needle.lower() in f.name.lower())
+    if not files:
+        rows.append(["(none)", "", f"no *{needle}*.xlsx in {OUT} — run --fetch first"])
+    for f in files:
+        wb = openpyxl.load_workbook(f, data_only=True, read_only=True)
+        rows.append([f.name, "SHEETS", ", ".join(wb.sheetnames)])
+        for sn in sheets:
+            if sn not in wb.sheetnames:
+                continue
+            ws = wb[sn]
+            n = 0
+            for i, row in enumerate(ws.iter_rows(values_only=True), 1):
+                cells = ["" if c is None else str(c) for c in row[:max_cols]]
+                if any(c.strip() for c in cells):
+                    rows.append([f.name, f"{sn} r{i}", " | ".join(cells)[:900]])
+                    n += 1
+            rows.append([f.name, f"{sn} rows", str(n)])
+    if verbose:
+        print(f"-> {len(files)} file(s) matching {needle!r}, {len(rows) - 1} row(s)")
+    try:
+        _dump_to_sheet(rows)
+        if verbose:
+            print(f"\n✓ {len(rows)} row(s) → '{DUMP_TAB}' tab")
+    except Exception as e:  # noqa: BLE001
+        print(f"\n⚠ couldn't write '{DUMP_TAB}' ({e})")
+    return rows
+
+
 def reconcile(week_label="7.19.26", verbose=True):
     """Match the parsed Credico totals against the VA's tab — the answer key.
 
@@ -900,10 +943,16 @@ def main(argv=None):
                     help="match parsed Credico totals against the VA's DD tab")
     ap.add_argument("--inspect", action="store_true",
                     help="dump every sheet of the downloaded file(s) (local only)")
+    ap.add_argument("--inspect-full", metavar="NEEDLE", nargs="?", const="High-Value",
+                    help="EVERY CommissionDetail + StatusChanges row of the file(s) whose "
+                         "name carries NEEDLE (default High-Value) -> the dump tab (local only)")
     ap.add_argument("--week", help="sheet week label, e.g. 7.19.26")
     a = ap.parse_args(argv)
     if a.reconcile:
         reconcile(a.week or current_week())
+        return 0
+    if a.inspect_full:          # before --inspect: `lucy rerun credico_inspect --inspect-full` carries both
+        inspect_full(a.inspect_full)
         return 0
     if a.inspect:
         inspect()
