@@ -645,10 +645,10 @@ def inspect(verbose=True):
     return rows
 
 
-FULL_SHEETS = ("CommissionDetail", "StatusChanges")
+FULL_SHEETS = ("CommissionDetail", "StatusChanges", "DetailAndStatus")
 
 
-def inspect_full(needle="High-Value", sheets=FULL_SHEETS, max_cols=16, verbose=True):
+def inspect_full(needle="High-Value", sheets=FULL_SHEETS, max_cols=40, verbose=True):
     """EVERY row of the per-line sheets of the downloaded file(s) whose name
     carries `needle` -> the '_credico_discover' tab. `inspect` stops at 40 rows
     a sheet, which is a peek; this is the whole CommissionDetail (one row per
@@ -674,7 +674,7 @@ def inspect_full(needle="High-Value", sheets=FULL_SHEETS, max_cols=16, verbose=T
             for i, row in enumerate(ws.iter_rows(values_only=True), 1):
                 cells = ["" if c is None else str(c) for c in row[:max_cols]]
                 if any(c.strip() for c in cells):
-                    rows.append([f.name, f"{sn} r{i}", " | ".join(cells)[:900]])
+                    rows.append([f.name, f"{sn} r{i}", " | ".join(cells)[:2000]])
                     n += 1
             rows.append([f.name, f"{sn} rows", str(n)])
     if verbose:
