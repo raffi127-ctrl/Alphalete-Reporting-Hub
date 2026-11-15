@@ -143,7 +143,8 @@ def main(argv=None) -> int:
         try:
             from automations.brand_audit.social_inbox import _client as _cl
             from automations.online_presence import review_alerts
-            for x in review_alerts.check(offices.alphalete(), _cl(), live=a.live):
+            for x in ([] if offices.moved_alphalete() else
+                      review_alerts.check(offices.alphalete(), _cl(), live=a.live)):
                 print(f"[alphalete] bad reviews: {x['action']} · {x.get('note') or x.get('error') or ''}")
         except Exception as e:
             print(f"[alphalete] bad-review check failed ({type(e).__name__}: {str(e)[:80]})")
@@ -155,7 +156,8 @@ def main(argv=None) -> int:
         try:
             from automations.brand_audit.social_inbox import _client as _cl
             from automations.online_presence import email_alerts
-            watch_list = [offices.alphalete()] + [p for p in todo if p.is_live]
+            watch_list = ([] if offices.moved_alphalete() else [offices.alphalete()]) \
+                + [p for p in todo if p.is_live]
             for x in email_alerts.check(watch_list, _cl(), live=a.live):
                 print(f"[mentions] {x['action']} · {x.get('note') or ''}")
         except Exception as e:
@@ -182,6 +184,12 @@ def main(argv=None) -> int:
         # nothing every 10 minutes -- run those by hand with no --live.
         if a.live and not p.is_live:
             continue
+        if p.replaces_alphalete:
+            # the first pass after the switch carries Alphalete's memory over,
+            # so nothing already answered or posted happens twice
+            copied = offices.migrate_alphalete_state(p)
+            if copied:
+                print(f"[{p.key}] took over Alphalete: carried over {', '.join(copied)}")
         probs = p.problems()
         if probs:
             print(f"[{p.key}] skipped — {'; '.join(probs)}")

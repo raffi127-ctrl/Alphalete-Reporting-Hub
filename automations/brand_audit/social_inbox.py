@@ -745,7 +745,10 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
     room, approvers, learned style, Zoho login and one-a-day slot. None =
     Alphalete, exactly as before."""
     if profile is None:
-        from automations.online_presence.offices import alphalete
+        from automations.online_presence.offices import alphalete, moved_alphalete
+        moved = moved_alphalete()
+        if moved:                     # Alphalete now posts from that office's computer
+            return [{"action": "moved", "note": f"Alphalete runs as office {moved.key}"}]
         profile = alphalete()
     P = profile
     alpha = P.key == "alphalete"

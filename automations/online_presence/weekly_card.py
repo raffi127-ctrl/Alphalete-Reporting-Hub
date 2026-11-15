@@ -151,6 +151,8 @@ def main(argv=None) -> int:
     # Alphalete gets the same card in #alphaletesocialmedia (Megan 2026-11-10),
     # first, so an office's trouble never holds it up.
     rows = {"alphalete": offices.alphalete(), **offices.load()}
+    if offices.moved_alphalete():          # its card now comes from that office's row
+        rows.pop("alphalete")
     todo = [rows[a.office.lower()]] if a.office and a.office.lower() in rows else (
         [] if a.office else list(rows.values()))
     if a.office and not todo:

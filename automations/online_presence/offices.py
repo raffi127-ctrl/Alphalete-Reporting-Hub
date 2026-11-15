@@ -88,6 +88,10 @@ class Presence:
     # Their Facebook page, once it's shared with Alphalete's Meta business on
     # the launch call -> Lucy answers its reviews like Google's (11/14).
     facebook_page_id: str = ""
+    # This office IS Alphalete's social, moved off Lucy 3 onto the office's
+    # own computer (Megan 2026-11-15: pilot = Raf, "A, move it to Raf's
+    # computer"). While it's live, every Alphalete job on Lucy 3 stands down.
+    replaces_alphalete: bool = False
 
     @property
     def social_links(self) -> Dict[str, str]:
@@ -230,7 +234,7 @@ def alphalete() -> Presence:
 # ---- the rows -------------------------------------------------------------
 _FIELDS = {f.name for f in fields(Presence)}
 _TUPLES = ("approvers", "post_hours", "pages")
-_ALPHALETE_ONLY = ("review_channel", "state_dir", "zoho_profile_dir",
+_ALPHALETE_ONLY = ("state_dir", "zoho_profile_dir",
                    "learned_style_path", "scrape_best_time")
 
 
@@ -278,6 +282,39 @@ def get(key: str, path: Path = OFFICES_FILE) -> Optional[Presence]:
     if key == "alphalete":
         return alphalete()
     return load(path).get(key)
+
+
+def moved_alphalete(path: Path = OFFICES_FILE) -> Optional[Presence]:
+    """The live office Alphalete's social now runs as, or None (still on Lucy 3)."""
+    try:
+        rows = load(path)
+    except Exception:
+        return None
+    return next((p for p in rows.values() if p.replaces_alphalete and p.is_live), None)
+
+
+# What Alphalete's social remembers (answered reviews, posted photos, caption
+# style, score history...). Copied into the office that takes it over, ONCE,
+# so nothing gets answered or posted twice. Never the keys/tokens.
+_SECRET = ("keys.json", "gbp-token.json", "gdocs-token.json")
+
+
+def migrate_alphalete_state(p: Presence) -> list:
+    import shutil
+    src = Path(alphalete().state_dir)
+    dst = p.folder
+    dst.mkdir(parents=True, exist_ok=True)
+    flag = dst / ".migrated_from_alphalete"
+    if flag.exists():
+        return []
+    copied = []
+    for f in sorted(src.glob("*.json")):
+        if f.name in _SECRET or (dst / f.name).exists():
+            continue
+        shutil.copy2(f, dst / f.name)
+        copied.append(f.name)
+    flag.write_text(", ".join(copied))
+    return copied
 
 
 def save(p: Presence, path: Path = OFFICES_FILE) -> None:

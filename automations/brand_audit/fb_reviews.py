@@ -121,6 +121,11 @@ def process(*, live: bool = False, profile=None) -> List[Dict]:
     """profile = an ECO office (offices.Presence) with facebook_page_id; None = Alphalete."""
     from automations.brand_audit import review_replies as RR
     from automations.brand_audit.config import SOCIAL_APPROVE_EMOJI, SOCIAL_REJECT_EMOJI
+    if profile is None:
+        from automations.online_presence.offices import moved_alphalete
+        moved = moved_alphalete()
+        if moved:
+            return [{"action": "moved", "note": f"Alphalete runs as office {moved.key}"}]
     k = _keys()
     P = RR._profile(profile)
     page_id = getattr(profile, "facebook_page_id", "") if profile else k["facebook_page_id"]

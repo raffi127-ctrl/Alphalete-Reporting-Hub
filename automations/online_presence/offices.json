@@ -1,1 +1,53 @@
-[]
+[
+  {
+    "key": "raf",
+    "business_name": "Alphalete Marketing",
+    "slack_channel": "C08P9T25N95",
+    "approvers": [
+      "U04G5HJBGFN",
+      "U045Z8N0ZQC"
+    ],
+    "contact_email": "hr@alphaletemarketing.com",
+    "gbp_location": "accounts/116205840161551097995/locations/8038298569275098536",
+    "timezone": "America/Chicago",
+    "mode": "dry",
+    "reviews": true,
+    "social": true,
+    "address": "5217 Tennyson Pkwy Suite 100, Plano, TX 75024",
+    "phone": "(469) 242-0625",
+    "website": "https://alphaletemarketing.com",
+    "google_link": "https://maps.google.com/maps?cid=7671689793908717645",
+    "indeed_url": "https://www.indeed.com/cmp/Alphalete-Marketing",
+    "glassdoor_url": "https://www.glassdoor.com/Overview/Working-at-Alphalete-Marketing-EI_IE1528823.11,30.htm",
+    "instagram_url": "https://www.instagram.com/alphaletemarketing/",
+    "facebook_url": "https://www.facebook.com/alphaletemarketing",
+    "linkedin_url": "https://www.linkedin.com/company/alphalete-marketing",
+    "x_url": "https://x.com/AlphaleteMrktg",
+    "tiktok_url": "",
+    "youtube_url": "",
+    "campaign": "att",
+    "facebook_page_id": "492591284283606",
+    "replaces_alphalete": true,
+    "pages": [
+      "instagram",
+      "facebook",
+      "google",
+      "linkedin",
+      "x"
+    ],
+    "owner_slack_id": "U045Z8N0ZQC",
+    "post_via": "eco",
+    "zoho_schedules": false,
+    "post_hours": [
+      9,
+      12,
+      15,
+      18
+    ],
+    "auto_reply_min_stars": 4,
+    "auto_reply_daily_cap": 25,
+    "review_draft_daily_cap": 3,
+    "notes": "",
+    "review_channel": "C0BBB2W5J1X"
+  }
+]

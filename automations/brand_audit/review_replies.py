@@ -396,6 +396,11 @@ def process_reviews(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True
     `profile` = an ICD office (automations.online_presence.offices): its own
     room, approvers, listing, sign-off name, contact and caps. None = Alphalete."""
     import datetime as dt
+    if profile is None:
+        from automations.online_presence.offices import moved_alphalete
+        moved = moved_alphalete()
+        if moved:                     # answered under that office now, never twice
+            return [{"action": "moved", "note": f"Alphalete runs as office {moved.key}"}]
     P = _profile(profile)
     if P.key == "alphalete":
         from automations.brand_audit import intake
