@@ -370,6 +370,23 @@ def push(sv_path: Path, *, today: Optional[dt.date] = None, sheet_id: str = SAND
     return {"rows": len(grid), "summary": s, "tier": tier}
 
 
+def screenshot(out_path: Path, *, sheet_id: str = SANDBOX_SHEET_ID) -> Path:
+    """The tab as a PNG (the Sheets PDF export, like the '% on the board'
+    block), so it can be DMed from a Lucy. Carlos 2026-11-15: "send it to me
+    on Slack. I still don't see it."""
+    from automations.pnl_office.run import _token
+    from automations.recruiting_report.fill import open_by_key, _retry
+    from automations.sales_boards import render as R
+    ws = open_by_key(sheet_id).worksheet(TAB)
+    vals = _retry(ws.get_all_values)
+    last = max((i for i, r in enumerate(vals, 1) if any(c.strip() for c in r)), default=1)
+    img = R.export(sheet_id, ws.id, "A1:Q%d" % last, _token())
+    out_path = Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    img.save(out_path)
+    return out_path
+
+
 def refresh(sv_path: Path, *, today: Optional[dt.date] = None, prod: bool = False, log=print) -> dict:
     return push(Path(sv_path), today=today, sheet_id=PROD_SHEET_ID if prod else SANDBOX_SHEET_ID, log=log)
 

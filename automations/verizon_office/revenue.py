@@ -80,12 +80,41 @@ def revenue_board(owner: str, sv_path: Path, target: dt.date, out_dir: Path) -> 
                 "green ✓ = the tier you're on; yellow = one order away; +N = orders still needed; "
                 "$ = that tier's rate × the rep's lines activated this week (+1 line per order still "
                 "needed), paid as lines activate. DNQ = 40%+ cancels in 90 days, no weekly bonus.")
+        # The two stat cards in place of "Office at next tier" (Carlos
+        # 2026-11-15): the office activation rate by week-ending for the last
+        # four sales weeks (lines sold that week that have activated since,
+        # the thread's rule) and the office's 0-30 day churn (the churn tab's
+        # box: lines activated in the last 30 days that have disconnected).
+        cards = [("ACTIVATION RATE BY WEEK-ENDING", _weeks_card(L, upto)),
+                 ("0–30 DAY CHURN", _churn_card(sv_path, target))]
         return RB.render(rows, office, start, upto,
                          out_dir / f"verizon_revenue_board_{target.isoformat()}.png",
                          board_name="Verizon Revenue Board", tiered=True,
-                         extra={"headers": headers}, note=note)
+                         extra={"headers": headers, "cards": cards, "no_next": True}, note=note)
     finally:
         RB.DAYS = saved
+
+
+def _weeks_card(L, upto: dt.date, weeks: int = 4) -> str:
+    """'WE 10/24 94% · WE 10/31 82% · ...' oldest first, activated-ever over sold."""
+    import html as _h
+    this_start, _ = C.sales_week(upto)
+    parts = []
+    for k in reversed(range(weeks)):
+        ws = this_start - dt.timedelta(weeks=k)
+        we = ws + dt.timedelta(days=6)
+        sold = [l for l in L if l["sold"] and ws <= l["sold"] <= we]
+        act = sum(1 for l in sold if l["activated"])
+        pct = ("%.0f%%" % (100 * act / len(sold))) if sold else "—"
+        parts.append(f'<span style="white-space:nowrap">WE {we.month}/{we.day} <b>{pct}</b></span>')
+    return ('<span style="font-size:17px;font-weight:600">' + " &nbsp;·&nbsp; ".join(parts) + "</span>")
+
+
+def _churn_card(sv_path: Path, target: dt.date) -> str:
+    from automations.verizon_office import churn_tab as CH, order_log_tab as OL
+    s = CH.churn_summary(OL.lines(Path(sv_path)), target)["All Lines"]
+    pct = ("%.1f%%" % (100 * s["rate"])) if s["rate"] is not None else "—"
+    return f'{pct} <span style="font-size:14px;color:#5b6770;font-weight:500">{s["disc"]} of {s["base"]} activated in the last 30 days</span>'
 
 
 _ACT_COLS = [("Rep Name", "rep", "left"), ("Activated $", "posted", "center"),
@@ -253,8 +282,10 @@ def main(argv=None) -> int:
     ap.add_argument("--office", default="nicolas")
     ap.add_argument("--sv", type=Path, help="local Sales Verification xlsx instead of the inbox")
     ap.add_argument("--date", help="YYYY-MM-DD (default today)")
-    ap.add_argument("--board", choices=["activation_one", "activation", "revenue_board", "rep_tiers"],
-                    default="activation_one")
+    ap.add_argument("--board", choices=["activation_one", "activation", "revenue_board", "rep_tiers", "churn_tab"],
+                    default="activation_one",
+                    help="churn_tab = a screenshot of the VERIZON CHURN tab (sandbox; --prod-tab for the master)")
+    ap.add_argument("--prod-tab", action="store_true", help="with --board churn_tab: the Vantura Master's tab")
     ap.add_argument("--dm", help="Slack user id(s) to DM the picture to, as Lucy (comma-separated)")
     a = ap.parse_args(argv)
     from automations.verizon_office import offices as OF, run as RUN
@@ -265,9 +296,14 @@ def main(argv=None) -> int:
         print("✗ no Sales Verification in the Hub inbox -- is the office's Outlook rule delivering?")
         return 1
     out_dir = Path(__file__).resolve().parents[2] / "output" / "verizon_office" / office.key / "boards"
-    fn = {"activation_one": activation_revenue_one, "activation": activation_revenue,
-          "revenue_board": revenue_board, "rep_tiers": rep_tiers}[a.board]
-    got = fn(office.owner, Path(sv), target, out_dir)
+    if a.board == "churn_tab":
+        from automations.verizon_office import churn_tab as CH
+        got = CH.screenshot(out_dir / f"verizon_churn_tab_{target.isoformat()}.png",
+                            sheet_id=CH.PROD_SHEET_ID if a.prod_tab else CH.SANDBOX_SHEET_ID)
+    else:
+        fn = {"activation_one": activation_revenue_one, "activation": activation_revenue,
+              "revenue_board": revenue_board, "rep_tiers": rep_tiers}[a.board]
+        got = fn(office.owner, Path(sv), target, out_dir)
     paths = got if isinstance(got, list) else [got]
     for p in paths:
         print("✓ %s" % p)
@@ -276,8 +312,10 @@ def main(argv=None) -> int:
         day = "%d/%d" % (target.month, target.day)
         for p in paths:
             for user in [u.strip() for u in a.dm.split(",") if u.strip()]:
-                comment = (":dollar: *Activation Revenue Overview* — %s, four weeks on one picture (preview)" % day
-                           if a.board == "activation_one" else ":moneybag: *%s* — %s (preview)" % (a.board, day))
+                comment = {"activation_one": ":dollar: *Activation Revenue Overview* — %s, four weeks on one picture (preview)" % day,
+                           "churn_tab": ":wolf: *VERIZON CHURN tab* — %s (sandbox sheet, preview)" % day,
+                           "revenue_board": ":moneybag: *Verizon Revenue Board* — %s (preview)" % day,
+                           }.get(a.board, ":moneybag: *%s* — %s (preview)" % (a.board, day))
                 try:
                     r = S.dm_user_with_file(p, user=user, comment=comment)
                 except S.SlackPostError:

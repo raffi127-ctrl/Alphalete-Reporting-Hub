@@ -439,6 +439,7 @@ def _render_html(rows, office, monday: dt.date, upto: dt.date, dest: Path,
     `note`: a line under the footer label."""
     extra_hdrs = list((extra or {}).get("headers") or [])
     n_extra = len(extra_hdrs)
+    show_next = tiered and not (extra or {}).get("no_next")     # the NEXT TIER column
     # The label over the title and in the footer, by board name. NDS since
     # 2026-11-14 (Carlos: "at the bottom it says b2b leaders idk why. were
     # nds now").
@@ -485,7 +486,7 @@ def _render_html(rows, office, monday: dt.date, upto: dt.date, dest: Path,
             f'<td class="rep">{row["rep"].upper()}{badge}</td>'
             f'<td class="tot">{money(row["total"])}</td>'
             + chip + "".join(days)
-            + (f'<td class="nxt {nxt_cls}">{nxt}</td>' if tiered else "")
+            + (f'<td class="nxt {nxt_cls}">{nxt}</td>' if show_next else "")
             + xcells + '</tr>')
 
     # Office totals close the table (Carlos 2026-09-08: "the total at the
@@ -498,7 +499,7 @@ def _render_html(rows, office, monday: dt.date, upto: dt.date, dest: Path,
         '<td class="rep">OFFICE TOTAL</td>'
         f'<td class="tot">{money(week_total)}</td>'
         + ('<td></td>' if tiered else '')
-        + tot_days + ('<td class="nxt"></td>' if tiered else '')
+        + tot_days + ('<td class="nxt"></td>' if show_next else '')
         + ('<td class="xt"></td>' * n_extra) + '</tr>')
 
     day_ths = "".join(
@@ -506,11 +507,24 @@ def _render_html(rows, office, monday: dt.date, upto: dt.date, dest: Path,
         f'<span class="dd">{d.month}/{d.day}</span></th>'
         for c, d in shown)
 
-    next_card = ('<div class="card"><div class="clab">OFFICE AT NEXT TIER'
-                 f'</div><div class="cval">{money(next_total)}</div></div>'
-                 if tiered else "")
+    # `extra["cards"]` (Verizon, Carlos 2026-11-15: "instead of where it says
+    # 'Office at Next Tier', let's add ... the activation rate by week ending
+    # for the last 4 weeks, and then a box that shows the 0-30-day churn"):
+    # [(label, value html), ...] drawn in place of the next-tier card.
+    # `extra["no_next"]`: drop the NEXT TIER column (the tier columns on the
+    # right already say it).
+    own_cards = (extra or {}).get("cards")
+    if own_cards:
+        next_card = "".join(
+            f'<div class="card"><div class="clab">{lab}</div><div class="cval">{val}</div></div>'
+            for lab, val in own_cards)
+    else:
+        next_card = ('<div class="card"><div class="clab">OFFICE AT NEXT TIER'
+                     f'</div><div class="cval">{money(next_total)}</div></div>'
+                     if tiered else "")
+    show_next = tiered and not (extra or {}).get("no_next")
     tier_th = '<th style="text-align:left">TIER</th>' if tiered else ""
-    next_th = "<th>NEXT TIER</th>" if tiered else ""
+    next_th = "<th>NEXT TIER</th>" if show_next else ""
     extra_th = "".join(f'<th class="xh">{h}</th>' for h in extra_hdrs)
     wrap_w = 1240 + 112 * n_extra            # the page grows a column at a time
     tbl_w = wrap_w - 80

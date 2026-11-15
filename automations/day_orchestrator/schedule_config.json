@@ -18024,6 +18024,54 @@
    },
    "timeout_minutes": 10
   },
+  "verizon_credico_lines": {
+   "on_scheduler": false,
+   "_off_scheduler_note": "Nico's Verizon customers' full LINE NUMBERS off Credico ARC's weekly Commissions workbooks (DetailAndStatus.ExternalLineID; the daily Sales Verification masks them) -> the 'VZ Credico Lines' tab on the control sheet + output/verizon_office/credico_lines.json. Carlos 2026-11-15: 'see if there's somewhere where we can get the customer's phone number ... go ahead and add in the customers you see on there'. Lucy 1 because credico_fetch lands the files there. Hand-run after a credico_fetch: `lucy rerun verizon_credico_lines -- --write` (bare = dry run). rc_contact_sync_verizon (Lucy 2) reads the tab.",
+   "machine": "Lucy 1",
+   "display_name": "Verizon customer line numbers (Credico ARC -> control sheet)",
+   "source_type": "local",
+   "data_sources": [
+    "Credico ARC Commissions workbooks (output/credico, Lucy 1)"
+   ],
+   "command": [
+    "automations.verizon_office.credico_lines"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": {
+    "type": "not_configured"
+   },
+   "timeout_minutes": 10
+  },
+  "rc_contact_sync_verizon": {
+   "on_scheduler": false,
+   "_off_scheduler_note": "Verizon customers -> Taylor's RingCentral address book with '(VZ)' on the last name, one contact per live line, off the 'VZ Credico Lines' tab (verizon_credico_lines on Lucy 1). DRY RUN unless `-- --live`; dedup by phone + state file; cancelled lines skipped. Carlos 2026-11-15. Lucy 2: the RingCentral creds live there (rc_contact_sync).",
+   "machine": "Lucy 2",
+   "display_name": "RingCentral contacts - Verizon customers (VZ)",
+   "source_type": "api",
+   "data_sources": [
+    "Credico ARC Commissions workbooks (output/credico, Lucy 1)"
+   ],
+   "command": [
+    "automations.rc_contact_sync.verizon"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": {
+    "type": "not_configured"
+   },
+   "timeout_minutes": 20
+  },
   "verizon_review_post": {
    "on_scheduler": false,
    "_off_scheduler_note": "HAND-RUN ONLY. Posts Nico's Verizon report EXAMPLES (resources/verizon_review/, built on Megan's laptop with `python -m automations.verizon_office.review --build`) to the review group DM C0CFN3SBFCM (Alphalete GP, Carlos, Evelyn, Lucy, Lucy Reporting, Megan, Nico): an intro explaining the reactions, then one post per report. A checkmark from Carlos or Nico = approved; an X = reply in the thread with what to change (Megan 2026-11-07). Lucy 4 so the posts come from Lucy, and pinned there because output/verizon_review_posted.json (what already went out) lives on that box: a retry posts only what is missing. Default (no --send) prints only.",
