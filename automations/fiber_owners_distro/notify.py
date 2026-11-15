@@ -39,7 +39,7 @@ def clean_name(name: str) -> str:
         out.append(t)
     return " ".join(out) or (name or "").strip()
 
-CHANNEL_ID = os.environ.get("FIBER_DISTRO_SLACK_CHANNEL", "C075PCEL92M")  # #l10-alphalete
+CHANNEL_ID = os.environ.get("FIBER_DISTRO_SLACK_CHANNEL", "C0CJNJXKTRN")  # moved here from #l10-alphalete (Megan 2026-11-15)
 
 KEEP_EMOJI = "white_check_mark"     # ✅  keep
 REMOVE_EMOJI = "x"                   # ❌  confirm removal
