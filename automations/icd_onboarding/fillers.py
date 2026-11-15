@@ -49,6 +49,20 @@ SOURCES: Dict[str, Sequence[str]] = {
 }
 
 
+# WHAT AN ALERT LOOKS LIKE IN A STEP CELL. A step that cannot be done until a
+# person decides something writes what it is waiting for into its own column,
+# because that column is where the leader is already looking -- and it is the
+# only surface they read. The prefix is what makes it an ASK rather than an
+# answer: `plan` treats a cell starting with it as still outstanding, so the
+# real date lands on top of it the moment the step actually runs. Without that
+# the alert would wedge the step shut forever (2026-11-15).
+ALERT_PREFIX = "NEEDS: "
+
+
+def is_alert(text) -> bool:
+    return str(text or "").strip().startswith(ALERT_PREFIX)
+
+
 def columns_for(source: str) -> Sequence[str]:
     if source not in SOURCES:
         raise ValueError(
@@ -100,8 +114,11 @@ def plan(rows: List[Dict], source: str,
                 text = verdict.strip()
             else:
                 continue                  # False = not done, None = unread
-            if str(row.get(column) or "").strip():
+            answered = str(row.get(column) or "").strip()
+            if answered and not is_alert(answered):
                 continue                  # already answered; nothing to do
+            if is_alert(text) and answered:
+                continue                  # an ask does not replace an ask
             name = ("%s %s" % (row.get("Name", ""), row.get("Last Name", ""))).strip()
             out.setdefault(column, {})[name] = text
     return out
@@ -191,6 +208,35 @@ def workbook_for(office_key: str):
     raise RuntimeError(
         "no office %r in office_metrics.offices — its board cannot be found"
         % office_key)
+
+
+def alert(office_key: str, week_start, source: str,
+          asks: Mapping[str, str], *, dry_run: bool = True, log=print) -> int:
+    """Write what a step is WAITING ON A PERSON FOR into its own column.
+
+    `asks` is {person: one sentence}. It goes in the source's column with
+    `ALERT_PREFIX`, so the leader reading down that column sees what to do,
+    and the step's real date overwrites it later with no tidying up.
+
+    Used by the Apex run for a name its two sources spell differently (Megan,
+    2026-11-15: "that 'alert' needs to go back to the admin to approve the
+    correct name so that you can run it"). It does not tick anything and it
+    never replaces an answer that is already there.
+    """
+    cols = columns_for(source)
+    if len(cols) != 1:
+        raise ValueError(
+            "%r owns %d columns; say which with apply()" % (source, len(cols)))
+    verdicts = {}
+    for who, said in (asks or {}).items():
+        said = " ".join(str(said or "").split())
+        if not str(who or "").strip() or not said:
+            continue
+        verdicts[str(who)] = {cols[0]: ALERT_PREFIX + said}
+    if not verdicts:
+        return 0
+    return apply(workbook_for(office_key), week_start, source, verdicts,
+                 dry_run=dry_run, log=log)
 
 
 def tick(office_key: str, week_start, source: str, names: Iterable[str],

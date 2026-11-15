@@ -213,3 +213,66 @@ def test_a_programme_ownerville_does_not_have_fails_loudly():
     src = inspect.getsource(ov_table.read_table)
     assert "has no %r programme" in src
     assert "It offers:" in src
+
+
+def _apex_row(first="Chrisjen", last="Davis", **cells):
+    row = {"Name": first, "Last Name": last, "Added to APEX": ""}
+    row.update(cells)
+    return row
+
+
+def test_an_ask_goes_in_the_steps_own_column():
+    """A step waiting on a person says so where the leader is already
+    looking. Megan, 2026-11-15, on a name two sources spell differently:
+    "that 'alert' needs to go back to the admin to approve the correct name
+    so that you can run it"."""
+    got = F.plan([_apex_row()], "apex",
+                 {"Chrisjen Davis": {"Added to APEX": F.ALERT_PREFIX
+                                     + "approve the surname"}})
+    assert got == {"Added to APEX": {"Chrisjen Davis":
+                                     "NEEDS: approve the surname"}}, got
+
+
+def test_the_real_date_lands_on_top_of_an_ask():
+    """Without this the ask would wedge the step shut: an answered cell is
+    never written again, so the step would read "NEEDS" forever after it had
+    actually run."""
+    got = F.plan([_apex_row(**{"Added to APEX": "NEEDS: approve the surname"})],
+                 "apex", {"Chrisjen Davis": {"Added to APEX": True}})
+    assert list(got["Added to APEX"]) == ["Chrisjen Davis"], got
+    assert not F.is_alert(got["Added to APEX"]["Chrisjen Davis"])
+
+
+def test_an_ask_never_overwrites_an_answer_or_another_ask():
+    done = F.plan([_apex_row(**{"Added to APEX": "11/15/2026"})], "apex",
+                  {"Chrisjen Davis": {"Added to APEX": "NEEDS: anything"}})
+    assert done == {}, "a step that is DONE is not reopened by an ask"
+    asked = F.plan([_apex_row(**{"Added to APEX": "NEEDS: approve the surname"})],
+                   "apex", {"Chrisjen Davis": {"Added to APEX": "NEEDS: other"}})
+    assert asked == {}, "the same ask is not rewritten every run"
+
+
+def test_an_ask_is_one_line_and_nothing_without_words():
+    """It lands in a spreadsheet cell a person reads down a column."""
+    import datetime as dt
+    seen = {}
+
+    def fake_apply(_book, _week, source, verdicts, **kw):
+        seen.update({"source": source, "verdicts": verdicts, "kw": kw})
+        return 1
+
+    old_apply, old_book = F.apply, F.workbook_for
+    F.apply, F.workbook_for = fake_apply, (lambda _k: object())
+    try:
+        n = F.alert("raf", dt.date(2026, 11, 9), "apex",
+                    {"Chrisjen Davis": "packet says Dav,\n  AppStream says Davis",
+                     "": "no name", "Nobody": "   "},
+                    dry_run=False)
+    finally:
+        F.apply, F.workbook_for = old_apply, old_book
+    assert n == 1
+    said = seen["verdicts"]
+    assert list(said) == ["Chrisjen Davis"], "no name and no words write nothing"
+    text = said["Chrisjen Davis"]["Added to APEX"]
+    assert text == "NEEDS: packet says Dav, AppStream says Davis", text
+    assert seen["kw"]["dry_run"] is False

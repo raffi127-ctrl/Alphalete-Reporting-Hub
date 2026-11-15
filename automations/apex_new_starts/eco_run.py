@@ -73,6 +73,39 @@ def starters(rows: List[Dict], day: Optional[dt.date] = None) -> List[Starter]:
     return out
 
 
+def _name_disagreement(person, hire) -> str:
+    """"" when the packet and AppStream agree about this person's name.
+
+    Compared on the letters only: "McCrobie" vs "Mccrobie" is the same name
+    written two ways, while "Davis" vs "Dav" is not. A packet that is simply
+    missing a name is somebody else's problem (plan already holds them for a
+    missing packet).
+    """
+    import re as _re
+
+    def fold(t):
+        return _re.sub(r"[^a-z]", "", str(t or "").lower())
+
+    want = str(getattr(person, "name", "") or "").split()
+    if not want or hire is None:
+        return ""
+    theirs_last, theirs_first = fold(hire.values.get("last")), \
+        fold(hire.values.get("first"))
+    ours_last, ours_first = fold(want[-1]), fold(want[0])
+    bad = []
+    if theirs_last and ours_last and theirs_last != ours_last:
+        bad.append("last name: the signed packet says %r, AppStream says %r"
+                   % (hire.values.get("last"), want[-1]))
+    if theirs_first and ours_first and theirs_first != ours_first:
+        bad.append("first name: the signed packet says %r, AppStream says %r"
+                   % (hire.values.get("first"), want[0]))
+    if not bad:
+        return ""
+    return ("their name does not match AppStream, so an admin has to say "
+            "which is right before this goes on a payroll record — "
+            + "; ".join(bad))
+
+
 def plan(people: List[Starter], hires: Dict[str, BID.NewHire],
          log=print, office_key: str = "") -> Dict:
     """Who can go in, and why anybody cannot -- without touching Apex.
@@ -92,7 +125,29 @@ def plan(people: List[Starter], hires: Dict[str, BID.NewHire],
             blocked.append({"name": p.name,
                             "why": "no signed Blue Ink packet — type this one by hand"})
             continue
+        # THE NAME ON THE PACKET MUST MATCH APPSTREAM. Chrisjen Davis wrote
+        # "Dav" in the Last Name box of his own I-9, so the packet said
+        # Chrisjen Dav while AppStream -- which is what seeded the board --
+        # said Chrisjen Davis. Creating him would have put "Chrisjen Dav" on
+        # a payroll record, and nothing downstream would ever have matched
+        # him again (Megan, 2026-11-15: "we would look at app stream and
+        # flag it for the admin to approve what is correct and then you run
+        # it").
+        #
+        # Nothing guesses which spelling is right -- a nickname, a married
+        # name and a typo all look the same from here. It holds, and says
+        # what each source claims.
+        said = _name_disagreement(p, hire)
+
         values = V.apex_values(p, hire, office_key)
+        if said:
+            # NOT A BLOCK ON ITS OWN (Megan, 2026-11-15: "UNLESS you find it
+            # in the pending where it matches app stream and you can just
+            # know it's correct"). Being on Apex's Pending list under the
+            # AppStream spelling IS the confirmation -- somebody already put
+            # them there under that name. The triage is what establishes
+            # that, so this travels with them and is settled there.
+            values["_name_dispute"] = said
         # Rate of Pay is in here because Apex REFUSES THE SAVE without one,
         # and because it is the office's own number -- an office nobody has
         # asked has none, and that must hold the person back rather than
@@ -233,6 +288,9 @@ def run_week(week_start: dt.date, *, office_appstream: str, office_key: str = ""
     added = out["added"]
     blocked = list(got["blocked"]) + out["blocked"]
     _tell_the_board(office_key, monday, added, log=log)
+    _ask_the_board(office_key, monday,
+                   {b["name"]: b["why"] for b in out.get("blocked", ())
+                    if b.get("ask")}, log=log)
     return _result(monday, status="filled", live=True, counted=len(people),
                    added=added, blocked=blocked)
 
@@ -294,6 +352,26 @@ def _removed_on_the_board(office_key: str, monday: dt.date,
             log("    off the board: %s (%s)" % (name, why))
             gone.add(B._fold(name))
     return gone
+
+
+def _ask_the_board(office_key: str, monday: dt.date, asks, log=print) -> None:
+    """Put what a person has to decide into the board's own Apex column.
+
+    Megan, 2026-11-15, on a name the packet and AppStream spell differently:
+    "that 'alert' needs to go back to the admin to approve the correct name so
+    that you can run it". A refusal that only reaches a log reaches nobody.
+
+    NEVER fails the run, the same reason the tick does not: the people who
+    went in are already in.
+    """
+    if not office_key or not asks:
+        return
+    try:
+        from automations.icd_onboarding import fillers as F
+        F.alert(office_key, monday, "apex", asks, dry_run=False, log=log)
+    except Exception as e:  # noqa: BLE001
+        log("  (the board was not asked: %s: %s)"
+            % (type(e).__name__, str(e)[:120]))
 
 
 def _tell_the_board(office_key: str, monday: dt.date, added, log=print) -> None:
@@ -534,6 +612,7 @@ def fill_week(page, ready, hires, week_start: dt.date, *, genders=None,
                            "roster — nothing was touched")
     need = drive.triage(page, people, log=log)
 
+    by_name = {pp.name: vv for pp, vv in ready}
     by_hand = [{"name": n, "why": v["why"]}
                for n, v in need.items() if v["need"] == drive.BY_HAND]
     for b in by_hand:
@@ -542,7 +621,38 @@ def fill_week(page, ready, hires, week_start: dt.date, *, genders=None,
     # Create only the ones Apex has never heard of. The engine checks All
     # Employees for each one again on its way past, so this cannot make a
     # second payroll record even if the triage were wrong.
-    to_add = [p for p in people if need.get(p["name"], {}).get("need") == drive.ADD]
+    #
+    # A DISPUTED NAME IS SETTLED HERE, by where the triage found them
+    # (Megan, 2026-11-15: "UNLESS you find it in the pending where it matches
+    # app stream and you can just knwo it's correct"). On Pending under
+    # AppStream's spelling, somebody already put them there under that name,
+    # so it is right and it is what gets typed. Not on Pending, and nothing
+    # here can tell which spelling is the real one -- so they are NOT created
+    # and it goes back as an alert for an admin to approve a name.
+    disputed = {pp.name: vv["_name_dispute"] for pp, vv in ready
+                if (vv or {}).get("_name_dispute")}
+    name_alerts = []
+    for who, said in sorted(disputed.items()):
+        what = (need.get(who) or {}).get("need")
+        if what == drive.ADD:
+            name_alerts.append(
+                {"name": who, "ask": True,
+                 "why": "%s Not on Apex's Pending list either, so an admin "
+                        "has to approve which spelling is right before a "
+                        "payroll record is made under it." % said})
+            log("  %s: not created — %s" % (who, said))
+        elif what == drive.COMPLETE:
+            parts = who.split()
+            vv = by_name.get(who)
+            if parts and vv is not None:
+                vv["first"] = parts[0]
+                vv["last"] = " ".join(parts[1:]) or parts[0]
+            log("  %s: on Pending under this spelling, so it is the right "
+                "one" % who)
+
+    to_add = [p for p in people
+              if need.get(p["name"], {}).get("need") == drive.ADD
+              and p["name"] not in disputed]
     if to_add:
         made = page.evaluate(
             "async (d) => { const said = [];"
@@ -564,9 +674,10 @@ def fill_week(page, ready, hires, week_start: dt.date, *, genders=None,
     # presses Save: there a person does, here `drive.save_tab` does -- which
     # is required, not a convenience, because Apex will not let a filled tab
     # be left unsaved and the way past that prompt discards the fill.
-    by_name = {pp.name: vv for pp, vv in ready}
     working = [p for p in people
-               if need.get(p["name"], {}).get("need") in (drive.COMPLETE, drive.ADD)]
+               if need.get(p["name"], {}).get("need") in (drive.COMPLETE, drive.ADD)
+               and not (need.get(p["name"], {}).get("need") == drive.ADD
+                        and p["name"] in disputed)]
     added, stuck = [], []
     for person in working:
         name = person["name"]
@@ -598,7 +709,7 @@ def fill_week(page, ready, hires, week_start: dt.date, *, genders=None,
         else:
             added.append(name)
     out = {"added": added, "blocked": stuck}
-    out["blocked"] = list(out["blocked"]) + by_hand
+    out["blocked"] = list(out["blocked"]) + by_hand + name_alerts
     return out
 
 

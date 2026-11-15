@@ -627,3 +627,168 @@ def test_the_gender_board_is_read_once_not_twice():
     import inspect
     src = inspect.getsource(eco_run.run_week)
     assert src.count("_genders_from_board(") == 1, src.count("_genders_from_board(")
+
+
+def _chrisjen():
+    """The packet and AppStream disagree about his surname."""
+    import datetime as dt
+    from automations.apex_new_starts import blueink_data as BID
+    from automations.apex_new_starts import eco_run as E
+    who = E.Starter(name="Chrisjen Davis", gender="Male",
+                    hire_date=dt.date(2026, 11, 9))
+    hire = BID.NewHire(name="Chrisjen Davis", values={
+        "first": "Chrisjen", "last": "Dav", "dob": "09/28/2005",
+        "address1": "3701 James Pitt rd", "city": "McKinney",
+        "state": "TX", "zip": "75071", "filing_single": "True"})
+    return who, hire
+
+
+def test_a_disagreeing_name_travels_as_a_dispute_not_a_block():
+    """Chrisjen Davis wrote "Dav" in the Last Name box of his own I-9, so the
+    packet said Chrisjen Dav while AppStream -- which seeds the board -- said
+    Chrisjen Davis.
+
+    It is NOT a block on its own. Megan, 2026-11-15: "UNLESS you find it in
+    the pending where it matches app stream and you can just know it's
+    correct". Being on Apex's Pending list under AppStream's spelling is the
+    confirmation, and only the triage can see that -- so the dispute rides
+    along to be settled there.
+    """
+    from automations.apex_new_starts import eco_run as E
+    who, hire = _chrisjen()
+    got = E.plan([who], {"Chrisjen Davis": hire}, log=lambda *a: None,
+                 office_key="raf")
+    assert [p.name for p, _ in got["ready"]] == ["Chrisjen Davis"], got
+    said = got["ready"][0][1]["_name_dispute"]
+    assert "Dav" in said and "Davis" in said, "say what each source claims"
+
+
+def test_a_disputed_name_is_never_typed_into_the_form():
+    """`values` is what gets typed. A marker in it must not reach a box, and
+    must not be read out as a field in the before-the-browser printout."""
+    import ast
+    import inspect
+    import pathlib
+    from automations.apex_new_starts import drive as D
+    from automations.apex_new_starts import supervised as S
+
+    tree = ast.parse(pathlib.Path(D.__file__).read_text())
+    keys = {n.slice.value for n in ast.walk(tree)
+            if isinstance(n, ast.Subscript)
+            and isinstance(n.slice, ast.Constant)
+            and isinstance(n.slice.value, str)}
+    assert "_name_dispute" not in keys, "drive must not type the marker"
+
+    assert all("_name_dispute" not in line
+               for line in inspect.getsource(S._describe).splitlines()
+               if not line.strip().startswith("#"))
+    shown = S._describe({"first": "Chrisjen", "last": "Dav",
+                         "_name_dispute": "packet says Dav"})
+    assert not any("dispute" in line for line in shown), shown
+
+
+def test_pending_settles_a_dispute_and_appstream_wins():
+    """On the COMPLETE path they were FOUND on Pending under AppStream's
+    spelling -- somebody already put them there under that name -- so that
+    spelling is the right one and it is what gets typed, not the packet's."""
+    import ast
+    import pathlib
+    from automations.apex_new_starts import supervised as S
+
+    src = pathlib.Path(S.__file__).read_text()
+    body = ast.get_source_segment(src, next(
+        n for n in ast.walk(ast.parse(src))
+        if isinstance(n, ast.FunctionDef) and n.name == "_complete"))
+    code = "\n".join(l for l in body.splitlines()
+                      if not l.strip().startswith("#"))
+    assert '_name_dispute' in code, "_complete has to settle it"
+    assert 'person.name' in code, "AppStream's spelling is the one typed"
+    assert '"last"' in code and '"first"' in code
+
+
+def test_creating_somebody_on_a_disputed_name_is_refused():
+    """Not on Pending either means nothing here can tell which spelling is
+    right, and a wrong surname on a NEW payroll record never matches them
+    again. An admin says which, then it runs."""
+    import ast
+    import pathlib
+    from automations.apex_new_starts import supervised as S
+
+    src = pathlib.Path(S.__file__).read_text()
+    body = ast.get_source_segment(src, next(
+        n for n in ast.walk(ast.parse(src))
+        if isinstance(n, ast.FunctionDef) and n.name == "run"))
+    code = [l for l in body.splitlines()
+            if not l.strip().startswith("#")]
+    where = [i for i, l in enumerate(code) if "_name_dispute" in l]
+    assert where, "run() has to check for a dispute"
+    after = "\n".join(code[where[0]:where[0] + 12])
+    assert "drive.ADD" in "\n".join(code[max(0, where[0] - 2):where[0] + 2])
+    assert "return 1" in after, "it refuses, it does not create them"
+
+
+def test_the_same_name_spelled_differently_is_not_a_disagreement():
+    """"McCrobie" and "Mccrobie" are one name written two ways. Holding on
+    that would stop everybody."""
+    import datetime as dt
+    from automations.apex_new_starts import blueink_data as BID
+    from automations.apex_new_starts import eco_run as E
+
+    who = E.Starter(name="Alexandria Mccrobie", gender="Female",
+                    hire_date=dt.date(2026, 11, 9))
+    hire = BID.NewHire(name="Alexandria Mccrobie", values={
+        "first": "Alexandria", "last": "McCrobie", "dob": "04/04/2007",
+        "address1": "704 green coral Dr", "city": "Little elm",
+        "state": "TX", "zip": "75068", "filing_single": "True"})
+    got = E.plan([who], {"Alexandria Mccrobie": hire}, log=lambda *a: None,
+                 office_key="raf")
+    assert [p.name for p, _ in got["ready"]] == ["Alexandria Mccrobie"], got
+
+
+def test_the_engine_path_settles_a_dispute_by_where_they_were_found():
+    """The supervised rehearsal is not what the ECO run uses. Both have to
+    settle a disputed name the same way, or the thing that runs by itself at
+    4am behaves differently from the thing that was watched working."""
+    import ast
+    import pathlib
+    from automations.apex_new_starts import eco_run as E
+
+    src = pathlib.Path(E.__file__).read_text()
+    body = ast.get_source_segment(src, next(
+        n for n in ast.walk(ast.parse(src))
+        if isinstance(n, ast.FunctionDef) and n.name == "fill_week"))
+    code = [l for l in body.splitlines() if not l.strip().startswith("#")]
+    joined = "\n".join(code)
+    assert "_name_dispute" in joined, "fill_week has to settle it"
+    assert "drive.COMPLETE" in joined and "drive.ADD" in joined
+
+    at = next(i for i, l in enumerate(code) if "to_add = [" in l)
+    create = "\n".join(code[at:at + 4])
+    assert "not in disputed" in create, \
+        "a disputed name is never given a NEW payroll record"
+
+
+def test_a_disputed_name_not_on_pending_goes_back_as_an_ask():
+    """A refusal that only reaches a log reaches nobody. Megan, 2026-11-15:
+    "that 'alert' needs to go back to the admin to approve the correct name
+    so that you can run it"."""
+    import ast
+    import inspect
+    import pathlib
+    from automations.apex_new_starts import eco_run as E
+
+    assert "fillers" in inspect.getsource(E._ask_the_board)
+    assert "dry_run=False" in inspect.getsource(E._ask_the_board)
+
+    src = pathlib.Path(E.__file__).read_text()
+    body = ast.get_source_segment(src, next(
+        n for n in ast.walk(ast.parse(src))
+        if isinstance(n, ast.FunctionDef) and n.name == "run_week"))
+    code = "\n".join(l for l in body.splitlines()
+                     if not l.strip().startswith("#"))
+    assert "_ask_the_board(" in code, "run_week has to send the ask"
+
+    # And ONLY an ask goes to the board -- not every held person. A gender
+    # nobody has typed in is not an admin decision about a name.
+    at = code.index("_ask_the_board(")
+    assert 'b.get("ask")' in code[at:at + 320], code[at:at + 320]

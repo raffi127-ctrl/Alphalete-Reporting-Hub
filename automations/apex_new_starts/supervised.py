@@ -134,7 +134,8 @@ def _describe(values: Dict) -> List[str]:
     for k in order:
         if values.get(k):
             out.append("    %-14s %s" % (k, values[k]))
-    rest = sorted(set(values) - set(order))
+    rest = sorted(k for k in set(values) - set(order)
+                  if not k.startswith("_"))
     for k in rest:
         out.append("    %-14s %s" % (k, values[k]))
     return out
@@ -290,6 +291,20 @@ def _complete(page, who, person, apex_id, log=print, *,
     script goes back in after each move, from here, rather than the page being
     trusted to still hold it.
     """
+    # FOUND ON PENDING SETTLES A DISPUTED NAME. They are on that list under
+    # the AppStream spelling, which is what was searched for -- so somebody
+    # has already put them there under that name and it needs no admin.
+    # AppStream's spelling is what gets typed, not the packet's.
+    if (who.get("_values") or {}).get("_name_dispute"):
+        parts = person.name.split()
+        if parts:
+            who["_values"]["first"] = parts[0]
+            who["_values"]["last"] = " ".join(parts[1:]) or parts[0]
+        log("")
+        log("  Their packet spells their name differently, but they are on")
+        log("  Pending under AppStream's spelling -- so that is the right")
+        log("  one and it is what will be typed.")
+
     log("")
     log("  They are already on Pending, so this is the COMPLETE path:")
     log("  employment record, then user profile, then tax.")
@@ -461,6 +476,15 @@ def run(office_key: str, name: str, week_start: dt.date, log=print,
             return _complete(s.page, who, person,
                              need.get("id", ""), log=log, social=social,
                              press_save=press_save)
+        if (need.get("need") == drive.ADD
+                and (values or {}).get("_name_dispute")):
+            log("")
+            log("  NOT CREATING THEM. %s" % values["_name_dispute"])
+            log("")
+            log("  They are not on Pending either, so nothing here can tell")
+            log("  which spelling is right. An admin has to say, and then")
+            log("  this will run.")
+            return 1
         if need.get("need") != drive.ADD:
             log("")
             log("  Neither path is safe for them. Creating would make a SECOND")

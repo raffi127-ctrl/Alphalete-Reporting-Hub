@@ -360,7 +360,7 @@ def triage(page, people, log=print) -> Dict[str, dict]:
             # surname found nobody and the run offered to CREATE her
             # (2026-11-15). A first-name search finds her anyway, and finding
             # somebody is what stops a duplicate payroll record.
-            again = search_roster(page, given, "", log=log)
+            again = search_roster(page, "", given, log=log)
             if again:
                 log("    found by FIRST name, not surname -- the surname in "
                     "Apex may not match the board")
@@ -1717,11 +1717,15 @@ def search_roster(page, surname: str, given: str = "", *, log=print):
 
     try:
         page.fill("[data-ans-f='last']", "")
-        page.type("[data-ans-f='last']", surname, delay=25)
+        if surname:
+            page.type("[data-ans-f='last']", surname, delay=25)
         if boxes.get("first"):
             page.fill("[data-ans-f='first']", "")
             if given:
                 page.type("[data-ans-f='first']", given, delay=25)
+        elif not surname:
+            log("    no First Name box to search by instead")
+            return None
         # APPLY, FOR REAL -- and found the way the tabs are found. The button
         # is <button ng-click="vm.onChangeFilters()">Apply Filters</button>,
         # and Playwright's :text-is() would not click it any more than it
@@ -1756,7 +1760,8 @@ def search_roster(page, surname: str, given: str = "", *, log=print):
     hits = page.evaluate(
         r"""(s) => {
              const want = String(s || '').toLowerCase();
+             if (!want) return 0;
              return [...document.querySelectorAll('table tr')]
                .filter(r => (r.innerText || '').toLowerCase().includes(want))
-               .length; }""", surname)
+               .length; }""", surname or given)
     return int(hits)

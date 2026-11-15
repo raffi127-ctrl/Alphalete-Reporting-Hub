@@ -138,7 +138,8 @@ class _Triage:
         pass
 
     def type(self, sel, val, delay=None):
-        if "last" in sel:
+        # whichever box was typed into is what the search is for
+        if "last" in sel or "first" in sel:
             self.looked_for = val
 
     def press(self, sel, key):
@@ -1169,3 +1170,18 @@ def test_save_waits_for_the_form_to_be_valid_before_pressing():
         "wait first, then press"
     assert "Apex still wants" in src, "and name what it is waiting on"
 
+
+
+def test_the_first_name_fallback_searches_the_first_name_box():
+    """The fallback for a surname Apex spells differently was passing the
+    FIRST name in as the surname -- so "Chrisjen" went into the Last Name
+    filter and matched nobody, which is the state that routes to the create
+    form (seen on screen, 2026-11-15)."""
+    import inspect
+    src = inspect.getsource(drive.triage)
+    assert 'search_roster(page, "", given' in src, \
+        "the first name goes in the first-name box"
+    # and the search itself copes with no surname at all
+    sr = inspect.getsource(drive.search_roster)
+    assert "if surname:" in sr and "elif not surname:" in sr
+    assert "surname or given" in sr, "count rows for whichever name was used"
