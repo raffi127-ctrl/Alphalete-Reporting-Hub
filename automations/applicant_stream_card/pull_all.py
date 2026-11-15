@@ -33,6 +33,7 @@ from __future__ import annotations  # Lucy runs Python 3.9 — keep lazy
 import argparse
 import datetime as dt
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -91,7 +92,7 @@ def _save(path, rows):
                     encoding="utf-8")
 
 
-def _run(name, *args):
+def _run(name, *args, env=None):
     """One puller as its own process (each opens and closes its own
     AppStream session). Returns True on exit 0."""
     log = OUTPUT / "audit-logs"
@@ -101,7 +102,8 @@ def _run(name, *args):
     print("[pull_all] {} ...".format(name), flush=True)
     with out.open("w", encoding="utf-8") as fh:
         rc = subprocess.call([sys.executable, "-m"] + list(args),
-                             cwd=str(ROOT), stdout=fh, stderr=subprocess.STDOUT)
+                             cwd=str(ROOT), stdout=fh, stderr=subprocess.STDOUT,
+                             env=env)
     print("[pull_all] {} {} in {:.0f} min (log: {})".format(
         name, "ok" if rc == 0 else "FAILED rc={}".format(rc),
         (dt.datetime.now() - t0).total_seconds() / 60, out), flush=True)
@@ -172,8 +174,14 @@ def main(argv=None):
         _save(dump_p, trim(dump, since, _rec_day))
         _save(log_p, trim(log, since, _log_day))
 
+    # A card built after a failed pull must not mark the Hub green on its
+    # own exit 0 (Megan's rule: green means delivered). With a failure, the
+    # card process stays quiet and this run's own exit 1 is what the Hub sees.
+    env = None
+    if any(not v for v in ok.values()):
+        env = dict(os.environ, HUB_AUTOPUBLISH="0")
     ok["card"] = _run("card-" + oid, "automations.applicant_stream_card.run",
-                      "--office", oid)
+                      "--office", oid, env=env)
     bad = [k for k, v in ok.items() if not v]
     print("[pull_all] {} done: {} of {} parts ok{}".format(
         oid, len(ok) - len(bad), len(ok),
