@@ -380,7 +380,7 @@ def header_text(day: dt.date, total: int) -> str:
 #            name is a typo; its "24065 Recruiters" tab is this office)
 # Colten's 14733 -> #colten-wrights-office-recruiting-14733 (his existing
 # channel, shown by Megan 2026-11-02; Lucy is in it).
-REPORT_CHANNEL = {"23965": "C0CAV0P4RRS", "24065": "C0CBEDBFXM2",
+REPORT_CHANNEL = {"23965": "C0CFLK9MK4H", "24065": "C0CBEDBFXM2",
                   "14733": "C0AUAPMEF37"}
 
 

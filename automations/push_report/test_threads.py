@@ -97,7 +97,7 @@ class RafsAccountsEachTheirOwn(unittest.TestCase):
     def test_real_channel_map(self):
         ch = R.channel_of_label()
         self.assertEqual(ch["Raf main 11280"], "C0AUAS88FGW")
-        self.assertEqual(ch["Raf 2nd funnel 23965"], "C0CAV0P4RRS")
+        self.assertEqual(ch["Raf 2nd funnel 23965"], "C0CFLK9MK4H")
         self.assertEqual(ch["Raf 24065"], "C0CBEDBFXM2")
         self.assertEqual(ch["Colten 14733"], "C0AUAPMEF37")
         self.assertEqual(len(set(ch.values())), len(ch))
