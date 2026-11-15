@@ -18,7 +18,7 @@ go -- a dry office renders and logs, it never texts.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Dict
 
 
@@ -178,6 +178,18 @@ OFFICES: Dict[str, Office] = {
                   team="Aces", group="A Players",
                   tz="America/New_York"),
 }
+
+# LIVE from Mon 2026-11-16 (Megan 11/15: "All 34 offices"). Only these text;
+# an office added later stays "dry" until its key goes on this list.
+LIVE = frozenset({
+    "aiden", "atef", "aya", "carlos", "cody", "cyrus", "emiliano", "eveliz",
+    "frank", "hasani", "haytham", "jacob", "jamis", "jennifer-att", "jose",
+    "joseph", "khalil", "luke", "maxamad", "natalia", "nigel", "omar",
+    "oren", "raf", "rashad", "ryan", "sahil", "samuel", "starr", "steve",
+    "trang", "tre", "valeria", "zaid",
+})
+OFFICES = {k: (replace(o, mode="live") if k in LIVE and o.mode == "dry" else o)
+           for k, o in OFFICES.items()}
 
 # Retention Details row labels (matched by label, never by position).
 L_FIRST = "Total First Interviews"
