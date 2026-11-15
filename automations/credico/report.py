@@ -684,7 +684,8 @@ def discover_screens(account="murrugarra", screens=SCREENS, verbose=True):
 
 
 REPORT_CENTER_URL = f"{BASE}/#/dashboard/reporting-center"
-REPORT_PROBE_DEFAULT = ("Verizon Wireless Apps by Signed Date", "App History", "Submission Status Report")
+REPORT_PROBE_DEFAULT = ("Verizon Wireless Apps by Signed Date", "App History", "Submission Status Report",
+                        "Application Status by Pay Period", "Verizon Auto Bill Pay by Week")
 
 
 def discover_report(account="murrugarra", names=REPORT_PROBE_DEFAULT, days=14, verbose=True):
@@ -743,13 +744,29 @@ def discover_report(account="murrugarra", names=REPORT_PROBE_DEFAULT, days=14, v
                 page.wait_for_timeout(5000)
                 rows.append(["opened", tag, page.url[:160]])
                 dump(page, tag + " (controls)")
-                # date inputs: fill start/end; AngularJS 'calendar' inputs take text
-                dates = [el for el in page.query_selector_all("input") if "calendar" in (el.get_attribute("class") or "")
-                         or "date" in ((el.get_attribute("placeholder") or "") + (el.get_attribute("name") or "") + (el.get_attribute("type") or "")).lower()]
+                # office + campaign first (the grid is empty without them, 11/15)
+                for sel in page.query_selector_all("select"):
+                    try:
+                        opts = [o.inner_text().strip() for o in sel.query_selector_all("option")]
+                        pick = next((o for o in opts if "High Value" in o), None) or next((o for o in opts if o == "Verizon Wireless"), None)
+                        if pick:
+                            sel.select_option(label=pick)
+                            sel.dispatch_event("change")
+                            rows.append(["selected", tag, pick])
+                    except Exception:  # noqa: BLE001
+                        continue
+                # date inputs: the inline text boxes (class d-inline-block) are the
+                # start / end dates on these reports (11/15: no 'calendar' class)
+                dates = [el for el in page.query_selector_all("input")
+                         if (el.get_attribute("type") or "text") == "text"
+                         and ("calendar" in (el.get_attribute("class") or "") or "d-inline-block" in (el.get_attribute("class") or "")
+                              or "date" in ((el.get_attribute("placeholder") or "") + (el.get_attribute("name") or "")).lower())]
                 vals = [start.strftime("%m/%d/%Y"), end.strftime("%m/%d/%Y")]
                 for el, v in zip(dates[:2], vals):
                     try:
+                        el.click()
                         el.fill(v)
+                        el.press("Tab")
                         el.dispatch_event("change")
                     except Exception:  # noqa: BLE001
                         pass
@@ -762,7 +779,7 @@ def discover_report(account="murrugarra", names=REPORT_PROBE_DEFAULT, days=14, v
                         ran = True
                         rows.append(["clicked", tag, label])
                         break
-                page.wait_for_timeout(8000 if ran else 2000)
+                page.wait_for_timeout(12000 if ran else 2000)
                 dump(page, tag + " (after run)" if ran else tag + " (no run button)")
             except Exception as e:  # noqa: BLE001
                 rows.append(["error", tag, f"{type(e).__name__}: {str(e)[:200]}"])
