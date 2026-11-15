@@ -38,7 +38,11 @@ def run_office(p: offices.Presence, *, live: bool,
     if p.social and p.post_via == "eco":
         from automations.brand_audit.social_inbox import _client
         from automations.online_presence import watch
-        acts = watch.collect(p, answers or [], _client(), dry=dry) if answers else []
+        from automations.online_presence import eco_reviews
+        review_rows, answers = eco_reviews.split(answers or [])
+        acts = watch.collect(p, answers, _client(), dry=dry) if answers else []
+        if review_rows:
+            out["google reviews (office computer)"] = eco_reviews.collect(p, review_rows, _client(), dry=dry)
         chk = watch.ensure_daily_check(p, live=not dry)
         out["office computer"] = acts + ([chk] if chk else [])
         # Weekly reels (reels_flow.py) are PARKED (Megan 2026-11-09: "we don't
@@ -49,7 +53,26 @@ def run_office(p: offices.Presence, *, live: bool,
     # too (Megan 2026-11-09: "hold off on the blog and press releases for
     # right now"). Turning them on = calling content.step(p, client, live=...)
     # here.
-    if p.reviews:
+    if p.reviews and getattr(p, "reviews_via", "lucy") == "eco":
+        # The office's own computer reads + posts; Lucy 3 drafts and asks ✅.
+        from automations.brand_audit.social_inbox import _client as _cl
+        from automations.online_presence import eco_reviews, review_alerts
+        if not (p.social and p.post_via == "eco"):      # answers not read above
+            review_rows, _rest = eco_reviews.split(answers or [])
+            if review_rows:
+                out["google reviews (office computer)"] = eco_reviews.collect(p, review_rows, _cl(), dry=dry)
+        rd = eco_reviews.ensure_read(p, live=not dry)
+        if not eco_reviews.signed_in(p):
+            out["reviews"] = [{"action": "waiting_on_google_signin",
+                               "note": f"run `setup google-signin {p.key}` on the set-up call"}] + ([rd] if rd else [])
+        else:
+            revs = eco_reviews.reviews(p)
+            if p.gbp_location:
+                out["bad reviews"] = review_alerts.check(p, _cl(), live=not dry, reviews=revs)
+            out["reviews"] = review_replies.process_reviews(
+                dry_run=dry, profile=p, fetch=lambda: revs, post=eco_reviews.poster(p),
+                can_post=True) + ([rd] if rd else [])
+    elif p.reviews:
         # The ALERT first (seconds), then the reply drafts (Claude, slower):
         # a bad review is in front of the office before its draft is written.
         if p.gbp_location:
@@ -166,7 +189,7 @@ def main(argv=None) -> int:
 
     # ONE read of the relay for every office (not one per office).
     answers: Dict[str, List[dict]] = {}
-    if any(p.social and p.post_via == "eco" for p in todo):
+    if any((p.social and p.post_via == "eco") or getattr(p, "reviews_via", "") == "eco" for p in todo):
         try:
             from automations.online_presence import relay
             for r in relay.answered():

@@ -163,6 +163,7 @@ AGENT_FILES = [
     # but never to this list, which is one half of why the manifest test sat
     # red for three days.
     "automations/icd_alerts/social_post.py",
+    "automations/icd_alerts/office_reviews.py",
     "automations/brand_audit/__init__.py",
     "automations/brand_audit/config.py",
     "automations/brand_audit/zoho_draft.py",

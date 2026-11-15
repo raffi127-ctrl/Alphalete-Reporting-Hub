@@ -14,6 +14,10 @@
     # 3. the owner signs into THEIR Zoho on THEIR office computer
     python -m automations.online_presence.setup zoho-signin kash
 
+    # 3b. the owner signs into THEIR Google there too: their computer then
+    #     reads + answers their reviews (Lucy 3 drafts, Slack ✅ approves)
+    python -m automations.online_presence.setup google-signin kash
+
     # 4. the checklist: everything green = ready for a dry run
     python -m automations.online_presence.setup check kash
 
@@ -296,13 +300,35 @@ def cmd_zoho_signin(a) -> int:
     return 0
 
 
+def cmd_google_signin(a) -> int:
+    """On the install call: Google opens on the OWNER's office computer, they
+    sign in with the account that manages their listing, and from then on
+    their computer reads + answers their reviews (Lucy 3 still drafts them
+    and asks ✅). Their sign-in never leaves their computer."""
+    from dataclasses import replace
+    from automations.online_presence import eco_reviews
+    p = offices.get(a.office)
+    if not p or p.key == "alphalete":
+        print(f"✗ no office {a.office!r} (run `add` first)")
+        return 1
+    if p.reviews_via != "eco":
+        offices.save(replace(p, reviews_via="eco"))
+        p = offices.get(a.office)
+    job = eco_reviews.queue_signin(p)
+    print(f"✓ asked {p.key}'s office computer to open Google (job {job[:8]}). It opens "
+          f"within ~3 minutes and waits {eco_reviews.SIGNIN_MINUTES} min. They sign in with the "
+          "Google account that manages their listing and press Allow. Then run `check`.")
+    return 0
+
+
 def _eco_zoho_rows(p) -> List[Tuple[bool, str]]:
     """What the office's computer last told us about its Zoho."""
     from automations.online_presence import relay, watch
     res, when = None, ""
     try:
         mine = [r for r in relay.answered() if str(r.get("office", "")).lower() == p.key
-                and r.get("kind") in ("zoho_signin", "social_check")]
+                and r.get("kind") in ("zoho_signin", "social_check")
+                and not (r.get("result") or {}).get("do")]       # a review job, not Zoho
         if mine:
             res = mine[-1].get("result") or {}
             when = "just now"
@@ -400,7 +426,18 @@ def checklist(p, *, zoho: bool = False) -> List[Tuple[bool, str]]:
                  + ("" if p.approvers else " (Megan + Eve approve until they name someone)")))
     if p.slack_channel:
         rows.extend(_slack_room_check(p))
-    if p.reviews:
+    if p.reviews and p.reviews_via == "eco":
+        from automations.online_presence import eco_reviews
+        st = eco_reviews._load(p)
+        if eco_reviews.signed_in(p):
+            rows.append((True, f"Google reviews from the office computer: signed in, "
+                               f"{len(st.get('reviews') or [])} without a reply at last read"))
+        elif st.get("listings") is not None and not st.get("location"):
+            rows.append((False, "Google sign-in worked but none of their listings matches this office: "
+                                + (", ".join(x.get("title", "") for x in st["listings"]) or "none")))
+        else:
+            rows.append((False, f"Google reviews from the office computer (run `google-signin {p.key}`)"))
+    elif p.reviews:
         if not p.gbp_location:
             rows.append((False, "Google listing linked (run `link-google`)"))
         else:
@@ -495,6 +532,9 @@ def main(argv=None) -> int:
     s.add_argument("office")
     s.add_argument("--minutes", type=int, default=15)
     s.set_defaults(fn=cmd_zoho_signin)
+    s = sub.add_parser("google-signin", help="owner signs in to Google on their office computer")
+    s.add_argument("office")
+    s.set_defaults(fn=cmd_google_signin)
     s = sub.add_parser("invites", help="Google manager invites waiting for us")
     s.add_argument("--accept", action="store_true")
     s.set_defaults(fn=cmd_invites)

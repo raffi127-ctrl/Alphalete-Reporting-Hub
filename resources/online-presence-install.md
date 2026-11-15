@@ -49,6 +49,12 @@ Answers land as PENDING on the **LucyECO Social Signups** tab of the relay workb
 4. **Sign Lucy's window into Zoho.** We send `zoho-signin`, a Zoho window opens on their
    screen, they sign in with the account from step 1, and it closes itself. Lucy never sees the
    password. Zoho's sign-in codes go to THEIR email; if Zoho ever signs them out, Lucy DMs them.
+4b. **Sign Lucy into their Google (so their computer answers their Google reviews).** We send
+   `google-signin`, Google opens on their screen, they sign in with the Google account that
+   **manages their listing** and press **Allow**. Their sign-in stays on their computer; from then
+   on their computer reads their reviews every 30 min and posts the replies. Lucy 3 still writes
+   the replies and puts the bad ones in Slack for ✅. (Step 3's Manager invite is still worth
+   doing as a backup, but nothing needs it once this is green.)
 5. **Facebook page → Alphalete (so Lucy answers their Facebook reviews).** On their phone:
    **business.facebook.com** (Meta Business Suite) → Settings → Business assets → their **Page** →
    **Partners** → **Assign partner** → **Business ID** `1600512619997772` (Alphalete Marketing) →
@@ -70,6 +76,7 @@ Before the call:
 On the call:
 ```
 python -m automations.online_presence.setup zoho-signin <key>        # step 4: Zoho opens on their screen
+python -m automations.online_presence.setup google-signin <key>      # step 4b: Google opens on their screen
 python -m automations.online_presence.setup invites --accept         # after step 3
 python -m automations.online_presence.setup link-google <key>
 python -m automations.brand_audit.fb_reviews --connect <key>         # after step 5: finds + connects their page
@@ -95,6 +102,8 @@ python -m automations.online_presence.run --office <key>             # dry run: 
 - A post that couldn't go out says so in its thread and goes out once it's fixed.
 
 **Reviews**
+- Their office computer reads their Google reviews every 30 min with THEIR sign-in (step 4b),
+  and posts each reply Lucy 3 hands it. If that sign-in runs out, Lucy DMs the owner once a day.
 - 4–5★ get an automatic reply, capped at 10 a day.
 - Under 4★ wait in the room for ✅ / ❌.
 - Replies sign off with the office's name, and complaints go to the office's own email.

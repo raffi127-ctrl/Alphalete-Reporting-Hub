@@ -386,7 +386,8 @@ def _review_block(review: dict, reply: str) -> str:
 
 
 def process_reviews(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
-                    channel: str | None = None, profile=None) -> list[dict]:
+                    channel: str | None = None, profile=None,
+                    fetch=None, post=None, can_post=None) -> list[dict]:
     """One daily scan: post a 'Response Reviews MM/DD/YY' header thread, draft a
     reply for each new review as a REPLY in that thread, and pick up reactions on
     every still-open day's threads (approve / redo / skip). Keeps re-checking a
@@ -394,7 +395,12 @@ def process_reviews(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True
     is stubbed (API pending) — approved replies are marked ready.
 
     `profile` = an ICD office (automations.online_presence.offices): its own
-    room, approvers, listing, sign-off name, contact and caps. None = Alphalete."""
+    room, approvers, listing, sign-off name, contact and caps. None = Alphalete.
+
+    fetch / post / can_post: the office's OWN computer reads and posts
+    (online_presence.eco_reviews, 11/15). fetch() -> reviews, post(rv, reply,
+    company) queues the reply, can_post = it is signed in. Unset = Lucy's
+    central Google key, as before."""
     import datetime as dt
     if profile is None:
         from automations.online_presence.offices import moved_alphalete
@@ -409,7 +415,7 @@ def process_reviews(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True
             return [{"error": f"company {company_name!r} not found"}]
     else:
         company, company_name = None, P.business_name
-        if not P.gbp_location:
+        if not P.gbp_location and fetch is None:
             return [{"action": "no_listing",
                      "note": f"{P.key}: no Google listing linked yet"}]
     channel = channel or P.reviews_channel
@@ -436,7 +442,8 @@ def process_reviews(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True
     #    rating >= AUTO_POST_MIN_STARS  -> auto-post to Google now + FYI to Slack.
     #    below that / no reply target   -> queue in Slack for approve/redo/skip.
     new_count = 0
-    auto_ok = gbp_ready(P.gbp_location)
+    auto_ok = bool(can_post) if can_post is not None else gbp_ready(P.gbp_location)
+    _post = post or post_reply_to_google
     counts = state.setdefault("auto_post_counts", {})
     posted_today = counts.get(today, 0)          # throttle across runs in a day
     deferred = 0
@@ -460,7 +467,7 @@ def process_reviews(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True
             if dry_run:
                 continue
             try:
-                post_reply_to_google(rv, st["reply"], company)
+                _post(rv, st["reply"], company)
                 st["posted"] = True
                 st.pop("post_error", None)
                 st.pop("approved_pending_api", None)
@@ -469,7 +476,7 @@ def process_reviews(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True
             except Exception as e:
                 st["post_error"] = str(e)[:200]
 
-    for rv in get_reviews(company, P.gbp_location):
+    for rv in (fetch() if fetch is not None else get_reviews(company, P.gbp_location)):
         k = _key(rv)
         if k in state["reviews"]:
             continue
@@ -497,7 +504,7 @@ def process_reviews(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True
             if not dry_run:
                 entry = {"reply": reply, "date": today, "review": rv, "auto": True}
                 try:
-                    post_reply_to_google(rv, reply, company)
+                    _post(rv, reply, company)
                     entry["posted"] = True
                 except gbp_api.GBPAccessError:
                     entry["approved_pending_api"] = True   # access dropped; hold
@@ -569,7 +576,7 @@ def process_reviews(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True
             actions.append({"action": "approved", "review": k, "reply": cur})
             if not dry_run:
                 try:
-                    post_reply_to_google(rv, cur, company)
+                    _post(rv, cur, company)
                     st["posted"] = True
                 except Exception:
                     st["approved_pending_api"] = True   # auto-posts once GBP API on

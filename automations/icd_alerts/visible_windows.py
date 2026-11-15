@@ -83,6 +83,9 @@ ALLOWED: Dict[str, Tuple[str, str]] = {
         (HIDDEN, "osascript reads a FILE (no window, nothing on screen)"),
     "automations/oat_processing/run.py":
         (HIDDEN, "osascript reads a screenshot FILE (no window, nothing on screen)"),
+    "automations/icd_alerts/office_reviews.py":
+        (PERSON, "the owner signs Lucy into their own Google once, to answer "
+                 "their reviews (sent only on the set-up call)"),
     # --- opens by itself, in view. TO BE MOVED. -----------------------------
     "automations/icd_alerts/ov_read.py":
         (OWED, "when the OwnerVille session lapses, Lucy signs in again in a "

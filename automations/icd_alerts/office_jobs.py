@@ -42,6 +42,7 @@ from automations.icd_alerts import config as C
 # Admins press a button and wait for it, so ask often -- but the answer is
 # almost always "nothing", which the relay gives without taking its lock.
 ASK_EVERY_MINUTES = 3
+IDLE_ASK_MINUTES = 30     # nothing set up here yet: still reachable for a first sign-in
 HOURS = (7, 22)
 
 _STATE = C.APP_DIR / "office-jobs.json"
@@ -62,12 +63,19 @@ def _save(s: Dict) -> None:
         pass
 
 
-def due(now: Optional[dt.datetime] = None, state: Optional[Dict] = None) -> bool:
+def _has_work() -> bool:
+    """A login saved on this computer that office jobs use."""
+    return bool(C.sterling_creds() or (C.APP_DIR / "zoho-profile").exists()
+                or (C.APP_DIR / "google-reviews-token.json").exists())
+
+
+def due(now: Optional[dt.datetime] = None, state: Optional[Dict] = None,
+        every: float = ASK_EVERY_MINUTES) -> bool:
     now = now or dt.datetime.now()
     if not (HOURS[0] <= now.hour < HOURS[1]):
         return False
     last = (state if state is not None else _load()).get("last_ask", 0)
-    return (time.time() - float(last or 0)) >= ASK_EVERY_MINUTES * 60
+    return (time.time() - float(last or 0)) >= every * 60
 
 
 def _call(rec: Dict, extra: Dict) -> Dict:
@@ -214,10 +222,13 @@ def maybe_run(log=print) -> bool:
     # relay that carries every office's alerts; today the only job is
     # Sterling, so a computer with no Sterling login saved (sterling_setup)
     # never asks.
-    if not C.sterling_creds():
-        return False
+    # Since 2026-11-15 offices also get social + review jobs (Megan: "move
+    # everything to the relay machine so we can offer EVERYTHING"). A
+    # computer already doing that work asks every 3 min; one with nothing set
+    # up yet asks every 30, so its FIRST sign-in job still reaches it without
+    # every office hammering the relay.
     state = _load()
-    if not due(state=state):
+    if not due(state=state, every=ASK_EVERY_MINUTES if _has_work() else IDLE_ASK_MINUTES):
         return False
     state["last_ask"] = time.time()
     _save(state)

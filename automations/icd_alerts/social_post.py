@@ -55,8 +55,17 @@ def _busy() -> bool:
 SIGNIN_MAX_MINUTES = 15
 
 
+def _reviews_job(payload: Dict):
+    """Google review jobs ride these same kinds (payload["do"]); they need no
+    Zoho window, so they never wait on _busy()."""
+    return str((payload or {}).get("do") or "") in ("google_signin", "google_reviews", "google_reply")
+
+
 def signin(payload: Dict, log=print) -> Dict:
     from automations.brand_audit import zoho_draft
+    if _reviews_job(payload):
+        from automations.icd_alerts import office_reviews
+        return dict(office_reviews.signin(payload, log=log), do=payload["do"])
     if _busy():
         return {"status": "deferred"}
     # Inside the scheduled run, which has a 20-minute hard stop (watchdog):
@@ -69,6 +78,11 @@ def signin(payload: Dict, log=print) -> Dict:
 
 
 def check(payload: Dict, log=print) -> Dict:
+    if _reviews_job(payload):
+        from automations.icd_alerts import office_reviews
+        res = (office_reviews.signin(payload, log=log) if payload.get("do") == "google_signin"
+               else office_reviews.read_job(payload, log=log))
+        return dict(res, do=payload["do"])     # Lucy 3 tells it from a Zoho check by this
     from automations.brand_audit import zoho_draft
     if _busy():
         return {"status": "deferred"}
@@ -96,6 +110,9 @@ def _unpack_album(data: bytes, folder: Path) -> list:
 
 
 def post(payload: Dict, live: bool, log=print) -> Dict:
+    if _reviews_job(payload):
+        from automations.icd_alerts import office_reviews
+        return dict(office_reviews.reply_job(payload, live, log=log), do=payload["do"])
     from automations.brand_audit import zoho_draft
     caption = str(payload.get("caption") or "").strip()
     raw = payload.get("photo_b64") or ""

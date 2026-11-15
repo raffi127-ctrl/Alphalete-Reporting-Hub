@@ -92,6 +92,11 @@ class Presence:
     # own computer (Megan 2026-11-15: pilot = Raf, "A, move it to Raf's
     # computer"). While it's live, every Alphalete job on Lucy 3 stands down.
     replaces_alphalete: bool = False
+    # Who reads + answers their Google reviews (Megan 2026-11-15: move
+    # everything to the office's computer). "lucy" = Alphalete's Manager
+    # access from Lucy 3; "eco" = the owner's OWN Google sign-in on their
+    # office computer (eco_reviews.py). Drafts + ✅ stay on Lucy 3 either way.
+    reviews_via: str = "lucy"
 
     @property
     def social_links(self) -> Dict[str, str]:
@@ -178,6 +183,8 @@ class Presence:
             out.append("no contact email for review complaints")
         if any(h < 8 or h > 18 for h in self.post_hours):
             out.append("post hours must be between 8am and 6pm")
+        if self.reviews_via not in ("eco", "lucy"):
+            out.append(f"reviews_via must be 'eco' or 'lucy', not {self.reviews_via!r}")
         if self.post_via not in ("eco", "lucy"):
             out.append(f"post_via must be 'eco' or 'lucy', not {self.post_via!r}")
         if self.social:

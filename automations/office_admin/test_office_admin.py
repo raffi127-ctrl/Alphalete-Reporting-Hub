@@ -701,12 +701,19 @@ class OfficeComputer(unittest.TestCase):
         r = office_jobs.work({"kind": "nope", "mode": "dry"}, "omar", log=lambda *_: None)
         self.assertEqual(r["status"], "error")
 
-    def test_computer_without_sterling_login_never_asks(self):
+    def test_computer_with_nothing_set_up_asks_only_every_30_min(self):
+        # Since 11/15 offices get social + review jobs too, so a computer with
+        # no Sterling login still asks (for its first sign-in), just rarely.
+        import time
         from automations.icd_alerts import office_jobs
-        with mock.patch("automations.icd_alerts.config.sterling_creds", return_value={}), \
+        with mock.patch.object(office_jobs, "_has_work", return_value=False), \
+                mock.patch.object(office_jobs, "_load", return_value={"last_ask": time.time() - 10 * 60}), \
                 mock.patch.object(office_jobs, "run_once") as ran:
             self.assertFalse(office_jobs.maybe_run(log=lambda *_: None))
         ran.assert_not_called()
+        noon = dt.datetime(2026, 11, 2, 12, 0)
+        self.assertTrue(office_jobs.due(noon, {"last_ask": time.time() - 31 * 60},
+                                        every=office_jobs.IDLE_ASK_MINUTES))
 
     def test_office_hours(self):
         from automations.icd_alerts import office_jobs
