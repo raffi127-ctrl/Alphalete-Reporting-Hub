@@ -186,9 +186,41 @@ def rep_activations(owner, header, rows, target, out_dir) -> List[Path]:
     _ls, _le, _ts, older_end = week_bounds(older_day)
     older = build_week_tables(frame(older_end), older_day)
     older["titles"] = ("3 Weeks Ago", "2 Weeks Ago")
-    return [render(build_week_tables(frame(), target),
-                   out_dir / f"verizon_rep_activations_{target.isoformat()}.png"),
-            render(older, out_dir / f"verizon_rep_activations_{target.isoformat()}_older.png")]
+    recent = build_week_tables(frame(), target)
+    # ONE PICTURE (Carlos 2026-11-15: "let's keep it on one screenshot ... it
+    # doesn't need to be separated into two"): the older pair on top, the
+    # newest pair below, drawn with the house renderer's own table pieces.
+    return [_four_tables_png(older, recent, out_dir / f"verizon_rep_activations_{target.isoformat()}.png")]
+
+
+def _four_tables_png(older: dict, recent: dict, out_path: Path) -> Path:
+    """2 x 2 grid of the house Rep Activations tables: 3 Weeks Ago | 2 Weeks
+    Ago over Last Week | This Week (rep_activations.render's pieces)."""
+    from PIL import Image
+    from automations.rep_activations import render as R
+    fonts = (R._font(16 * R.S, bold=True), R._font(12 * R.S, bold=True),
+             R._font(12 * R.S), R._font(12 * R.S, bold=True))
+    cols = R._cols(recent.get("pending_cols"))
+    alert = frozenset(recent.get("alert_cols") or ())
+    rows_of = []
+    for summary in (older, recent):
+        names = summary.get("titles") or ("Last Week", "This Week")
+        rows_of.append((R._build_table(f"{names[0]}: {summary['last']['label']}", summary["last"], fonts, cols, alert),
+                        R._build_table(f"{names[1]}: {summary['this']['label']}", summary["this"], fonts, cols, alert)))
+    col_w = [max(r[c].width for r in rows_of) for c in range(2)]
+    row_h = [max(im.height for im in r) for r in rows_of]
+    W = R.PAD * R.S * 2 + col_w[0] + R.GAP * R.S + col_w[1]
+    H = R.PAD * R.S * 2 + row_h[0] + R.GAP * R.S + row_h[1]
+    canvas = Image.new("RGB", (W, H), R.WHITE)
+    y = R.PAD * R.S
+    for k, (left, right) in enumerate(rows_of):
+        canvas.paste(left, (R.PAD * R.S, y))
+        canvas.paste(right, (R.PAD * R.S + col_w[0] + R.GAP * R.S, y))
+        y += row_h[k] + R.GAP * R.S
+    out_path = Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    canvas.resize((W // R.S, H // R.S), Image.LANCZOS).save(out_path)
+    return out_path
 
 
 def pending_orders(owner, header, rows, target, out_dir) -> Tuple[List[Path], int]:
@@ -451,8 +483,10 @@ def build(owner: str, sv_path: Path, target: dt.date, out_dir: Path) -> List[Dic
         elif slug in ("revenue_board", "activation_revenue", "rep_tiers"):
             # Priced on Credico's comp grid (verizon_office.comp); these read
             # the file themselves -- they need fields the NDS rows don't carry.
+            # The overview goes as ONE picture (Carlos 2026-11-15).
             from automations.verizon_office import revenue as RV
-            got = getattr(RV, slug)(owner, Path(sv_path).resolve(), target, out_dir.resolve())
+            fn = RV.activation_revenue_one if slug == "activation_revenue" else getattr(RV, slug)
+            got = fn(owner, Path(sv_path).resolve(), target, out_dir.resolve())
             paths = got if isinstance(got, list) else [got]
         elif slug == "order_log":
             kind, paths = "file", [order_log(owner, header, rows, target, out_dir)[0]]

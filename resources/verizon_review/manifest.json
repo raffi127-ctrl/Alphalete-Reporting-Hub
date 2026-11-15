@@ -40,7 +40,7 @@
     {
       "key": "rep_activations",
       "title": "🆕 Rep Activations",
-      "what": "The last 4 weeks per rep (two pictures: this + last week, then the two before): activated, pending, total, canceled/disconnected.",
+      "what": "The last 4 weeks per rep on one picture (3 weeks ago, 2 weeks ago, last week, this week): activated, pending, total, canceled/disconnected.",
       "when": "Daily, same *Verizon Metrics* thread, right after the sales board.",
       "files": [
         "rep_activations_1.png",
@@ -102,7 +102,7 @@
     {
       "key": "activation_revenue",
       "title": "💵 Activation Revenue Overview",
-      "what": "4 weeks (two pictures): activated $, canceled $ and still-open $ by rep, on Credico's comp grid.",
+      "what": "4 weeks on one picture: activated $, canceled $ and still-open $ by rep, on Credico's comp grid.",
       "when": "Daily, same *Verizon Metrics* thread, right after the sales board.",
       "files": [
         "activation_revenue_1.png",

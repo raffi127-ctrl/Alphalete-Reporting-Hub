@@ -6,7 +6,7 @@ Carlos's "What's missing" (2026-11-07), the three that needed the comp grid:
                       week + weekly tier + week total incl. the activation
                       bonus -- Carlos's own Vantura Revenue Board renderer.
   activation_revenue  Activation Revenue Overview: activated / canceled /
-                      still-open $ by rep, 4 weeks as two pictures (pay runs
+                      still-open $ by rep, 4 weeks on one picture (pay runs
                       two weeks behind) -- the fiber/Box dollar tables.
   rep_tiers           Rep Tiered Ranking: each rep's unique orders this sales
                       week, their weekly bonus tier, and what the next tier
