@@ -422,12 +422,50 @@ def _ampm(start):
     return "pm" if t.endswith("PM") else "am" if t.endswith("AM") else ""
 
 
+def _short_time(t):
+    """'08:15 AM' -> '8:15'."""
+    return (t or "").strip().upper().replace(" AM", "").replace(
+        " PM", "").lstrip("0")
+
+
 def _slot_list(lst):
+    """One line for a half-day: '5 times, 8:15-10:15 AM · 24 seats each'.
+    Megan 2026-11-15: every time listed out was "a lot to look at"."""
     if not lst:
         return "<span class='s'>none</span>"
-    return ", ".join("{}{}".format(
-        _e(x.get("start", "").lstrip("0")),
-        " ({})".format(x["seats"]) if x.get("seats") else "") for x in lst)
+    first, last = lst[0].get("start", ""), lst[-1].get("start", "")
+    span = _short_time(first) if first == last else "{}\u2013{}".format(
+        _short_time(first), _short_time(last))
+    seats = sorted({x["seats"] for x in lst if x.get("seats")})
+    each = ("" if not seats else " \u00b7 {} seats{}".format(
+        seats[0], " each" if len(lst) > 1 else "")
+            if len(seats) == 1 else " \u00b7 {}\u2013{} seats".format(
+                seats[0], seats[-1]))
+    return "<b>{} time{}</b>, {} {}{}".format(
+        len(lst), "" if len(lst) == 1 else "s", _e(span),
+        _ampm(last).upper(), each)
+
+
+DAY_SHORT = {"Monday": "Mon", "Tuesday": "Tue", "Wednesday": "Wed",
+             "Thursday": "Thu", "Friday": "Fri", "Saturday": "Sat",
+             "Sunday": "Sun"}
+
+
+def slot_rows(hours):
+    """[(day label, morning html, afternoon html)] with days in a row that
+    are set the same folded into one ('Mon\u2013Fri')."""
+    rows = []
+    for day in ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday",
+                "Saturday", "Sunday"):
+        lst = hours.get(day) or []
+        am = _slot_list([x for x in lst if _ampm(x.get("start")) == "am"])
+        pm = _slot_list([x for x in lst if _ampm(x.get("start")) == "pm"])
+        if rows and rows[-1][2:] == [am, pm]:
+            rows[-1][1] = day
+        else:
+            rows.append([day, day, am, pm])
+    return [(DAY_SHORT[a] if a == b else "{}\u2013{}".format(
+        DAY_SHORT[a], DAY_SHORT[b]), am, pm) for a, b, am, pm in rows]
 
 
 def _flags_html(flags):
@@ -450,9 +488,13 @@ def _badge(n):
     return ("<span class='fl'>\u2691 {}</span>".format(n) if n else "")
 
 
-def _head(title, n, when=None):
-    return "<h2 class='k'>{}{} {}</h2>".format(
-        _e(title), _e(_when(when)), _badge(n))
+def _head(title, n, when=None, checked=False):
+    """`checked`: a section we grade, so a clean one says so in green
+    (Megan 2026-11-15: "this section should check green")."""
+    ok = (" <span class='okay'>\u2713 matches our standard</span>"
+          if checked and not n else "")
+    return "<h2 class='k'>{}{} {}{}</h2>".format(
+        _e(title), _e(_when(when)), _badge(n), ok)
 
 
 def _onoff(state):
@@ -462,22 +504,45 @@ def _onoff(state):
         "ON" if on else "OFF" if state == "Not Activated" else "NONE")
 
 
-def render(setup):
-    """HTML for page 2."""
+# Megan 2026-11-15: the setup page split in two tabs. AI Settings is
+# everything set on ApplicantStream's AI Settings page; Templates is the
+# text + email wording.
+AI_PARTS = ("ai", "prefs", "replies")
+TEMPLATE_PARTS = ("sms", "email")
+
+
+def flag_total(setup, parts):
+    """How many flags fall on one tab."""
     s = setup or {}
     n = s.get("flags") or count(s)
-    total = sum(n.values())
-    L = []
+    return sum(n.get(k) or 0 for k in parts)
+
+
+def _intro(total, what):
+    out = ["<p class='s'>{}, as of the last pull. <span class='fl'>\u2691"
+           "</span> marks what we recommend changing or setting up, and why."
+           "</p>".format(what)]
+    if total:
+        out.append("<p class='flagsum'>\u2691 {} thing{} we recommend "
+                   "changing</p>".format(total, "" if total == 1 else "s"))
+    return out
+
+
+def render(setup):
+    """Both setup tabs, one after the other (for tests and old callers)."""
+    return render_ai(setup) + "\n" + render_templates(setup)
+
+
+def render_ai(setup):
+    """HTML for the AI Settings tab."""
+    s = setup or {}
+    n = s.get("flags") or count(s)
+    L = _intro(flag_total(s, AI_PARTS),
+               "What ApplicantStream's AI is set to")
     add = L.append
     when = s.get("pulled") or {}
-    add("<p class='s'>What ApplicantStream is set to, as of the last pull. "
-        "<span class='fl'>\u2691</span> marks what we recommend changing "
-        "or setting up, and why.</p>")
-    if total:
-        add("<p class='flagsum'>\u2691 {} thing{} we recommend changing"
-            "</p>".format(total, "" if total == 1 else "s"))
 
-    add(_head("AI Settings", n.get("ai"), when.get("ai")))
+    add(_head("Office info the AI uses", n.get("ai"), when.get("ai")))
     if "info" not in s:
         add("<p class='s'>Not pulled yet.</p>")
     else:
@@ -489,13 +554,15 @@ def render(setup):
                 _flags_html([flag]) if flag else ""))
         add("</table>{}</div>".format(_flags_html(s.get("info_flags"))))
 
-        add(_head("Buffer times + ghosting", n.get("prefs")))
+        add(_head("Buffer times + ghosting", n.get("prefs"), checked=True))
         add("<div class='truth'><table class='prefs'><tr><th></th>"
             "<th>Set now</th><th>Our standard</th></tr>")
         for label, now, want, meaning, flag in s["prefs"]:
             add("<tr{}><td><b>{}</b><br><span class='s'>{}</span></td>"
-                "<td>{}</td><td>{}</td></tr>".format(
+                "<td{}>{}{}</td><td>{}</td></tr>".format(
                     " class='diff'" if flag else "", _e(label), _e(meaning),
+                    "" if flag else " class='okay'",
+                    "" if flag else "\u2713 ",
                     _e(_mins(now)) if now not in (None, "") else
                     "<i>blank</i>", _e(_mins(want))))
             if flag:
@@ -510,16 +577,11 @@ def render(setup):
     else:
         add("<div class='truth'><table class='list'><tr><th>Day</th>"
             "<th>Morning</th><th>Afternoon</th></tr>")
-        for day in ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday",
-                    "Saturday", "Sunday"):
-            lst = s["hours"].get(day) or []
-            am = [x for x in lst if _ampm(x.get("start")) == "am"]
-            pm = [x for x in lst if _ampm(x.get("start")) == "pm"]
+        for label, am, pm in slot_rows(s["hours"]):
             add("<tr><td><b>{}</b></td><td>{}</td><td>{}</td></tr>".format(
-                day, _slot_list(am), _slot_list(pm)))
-        add("</table><p class='s'>The number in brackets is how many "
-            "people that time holds. 2nd-round times aren't pulled yet."
-            "</p></div>")
+                label, am, pm))
+        add("</table><p class='s'>Seats = how many people each time holds. "
+            "2nd-round times aren't pulled yet.</p></div>")
 
     add(_head("AI replies (escalations)", n.get("replies"), when.get("ai")))
     if "replies" not in s:
@@ -555,6 +617,17 @@ def render(setup):
                             "<i class='s'>nothing (blank)</i>",
                             _flags_html(flags)))
             add("</table></div></details>")
+    return "\n".join(L)
+
+
+def render_templates(setup):
+    """HTML for the Templates tab."""
+    s = setup or {}
+    n = s.get("flags") or count(s)
+    L = _intro(flag_total(s, TEMPLATE_PARTS),
+               "What your text and email templates say")
+    add = L.append
+    when = s.get("pulled") or {}
 
     add(_head("SMS templates", n.get("sms"), when.get("templates")))
     if "sms" not in s:
@@ -612,12 +685,18 @@ CSS = """
 .tabs label{flex:1;text-align:center;padding:.55em .4em;border-radius:8px;
      border:2px solid var(--ink);cursor:pointer;font-weight:bold;
      background:#fff}
-#pg0,#pg1,#pg2{display:none}
+#pg0,#pg1,#pg2,#pg3{display:none}
 #pg0:checked~.tabs label[for=pg0],#pg1:checked~.tabs label[for=pg1],
-#pg2:checked~.tabs label[for=pg2]{
+#pg2:checked~.tabs label[for=pg2],#pg3:checked~.tabs label[for=pg3]{
      background:var(--ink);color:#fff}
-.page0,.page1,.page2{display:none}
-#pg0:checked~.page0,#pg1:checked~.page1,#pg2:checked~.page2{display:block}
+.page0,.page1,.page2,.page3{display:none}
+#pg0:checked~.page0,#pg1:checked~.page1,#pg2:checked~.page2,
+#pg3:checked~.page3{display:block}
+.tabs .fl{font-size:.8em;margin-left:.3em}
+.okay{color:#156E46;font-weight:bold}
+h2 .okay{font-size:.85em;margin-left:.4em;text-transform:none;
+     letter-spacing:0}
+.prefs td:nth-child(2),.prefs td:nth-child(3){white-space:nowrap}
 table.prefs th{font-size:.8em;color:var(--muted);text-align:left;
      font-weight:normal;padding:.2em .3em}
 table.prefs td{text-align:left;white-space:normal}

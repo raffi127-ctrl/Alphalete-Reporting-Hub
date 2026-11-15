@@ -342,8 +342,8 @@ class SlotsTest(unittest.TestCase):
         setup = P.gather()
         setup["hours"] = self._hours(1, 1)
         out = P.render(setup)
-        self.assertIn("9:00 AM (2)", out)
-        self.assertIn("1:00 PM (2)", out)
+        self.assertIn("9:00 AM \u00b7 2 seats", out)
+        self.assertIn("1:00 PM \u00b7 2 seats", out)
 
 
 class SetupPageTest(unittest.TestCase):
@@ -382,7 +382,11 @@ class SetupPageTest(unittest.TestCase):
         c = C.build("1", setup=setup)
         out = C.render(c)
         # the switch is radio tabs, not #links
-        self.assertIn("<label for='pg2'>AppStream setup</label>", out)
+        self.assertIn("<label for='pg2'>AI Settings", out)
+        self.assertIn("<label for='pg3'>Templates", out)
+        ai = out[out.index("<div class='page2'>"):out.index("<div class='page3'>")]
+        self.assertIn("45 min", ai)               # buffers on the AI tab
+        self.assertNotIn("SMS templates", ai)     # templates are not
         page2 = out[out.index("<div class='page2'>"):]
         self.assertIn("45 min", page2)            # buffer as set now
         self.assertIn("60 min (1 hr)", page2)     # next to our standard
@@ -443,6 +447,25 @@ class SetupPageTest(unittest.TestCase):
         comp = got["Compensation"][3][0]
         self.assertTrue(comp["link"].endswith("#q16"))  # blank -> our 5
         self.assertIn("What your current reply says:", P.render(setup))
+
+    def test_slot_rows_fold_matching_days(self):
+        from automations.applicant_stream_card import setup_page as P
+        mk = lambda t: {"start": t, "end": t, "seats": 24}
+        week = {d: [mk("08:15 AM"), mk("08:45 AM"), mk("12:15 PM")]
+                for d in ("Monday", "Tuesday", "Wednesday", "Thursday",
+                          "Friday")}
+        rows = P.slot_rows(week)
+        self.assertEqual([r[0] for r in rows], ["Mon\u2013Fri", "Sat\u2013Sun"])
+        self.assertIn("2 times", rows[0][1])
+        self.assertIn("8:15\u20138:45 AM", rows[0][1])
+        self.assertIn("24 seats each", rows[0][1])
+        self.assertIn("1 time</b>, 12:15 PM", rows[0][2])
+
+    def test_clean_buffers_check_green(self):
+        from automations.applicant_stream_card import setup_page as P
+        self.assertIn("matches our standard", P._head("x", 0, checked=True))
+        self.assertNotIn("matches our standard", P._head("x", 2, checked=True))
+        self.assertNotIn("matches our standard", P._head("x", 0))
 
     def test_page_two_says_not_pulled(self):
         out = C.render(C.build("1"))

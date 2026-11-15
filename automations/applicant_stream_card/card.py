@@ -898,14 +898,25 @@ def render(card, scorecard_css=""):
     # Page 2 (Megan 2026-11-13): what AppStream is set to. Radio tabs, so the
     # switch works with no script and no #links (dead in the app pane).
     # Trend first (Megan 2026-11-13: "a 'trend' section as the 1st page").
+    # Megan 2026-11-15: AppStream setup split into AI Settings + Templates,
+    # each tab showing its own flag count.
+    setup = card.get("setup")
+
+    def _tab(n):
+        return " <span class='fl'>\u2691 {}</span>".format(n) if n else ""
     add("<input type='radio' name='pg' id='pg0' checked>"
         "<input type='radio' name='pg' id='pg1'>"
         "<input type='radio' name='pg' id='pg2'>"
+        "<input type='radio' name='pg' id='pg3'>"
         "<div class='tabs'><label for='pg0'>Trend</label>"
         "<label for='pg1'>Grade card</label>"
-        "<label for='pg2'>AppStream setup</label></div>"
+        "<label for='pg2'>AI Settings{}</label>"
+        "<label for='pg3'>Templates{}</label></div>"
         "<div class='page0'>{}</div>"
-        "<div class='page1'>".format(trend_html(card.get("vitals"))))
+        "<div class='page1'>".format(
+            _tab(SP.flag_total(setup, SP.AI_PARTS)),
+            _tab(SP.flag_total(setup, SP.TEMPLATE_PARTS)),
+            trend_html(card.get("vitals"))))
 
     if card.get("grading"):
         add("<div class='truth'><b>Make sure these are correct.</b> This is "
@@ -993,6 +1004,8 @@ def render(card, scorecard_css=""):
         add("</table><p class='s'>Read-only. Grey means not checked, never "
             "passed.</p></div></details>")
     add("</div><div class='page2'>")
-    add(SP.render(card.get("setup")))
+    add(SP.render_ai(setup))
+    add("</div><div class='page3'>")
+    add(SP.render_templates(setup))
     add("</div>{}</body></html>".format(SP.COPY_JS))
     return "\n".join(L)
