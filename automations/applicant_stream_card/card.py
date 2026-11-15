@@ -428,23 +428,45 @@ def best_times(st):
     return _line("times", "\U0001F552", title, GREEN, short, "", facts)
 
 
+CHANCE = "too few people to be sure"
+
+
+def _driver_html(d):
+    """One factor: best vs worst on the row; tap for every group."""
+    rows = "".join(
+        "<tr><td>{}</td><td>{:.0f}%</td><td class='s'>{} people</td></tr>"
+        .format(_e(v), r, n) for v, r, n in d["groups"])
+    return ("<details class='drv'><summary><span class='t'>{}</span>"
+            "<span class='s'>best {} {:.0f}% vs worst {} {:.0f}%{}</span>"
+            "</summary><div class='body'><table class='list'>{}</table>"
+            "</div></details>".format(
+                _e(d["label"]), _e(d["best"][0]), d["best"][1],
+                _e(d["worst"][0]), d["worst"][1],
+                "" if d["real"] else " ({})".format(CHANCE), rows))
+
+
 def drivers(st):
     dr = list((st or {}).get("drivers") or [])
     title = "What moves show-ups most"
     if not dr:
         return _line("drivers", "\U0001F4C8", title, GREY, "Not enough data")
-    facts = [(d["label"], "{} {:.0f}% vs {} {:.0f}%{}".format(
-                d["best"][0], d["best"][1], d["worst"][0], d["worst"][1],
-                "" if d["real"] else " (could be chance)"))
-             for d in dr[:5]]
+    # Megan 2026-11-15: each row is best vs worst; a tap shows every group.
+    # "Could be chance" read as jargon: say what it means.
+    text = ("Show-up rate for the best and worst group of each. Tap one to "
+            "see every group. \u201c{}\u201d means the gap is small for how "
+            "few people are in it, so it may just be luck.".format(CHANCE))
     top = [d for d in dr if d["real"]][:1]
     if not top:
-        return _line("drivers", "\U0001F4C8", title, GREEN,
-                     "Nothing stands out yet", "", facts)
-    d = top[0]
-    short = "{}: {} {:.0f}% vs {} {:.0f}%".format(
-        d["label"], d["best"][0], d["best"][1], d["worst"][0], d["worst"][1])
-    return _line("drivers", "\U0001F4C8", title, GREEN, short, "", facts)
+        ln = _line("drivers", "\U0001F4C8", title, GREEN,
+                   "Nothing stands out yet", text, [])
+    else:
+        d = top[0]
+        short = "{}: {} {:.0f}% vs {} {:.0f}%".format(
+            d["label"], d["best"][0], d["best"][1], d["worst"][0],
+            d["worst"][1])
+        ln = _line("drivers", "\U0001F4C8", title, GREEN, short, text, [])
+    ln["extra_html"] = "".join(_driver_html(d) for d in dr[:6])
+    return ln
 
 
 def recruiters(rows):
@@ -651,6 +673,8 @@ ol.replies li{margin:.45em 0}
      grid-template-columns:minmax(0,1fr) auto 6.5em;gap:.7em;
      align-items:center}
 .vitals details.vital>summary:after{display:none}
+details.drv{margin:.3em 0}
+details.drv>summary{flex-wrap:wrap;gap:.2em .6em}
 label.go{color:#1a56c4;font-weight:bold;cursor:pointer;text-decoration:underline}
 .vn{font-weight:bold}
 .vv{text-align:right;display:flex;flex-direction:column;line-height:1.2}
@@ -852,6 +876,7 @@ def _line_html(ln):
     if ln["text"]:
         out.append("<p class='why'>{}</p>".format(_e(ln["text"])))
     out.append(_facts(ln["facts"]))
+    out.append(ln.get("extra_html") or "")
     out.append(_fixes_html(ln.get("fixes")))
     if ln["items"]:
         out.append("<ul class='acts'>")

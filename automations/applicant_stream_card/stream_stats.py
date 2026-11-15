@@ -307,6 +307,17 @@ def _lead_bucket(t):
     return "same day" if d <= 0 else "next day" if d == 1 else "2+ days out"
 
 
+def _processed_bucket(t):
+    """Days from the resume being processed to the day of the 1st round,
+    the same count as Time to book (Megan 2026-11-15)."""
+    if not (t["pushed"] and t["slot"]):
+        return None
+    d = (t["slot"].date() - t["pushed"].date()).days
+    if d < 0:
+        return None
+    return "same day" if d == 0 else "next day" if d == 1 else "2+ days"
+
+
 def _push_bucket(t):
     h = _hours(t["pushed"], t["booked"])
     if h is None:
@@ -323,9 +334,9 @@ def _part_of_day(t):
 
 # (what it is, plain question on the card, how to read one level)
 FACTORS = (
-    ("push", "How fast they were booked after their resume was pushed",
-     _push_bucket),
-    ("lead", "How far out the interview was set", _lead_bucket),
+    ("processed", "Days from processing to the 1st round",
+     _processed_bucket),
+    ("lead", "Days from booking to the 1st round", _lead_bucket),
     ("booker", "Who booked them",
      lambda t: "the AI" if t["ai"] else "a recruiter"),
     ("resched", "Whether the interview was moved",
