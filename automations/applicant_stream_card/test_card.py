@@ -689,12 +689,21 @@ class CardTest(unittest.TestCase):
         self.assertIn("never reach", line["action"])
         self.assertEqual(dv["numbers"][0][0], "+1469")
 
-    def test_grading_box_is_at_the_top(self):
+    def test_grading_box_is_on_templates_tab(self):
         c = C.build("1", grading=[("Address", "5217 Tennyson Pkwy", "AI "
                                    "Settings")])
         out = C.render(c)
-        self.assertLess(out.index("what we're grading against"),
-                        out.index("Your scorecard"))
+        tpl = out[out.index("<div class='page3'>"):]
+        self.assertIn("what we check your templates against", tpl)
+
+    def test_each_line_on_its_tab(self):
+        out = C.render(C.build("11280", stats=S.summary(office_week())))
+        human = out[out.index("<div class='page1'>"):out.index("<div class='page2'>")]
+        vitals = out[out.index("<div class='page0'>"):out.index("<div class='page4'>")]
+        self.assertIn("AI vs recruiters", human)
+        self.assertNotIn("Address, Zoom, phone", human)
+        self.assertNotIn("Time to book", human)
+        self.assertIn("Time to book", vitals)
 
     def test_renders(self):
         html = C.render(C.build("11280", stats=S.summary(office_week())))

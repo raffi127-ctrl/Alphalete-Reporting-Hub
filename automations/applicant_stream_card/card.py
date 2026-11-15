@@ -829,6 +829,44 @@ TAB_OF = {"Templates": ("pg3", "Templates"), "AI Settings": ("pg2", "AI Settings
           "AI replies": ("pg2", "AI Settings")}
 
 
+# Which tab each scorecard line sits on (Megan 2026-11-15).
+HUMAN_KEYS = ("who",)                       # + recruiter typing, recruiters
+VITALS_KEYS = ("speed", "times", "drivers")
+AI_KEYS = ("slots",)
+TEMPLATE_KEYS = ("delivery",)
+
+
+def _line_html(ln):
+    """One scorecard line as a tap-to-open row."""
+    out = ["<details><summary><span class='dot' style='background:{}'>"
+           "</span><span class='row'><span class='t'>{} {}</span>"
+           "<span class='s'>{}</span></span></summary><div class='body'>"
+           .format(DOT[ln["dot"]], ln["icon"], _e(ln["title"]),
+                   _e(ln["short"]))]
+    if ln["text"]:
+        out.append("<p class='why'>{}</p>".format(_e(ln["text"])))
+    out.append(_facts(ln["facts"]))
+    out.append(_fixes_html(ln.get("fixes")))
+    if ln["items"]:
+        out.append("<ul class='acts'>")
+        for i in sorted(ln["items"], key=_rank):
+            out.append("<li><details><summary>{}</summary><div class='body'>"
+                       "{}</div></details></li>".format(
+                           _e(i["action"]), _fix_body(i) + _tab_link(i)))
+        out.append("</ul>")
+    out.append("</div></details>")
+    return "".join(out)
+
+
+def _lines_html(card, keys, title):
+    lines = {ln["key"]: ln for ln in card["lines"]}
+    got = [lines[k] for k in keys if k in lines]
+    if not got:
+        return ""
+    return "<h2 class='k'>{}</h2>{}".format(
+        _e(title), "".join(_line_html(ln) for ln in got))
+
+
 def _todo_html(card):
     """The 'Fix these first' tab (Megan 2026-11-15: "we should have like a
     fix these first tab")."""
@@ -957,7 +995,7 @@ def render(card, scorecard_css=""):
         "<input type='radio' name='pg' id='pg4'>"
         "<div class='tabs'><label for='pg0'>Vitals</label>"
         "<label for='pg4'>Fix these first{}</label>"
-        "<label for='pg1'>Grade card</label>"
+        "<label for='pg1'>Human Grade Card</label>"
         "<label for='pg2'>AI Settings{}{}</label>"
         "<label for='pg3'>Templates{}</label></div>"
         "<div class='page0'>{}</div>"
@@ -969,40 +1007,27 @@ def render(card, scorecard_css=""):
             " <span class='fl'>not set up</span>" if SP.no_ai(setup)
             else "",
             _tab(SP.flag_total(setup, SP.TEMPLATE_PARTS)),
-            trend_html(card.get("vitals")) + CH.html(
-                card.get("changes"), card.get("vitals")),
+            trend_html(card.get("vitals"))
+            + _lines_html(card, VITALS_KEYS, "Bookings and show-ups")
+            + CH.html(card.get("changes"), card.get("vitals")),
             _todo_html(card)))
 
-    if card.get("grading"):
-        add("<div class='truth'><b>Make sure these are correct.</b> This is "
-            "what we're grading against.<table>")
-        for row in card["grading"]:
-            label, value = row[0], row[1]
-            add("<tr><td>{}</td><td>{}</td></tr>".format(
-                _e(label), _e(value) if value else "<i>not on file</i>"))
-        add("</table></div>")
 
+    # Megan 2026-11-15: the Human Grade Card grades PEOPLE. Template and AI
+    # setup items live on their own tabs (each flag is already shown there,
+    # next to the thing it's about); booking timing goes on Vitals.
+    lines = {ln["key"]: ln for ln in card["lines"]}
+    human = [lines[k] for k in HUMAN_KEYS if k in lines]
+    words = lines.get("words")
+    if words:
+        mine = [i for i in words["items"]
+                if i.get("source") == "Recruiter texts"]
+        human.append(_checked_line("words", "\u270d\ufe0f",
+                                   "Recruiter typing + wording", mine, [],
+                                   set()))
     add("<h2 class='k'>Your scorecard</h2>")
-    for ln in card["lines"]:
-        if ln["key"] == "recruiters":
-            continue
-        add("<details><summary><span class='dot' style='background:{}'>"
-            "</span><span class='row'><span class='t'>{} {}</span>"
-            "<span class='s'>{}</span></span></summary><div class='body'>"
-            .format(DOT[ln["dot"]], ln["icon"], _e(ln["title"]),
-                    _e(ln["short"])))
-        if ln["text"]:
-            add("<p class='why'>{}</p>".format(_e(ln["text"])))
-        add(_facts(ln["facts"]))
-        add(_fixes_html(ln.get("fixes")))
-        if ln["items"]:
-            add("<ul class='acts'>")
-            for i in sorted(ln["items"], key=_rank):
-                add("<li><details><summary>{}</summary><div class='body'>"
-                    "{}</div></details></li>".format(
-                        _e(i["action"]), _fix_body(i) + _tab_link(i)))
-            add("</ul>")
-        add("</div></details>")
+    for ln in human:
+        add(_line_html(ln))
 
     rc = next((ln for ln in card["lines"] if ln["key"] == "recruiters"), None)
     if rc:
@@ -1042,8 +1067,20 @@ def render(card, scorecard_css=""):
         add("</table><p class='s'>Read-only. Grey means not checked, never "
             "passed.</p></div></details>")
     add("</div><div class='page2'>")
+    add(_lines_html(card, AI_KEYS, "At a glance"))
     add(SP.render_ai(setup))
     add("</div><div class='page3'>")
+    if card.get("grading"):
+        # What the template checks grade against (moved off the Human
+        # Grade Card, Megan 2026-11-15).
+        add("<div class='truth'><b>Make sure these are correct.</b> This is "
+            "what we check your templates against.<table>")
+        for row in card["grading"]:
+            label, value = row[0], row[1]
+            add("<tr><td>{}</td><td>{}</td></tr>".format(
+                _e(label), _e(value) if value else "<i>not on file</i>"))
+        add("</table></div>")
+    add(_lines_html(card, TEMPLATE_KEYS, "At a glance"))
     add(SP.render_templates(setup))
     add("</div>{}</body></html>".format(SP.COPY_JS))
     return "\n".join(L)
