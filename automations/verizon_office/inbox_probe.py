@@ -61,11 +61,14 @@ def run(office_key: str, days: int, log=print) -> List[List[str]]:
     dest = Path(tempfile.gettempdir()) / "verizon_inbox_probe"
     rows = [["File", "Sheet", "Header", "Phone-like columns"],
             ["probed", dt.datetime.now().isoformat(timespec="seconds"), "office " + office.office, "last %d days" % days]]
-    globs = ["*%s*" % office.office.split(",")[0], "*Verizon*", "*Churn*", "*Scorecard*", "*Bulletin*", "*Bonus*",
-             "*Compliance*", "*Sales Verification*"]
+    # ONE IMAP pass per sender with ONE glob: eight globs x two senders timed
+    # out at 15 minutes on Lucy 4 (2026-11-15). The any-sender pass is narrowed
+    # by subject, the way verizon_office.run.fetch does it (an all-mail search
+    # with no sender took 3+ minutes on 11/06).
+    globs = ["*.xlsx", "*.xlsm", "*.pdf"]
     seen = set()
-    for sender in (SENDER, ""):
-        found = email_ingest.fetch_by_globs(sender, globs, dest, since_days=days, verbose=False)
+    for sender, subject in ((SENDER, None), ("", "Verizon")):
+        found = email_ingest.fetch_by_globs(sender, globs, dest, subject=subject, since_days=days, verbose=False)
         for fname, path in found.items():
             if fname in seen:
                 continue

@@ -18097,7 +18097,7 @@
    "verify": {
     "type": "not_configured"
    },
-   "timeout_minutes": 15
+   "timeout_minutes": 40
   },
   "verizon_review_post": {
    "on_scheduler": false,
