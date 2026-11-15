@@ -151,6 +151,37 @@ def _activations_today(o: B2BOffice, out_dir: Path, log, today=None):
     return b2b.image(o, out_dir, log=log, today=today)
 
 
+# Offices whose Total Knocks board carries the 7 consumer-tally columns
+# (OwnerVille CRU/IRU Engagement → Consumer Tally). Jamis asked 2026-11-14;
+# widen by adding keys once another B2B office wants them.
+CONSUMER_TALLY_OFFICES = {"jamis"}
+
+
+def _consumer_columns(o: B2BOffice, day: dt.date, rows: list, log):
+    """{column: {rep: n}} for the far-right consumer columns, or None.
+
+    A rep on the knocks board with no consumer tallies gets 0 — the tally
+    call returns only reps who logged one, so a missing rep IS a proven zero.
+    A FAILED pull returns None: the knocks board still posts (business-only)
+    and the log says so loudly, rather than the whole section failing."""
+    if o.key not in CONSUMER_TALLY_OFFICES:
+        return None
+    from automations.b2b_metrics import consumer_tally as ct
+    try:
+        reps = ct.pull(o.knocks_office, day)
+    except Exception as e:  # noqa: BLE001
+        log("  [knocks] ⚠ consumer tallies FAILED for {} {} — posting the "
+            "board without them: {}".format(o.knocks_office, day, str(e)[:160]))
+        return None
+    cols = ct.extra_columns(reps)
+    names = [r.get("Rep") for r in rows if r.get("Rep")]
+    for col in cols.values():
+        for n in names:
+            col.setdefault(n, 0)
+    log("  [knocks] consumer tallies: {} rep(s) for {}".format(len(reps), day))
+    return cols
+
+
 class NoKnocksLogged(Exception):
     """The knocks pull COMPLETED and the office logged nothing that day — a
     proven zero, not a failure. Posts one line instead of an image."""
@@ -179,10 +210,11 @@ def _knocks(o: B2BOffice, out_dir: Path, log, today=None):
     if not rows:
         raise NoKnocksLogged(target)
     # The ICD's name on top of the chart, like every other office knocks
-    # board (Megan 2026-11-13).
-    pngs, shape = knocks_render.render_knocks_boards(target, rows=rows,
-                                                     out_dir=out_dir,
-                                                     title_suffix=o.owner)
+    # board (Megan 2026-11-13). Consumer tallies ride at the far right for the
+    # offices that asked (Jamis 2026-11-14, Megan picked "B, far right").
+    pngs, shape = knocks_render.render_knocks_boards(
+        target, rows=rows, out_dir=out_dir, title_suffix=o.owner,
+        end_columns=_consumer_columns(o, target, rows, log))
     log("  [knocks] {} rep(s), {} board, {}".format(len(rows), shape, target))
     return pngs[0] if len(pngs) == 1 else pngs
 

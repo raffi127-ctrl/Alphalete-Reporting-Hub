@@ -938,7 +938,8 @@ def _draw(header: list[str], rows: list[list[str]], title: str, theme: dict,
           cell_bgs: "dict | None" = None,
           col_min_w: "dict | None" = None,
           section_rows: "dict | None" = None,
-          header_before: "set | None" = None) -> Path:
+          header_before: "set | None" = None,
+          col_shades: "dict | None" = None) -> Path:
     """Generic table → PNG. `name_col` (0-based) is left-aligned + bold.
 
     wrap_headers=False (default): every existing board unchanged — column
@@ -982,6 +983,11 @@ def _draw(header: list[str], rows: list[list[str]], title: str, theme: dict,
     can lead the group of rows under it. highlight_first_row /
     highlight_last_row can only ever reach the two ENDS of the table, which
     is why this exists. None = every existing board byte-identical.
+    col_shades (Megan 2026-11-15, Midspire consumer tallies: "make them a
+    different shade to differentiate"): {column_index: (header, row, total)}
+    — a column group drawn in its own colour family: its header cells, its
+    rep-row cells and its cells on highlighted (total) rows. cell_bgs still
+    paints over it. None = every existing board byte-identical.
     total_row_bgs (Megan 2026-08-23, "make Chan's row teal"): per-row fills
     for the trailing highlighted rows, in order — e.g. [plum, teal] paints
     the host OFFICE TOTALS plum and the comparison row teal. None = the
@@ -1078,8 +1084,10 @@ def _draw(header: list[str], rows: list[list[str]], title: str, theme: dict,
     def _header_band(y0: int, band_bg=None) -> int:
         x0 = PAD
         for ci in range(ncol):
+            _sh = (col_shades or {}).get(ci)
             d.rectangle([x0, y0, x0 + col_w[ci], y0 + header_h],
-                        fill=band_bg or theme["header_bg"])
+                        fill=(_sh[0] if _sh else None) or band_bg
+                        or theme["header_bg"])
             lines = head_lines[ci]
             block_h = head_lh * len(lines)
             ty = y0 + (header_h - block_h) // 2 + 1
@@ -1131,6 +1139,10 @@ def _draw(header: list[str], rows: list[list[str]], title: str, theme: dict,
         for ci in range(ncol):
             # One cell's own fill, painted over the row band. Drawn before the
             # text so the number sits on top of it.
+            _sh = (col_shades or {}).get(ci)
+            if _sh:
+                d.rectangle([x, y, x + col_w[ci], y + ROW_H],
+                            fill=_sh[2] if is_total else _sh[1])
             _cbg = (cell_bgs or {}).get((ri, ci))
             if _cbg:
                 d.rectangle([x, y, x + col_w[ci], y + ROW_H], fill=_cbg)
@@ -1283,6 +1295,7 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
                         apps: "dict[str, int] | None" = None,
                         credit_checks: "dict[str, int] | None" = None,
                         extra_columns: "dict | None" = None,
+                        end_columns: "dict | None" = None,
                         rate_columns: bool = True,
                         knocks_green_at: "int | None" = None,
                         first_knock_green_at: "int | None" = None,
@@ -1523,6 +1536,14 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
         # mins" on the NDS board. {column name: {rep: value}}.
         _insert_extra_columns(cols, disp, table, extra_columns,
                               n_extra=len(extra_rows), bands=bands)
+    if end_columns:
+        # Same shape as extra_columns, but at the FAR RIGHT of the board, in
+        # the caller's order — Midspire's consumer tallies (Megan 2026-11-15:
+        # "move the columns to the far right"), so the business board reads
+        # exactly as before and the consumer side follows it.
+        _insert_extra_columns(cols, disp, table, end_columns,
+                              n_extra=len(extra_rows), bands=bands,
+                              at_end=True)
     if fill_rep_rows:
         # EVERY CELL FILLED ON A REP ROW (Megan 2026-11-07, Verizon: "all
         # others should be filled/calculated in"). The two office averages,
@@ -1654,6 +1675,18 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
         _probe = ImageDraw.Draw(Image.new("RGB", (10, 10)))
         _min_w[0] = max(_text_w(_probe, w, _font(11 * SCALE, bold=True))
                         for w in COL_NUM_HEADER.split())
+    _shades = None
+    if end_columns:
+        _shades = {i: END_COLUMN_SHADE for i, name in enumerate(disp)
+                   if name in end_columns}
+        # Whole words in their headers ("Consumer", "Appointments"): these
+        # columns hold one- or two-digit counts, so without a floor the wrap
+        # rule hyphenates the label ("Consu-mer").
+        _probe2 = ImageDraw.Draw(Image.new("RGB", (10, 10)))
+        for i in _shades:
+            _min_w[i] = max(_min_w.get(i, 0), max(
+                _text_w(_probe2, w, _font(11 * SCALE, bold=True))
+                for w in disp[i].split()) + 8 * SCALE)
     return _draw(disp, table,
                  f"{title_prefix}TOTAL KNOCKS — {_office}"
                  f"{_date_text(target, end, date_text)}",
@@ -1677,7 +1710,8 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
                  # is also why _draw is told name_col=1 just above.
                  section_rows=_summary_bands or {i: band_color(table[i][1])
                                                  for i in bands} or None,
-                 header_before=set(bands) or None)
+                 header_before=set(bands) or None,
+                 col_shades=_shades or None)
 
 
 # The "#" column's header. It numbers the rep rows AND carries each summary
@@ -2028,9 +2062,16 @@ def _insert_credit_column(cols: list, disp: list, table: list,
         row.insert(at, v)
 
 
+# The far-right `end_columns` group (Midspire's consumer tallies) in its own
+# colour family so it reads apart from the business board: (header, rep-row
+# cell, total-row cell).
+END_COLUMN_SHADE = ((14, 92, 104), (224, 242, 244), (17, 118, 132))
+
+
 def _insert_extra_columns(cols: list, disp: list, table: list,
                           extra: dict, *, n_extra: int,
-                          bands: "dict | None" = None) -> None:
+                          bands: "dict | None" = None,
+                          at_end: bool = False) -> None:
     """Put each {name: {rep: value}} of `extra` into `cols`/`disp`/`table`
     IN PLACE, right after Total Knocks (after the rate columns have gone in,
     so the new column sits between Total Knocks and Avg Knocks / Hr).
@@ -2040,12 +2081,16 @@ def _insert_extra_columns(cols: list, disp: list, table: list,
     (blank when the caller gave none), team bands = the sum of their reps."""
     bands = bands or {}
     rep_at = cols.index(COL_REP)
-    for name in reversed(list(extra.keys())):     # keep the caller's order
+    # After Total Knocks, each insert lands at the same index, so walk the
+    # names backwards to keep the caller's order; at the end, walk forwards.
+    names = list(extra.keys()) if at_end else list(reversed(list(extra.keys())))
+    for name in names:
         mapping = extra[name] or {}
         by_key: dict = {}
         for k, v in mapping.items():
             by_key[_apps_key(k)] = by_key.get(_apps_key(k), 0) + int(v or 0)
-        at = (cols.index(COL_TOTAL_KNOCKS) + 1 if COL_TOTAL_KNOCKS in cols
+        at = (len(cols) if at_end
+              else cols.index(COL_TOTAL_KNOCKS) + 1 if COL_TOTAL_KNOCKS in cols
               else len(cols))
         values: list = []
         for i, row in enumerate(table):
@@ -2619,7 +2664,8 @@ def render_knocks_boards(target: dt.date, *, rows: "list[dict]",
                          credit_checks: "dict | None" = None,
                          teams=None,
                          kpis: "dict | None" = None,
-                         extra_columns: "dict | None" = None
+                         extra_columns: "dict | None" = None,
+                         end_columns: "dict | None" = None
                          ) -> "tuple[list[Path], str]":
     """Every board this row shape deserves, in post order: ([paths], shape).
 
@@ -2691,7 +2737,8 @@ def render_knocks_boards(target: dt.date, *, rows: "list[dict]",
             first_knock_green_at=first_knock_green_at, sort_by=sort_by,
             title_suffix=title_suffix, end=end, date_text=date_text,
             base_cols=base, out_cols=out, teams=teams, kpis=kpis,
-            credit_checks=credit_checks, extra_columns=extra_columns)], shape)
+            credit_checks=credit_checks, extra_columns=extra_columns,
+            end_columns=end_columns)], shape)
     elif shape == SHAPE_VERIZON:
         # Same renderer as every other shape; Verizon's columns. No
         # extra_totals: the comparison office is fiber.
