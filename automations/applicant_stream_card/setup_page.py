@@ -213,6 +213,9 @@ def marked(body, spans, warn=()):
 # Plain one-liners for the template flags people see most.
 PLAIN_FIX = {
     "CALL CHECK": "Do you actually call after this one, or only text?",
+    "WHO WE HIRE": "Take out the red word: it says who we hire",
+    "LOW PAY": "Change the pay to $1,000-$1,500 a week",
+    "TYPED ADDRESS": "Use the address fields instead of typing the address",
     "WRONG CITY": "Change the city in the red part to where you are",
     "NOT PLAIN TEXT": "Retype the red mark with your keyboard's plain ' or -",
     "PROMISES A CALL": "Take out the time you promise to call by",
@@ -257,6 +260,11 @@ def suggest(body, flags):
                 out = out.replace(m.group(1), m.group(1).capitalize())
         elif kind == "GRAMMAR":
             out = _fix_grammar(out, detail)
+        elif kind == "TYPED ADDRESS":
+            q = _quoted(detail)
+            if q and q in out:
+                out = out.replace(q, "officeAddress1, officeCity, "
+                                     "officeState officeZip")
         elif kind == "WRONG CITY":
             m = re.search("says \u201c(.+?)\u201d \u2014 this office is in "
                           "(.+?)\\.?$", detail)

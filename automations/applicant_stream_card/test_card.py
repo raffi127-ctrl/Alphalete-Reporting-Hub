@@ -563,6 +563,21 @@ class SetupPageTest(unittest.TestCase):
         self.assertIn("First Day of Training", P._sec_label("No Show - FDOT"))
         self.assertEqual(P._sec_label("Directions"), "Directions")
 
+    def test_ai_rules_on_templates(self):
+        from automations.applicant_stream_card import fixes as F
+        from automations.applicant_stream_card import setup_page as P
+        got = F.reply_rule_findings([("X", "x", "We pay $800 a week, young "
+                                      "guys welcome")])
+        self.assertEqual(sorted(k for k, _t in got), ["LOW PAY", "WHO WE HIRE"])
+        body = "Orientation at 5217 Tennyson Pkwy, Suite 100, Plano, TX 75024."
+        got = F.reply_rule_findings([("BOB", "x", body)], city="Plano")
+        self.assertEqual([k for k, _t in got], ["TYPED ADDRESS"])
+        self.assertIn("TYPED ADDRESS", F.WARN_KINDS)
+        fixed = P.suggest(body, [{"kind": "TYPED ADDRESS",
+                                  "detail": got[0][1].split(": ", 1)[1]}])
+        self.assertEqual(fixed, "Orientation at officeAddress1, officeCity, "
+                                "officeState officeZip.")
+
     def test_page_two_says_not_pulled(self):
         out = C.render(C.build("1"))
         self.assertIn("Not pulled yet", out[out.index("<div class='page2'>"):])

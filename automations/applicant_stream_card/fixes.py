@@ -409,7 +409,21 @@ REPLY_RULES = ("GRAMMAR",)
 # 3rd left message promising a call at all: "for second and third, we don't
 # always call ... are you making a promise you're not going to keep?" That
 # is an orange question, not a red fault, so it is never graded.
-WARN_KINDS = {"CALL CHECK"}
+WARN_KINDS = {"CALL CHECK", "TYPED ADDRESS"}
+
+# Megan 2026-07-09: never an age, gender or "who we hire" preference in
+# anything public (feedback_recruiting_copy_compliance).
+WHO_WE_HIRE = re.compile(
+    r"\b(young|guys|gentlemen|ladies|\d0-somethings?|twenty-somethings?|"
+    r"men only|women only|males?|females?|under \d\d|over \d\d|"
+    r"recent grads? only)\b", re.I)
+# appstream-ai-escalations.md rule: "Address lines are read from fields,
+# not typed" - a typed street address drifts (11280's Suite 207 / 100).
+TYPED_STREET = re.compile(
+    r"\b\d{2,6} [A-Z][A-Za-z]+(?: [A-Z][A-Za-z]+)? "
+    r"(Pkwy|Parkway|St|Street|Ave|Avenue|Rd|Road|Blvd|Dr|Drive|Ln|Way|Hwy)"
+    r"\b\.?(?:,? (?:Suite|Ste\.?|#) ?\w+)?(?:,? [A-Z][a-z]+(?: [A-Z][a-z]+)?"
+    r",? (?:TX|Texas)(?: \d{5})?)?")
 CALL_SAID = re.compile(
     r"\b(i'?ll|i will|we'?ll|we will|someone will|we are going to|i'?m going "
     r"to)\b[^.!?]{0,25}\b(call|give you a (quick )?call|ring)\b", re.I)
@@ -421,6 +435,19 @@ EXTRA_WHY = {
         "This text promises a call. On a 2nd or 3rd left message, offices "
         "often only follow up by text. If nobody calls, the applicant is "
         "left waiting on a call that won't come."),
+    "WHO WE HIRE": (
+        "Says who we hire",
+        "Words about age or gender, like \u201cyoung\u201d or \u201cguys\u201d, "
+        "in a hiring message can read as discrimination and put the office "
+        "at legal risk."),
+    "LOW PAY": (
+        "Pay figure under our range",
+        "Our pay answer is weekly pay of $1,000\u2013$1,500. A lower number "
+        "here undersells the job."),
+    "TYPED ADDRESS": (
+        "Address typed in by hand",
+        "A typed address goes stale when the office moves or changes suite. "
+        "The address fields always send what's on file."),
     "WRONG CITY": (
         "Names the wrong city",
         "The text tells applicants the office is somewhere it isn't, so "
@@ -464,6 +491,19 @@ def reply_rule_findings(bodies, city=None):
         if LATER_LEFT_MESSAGE.match(_sec or "") and CALL_SAID.search(msg):
             out.append(("CALL CHECK", "{}: \u201c{}\u201d".format(
                 where, CALL_SAID.search(msg).group(0))))
+        hit = WHO_WE_HIRE.search(msg)
+        if hit:
+            out.append(("WHO WE HIRE", "{}: \u201c{}\u201d".format(
+                where, hit.group(0))))
+        if ESC.PAY_TOPIC.search(msg):
+            low = re.search(r"\$\s?[1-9]\d{2}\b(?![\d,])", msg)
+            if low:
+                out.append(("LOW PAY", "{}: \u201c{}\u201d".format(
+                    where, low.group(0))))
+        typed = TYPED_STREET.search(msg)
+        if typed:
+            out.append(("TYPED ADDRESS", "{}: \u201c{}\u201d".format(
+                where, typed.group(0))))
         want = (city or "").strip().lower()
         if want:
             for m in CITY_ST.finditer(msg):

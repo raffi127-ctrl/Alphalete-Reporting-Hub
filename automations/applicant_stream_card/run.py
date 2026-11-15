@@ -284,6 +284,12 @@ def gather(oid, use_sheets=True):
             bodies, city=(sinfo or {}).get("office_city"))
         z2 = (office.get("zoom2") or "").strip()
         for kind, text in found:
+            # One word in capitals ("available TODAY") is emphasis on
+            # purpose (Megan 2026-11-15); only a run of them is shouting.
+            if kind == "SHOUTING" and " " not in (
+                    (re.findall("\u201c([^\u201c\u201d]+?)\u201d", text)
+                     or ["x y"])[-1]):
+                continue
             if kind in NOT_GRADED:
                 continue
             if kind == "WRONG ROOM" and z2 and z2 in text:
