@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import datetime as dt
 import html
+import sys
 from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, Tuple
@@ -63,17 +64,22 @@ def revenue_board(owner: str, sv_path: Path, target: dt.date, out_dir: Path) -> 
         RB.DAYS = saved
 
 
-def activation_revenue(owner: str, sv_path: Path, target: dt.date, out_dir: Path) -> List[Path]:
-    """Activated $ by ACTIVATION week, canceled $ (what those lines would have
-    paid) and still-open $ (sold, not activated yet), per rep. Four weeks as two
-    pictures like Rep Activations."""
-    from automations.box_order_log import png as bpng
+_ACT_COLS = [("Rep Name", "rep", "left"), ("Activated $", "posted", "center"),
+             ("Cancelled $", "canceled", "center"), ("Still Open $", "pending", "center")]
+_ACT_TITLES = ("THIS WEEK", "LAST WEEK", "2 WEEKS AGO", "3 WEEKS AGO")     # newest first
+
+
+def activation_tables(sv_path: Path, target: dt.date, weeks: int = 4):
+    """The Activation Revenue Overview's numbers: one table per Sun-Sat week,
+    NEWEST FIRST -- activated $ by ACTIVATION week, canceled $ (what those
+    lines would have paid) and still-open $ (sold that week, not activated
+    yet), per rep, priced on the comp grid. Returns (tables, subtitle)."""
     L = C.lines(sv_path)
     upto = target - dt.timedelta(days=1)
     tier, why = C.office_tier(L, upto)
     this_start, _ = C.sales_week(upto)
-    weeks = [(this_start - dt.timedelta(weeks=k), this_start - dt.timedelta(weeks=k) + dt.timedelta(days=6))
-             for k in range(4)]                                  # newest first
+    spans = [(this_start - dt.timedelta(weeks=k), this_start - dt.timedelta(weeks=k) + dt.timedelta(days=6))
+             for k in range(weeks)]                              # newest first
 
     def worth(l):
         return C.line_pay(dict(l, status="Posted"), tier)        # what it pays if it sticks
@@ -98,13 +104,19 @@ def activation_revenue(owner: str, sv_path: Path, target: dt.date, out_dir: Path
     sub = (f"Verizon — activated $ by activation week, Credico comp grid. Office Tier {tier} "
            f"({why.split(' — ')[0]}).\nAdd-ons included, weekly bonus not. "
            "Estimates — Credico's statement is the pay.")
+    return [table(*s) for s in spans], sub
+
+
+def activation_revenue(owner: str, sv_path: Path, target: dt.date, out_dir: Path) -> List[Path]:
+    """Four weeks as two pictures like Rep Activations (the thread's layout)."""
+    from automations.box_order_log import png as bpng
+    tabs, sub = activation_tables(sv_path, target)
     saved = list(bpng.COLS)
-    bpng.COLS[:] = [("Rep Name", "rep", "left"), ("Activated $", "posted", "center"),
-                    ("Cancelled $", "canceled", "center"), ("Still Open $", "pending", "center")]
+    bpng.COLS[:] = _ACT_COLS
     try:
         outs = []
-        for (a, b, name) in ((weeks[1], weeks[0], "recent"), (weeks[3], weeks[2], "older")):
-            tables = {"last": table(*a), "this": table(*b)}
+        for (last, this, name) in ((tabs[1], tabs[0], "recent"), (tabs[3], tabs[2], "older")):
+            tables = {"last": last, "this": this}
             if name == "older":
                 tables["titles"] = ("3 WEEKS AGO", "2 WEEKS AGO")
             outs.append(bpng.render(tables, out_dir / f"verizon_activation_revenue_{target.isoformat()}_{name}.png",
@@ -112,6 +124,49 @@ def activation_revenue(owner: str, sv_path: Path, target: dt.date, out_dir: Path
         return outs
     finally:
         bpng.COLS[:] = saved
+
+
+def activation_revenue_one(owner: str, sv_path: Path, target: dt.date, out_dir: Path) -> Path:
+    """The same four weeks on ONE picture, a 2 x 2 grid: 3 WEEKS AGO | 2 WEEKS
+    AGO on top, LAST WEEK | THIS WEEK below, so the eye reads left-to-right,
+    top-to-bottom towards today. Carlos 2026-11-15: "Can you show me what it
+    would look like on one screenshot?" Drawn with the two-table renderer's
+    own pieces (box_order_log.png), so it is the same look."""
+    from PIL import Image, ImageDraw
+    from automations.box_order_log import png as P
+    tabs, sub = activation_tables(sv_path, target)
+    grid = ((tabs[3], tabs[2]), (tabs[1], tabs[0]))              # oldest top-left
+    titles = ((_ACT_TITLES[3], _ACT_TITLES[2]), (_ACT_TITLES[1], _ACT_TITLES[0]))
+    saved = list(P.COLS)
+    P.COLS[:] = _ACT_COLS
+    try:
+        fonts = (P._font(15 * P.SCALE, True), P._font(12 * P.SCALE, True), P._font(13 * P.SCALE, False))
+        probe = ImageDraw.Draw(Image.new("RGB", (10, 10)))
+        col_w = [max(P._table_width(probe, grid[r][c]["rows"], fonts[2], fonts[1], True)[0] for r in range(2))
+                 for c in range(2)]
+        row_h = [(max(len(grid[r][c]["rows"]) for c in range(2)) + 1) * P.ROW_H + P.TITLE_H + P.HEADER_H
+                 for r in range(2)]
+        sub_h = 26 * P.SCALE * (sub.count("\n") + 1)
+        W = P.PAD * 2 + col_w[0] + P.GAP + col_w[1]
+        H = P.PAD * 2 + sub_h + row_h[0] + P.GAP + row_h[1]
+        img = Image.new("RGB", (int(W), int(H)), P.WHITE)
+        draw = ImageDraw.Draw(img)
+        draw.text((P.PAD, P.PAD), sub, font=fonts[1], fill=(110, 110, 110))
+        y = P.PAD + sub_h
+        for r in range(2):
+            x = P.PAD
+            for c in range(2):
+                t = grid[r][c]
+                P._draw_table(draw, x, y, "{}  ({})".format(titles[r][c], t["label"]), t["rows"], fonts,
+                              money=True, totals=t.get("totals"))
+                x += col_w[c] + P.GAP
+            y += row_h[r] + P.GAP
+        out = Path(out_dir) / f"verizon_activation_revenue_{target.isoformat()}_one.png"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        img.resize((int(W / P.SCALE), int(H / P.SCALE)), Image.LANCZOS).save(out)
+        return out
+    finally:
+        P.COLS[:] = saved
 
 
 def rep_tiers(owner: str, sv_path: Path, target: dt.date, out_dir: Path) -> Path:
@@ -159,3 +214,50 @@ tr.near td{{background:#fff3b0}} tr.dq td{{color:#a33b2c}}
 <div class="foot">Orders = unique customer orders this week. Tiers 4 / 5–6 / 7–8 / 9+ orders pay $30 / $50 / $75 / $110 per activated line. <span style="background:#fff3b0">Yellow</span> = 1 order from the next tier.</div>
 </div></body></html>"""
     return _screenshot_html(page, out_dir / f"verizon_rep_tiers_{target.isoformat()}.png")
+
+
+def main(argv=None) -> int:
+    """Render one money board off Credico's file and (optionally) DM it as Lucy.
+
+        python -m automations.verizon_office.revenue --office nicolas --board activation_one --dm U046G04P5LG
+        python -m automations.verizon_office.revenue --sv FILE.xlsx --board activation_one      # local, no DM
+        lucy rerun verizon_revenue_preview -- --dm U046G04P5LG
+    """
+    import argparse
+    import sys
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--office", default="nicolas")
+    ap.add_argument("--sv", type=Path, help="local Sales Verification xlsx instead of the inbox")
+    ap.add_argument("--date", help="YYYY-MM-DD (default today)")
+    ap.add_argument("--board", choices=["activation_one", "activation", "revenue_board", "rep_tiers"],
+                    default="activation_one")
+    ap.add_argument("--dm", help="Slack user id(s) to DM the picture to, as Lucy (comma-separated)")
+    a = ap.parse_args(argv)
+    from automations.verizon_office import offices as OF, run as RUN
+    office = OF.get(a.office)
+    target = dt.date.fromisoformat(a.date) if a.date else dt.date.today()
+    sv = a.sv or RUN.fetch(office, "sales")
+    if not sv:
+        print("✗ no Sales Verification in the Hub inbox -- is the office's Outlook rule delivering?")
+        return 1
+    out_dir = Path(__file__).resolve().parents[2] / "output" / "verizon_office" / office.key / "boards"
+    fn = {"activation_one": activation_revenue_one, "activation": activation_revenue,
+          "revenue_board": revenue_board, "rep_tiers": rep_tiers}[a.board]
+    got = fn(office.owner, Path(sv), target, out_dir)
+    paths = got if isinstance(got, list) else [got]
+    for p in paths:
+        print("✓ %s" % p)
+    if a.dm:
+        from automations.shared import slack_metrics_post as S
+        day = "%d/%d" % (target.month, target.day)
+        for p in paths:
+            for user in [u.strip() for u in a.dm.split(",") if u.strip()]:
+                r = S.dm_user_with_file(p, user=user,
+                                        comment=":dollar: *Activation Revenue Overview* — %s, four weeks on one picture (preview)" % day
+                                        if a.board == "activation_one" else ":moneybag: *%s* — %s (preview)" % (a.board, day))
+                print("  DM %s: %s" % (user, "ok" if r.get("ok") else r))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

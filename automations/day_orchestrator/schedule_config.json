@@ -17970,6 +17970,33 @@
    },
    "timeout_minutes": 10
   },
+  "verizon_revenue_preview": {
+   "on_scheduler": false,
+   "_off_scheduler_note": "HAND-RUN ONLY. Renders one of Nico's Verizon money boards off today's Credico Sales Verification (Hub inbox) and DMs it as Lucy -- `lucy rerun verizon_revenue_preview -- --dm U046G04P5LG` (default board: the Activation Revenue Overview as ONE picture, four weeks in a 2x2 grid; Carlos 2026-11-15: 'show me what it would look like on one screenshot? Just send it to me personally'). --board activation / revenue_board / rep_tiers for the others. Nothing posts to the room from here. Lucy 4: it has the Hub inbox login.",
+   "machine": "Lucy 4",
+   "display_name": "Verizon money board preview (DM)",
+   "source_type": "email",
+   "data_sources": [
+    "Credico Sales Verification (Hub inbox)"
+   ],
+   "command": [
+    "automations.verizon_office.revenue"
+   ],
+   "base_args": [
+    "--office",
+    "nicolas"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": {
+    "type": "not_configured"
+   },
+   "timeout_minutes": 10
+  },
   "verizon_review_post": {
    "on_scheduler": false,
    "_off_scheduler_note": "HAND-RUN ONLY. Posts Nico's Verizon report EXAMPLES (resources/verizon_review/, built on Megan's laptop with `python -m automations.verizon_office.review --build`) to the review group DM C0CFN3SBFCM (Alphalete GP, Carlos, Evelyn, Lucy, Lucy Reporting, Megan, Nico): an intro explaining the reactions, then one post per report. A checkmark from Carlos or Nico = approved; an X = reply in the thread with what to change (Megan 2026-11-07). Lucy 4 so the posts come from Lucy, and pinned there because output/verizon_review_posted.json (what already went out) lives on that box: a retry posts only what is missing. Default (no --send) prints only.",
