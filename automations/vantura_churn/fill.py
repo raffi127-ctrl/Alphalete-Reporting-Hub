@@ -63,9 +63,9 @@ class ActivationsTabMissing(Exception):
 # is added or removed.
 U_FORMULA = ('=IFERROR(${rem}{r}/IF(${key}{r}="Wireless",$B$5,'
              'IF(${key}{r}="Air",$B$6,$B$7)),"")')
-# Same formula with the three product bases as placeholders -- the NDS CHURN
-# tab keeps its bases elsewhere (nds_churn.sheet.BASE_CELLS) since its box
-# was redrawn 2026-11-10; every other tab still divides by B5:B7.
+# Same formula with the three product bases as placeholders (the NDS CHURN
+# tab kept its bases in its own box from 2026-11-10 until 11/15, when its
+# list became plain-value tables); every tab divides by B5:B7 today.
 U_FORMULA_T = ('=IFERROR(${rem}{r}/IF(${key}{r}="Wireless",{wl},'
                'IF(${key}{r}="Air",{air},{inet})),"")')
 DEFAULT_BASE_CELLS = ("$B$5", "$B$6", "$B$7")
@@ -128,8 +128,8 @@ H_NOTES_F, H_KEY, H_REMAINING = 13, 14, 15
 H_WIDTH = 16
 # Helper offsets that carry a formula (update_churn_tab): the per-row
 # churn-after column and the customer-notes lookup. A tab laid out
-# differently passes its own map as `formulas=` (NDS CHURN: two churn-after
-# columns at +3/+4, no notes).
+# differently passes its own map as `formulas=` (NDS CHURN did -- two
+# churn-after columns at +3/+4, no notes -- until 2026-11-15).
 DEFAULT_FORMULAS = {H_CHURN_F: U_FORMULA_T, H_NOTES_F: AC_FORMULA}
 # Gap between the helper block and the per-rep list.
 REP_GAP = 2
@@ -782,9 +782,9 @@ def update_churn_tab(ws: gspread.Worksheet, bases: dict,
     leaves B5:B7 to the caller (the NDS tab draws its own box there);
     `formulas` = {helper offset: template} written into every row INSTEAD
     of DEFAULT_FORMULAS (placeholders r, cap, fall, lines, rem, key, cust,
-    n0, n1, wl, air, inet -- nds_churn.sheet.rolloff_formulas puts two
-    churn-after columns at +3/+4 and no notes lookup). Every other tab
-    keeps the defaults."""
+    n0, n1, wl, air, inet -- the NDS CHURN tab used this for two churn-after
+    columns at +3/+4 and no notes lookup until 2026-11-15). Every tab keeps
+    the defaults today."""
     b = helper_bounds(ws)
     f0, cap = b["f0"], b["cap"]
     n = len(helper_rows)

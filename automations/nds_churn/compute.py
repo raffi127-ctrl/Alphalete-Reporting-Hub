@@ -13,12 +13,14 @@ can make the same report"):
     (5), tablet/wearable "new" lines (4) and one untyped line were left
     out, rep by rep. Those lines are counted separately (summary
     'excluded') and named on the status line; they are not churn base.
-  * the hidden helper block = one row per product + customer (+ BAN when the
-    export carries one), soonest to fall off first; same 16 columns as LUCY
-    CHURN except offset +9, which was CRU/IRU ("there's not going to be CRU
-    or IRU"): it shows the line type and footprint ("port · OOF"). The NDS
-    ORDERLOG export has NO disconnect-reason or non-pay column (the B2B one
-    did), so a reason cannot come from this source.
+  * the rolloff tables (class_tables, 2026-11-15: "let's make into tables
+    one for wireless no BYODs, BYODs, & airs") = one table per box row --
+    All Wireless (non-BYOD) / BYODs / Air -- one row per account (+ BAN
+    when the export carries one), soonest to fall off first; the row shows
+    the line type and footprint ("port · OOF") where LUCY CHURN showed
+    CRU/IRU ("there's not going to be CRU or IRU"). The NDS ORDERLOG export
+    has NO disconnect-reason or non-pay column (the B2B one did), so a
+    reason cannot come from this source.
   * activation rates (office + per rep) = the Activation Rate by Rep rule on
     the NDS Metrics thread: sold by ORDER-date age (0-30 / 31-60 days),
     activated = Posted now or Disconnected (it was active before it fell).
@@ -353,19 +355,13 @@ def _join_uniq(vals, sep=" / "):
 _ABBR = {"Wireless": "W", "Internet": "INT", "Air": "AIR"}
 
 
-def helper_block(lines: List[dict], today: dt.date) -> List[List]:
-    """The hidden 16-column rows, one per box row + account, soonest fall-off
-    first across every box row (Carlos 2026-11-10: "adjust the 0-30 day
-    portion to reflect the same way" -- the rolloff list follows the
-    top-left box). +3 / +4 are left None for the two churn-after formulas
-    (sheet.rolloff_formulas: the All Orders % and the All Wireless % the box
-    will show once this group has aged off -- Carlos 2026-11-10: "show the
-    All orders and the all wireless % numbers after those lines roll off"),
-    so Customer..Product Type sit one column right of the B2B layout and
-    there is no Notes column (never written for NDS). +14 = the box row the
-    lines belong to (BOX_LABELS: what the Filter dropdown picks), +15 =
-    lines of that same box row still on the report once this group has aged
-    off (kept for the dry-run print)."""
+def rolloff_groups(lines: List[dict], today: dt.date) -> List[dict]:
+    """Every box-row disconnect in the 0-30 window (box_class, not ports
+    only -- the list follows the box, Carlos 2026-11-10), one group per box
+    row + account (BAN, else customer), soonest fall-off first ACROSS the
+    rows, then customer. Each group: cls, customer, ban, posted, falloff,
+    days_left, lines, rep, order_date, disc_date, kind ("port · OOF"),
+    acct_lines ("4 (3W · 1AIR)"), device ("BYOD" or the phone), product."""
     groups: Dict[tuple, List[dict]] = collections.defaultdict(list)
     for u in churn_units(lines, today, ports_only=False):
         cls = box_class(u)
@@ -397,35 +393,94 @@ def helper_block(lines: List[dict], today: dt.date) -> List[List]:
         return min(u["posted"] for u in grp)
 
     ordered = sorted(groups.items(), key=lambda kv: (_posted(kv[1]), kv[0][1]))
-    rows = []
+    out = []
     for (cls, customer, ban), grp in ordered:
         posted = _posted(grp)
         falloff = posted + dt.timedelta(days=WINDOW_DAYS)
-        disc_real = min((g["status_date_d"] for g in grp
-                         if g["status_date_d"]), default=None)
-        remaining = sum(len(v) for (c, _, _), v in ordered
-                        if c == cls and _posted(v) > posted)
-        rows.append([
-            f"{(falloff - today).days}d",                 # +0 Days Left
-            fmt_date(falloff),                            # +1 Fall-Off Date
-            len(grp),                                     # +2 Lines
-            None,                                         # +3 All Orders % after rolloff (formula)
-            None,                                         # +4 All Wireless % after rolloff (formula)
-            customer,                                     # +5 Customer
-            _join_uniq(g["rep"] for g in grp),            # +6 Sales Rep
-            fmt_date(min((g["order_date"] for g in grp
-                          if g["order_date"]), default=None)),  # +7 Order Date
-            fmt_date(posted),                             # +8 Activation Date
-            fmt_date(disc_real),                          # +9 Disconnect Date
-            _join_uniq(f"{line_kind(g)} · {g['if_oof']}".strip(" ·")
-                       for g in grp),                     # +10 Line · IF/OOF (was CRU/IRU)
-            _acct_lines(ban, customer),                   # +11 Lines on Acct
-            _join_uniq(_device(g) for g in grp),          # +12 Phone/BYOD
-            grp[0]["prod"],                               # +13 Product Type
-            BOX_LABELS[cls],                              # +14 box-row key (the Filter)
-            remaining,                                    # +15 same box row, falling off later
-        ])
-    return rows
+        out.append({
+            "cls": cls, "customer": customer, "ban": ban,
+            "posted": posted, "falloff": falloff,
+            "days_left": (falloff - today).days, "lines": len(grp),
+            "rep": _join_uniq(g["rep"] for g in grp),
+            "order_date": min((g["order_date"] for g in grp if g["order_date"]),
+                              default=None),
+            "disc_date": min((g["status_date_d"] for g in grp if g["status_date_d"]),
+                             default=None),
+            "kind": _join_uniq(f"{line_kind(g)} · {g['if_oof']}".strip(" ·")
+                               for g in grp),
+            "acct_lines": _acct_lines(ban, customer),
+            "device": _join_uniq(_device(g) for g in grp),
+            "product": grp[0]["prod"],
+        })
+    return out
+
+
+# The three rolloff tables, in box order (Carlos 2026-11-15: "let's make
+# into tables one for wireless no BYODs, BYODs, & airs"). Internet (fiber)
+# has no table, as it had no place in the old "All Orders" list either.
+TABLE_CLASSES = ("wireless", "byod", "air")
+TABLE_TITLES = {"wireless": "ALL WIRELESS (non-BYOD)", "byod": "BYODs", "air": "AIR"}
+ALL_ORDERS_SCOPE = ("wireless", "byod", "air")      # = the box's All Orders row
+# Row layout of a table (sheet.LIST_HEADERS names the columns): the two
+# churn-after columns sit at +3 (All Orders %) and +4 (the table's own %).
+T_LINES, T_ALL_PCT, T_OWN_PCT, T_CUSTOMER, T_DISC_DATE = 2, 3, 4, 5, 9
+
+
+def pct_after(groups: List[dict], scope, falloff: dt.date, base: int
+              ) -> Optional[float]:
+    """The churn `scope` will still show once a group falling off on
+    `falloff` has aged off: lines of the scope's groups with a LATER
+    fall-off date ÷ `base` activations (0..1; None when base is 0). Groups
+    sharing the date fall off together, so they are not 'later'."""
+    if not base:
+        return None
+    later = sum(g["lines"] for g in groups
+                if g["cls"] in scope and g["falloff"] > falloff)
+    return later / base
+
+
+def class_tables(lines: List[dict], today: dt.date, box: Optional[dict] = None
+                 ) -> List[dict]:
+    """The three rolloff tables (TABLE_CLASSES): per table {'cls', 'title',
+    'act', 'disc', 'pct' (0-100, None without activations), 'rows'} --
+    rows = 14 values in sheet.LIST_HEADERS order: Days Left | Fall-Off Date
+    | Lines | All Orders % After Rolloff | <table> % After Rolloff |
+    Customer | Sales Rep | Order Date | Activation Date | Disconnect Date |
+    Line · IF/OOF | Lines on Acct | Phone / BYOD | Product Type. The two
+    percentages are fractions (None when the base is 0): the All Orders %
+    divides by the box's All Orders activations, the own % by the table's
+    box row (Carlos 2026-11-10 pm: "show the All orders and the all
+    wireless % numbers after those lines roll off" -- the wireless table
+    keeps exactly those two; BYODs / Air show their own instead)."""
+    box = box or product_box(lines, today)
+    groups = rolloff_groups(lines, today)
+    out = []
+    for cls in TABLE_CLASSES:
+        rows = []
+        for g in groups:
+            if g["cls"] != cls:
+                continue
+            rows.append([
+                f"{g['days_left']}d",                         # +0 Days Left
+                fmt_date(g["falloff"]),                       # +1 Fall-Off Date
+                g["lines"],                                   # +2 Lines
+                pct_after(groups, ALL_ORDERS_SCOPE, g["falloff"],
+                          box["all_orders"]["act"]),          # +3 All Orders % after
+                pct_after(groups, (cls,), g["falloff"], box[cls]["act"]),  # +4 own % after
+                g["customer"],                                # +5 Customer
+                g["rep"],                                     # +6 Sales Rep
+                fmt_date(g["order_date"]),                    # +7 Order Date (Sold)
+                fmt_date(g["posted"]),                        # +8 Activation Date
+                fmt_date(g["disc_date"]),                     # +9 Disconnect Date
+                g["kind"],                                    # +10 Line · IF/OOF
+                g["acct_lines"],                              # +11 Lines on Acct
+                g["device"],                                  # +12 Phone / BYOD
+                g["product"],                                 # +13 Product Type
+            ])
+        act, disc = box[cls]["act"], box[cls]["disc"]
+        out.append({"cls": cls, "title": TABLE_TITLES[cls], "act": act, "disc": disc,
+                    "pct": (100.0 * disc / act) if act else None, "rows": rows})
+    return out
 
 
 def activation_rates(lines: List[dict], today: dt.date) -> Tuple[dict, dict]:
@@ -509,13 +564,10 @@ def box_class(ln: dict) -> Optional[str]:
 
 
 BOX_CLASSES = ("wireless", "byod", "air", "internet")
-# The box row each class belongs to: the rolloff Filter's choices (plus
-# "All Orders" = wireless + byod + air) and the helper block's key column.
+# The box row each class belongs to ("All Orders" = wireless + byod + air);
+# the tables' own churn-after column is headed "<box row> % After Rolloff".
 BOX_LABELS = {"wireless": "All Wireless", "byod": "BYODs", "air": "Air",
               "internet": "Internet"}
-# Helper-block offsets of the two churn-after columns (helper_block leaves
-# them None; fill.update_churn_tab fills them from sheet.rolloff_formulas).
-H_ALL_ORDERS_F, H_ALL_WIRELESS_F = 3, 4
 
 
 def product_box(lines: List[dict], today: dt.date) -> dict:

@@ -3,8 +3,8 @@ code, the LUCY CHURN (B2B) report remade (Carlos 2026-11-09).
 
 Flow, the B2B one: pull the NDS-SN ORDERLOG (nds_metrics.pull, 60 days,
 Owner & Office = CARLOS HIDALGO) -> compute 0-30 bases / disconnects by
-activation date, the rolloff rows, the activations rows, the activation
-rates -> RECONCILE the wireless 0-30 count against the NDS workbook's own
+activation date, the three rolloff tables (wireless non-BYOD / BYODs /
+Air, since 11/15), the activation rates -> RECONCILE the wireless 0-30 count against the NDS workbook's own
 CHURNRATES view sliced to Carlos (office_metrics.nds_churn's ChurnALlExp
 pull) -> only then write the NDS CHURN tab on the Vantura Master Sales
 Board. A mismatch writes nothing and exits 1; a view with no rows for Carlos
@@ -279,7 +279,6 @@ def main(argv=None) -> int:
         return 0
 
     summary = C.churn_summary(lines, today)
-    helper = C.helper_block(lines, today)
     office, reps = C.activation_rates(lines, today)
     rates = C.box_activation_rates(lines, today)
     ts = C.tier_status(summary, today)
@@ -297,9 +296,16 @@ def main(argv=None) -> int:
     box = C.product_box(lines, today)
     log("BOX: " + "; ".join(f"{k} act {v['act']} disc {v['disc']} pend {v['pend']}"
                             for k, v in box.items()))
+    tables = C.class_tables(lines, today, box)
+    log("TABLES: " + "; ".join(
+        f"{t['title']} {len(t['rows'])} group(s) / "
+        f"{sum(r[C.T_LINES] for r in t['rows'])} of {t['disc']} disconnected line(s)"
+        for t in tables))
+    if box["internet"]["disc"]:
+        log(f"NOTE: {box['internet']['disc']} Internet disconnect(s) have no table "
+            "(the old All Orders list left Internet out too)")
     log(f"CHURN 0-30 (by activation date): base {summary['base']} "
         f"disc {summary['disc']}  wireless split {summary['split']}")
-    log(f"ROLLOFF rows: {len(helper)}")
     log(f"RATES: {_fmt_rates(office)}   ({len(reps)} reps)")
     log("BOX RATES: " + "; ".join(f"{k} {_fmt_rates(v)}" for k, v in rates.items()))
     log("STATUS: " + status)
@@ -311,7 +317,11 @@ def main(argv=None) -> int:
         f" — {detail}")
 
     if a.dry_run:
-        rows_txt = [" | ".join("" if v is None else str(v) for v in r) for r in helper]
+        rows_txt = []
+        for t in tables:
+            rows_txt.append(S.band_text(t))
+            rows_txt += [("   " + " | ".join("" if v is None else str(v) for v in r))
+                         for r in t["rows"]] or ["   (none)"]
         for t in rows_txt:
             log("   " + t)
         write_diag(["DRY-RUN " + today.isoformat(),
@@ -323,7 +333,7 @@ def main(argv=None) -> int:
                     f"BOX: {box}",
                     f"BOX RATES: {rates}",
                     f"UNMAPPED: {um}",
-                    "ROLLOFF ROWS (%d):" % len(helper)] + rows_txt
+                    "TABLES:"] + rows_txt
                    + ["VIEW REPS (0-30 disc / activated / pct):"]
                    + ([f"{k}: {v}" for k, v in sorted((_LAST_VIEW or {}).get("detail", {}).items())]
                       or ["(no view rows)"])
@@ -341,25 +351,18 @@ def main(argv=None) -> int:
     sh = S.open_board()
     ws = worksheet_ci(sh, S.TAB)
     log(f"▶ updating '{ws.title}'…")
-    for step in (VF.repair_viewing_dropdown, VF.hide_helper_columns):
-        try:
-            step(ws, log=log)
-        except Exception as e:  # noqa: BLE001 -- never block the daily write
-            log(f"  ⚠ {step.__name__} skipped: {e}")
-    # The rolloff list follows the box: Filter = a box row; every listed
-    # group carries the All Orders % and the All Wireless % the box will
-    # show once it has aged off (D / E).
-    S.ensure_rolloff_layout(ws, log=log)
-    VF.update_churn_tab(ws, summary["base"], helper, log=log, write_bases=False,
-                        formulas=S.rolloff_formulas())
+    # 2026-11-15: the three rolloff tables replace the single FILTER list
+    # (Carlos: "let's make into tables one for wireless no BYODs, BYODs, &
+    # airs") -- plain values, so none of vantura_churn.fill's helper-block
+    # machinery runs here any more; migrate_filter_list retires it once.
+    S.migrate_filter_list(ws, log=log)
+    S.write_subtitle(ws, log=log)
+    layout = S.write_class_tables(ws, tables, log=log)
     try:                                  # rose on disconnects from the last 7 days
         S.ensure_recent_highlight(ws, log=log)
     except Exception as e:  # noqa: BLE001 -- a colour never blocks the numbers
         log(f"  ⚠ recent-disconnect highlight skipped: {e}")
-    for b in [b for b in C.BUCKETS if office[b]["rate"] is None]:
-        office[b]["rate"] = 0.0               # the writer logs rate:.1%
-    VF.update_activation_rates(ws, office, reps, log=log,          # E5/F5 + the per-rep list
-                               total_label="OFFICE TOTAL (all reps)")   # Carlos 11/14
+    S.write_rep_list(ws, office, reps, log=log)      # office total + reps (Carlos 11/14)
     # E5:F12 per box row (All Orders / All Wireless / BYODs / Air / Internet);
     # a bucket with no sales stays blank, not 0.0% (NDS started 10/19, so
     # 31-60 has nothing to rate until mid-November).
@@ -367,19 +370,19 @@ def main(argv=None) -> int:
     S.write_tier_tables(ws, ts, log=log)
     S.write_status(ws, status + "  " + S.BOX_NOTE, log=log)
     S.write_product_box(ws, box, log=log)
-    try:                                  # lists bordered for the gridline-less shot
-        S.ensure_borders(ws, log=log)
+    try:                                  # tables bordered for the gridline-less shot
+        S.ensure_borders(ws, layout, log=log)
     except Exception as e:  # noqa: BLE001 -- a border never blocks the numbers
         log(f"  ⚠ borders skipped: {e}")
     if a.dm:
         from automations.shared import slack_metrics_post as smp
         from automations.vantura_churn import shot
-        png = shot.render_report(
-            ws, OUT_DIR / f"nds_churn_{today.isoformat()}.png", log=log)
+        png = shot.render(ws, OUT_DIR / f"nds_churn_{today.isoformat()}.png",
+                          S.report_range(ws))
         smp.dm_user_with_file(
             Path(png), user=a.dm, file_name=Path(png).name,
-            comment="🐺 *NDS Customer Churn* — preview of the new NDS CHURN "
-                    "tab on the Vantura board (not posted anywhere).")
+            comment="🐺 *NDS Customer Churn* — preview of the NDS CHURN tab on the "
+                    "Vantura board (not posted anywhere).")
         log(f"  ✓ DM'd {png}")
     print("=== done ===", flush=True)
     return 0

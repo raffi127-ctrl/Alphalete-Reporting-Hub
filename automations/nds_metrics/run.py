@@ -1953,16 +1953,18 @@ def build_week_board(cols, crew, today, log=print) -> Path:
 
 
 def build_customer_churn(cols, crew, today, log=print) -> Path:
-    """The NDS CHURN tab (automations.nds_churn, written 07:00) as one
+    """The NDS CHURN tab (automations.nds_churn, written 06:00) as one
     picture -- the B2B thread's #6 Customer Churn remade for NDS (Carlos
-    2026-11-09). Shot off the live sheet like pct_on_board; a missing tab
-    is an honest skip."""
+    2026-11-09): the box, the tier charts, the three rolloff tables
+    (wireless non-BYOD / BYODs / Air, since 11/15) and the per-rep list,
+    framed by nds_churn.sheet.report_range. Shot off the live sheet like
+    pct_on_board; a missing tab is an honest skip."""
     from automations.nds_churn import sheet as NCS
     from automations.recruiting_report.fill import open_by_key, worksheet_ci
     from automations.vantura_churn import shot
     ws = worksheet_ci(open_by_key(NCS.SHEET_ID), NCS.TAB)
     out = OUT_DIR / f"nds_customer_churn_{today.isoformat()}.png"
-    return shot.render_report(ws, out, log=log)
+    return shot.render(ws, out, NCS.report_range(ws))
 
 
 # Sections that BUILD (so --only/--dm previews work) but never post to the

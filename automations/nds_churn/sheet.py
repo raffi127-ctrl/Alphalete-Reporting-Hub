@@ -3,14 +3,19 @@
 Born as a duplicate of LUCY CHURN (Carlos 2026-11-09: "see if we can remake
 this report ... remove that [CRU/IRU] column ... anything that involved the
 captainship, we wouldn't need"), reshaped once by --setup:
-  * same control box, dropdown, FILTER / SUMIF helper block (P:AE), notes
-    lookup (P99+), per-rep list (AG) -- so vantura_churn.fill writes it
-    unchanged;
-  * the rolloff list (A15:N) = Days Left | Fall-Off Date | Lines |
-    All Orders % After Rolloff | All Wireless % After Rolloff | Customer |
-    Sales Rep | Order / Activation / Disconnect Date | Line · IF/OOF |
-    Lines on Acct | Phone / BYOD | Product Type (LIST_HEADERS -- no CRU/IRU,
-    no Notes; the two churn-after columns since 11/10 pm);
+  * the top-left box (A5:D12, redrawn 11/10) with its activation rates
+    (E:F), the per-rep list (AG, written here since 11/15 -- the LUCY CHURN
+    machinery in vantura_churn.fill is no longer used on this tab);
+  * the 0-30 day rolloff as THREE STACKED TABLES (A15:N, since 11/15 --
+    Carlos: "let's make into tables one for wireless no BYODs, BYODs, &
+    airs"): ALL WIRELESS (non-BYOD) / BYODs / AIR, each a band row carrying
+    that box row's churn, a header row and one row per disconnecting
+    account: Days Left | Fall-Off Date | Lines | All Orders % After Rolloff
+    | <table> % After Rolloff | Customer | Sales Rep | Order / Activation /
+    Disconnect Date | Line · IF/OOF | Lines on Acct | Phone / BYOD |
+    Product Type (LIST_HEADERS). Plain values from compute.class_tables --
+    no FILTER, no dropdown, no hidden helper block (migrate_filter_list
+    cleared the one the single list read; its columns P:AE stay hidden);
   * the tier charts show the SOW's NDS tiers (comp.py) -- what a port line
     pays at each 0-30 day band, at the 90-day tier the latest Churn Notice
     placed us; the live band is marked "◀ now" by the daily run;
@@ -153,7 +158,7 @@ def write_tier_tables(ws, ts: Optional[dict], log=print) -> None:
     ], value_input_option="USER_ENTERED"))
     # Layout the duplicate carried from the B2B tab and the theme leaves
     # alone: stray fills on the two spare chart rows and a bold B2B marker
-    # row (column widths: ensure_rolloff_layout). Idempotent, so every run
+    # row (column widths: table_format_requests). Idempotent, so every run
     # re-asserts it.
     white = {"red": 1, "green": 1, "blue": 1}
     reqs = [
@@ -200,45 +205,369 @@ BOX_NOTE = ("Top-left box: phone lines (ported or new-number) + Air; no tablets,
             "activation rate per row = activated ÷ sold, by sale date (0-30 = the "
             "last 30 days, 31-60 = the 30 before).")
 
-# The 0-30 day rolloff list follows the box (Carlos 2026-11-10: "adjust the
-# 0-30 day portion to reflect the same way"): the Filter picks a box row and
-# the list shows that row's disconnects ("All Orders" = every row but
-# Internet, the box's own definition). Each listed group then carries the
-# churn the box will show once it has aged off, for All Orders AND All
-# Wireless side by side (Carlos 2026-11-10 pm: "churn after roll off we
-# should have it show the All orders and the all wireless % numbers after
-# those lines roll off"): that box row's lines still on the report ÷ its
-# activations (B5 / B7).
-FILTER_BASE = {label: f"$B${BOX_FIRST_ROW + i}"
-               for i, (_k, label, kind) in enumerate(BOX_ROWS) if kind == "act"}
-FILTER_OPTIONS = tuple(FILTER_BASE)             # All Orders, All Wireless, BYODs, Air, Internet
-FILTER_EMPTY = "no disconnects in this view"
-CHURN_AFTER = ("All Orders", "All Wireless")    # the two churn-after columns, D then E
+# The rolloff tables (Carlos 2026-11-15: "The NDS customer churn. Let's
+# make into tables one for wireless no BYODs, BYODs, & airs"). Until then
+# the tab showed ONE list, a FILTER over a hidden helper block picked by a
+# box-row dropdown (Carlos 2026-11-10); the three tables are plain values
+# written every run, one under the other from TABLES_FIRST_ROW, each: a
+# band row (title + that box row's churn), the header row, the rows
+# soonest-to-fall-off first (or a one-line placeholder), then a blank row.
+# Each listed group carries the churn the box will show once it has aged
+# off, for All Orders AND the table's own box row (the wireless table keeps
+# exactly the two columns Carlos asked for on 11/10 pm).
 LIST_HEADERS = ("Days Left", "Fall-Off Date", "Lines",
                 "All Orders % After Rolloff", "All Wireless % After Rolloff",
                 "Customer", "Sales Rep", "Order Date (Sold)", "Activation Date",
                 "Disconnect Date", "Line · IF/OOF", "Lines on Acct", "Phone / BYOD",
-                "Product Type")                 # A15:N15 = compute.helper_block[:14]
+                "Product Type")                 # compute.class_tables row order
 # Column widths A:N, re-asserted every run: the box labels (A), the two
 # churn-after headers (D/E), the rep names and the dates need the room; H:N
 # double as the tier charts' columns.
 LIST_COL_PX = (170, 124, 103, 195, 210, 170, 230, 140, 140, 140, 140, 120, 150, 110)
-ROLLOFF_SUBTITLE = ("Days left = (Posted+30) − Today. Filter = a box row (All Orders / "
-                    "All Wireless / BYODs / Air / Internet) — which disconnects are "
-                    "listed. All Orders % / All Wireless % After Rolloff = that box "
-                    "row's lines still on the 0–30 report once this group has aged "
-                    "off ÷ its activations (B5 / B7).")
-FILTER_HINT = "◀ pick a box row to filter the rolloff list below"
-LIST_FIRST_ROW = 16                   # the A16 FILTER spills from here (header row 15)
+ROLLOFF_SUBTITLE = ("Days left = (Posted+30) − Today. One table per box row — All Wireless "
+                    "(non-BYOD) / BYODs / Air — each disconnect listed under its own "
+                    "table, soonest to fall off first. All Orders % / <table> % After "
+                    "Rolloff = that box row's lines still on the 0–30 report once this "
+                    "group has aged off ÷ its activations.")
+TABLES_FIRST_ROW = 15                 # table 1's band row; the rep list header shares it
+TABLES_LAST_ROW = 98                  # the rows the tables may use (A:N below 15 is theirs;
+                                      # the old notes lookup sat at P99+, never in A:N)
+TABLE_GAP_ROWS = 1                    # blank rows between two tables
+NO_ROWS_TEXT = "no disconnects in the last 30 days"
+LIST_FIRST_ROW = TABLES_FIRST_ROW + 1   # first row the rose rule covers (table 1's header)
 RECENT_DAYS = 7                       # a disconnect stays rose this many days past its
                                       # Disconnect Date -- the LUCY CHURN (B2B) rule
 RECENT_BG = {"red": 0.91764706, "green": 0.6, "blue": 0.6}   # #EA9999, the B2B tab's rose
+BAND_BG = VF._rgb(VF.NAVY_MID)        # the theme's section-header blue
+WHITE = {"red": 1, "green": 1, "blue": 1}
+REP_TOTAL_LABEL = "OFFICE TOTAL (all reps)"      # Carlos 11/14
+REP_LIST_COL_DEFAULT = "AG"           # where the LUCY CHURN duplicate put it (helper P:AE + gap)
+
+assert len(LIST_HEADERS) == len(LIST_COL_PX) == 14
+assert LIST_COL_PX[0] == BOX_COL_A_PX
+assert LIST_HEADERS[C.T_ALL_PCT].startswith("All Orders")
+assert LIST_HEADERS[C.T_OWN_PCT].startswith(C.BOX_LABELS["wireless"])
+assert LIST_HEADERS[C.T_DISC_DATE] == "Disconnect Date"
 
 
-def recent_highlight_spec(sheet_id: int, cap: int) -> Tuple[str, list]:
+def table_headers(cls: str) -> tuple:
+    """LIST_HEADERS with the own-churn column named after the table's box
+    row: 'All Wireless' / 'BYODs' / 'Air' % After Rolloff."""
+    h = list(LIST_HEADERS)
+    h[C.T_OWN_PCT] = f"{C.BOX_LABELS[cls]} % After Rolloff"
+    return tuple(h)
+
+
+def band_text(t: dict) -> str:
+    """The band row: the table's title and its box row's churn."""
+    if not t["act"]:
+        return f"{t['title']} — no activations in the last 30 days"
+    return (f"{t['title']} — {t['disc']} of {t['act']} disconnected "
+            f"= {t['pct']:.2f}%")
+
+
+def table_layout(tables: list, first_row: int = TABLES_FIRST_ROW,
+                 gap: int = TABLE_GAP_ROWS) -> list:
+    """1-based row positions, one dict per table: band, header, first /
+    last data row, n (>= 1: an empty table shows NO_ROWS_TEXT)."""
+    out, r = [], first_row
+    for t in tables:
+        n = max(1, len(t["rows"]))
+        out.append({"band": r, "header": r + 1, "first": r + 2,
+                    "last": r + 1 + n, "n": n})
+        r = r + 2 + n + gap
+    return out
+
+
+def tables_end_row(layout: list) -> int:
+    return layout[-1]["last"] if layout else TABLES_FIRST_ROW
+
+
+def tables_grid(tables: list, layout: list) -> list:
+    """The A{TABLES_FIRST_ROW}:N{end} values: band / header / data / gap
+    rows (None -> ''); percentages stay fractions for the cell format."""
+    w = len(LIST_HEADERS)
+    grid = []
+    for t, pos in zip(tables, layout):
+        grid.append([band_text(t)] + [""] * (w - 1))
+        grid.append(list(table_headers(t["cls"])))
+        if t["rows"]:
+            for r in t["rows"]:
+                grid.append(["" if v is None else v for v in r])
+        else:
+            grid.append([NO_ROWS_TEXT] + [""] * (w - 1))
+        grid.extend([[""] * w for _ in range(TABLE_GAP_ROWS)])
+    while grid and not any(grid[-1]):
+        grid.pop()                       # the trailing gap: the clear covers it
+    return grid
+
+
+def _grid_range(sheet_id: int, r0: int, r1: int, c0: int = 0,
+                c1: int = len(LIST_HEADERS)) -> dict:
+    """1-based inclusive rows r0..r1, 0-based half-open columns."""
+    return {"sheetId": sheet_id, "startRowIndex": r0 - 1, "endRowIndex": r1,
+            "startColumnIndex": c0, "endColumnIndex": c1}
+
+
+def table_format_requests(sheet_id: int, layout: list) -> list:
+    """Formats for the tables region, pure: reset A15:N98, then per table
+    the band row, the header row and the data rows (centred; dates on B
+    and H:J, 0.00% on D:E, text on F:G), plus the column widths."""
+    def cell(r0, r1, fmt, fields):
+        return {"repeatCell": {"range": _grid_range(sheet_id, r0, r1),
+                               "cell": {"userEnteredFormat": fmt}, "fields": fields}}
+
+    def numfmt(r0, r1, c0, c1, number_format):
+        return {"repeatCell": {"range": _grid_range(sheet_id, r0, r1, c0, c1),
+                               "cell": {"userEnteredFormat": {"numberFormat": number_format}},
+                               "fields": "userEnteredFormat.numberFormat"}}
+    reqs = [cell(TABLES_FIRST_ROW, TABLES_LAST_ROW, {}, "userEnteredFormat")]
+    date_fmt = {"type": "DATE", "pattern": "mm/dd/yyyy"}
+    for pos in layout:
+        reqs.append(cell(pos["band"], pos["band"], {
+            "backgroundColor": BAND_BG, "horizontalAlignment": "LEFT",
+            "verticalAlignment": "MIDDLE", "wrapStrategy": "OVERFLOW_CELL",
+            "textFormat": {"bold": True, "fontFamily": "Arial", "fontSize": 11,
+                           "foregroundColor": WHITE}},
+            "userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,"
+            "wrapStrategy,textFormat)"))
+        reqs.append(cell(pos["header"], pos["header"], {
+            "backgroundColor": VF.HEADER_BG, "horizontalAlignment": "CENTER",
+            "verticalAlignment": "MIDDLE", "wrapStrategy": "WRAP",
+            "textFormat": {"bold": True, "fontFamily": "Arial", "fontSize": 12,
+                           "foregroundColor": WHITE}},
+            "userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,"
+            "wrapStrategy,textFormat)"))
+        reqs.append(cell(pos["first"], pos["last"], {
+            "horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE",
+            "wrapStrategy": "CLIP"},
+            "userEnteredFormat(horizontalAlignment,verticalAlignment,wrapStrategy)"))
+        reqs += [numfmt(pos["first"], pos["last"], 1, 2, date_fmt),
+                 numfmt(pos["first"], pos["last"], 7, 10, date_fmt),
+                 numfmt(pos["first"], pos["last"], 3, 5, {"type": "PERCENT", "pattern": "0.00%"}),
+                 numfmt(pos["first"], pos["last"], 5, 7, {"type": "TEXT"})]
+    reqs += [{"updateDimensionProperties": {
+                "range": {"sheetId": sheet_id, "dimension": "COLUMNS",
+                          "startIndex": i, "endIndex": i + 1},
+                "properties": {"pixelSize": px}, "fields": "pixelSize"}}
+             for i, px in enumerate(LIST_COL_PX)]
+    return reqs
+
+
+def placeholder_requests(sheet_id: int, layout: list, tables: list) -> list:
+    """The one-line 'no disconnects' rows read as a note, not a value."""
+    reqs = []
+    for t, pos in zip(tables, layout):
+        if t["rows"]:
+            continue
+        reqs.append({"repeatCell": {
+            "range": _grid_range(sheet_id, pos["first"], pos["first"]),
+            "cell": {"userEnteredFormat": {
+                "horizontalAlignment": "LEFT", "wrapStrategy": "OVERFLOW_CELL",
+                "textFormat": {"italic": True, "foregroundColor": VF._rgb("#3E4A5C")}}},
+            "fields": "userEnteredFormat(horizontalAlignment,wrapStrategy,textFormat)"}})
+    return reqs
+
+
+def write_class_tables(ws, tables: list, log=print) -> list:
+    """A15:N -- the three rolloff tables (compute.class_tables) as values,
+    formats first so USER_ENTERED dates and fractions land typed. Returns
+    the layout (table_layout) for the borders and the picture."""
+    layout = table_layout(tables)
+    end = tables_end_row(layout)
+    if end > TABLES_LAST_ROW:
+        raise RuntimeError(f"{ws.title}: the rolloff tables would reach row {end}, "
+                           f"past row {TABLES_LAST_ROW} -- investigate the pull")
+    grid = tables_grid(tables, layout)
+    last_col = VF._colletter(len(LIST_HEADERS) - 1)
+    reqs = table_format_requests(ws.id, layout) + placeholder_requests(ws.id, layout, tables)
+    _retry(lambda: ws.spreadsheet.batch_update({"requests": reqs}))
+    _retry(lambda: ws.batch_clear([f"A{TABLES_FIRST_ROW}:{last_col}{TABLES_LAST_ROW}"]))
+    _retry(lambda: ws.batch_update(
+        [{"range": f"A{TABLES_FIRST_ROW}:{last_col}{TABLES_FIRST_ROW + len(grid) - 1}",
+          "values": grid}], value_input_option="USER_ENTERED"))
+    log(f"  ✓ {ws.title}: rolloff tables A{TABLES_FIRST_ROW}:{last_col}{end} -- "
+        + "; ".join(f"{t['title']} {len(t['rows'])} group(s) / "
+                    f"{sum(r[C.T_LINES] for r in t['rows'])} line(s) "
+                    f"(rows {pos['band']}-{pos['last']})"
+                    for t, pos in zip(tables, layout)))
+    return layout
+
+
+def write_subtitle(ws, log=print) -> None:
+    """A2 says what the tables are (idempotent)."""
+    cur = _retry(lambda: ws.get("A2"))
+    if (str(cur[0][0]) if cur and cur[0] else "") != ROLLOFF_SUBTITLE:
+        _retry(lambda: ws.batch_update([{"range": "A2", "values": [[ROLLOFF_SUBTITLE]]}],
+                                       value_input_option="USER_ENTERED"))
+        log(f"  ✓ {ws.title}: A2 subtitle rewritten for the tables")
+
+
+def migrate_filter_list(ws, log=print) -> bool:
+    """2026-11-15, once: the single FILTER-driven list -> the tables. Clears
+    the hidden helper block the A16 FILTER read (its columns stay hidden)
+    and the 'Filter:' dropdown row (A3:C3, validation and format). Nothing
+    to do once A16 no longer holds the FILTER -- write_class_tables
+    overwrites A16 with table 1's header."""
+    a16 = _retry(lambda: ws.get("A16", value_render_option="FORMULA"))
+    f = str(a16[0][0]) if a16 and a16[0] else ""
+    a3 = _retry(lambda: ws.get("A3"))
+    label = str(a3[0][0]) if a3 and a3[0] else ""
+    did = []
+    if "FILTER(" in f.upper():
+        try:
+            b = VF.helper_bounds(ws)
+            first = VF._colletter(b["f0"])
+            last = VF._colletter(b["f0"] + VF.H_WIDTH - 1)
+            _retry(lambda: ws.batch_clear([f"{first}2:{last}{b['cap']}"]))
+            did.append(f"helper block {first}2:{last}{b['cap']} cleared")
+        except Exception as e:  # noqa: BLE001 -- a hidden block never blocks the tables
+            did.append(f"helper block left (could not place it: {e})")
+    if label.strip().lower().startswith("filter"):
+        _retry(lambda: ws.batch_clear(["A3:C3"]))
+        _retry(lambda: ws.spreadsheet.batch_update({"requests": [
+            {"setDataValidation": {"range": _grid_range(ws.id, 3, 3, 0, 3)}},
+            {"repeatCell": {"range": _grid_range(ws.id, 3, 3, 0, 3),
+                            "cell": {"userEnteredFormat": {}}, "fields": "userEnteredFormat"}},
+        ]}))
+        did.append("Filter dropdown row A3:C3 removed")
+    if did:
+        log(f"  ✓ {ws.title}: migrated from the single FILTER list ({'; '.join(did)})")
+    return bool(did)
+
+
+# ------------------------------------------------------------ rep list ----
+
+def rep_list_col(ws) -> int:
+    """0-based column of the per-rep list: the 'Rep Name' header on the
+    tables' first row; the LUCY CHURN duplicate's column when none."""
+    row = _retry(lambda: ws.row_values(TABLES_FIRST_ROW))
+    for i, v in enumerate(row):
+        if str(v).strip().lower() == "rep name":
+            return i
+    return VF._col_idx(REP_LIST_COL_DEFAULT)
+
+
+def rep_list_span(ws) -> Optional[str]:
+    """A1 span of the per-rep list (header included), None when unwritten."""
+    c0 = rep_list_col(ws)
+    first, last = VF._colletter(c0), VF._colletter(c0 + 1)
+    col = _retry(lambda: ws.get(f"{first}{TABLES_FIRST_ROW}:{first}{ws.row_count}"))
+    n = 0
+    for i, r in enumerate(col or [], start=1):
+        if r and str(r[0]).strip():
+            n = i
+    if n < 2:
+        return None
+    return f"{first}{TABLES_FIRST_ROW}:{last}{TABLES_FIRST_ROW + n - 1}"
+
+
+def write_rep_list(ws, office: dict, reps: dict, log=print) -> str:
+    """The per-rep 0-30 activation list (vantura_churn.fill.activation_list_rows
+    -- office total first, reps greatest -> least, no-sales reps dropped) at
+    rep_list_col, from TABLES_FIRST_ROW, styled like fill.update_activation_rates
+    did (navy header, banded rates, bold total, names auto-fit). Returns the
+    written span."""
+    rows, ranked, band_rates = VF.activation_list_rows(office, reps, REP_TOTAL_LABEL)
+    c0 = rep_list_col(ws)
+    first, last = VF._colletter(c0), VF._colletter(c0 + 1)
+    r0 = TABLES_FIRST_ROW
+    end = r0 - 1 + len(rows)
+    _retry(lambda: ws.batch_clear([f"{first}1:{VF._colletter(c0 + 2)}{ws.row_count}"]))
+    reqs = [{"repeatCell": {
+        "range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": ws.row_count,
+                  "startColumnIndex": c0, "endColumnIndex": c0 + 3},
+        "cell": {"userEnteredFormat": {}}, "fields": "userEnteredFormat"}}]
+    _retry(lambda: ws.spreadsheet.batch_update({"requests": reqs}))
+    _retry(lambda: ws.batch_update([{"range": f"{first}{r0}:{last}{end}", "values": rows}],
+                                   value_input_option="USER_ENTERED"))
+
+    def _bg(row1, col0, colour):
+        return {"repeatCell": {
+            "range": {"sheetId": ws.id, "startRowIndex": row1 - 1, "endRowIndex": row1,
+                      "startColumnIndex": col0, "endColumnIndex": col0 + 1},
+            "cell": {"userEnteredFormat": {"backgroundColor": VF.BAND_BG[colour]}},
+            "fields": "userEnteredFormat.backgroundColor"}}
+    fmt = [{"repeatCell": {
+        "range": {"sheetId": ws.id, "startRowIndex": r0, "endRowIndex": end,
+                  "startColumnIndex": c0 + 1, "endColumnIndex": c0 + 2},
+        "cell": {"userEnteredFormat": {
+            "numberFormat": {"type": "PERCENT", "pattern": "0.0%"},
+            "horizontalAlignment": "CENTER"}},
+        "fields": "userEnteredFormat.numberFormat,userEnteredFormat.horizontalAlignment"}}]
+    for i, rate in enumerate(band_rates):          # the total row first
+        colour = VF.band_for(rate, "0-30")
+        if colour:
+            fmt.append(_bg(r0 + 1 + i, c0 + 1, colour))
+    fmt.append({"repeatCell": {
+        "range": {"sheetId": ws.id, "startRowIndex": r0, "endRowIndex": r0 + 1,
+                  "startColumnIndex": c0, "endColumnIndex": c0 + 2},
+        "cell": {"userEnteredFormat": {"textFormat": {"bold": True}}},
+        "fields": "userEnteredFormat.textFormat.bold"}})
+    fmt.append({"updateDimensionProperties": {
+        "range": {"sheetId": ws.id, "dimension": "COLUMNS",
+                  "startIndex": c0 + 1, "endIndex": c0 + 2},
+        "properties": {"pixelSize": 120}, "fields": "pixelSize"}})
+    fmt.append({"repeatCell": {
+        "range": {"sheetId": ws.id, "startRowIndex": r0 - 1, "endRowIndex": r0,
+                  "startColumnIndex": c0, "endColumnIndex": c0 + 2},
+        "cell": {"userEnteredFormat": {
+            "wrapStrategy": "WRAP", "horizontalAlignment": "CENTER",
+            "verticalAlignment": "MIDDLE", "backgroundColor": VF.HEADER_BG,
+            "textFormat": {"bold": True, "fontFamily": "Arial", "fontSize": 12,
+                           "foregroundColor": WHITE}}},
+        "fields": "userEnteredFormat.wrapStrategy,userEnteredFormat.horizontalAlignment,"
+                  "userEnteredFormat.verticalAlignment,userEnteredFormat.backgroundColor,"
+                  "userEnteredFormat.textFormat"}})
+    fmt.append({"repeatCell": {
+        "range": {"sheetId": ws.id, "startRowIndex": r0, "endRowIndex": end,
+                  "startColumnIndex": c0, "endColumnIndex": c0 + 1},
+        "cell": {"userEnteredFormat": {"backgroundColor": WHITE,
+                                       "horizontalAlignment": "LEFT"}},
+        "fields": "userEnteredFormat.backgroundColor,userEnteredFormat.horizontalAlignment"}})
+    fmt.append({"autoResizeDimensions": {"dimensions": {
+        "sheetId": ws.id, "dimension": "COLUMNS", "startIndex": c0, "endIndex": c0 + 1}}})
+    _retry(lambda: ws.spreadsheet.batch_update({"requests": fmt}))
+    o30 = office["0-30"]
+    rate = f"{o30['rate']:.1%}" if o30["rate"] is not None else "n/a"
+    log(f"  ✓ {ws.title}: rep list {first}{r0}:{last}{end} -- office 0-30 "
+        f"{o30['activated']}/{o30['sold']} = {rate}, {len(ranked)} reps with 0-30 data")
+    return f"{first}{r0}:{last}{end}"
+
+
+def tables_last_row(ws) -> int:
+    """Last row the tables occupy, read off column A (the tables are
+    contiguous but for their one-row gaps; the region below is blank)."""
+    col = _retry(lambda: ws.get(f"A{TABLES_FIRST_ROW}:A{TABLES_LAST_ROW}"))
+    n = 0
+    for i, r in enumerate(col or [], start=1):
+        if r and str(r[0]).strip():
+            n = i
+    return TABLES_FIRST_ROW + max(n, 1) - 1
+
+
+def report_range(ws) -> str:
+    """The picture: A1 down to the longer of the tables and the rep list,
+    across to the rep list's last column (the hidden helper columns drop
+    out of the PDF export by themselves)."""
+    span = rep_list_span(ws)
+    last_row = tables_last_row(ws)
+    if span:
+        m = re.match(r"^[A-Z]+\d+:([A-Z]+)(\d+)$", span)
+        last_col, rep_last = m.group(1), int(m.group(2))
+        last_row = max(last_row, rep_last)
+    else:
+        last_col = VF._colletter(len(LIST_HEADERS) - 1)
+    return f"A1:{last_col}{max(last_row, 20)}"
+
+
+# ------------------------------------------------------ rose highlight ----
+
+def recent_highlight_spec(sheet_id: int) -> Tuple[str, list]:
     """The 'new disconnect' conditional format as (formula, ranges): rose
-    over every row the A16 FILTER can spill into (16 .. cap+14, A:N) when
-    the row's Disconnect Date is within the last RECENT_DAYS days.
+    over the whole tables region (A16:N98) when the row's Disconnect Date
+    is within the last RECENT_DAYS days. Band rows (blank J) and header
+    rows (text in J) never match, so only data rows light up.
 
     The column comes from LIST_HEADERS, never a letter: the rule the tab
     inherited from LUCY CHURN watched $H -- Disconnect Date THERE, Order
@@ -248,9 +577,7 @@ def recent_highlight_spec(sheet_id: int, cap: int) -> Tuple[str, list]:
     r = LIST_FIRST_ROW
     formula = (f'=AND(${col}{r}<>"",TODAY()-${col}{r}>=0,'
                f'TODAY()-${col}{r}<={RECENT_DAYS})')
-    ranges = [{"sheetId": sheet_id, "startRowIndex": r - 1,
-               "endRowIndex": cap + r - 2,                # helper rows 2..cap spill to row cap+14
-               "startColumnIndex": 0, "endColumnIndex": len(LIST_HEADERS)}]
+    ranges = [_grid_range(sheet_id, LIST_FIRST_ROW, TABLES_LAST_ROW)]
     return formula, ranges
 
 
@@ -261,13 +588,10 @@ def _norm_range(g: dict) -> tuple:
 
 
 def ensure_recent_highlight(ws, log=print) -> str:
-    """Assert the rose 'recent disconnect' rule over the rolloff list.
-    Idempotent, every run, and called AFTER update_churn_tab so it spans
-    the block even on a day the list outgrew its cap (new disconnects sit
-    at the BOTTOM of the list, exactly where it grows). The tab's existing
-    TODAY()-based rule is retargeted in place; none -> one is added on top."""
-    cap = VF.helper_bounds(ws)["cap"]
-    formula, ranges = recent_highlight_spec(ws.id, cap)
+    """Assert the rose 'recent disconnect' rule over the tables region.
+    Idempotent, every run. The tab's existing TODAY()-based rule is
+    retargeted in place; none -> one is added on top."""
+    formula, ranges = recent_highlight_spec(ws.id)
     meta = _retry(lambda: ws.spreadsheet.fetch_sheet_metadata(
         params={"fields": "sheets(properties(sheetId),conditionalFormats)"}))
     rules = next((sh.get("conditionalFormats", []) for sh in meta.get("sheets", [])
@@ -283,6 +607,7 @@ def ensure_recent_highlight(ws, log=print) -> str:
             "booleanRule": {"condition": {"type": "CUSTOM_FORMULA",
                                           "values": [{"userEnteredValue": formula}]},
                             "format": {"backgroundColor": RECENT_BG}}}
+    where = f"A{LIST_FIRST_ROW}:{VF._colletter(len(LIST_HEADERS) - 1)}{TABLES_LAST_ROW}"
     if idx is None:
         req = {"addConditionalFormatRule": {"rule": rule, "index": 0}}
         what = "added"
@@ -293,162 +618,13 @@ def ensure_recent_highlight(ws, log=print) -> str:
         if cur_vals == [formula] and \
                 [_norm_range(g) for g in cur["ranges"]] == [_norm_range(g) for g in ranges]:
             log(f"  ✓ {ws.title}: recent-disconnect highlight already in place "
-                f"(rule {idx}, A{LIST_FIRST_ROW}:{VF._colletter(len(LIST_HEADERS) - 1)}{cap + LIST_FIRST_ROW - 2})")
+                f"(rule {idx}, {where})")
             return "in place"
         req = {"updateConditionalFormatRule": {"sheetId": ws.id, "index": idx, "rule": rule}}
         what = f"rule {idx} retargeted (was {' / '.join(cur_vals) or 'blank'})"
     _retry(lambda: ws.spreadsheet.batch_update({"requests": [req]}))
-    log(f"  ✓ {ws.title}: recent-disconnect highlight {what}: {formula} over "
-        f"A{LIST_FIRST_ROW}:{VF._colletter(len(LIST_HEADERS) - 1)}{cap + LIST_FIRST_ROW - 2}")
+    log(f"  ✓ {ws.title}: recent-disconnect highlight {what}: {formula} over {where}")
     return what
-assert len(LIST_HEADERS) == len(LIST_COL_PX) == VF.H_WIDTH - 2
-assert LIST_COL_PX[0] == BOX_COL_A_PX
-assert LIST_HEADERS[C.H_ALL_ORDERS_F].startswith(CHURN_AFTER[0])
-assert LIST_HEADERS[C.H_ALL_WIRELESS_F].startswith(CHURN_AFTER[1])
-
-
-def _row_mask(label: str) -> str:
-    """Helper-block rows of ONE box row as a 0/1 array over the key column
-    ({key} / {cap} left for fill.update_churn_tab to fill)."""
-    k = "${key}$2:${key}${cap}"
-    if label == "All Orders":
-        return '(%s<>"Internet")*(%s<>"")' % (k, k)
-    return '(%s="%s")' % (k, label)
-
-
-def _view_mask(view: str) -> str:
-    """Helper-block rows in the box row the Filter cell `view` names, as a
-    0/1 array over the key column ({key} / {cap} left for
-    fill.update_churn_tab to fill)."""
-    k = "${key}$2:${key}${cap}"
-    return ('((%s="All Orders")*(%s<>"Internet")*(%s<>"")+(%s=%s))'
-            % (view, k, k, k, view))
-
-
-def churn_after_formula(label: str) -> str:
-    """Template for one churn-after column (fill.update_churn_tab fills the
-    column letters): `label`'s lines that fall off AFTER this group ÷ that
-    box row's activations."""
-    return ('=IFERROR(SUMPRODUCT((${fall}$2:${fall}${cap}>${fall}{r})*'
-            + _row_mask(label) + '*${lines}$2:${lines}${cap})/'
-            + FILTER_BASE[label] + ',"")')
-
-
-def rolloff_formulas() -> dict:
-    """{helper offset: template} for fill.update_churn_tab(formulas=): the
-    All Orders % and All Wireless % after-rolloff columns, nothing else (no
-    customer-notes lookup on this tab)."""
-    return {C.H_ALL_ORDERS_F: churn_after_formula(CHURN_AFTER[0]),
-            C.H_ALL_WIRELESS_F: churn_after_formula(CHURN_AFTER[1])}
-
-
-def filter_formula(first: str, last: str, key: str, cap: int, view: str) -> str:
-    """A16: the visible rolloff list = the helper rows in the picked view.
-    Starts 'FILTER($P$2:$AC$<cap>,$AD$2:$AD$<cap>' so fill.helper_bounds /
-    viewing_cell / _grow_helper_formulas keep reading it."""
-    mask = _view_mask(view).format(key=key, cap=cap)
-    return (f'=IFNA(FILTER(${first}$2:${last}${cap},${key}$2:${key}${cap}<>"",'
-            f'{mask}),"{FILTER_EMPTY}")')
-
-
-def ensure_rolloff_layout(ws, log=print) -> str:
-    """Re-assert the rolloff list's layout (idempotent, every run): the
-    A16 FILTER over the box-row key, the Filter dropdown's choices
-    (FILTER_OPTIONS; the selection is kept while valid, else All Orders),
-    the subtitle (A2), the hint beside the dropdown, the row-15 headers
-    (LIST_HEADERS), the column widths (LIST_COL_PX) and the number formats
-    of the spilled rows. Reads the block's CURRENT bounds, never a constant,
-    and runs before update_churn_tab (which may grow the ranges). Returns
-    the Filter cell as '$B$3'."""
-    b = VF.helper_bounds(ws)
-    f0, cap = b["f0"], b["cap"]
-    first, last = VF._colletter(f0), VF._colletter(f0 + VF.H_WIDTH - 3)   # the 14 shown columns
-    key = VF._colletter(f0 + VF.H_KEY)
-    view = VF.viewing_cell(ws)                                             # e.g. "B3"
-    vcol, vrow = re.match(r"([A-Z]{1,2})(\d+)", view).groups()
-    vabs = f"${vcol}${vrow}"
-    vcol_i, vrow_i = VF._col_idx(vcol), int(vrow) - 1
-    hint_cell = f"{VF._colletter(vcol_i + 1)}{vrow}"
-
-    want_a16 = filter_formula(first, last, key, cap, vabs)
-    cur = _retry(lambda: ws.get("A16", value_render_option="FORMULA"))
-    cur_a16 = str(cur[0][0]) if cur and cur[0] else ""
-    meta = _retry(lambda: ws.spreadsheet.fetch_sheet_metadata({
-        "includeGridData": True, "ranges": [f"{ws.title}!{view}"],
-        "fields": "sheets(data(rowData(values(formattedValue,dataValidation))))"}))
-    cell = ((meta["sheets"][0].get("data", [{}])[0].get("rowData", [{}]) or [{}])[0]
-            .get("values", [{}]) or [{}])[0]
-    dv = cell.get("dataValidation") or {}
-    have = tuple(c.get("userEnteredValue") for c in dv.get("condition", {}).get("values", []))
-    selection = cell.get("formattedValue")
-    a2 = _retry(lambda: ws.get("A2"))
-    hint = _retry(lambda: ws.get(hint_cell))
-    cur_a2 = str(a2[0][0]) if a2 and a2[0] else ""
-    cur_hint = str(hint[0][0]) if hint and hint[0] else ""
-    hdr = _retry(lambda: ws.get("A15:N15"))
-    cur_hdr = tuple(((hdr[0] if hdr else []) + [""] * len(LIST_HEADERS))[:len(LIST_HEADERS)])
-    cmeta = _retry(lambda: ws.spreadsheet.fetch_sheet_metadata({
-        "ranges": [f"'{ws.title}'!A1:{VF._colletter(len(LIST_COL_PX) - 1)}1"],
-        "fields": "sheets(data(columnMetadata(pixelSize)))"}))
-    cur_px = [c.get("pixelSize") for c in
-              cmeta["sheets"][0].get("data", [{}])[0].get("columnMetadata", [])]
-
-    done = []
-    if have != FILTER_OPTIONS:
-        _retry(lambda: ws.spreadsheet.batch_update({"requests": [{"setDataValidation": {
-            "range": {"sheetId": ws.id, "startRowIndex": vrow_i, "endRowIndex": vrow_i + 1,
-                      "startColumnIndex": vcol_i, "endColumnIndex": vcol_i + 1},
-            "rule": {"condition": {"type": "ONE_OF_LIST",
-                                   "values": [{"userEnteredValue": o} for o in FILTER_OPTIONS]},
-                     "strict": True, "showCustomUi": True}}}]}))
-        done.append(f"dropdown {view} = {' / '.join(FILTER_OPTIONS)}")
-    updates = []
-    if selection not in FILTER_OPTIONS:
-        updates.append({"range": view, "values": [[FILTER_OPTIONS[0]]]})
-        done.append(f"{view} {selection!r} -> {FILTER_OPTIONS[0]!r}")
-    if want_a16 != cur_a16:
-        updates.append({"range": "A16", "values": [[want_a16]]})
-        done.append("A16 FILTER rewritten")
-    if cur_a2 != ROLLOFF_SUBTITLE:
-        updates.append({"range": "A2", "values": [[ROLLOFF_SUBTITLE]]})
-        done.append("A2 subtitle")
-    if cur_hint != FILTER_HINT:
-        updates.append({"range": hint_cell, "values": [[FILTER_HINT]]})
-        done.append(f"{hint_cell} hint")
-    if cur_hdr != LIST_HEADERS:
-        updates.append({"range": "A15:N15", "values": [list(LIST_HEADERS)]})
-        done.append("row 15 headers")
-    if updates:
-        _retry(lambda: ws.batch_update(updates, value_input_option="USER_ENTERED"))
-    reqs = [{"updateDimensionProperties": {
-                "range": {"sheetId": ws.id, "dimension": "COLUMNS",
-                          "startIndex": i, "endIndex": i + 1},
-                "properties": {"pixelSize": px}, "fields": "pixelSize"}}
-            for i, px in enumerate(LIST_COL_PX)
-            if i >= len(cur_px) or cur_px[i] != px]
-    if reqs:
-        done.append(f"{len(reqs)} column width(s)")
-    # Number formats on every row the FILTER can spill into: the IFNA
-    # wrapper leaves spilled dates as bare serials otherwise (11/10: only
-    # row 16, formatted at setup, read as a date), and the columns moved
-    # one right on 11/10 pm (E = All Wireless %, G = Sales Rep, J =
-    # Disconnect Date), so each gets its own type -- B, H:J dates, D:E
-    # percentages, G plain text.
-    def _fmt(c0, c1, number_format):
-        return {"repeatCell": {"range": {"sheetId": ws.id, "startRowIndex": 15,
-                                         "endRowIndex": 14 + cap,
-                                         "startColumnIndex": c0, "endColumnIndex": c1},
-                               "cell": {"userEnteredFormat": {"numberFormat": number_format}},
-                               "fields": "userEnteredFormat.numberFormat"}}
-    date_fmt = {"type": "DATE", "pattern": "mm/dd/yyyy"}
-    reqs += [_fmt(1, 2, date_fmt), _fmt(7, 10, date_fmt),
-             _fmt(3, 5, {"type": "PERCENT", "pattern": "0.00%"}),
-             _fmt(6, 7, {"type": "TEXT"})]
-    _retry(lambda: ws.spreadsheet.batch_update({"requests": reqs}))
-    log(f"  ✓ {ws.title}: rolloff list follows the box "
-        f"({'; '.join(done) if done else 'already in place'}; block {first}:{last}, "
-        f"key {key}, rows to {cap}, view {vabs})")
-    return vabs
 
 
 def _unmerge_box_rates(ws, log=print) -> None:
@@ -531,49 +707,32 @@ _SOLID = {"style": "SOLID", "width": 1, "color": {"red": 0, "green": 0, "blue": 
 _NO_BORDER = {"style": "NONE"}
 
 
-def border_requests(sheet_id: int, n_rows: int, cap: int, rep_a1: Optional[str]) -> list:
-    """Thin black borders on the rolloff list -- header row 15 plus the
-    `n_rows` spilled rows, A:N -- and on the per-rep list (`rep_a1`, header
-    included); the rows the FILTER can still spill into below the list are
-    cleared so a longer earlier list leaves no empty grid. Pure, for tests."""
-    def rng(r0, r1, c0, c1):
-        return {"sheetId": sheet_id, "startRowIndex": r0, "endRowIndex": r1,
-                "startColumnIndex": c0, "endColumnIndex": c1}
-
+def border_requests(sheet_id: int, layout: list, rep_a1: Optional[str]) -> list:
+    """Thin black borders on each table (header row through its last data
+    row, A:N) and on the per-rep list (`rep_a1`, header included); the rest
+    of the tables region is cleared first, so yesterday's longer table
+    leaves no empty grid. Pure, for tests."""
     def box(r, style):
         return {"updateBorders": {"range": r, "top": style, "bottom": style, "left": style,
                                   "right": style, "innerHorizontal": style, "innerVertical": style}}
-    hdr0 = LIST_FIRST_ROW - 2                       # row 15, 0-based
-    last = LIST_FIRST_ROW - 1 + max(0, n_rows)      # exclusive end after the spilled rows
-    reqs = [box(rng(hdr0, last, 0, len(LIST_HEADERS)), _SOLID)]
-    if last < cap:
-        reqs.append(box(rng(last, cap, 0, len(LIST_HEADERS)), _NO_BORDER))
+    reqs = [box(_grid_range(sheet_id, TABLES_FIRST_ROW, TABLES_LAST_ROW), _NO_BORDER)]
+    for pos in layout:
+        reqs.append(box(_grid_range(sheet_id, pos["header"], pos["last"]), _SOLID))
     if rep_a1:
         reqs.append(box(_a1_span_to_range(rep_a1, sheet_id), _SOLID))
     return reqs
 
 
-def ensure_borders(ws, log=print) -> None:
-    """Every run, last: borders on the rolloff list and the per-rep list.
+def ensure_borders(ws, layout: list, log=print) -> None:
+    """Every run, last: borders on the three tables and the per-rep list.
     The thread's picture is a PDF export with gridlines off, so without cell
-    borders both lists print as floating text (Carlos 2026-11-14: "customer
+    borders the lists print as floating text (Carlos 2026-11-14: "customer
     churn is missing the bordering lines")."""
-    b = VF.helper_bounds(ws)
-    cap = b["cap"]
-    col_a = _retry(lambda: ws.get(f"A{LIST_FIRST_ROW}:A{cap}"))
-    n = 0
-    for i, row in enumerate(col_a or [], start=1):
-        if row and str(row[0]).strip():
-            n = i
-    rep_a1 = None
-    try:
-        from automations.vantura_churn import shot as VS
-        rep_a1 = VS._rep_range(ws)
-    except Exception as e:  # noqa: BLE001 -- the list still gets its borders
-        log(f"  ⚠ rep list range not found for borders: {e}")
-    reqs = border_requests(ws.id, n, cap, rep_a1)
+    rep_a1 = rep_list_span(ws)
+    reqs = border_requests(ws.id, layout, rep_a1)
     _retry(lambda: ws.spreadsheet.batch_update({"requests": reqs}))
-    log(f"  ✓ {ws.title}: borders on the rolloff list (A15:N{LIST_FIRST_ROW - 1 + n})"
+    log(f"  ✓ {ws.title}: borders on "
+        + ", ".join(f"rows {p['header']}-{p['last']}" for p in layout)
         + (f" and the rep list ({rep_a1})" if rep_a1 else ""))
 
 

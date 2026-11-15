@@ -81,27 +81,33 @@ class Compute(unittest.TestCase):
         self.assertEqual(s["split"]["non_byod"], {"base": 1, "disc": 0})
         self.assertEqual(s["excluded"], {"upgrade": 1, "new": 1, "device": 1})
 
-    def test_helper_block_shape_and_reason(self):
-        rows = C.helper_block(self.lines, TODAY)
-        self.assertEqual(len(rows), 1)
-        r = rows[0]
-        self.assertEqual(len(r), 16)
-        self.assertIsNone(r[C.H_ALL_ORDERS_F]); self.assertIsNone(r[C.H_ALL_WIRELESS_F])
-        self.assertEqual((C.H_ALL_ORDERS_F, C.H_ALL_WIRELESS_F), (3, 4))
-        self.assertEqual(r[5], "HENRY W")
-        self.assertEqual(r[10], "port")              # was CRU/IRU; export has no reason
-        self.assertEqual(r[9], "11/3/2026")          # real disconnect date
-        self.assertEqual(r[1], "11/24/2026")         # posted 10/25 + 30
-        self.assertEqual(r[11], "2 (2W)")
-        self.assertEqual(r[12], "BYOD")
-        self.assertEqual(r[13], "Wireless")          # product, as shown (no Notes column)
-        self.assertEqual(r[14], "BYODs")             # box row, what the Filter picks
-        self.assertEqual(r[15], 0)
+    def test_rolloff_groups_and_tables(self):
+        groups = C.rolloff_groups(self.lines, TODAY)
+        self.assertEqual(len(groups), 1)
+        g = groups[0]
+        self.assertEqual((g["cls"], g["customer"], g["lines"], g["days_left"]),
+                         ("byod", "HENRY W", 1, 15))
+        self.assertEqual(g["falloff"], dt.date(2026, 11, 24))      # posted 10/25 + 30
+        self.assertEqual(g["disc_date"], dt.date(2026, 11, 3))     # real disconnect date
+        self.assertEqual((g["kind"], g["acct_lines"], g["device"], g["product"]),
+                         ("port", "2 (2W)", "BYOD", "Wireless"))    # kind, not CRU/IRU
+        tables = C.class_tables(self.lines, TODAY)
+        self.assertEqual([t["cls"] for t in tables], ["wireless", "byod", "air"])
+        self.assertEqual([t["title"] for t in tables],
+                         ["ALL WIRELESS (non-BYOD)", "BYODs", "AIR"])
+        w, b, air = tables
+        self.assertEqual((w["act"], w["disc"], w["pct"], w["rows"]), (1, 0, 0.0, []))
+        self.assertEqual((b["act"], b["disc"], b["pct"]), (1, 1, 100.0))
+        self.assertEqual(b["rows"], [["15d", "11/24/2026", 1, 0.0, 0.0, "HENRY W", "Nick Smedra",
+                                      "10/20/2026", "10/25/2026", "11/3/2026", "port", "2 (2W)",
+                                      "BYOD", "Wireless"]])
+        self.assertEqual(len(b["rows"][0]), 14)
+        self.assertEqual((air["act"], air["disc"], air["rows"]), (1, 0, []))
 
-    def test_helper_block_follows_box(self):
-        # Carlos 2026-11-10: the list reflects the box -- every box-row
-        # disconnect (not just ports), keyed by box row, soonest fall-off
-        # first across rows; 'remaining' counts the SAME box row only.
+    def test_class_tables_follow_box(self):
+        # Carlos 2026-11-15: one table per box row -- every box-row
+        # disconnect (not just ports) under its own table, soonest fall-off
+        # first; each row's two churn-after numbers divide by the box.
         byod = next(l for l in self.lines if l["customer"] == "HENRY W" and l["byod"])
         late = dict(byod, customer="LATE L", ban="BAN8", spe="SPE12", tn="1212",
                     posted=dt.date(2026, 10, 30), status_date_d=dt.date(2026, 11, 5))
@@ -112,16 +118,29 @@ class Compute(unittest.TestCase):
                      package="Unlimited", device="iPhone 18 Pro - 256GB - Black",
                      byod=False, tn_type="new", posted=dt.date(2026, 10, 28),
                      status_date_d=dt.date(2026, 11, 4))
-        rows = C.helper_block(list(self.lines) + [late, air, phone], TODAY)
-        self.assertEqual([(r[5], r[14], r[15]) for r in rows],
-                         [("EARLY A", "Air", 0), ("HENRY W", "BYODs", 1),
-                          ("NEW N", "All Wireless", 0), ("LATE L", "BYODs", 0)])
-        self.assertEqual([r[1] for r in rows],
-                         ["11/19/2026", "11/24/2026", "11/27/2026", "11/29/2026"])
-        self.assertEqual(rows[2][10], "new")         # a new-number phone is listed too
-        # and the list is exactly the box's disconnects
-        box = C.product_box(list(self.lines) + [late, air, phone], TODAY)
-        self.assertEqual(sum(r[2] for r in rows), box["all_orders"]["disc"])
+        lines = list(self.lines) + [late, air, phone]
+        groups = C.rolloff_groups(lines, TODAY)
+        self.assertEqual([(g["customer"], g["cls"]) for g in groups],
+                         [("EARLY A", "air"), ("HENRY W", "byod"),
+                          ("NEW N", "wireless"), ("LATE L", "byod")])
+        box = C.product_box(lines, TODAY)
+        self.assertEqual(box["all_orders"], {"act": 6, "disc": 4, "pend": 1})
+        w, b, a = C.class_tables(lines, TODAY, box)
+        self.assertEqual([r[C.T_CUSTOMER] for r in w["rows"]], ["NEW N"])
+        self.assertEqual([r[C.T_CUSTOMER] for r in b["rows"]], ["HENRY W", "LATE L"])
+        self.assertEqual([r[C.T_CUSTOMER] for r in a["rows"]], ["EARLY A"])
+        for t in (w, b, a):                      # each table = its box row's disconnects
+            self.assertEqual(sum(r[C.T_LINES] for r in t["rows"]), box[t["cls"]]["disc"])
+        self.assertEqual(w["rows"][0][10], "new")           # a new-number phone is listed too
+        # % after rolloff: All Orders over B5 (6 activations), own over the table's row
+        self.assertAlmostEqual(w["rows"][0][C.T_ALL_PCT], 1 / 6)   # LATE L (11/29) is later
+        self.assertEqual(w["rows"][0][C.T_OWN_PCT], 0.0)
+        self.assertAlmostEqual(b["rows"][0][C.T_ALL_PCT], 2 / 6)   # NEW N + LATE L after 11/24
+        self.assertEqual(b["rows"][0][C.T_OWN_PCT], 0.5)           # LATE L of 2 BYOD activations
+        self.assertEqual((b["rows"][1][C.T_ALL_PCT], b["rows"][1][C.T_OWN_PCT]), (0.0, 0.0))
+        self.assertEqual((a["rows"][0][C.T_ALL_PCT], a["rows"][0][C.T_OWN_PCT]), (0.5, 0.0))
+        self.assertEqual((b["disc"], b["act"], b["pct"]), (2, 2, 100.0))
+        self.assertIsNone(C.pct_after(groups, ("internet",), TODAY, 0))
 
     def test_box_activation_rates(self):
         r = C.box_activation_rates(self.lines, TODAY)
@@ -136,46 +155,53 @@ class Compute(unittest.TestCase):
 
     def test_recent_highlight_follows_the_disconnect_column(self):
         from automations.nds_churn import sheet as S
-        formula, ranges = S.recent_highlight_spec(7, 41)
+        formula, ranges = S.recent_highlight_spec(7)
         # Disconnect Date is the 10th shown column (J); the rule must name it,
         # not the $H the B2B tab's copy carried.
         self.assertEqual(S.LIST_HEADERS[9], "Disconnect Date")
         self.assertEqual(formula, '=AND($J16<>"",TODAY()-$J16>=0,TODAY()-$J16<=7)')
-        # helper rows 2..41 spill into list rows 16..55 -> A16:N55, half-open
-        self.assertEqual(ranges, [{"sheetId": 7, "startRowIndex": 15, "endRowIndex": 55,
+        # the whole tables region, A16:N98, half-open
+        self.assertEqual(ranges, [{"sheetId": 7, "startRowIndex": 15, "endRowIndex": 98,
                                    "startColumnIndex": 0, "endColumnIndex": 14}])
-        self.assertEqual(S._norm_range({"sheetId": 7, "startRowIndex": 15, "endRowIndex": 55,
+        self.assertEqual(S._norm_range({"sheetId": 7, "startRowIndex": 15, "endRowIndex": 98,
                                         "endColumnIndex": 14}),
                          S._norm_range(ranges[0]))
 
-    def test_rolloff_formulas_follow_the_box(self):
+    def test_table_layout_and_grid(self):
         from automations.nds_churn import sheet as S
-        from automations.vantura_churn import fill as VF
-        self.assertEqual(S.FILTER_BASE, {"All Orders": "$B$5", "All Wireless": "$B$7",
-                                         "BYODs": "$B$9", "Air": "$B$11", "Internet": "$B$12"})
-        self.assertEqual(S.FILTER_OPTIONS[0], "All Orders")
-        # D / E: the All Orders % and the All Wireless % after this group
-        # rolls off, whatever the Filter shows (Carlos 2026-11-10 pm)
-        fm = S.rolloff_formulas()
-        self.assertEqual(sorted(fm), [3, 4])
-        ph = dict(r=2, cap=41, fall="Q", lines="R", key="AD", rem="AE", cust="T",
-                  n0="P", n1="Q", wl="x", air="y", inet="z")
-        self.assertEqual(fm[3].format(**ph),
-                         '=IFERROR(SUMPRODUCT(($Q$2:$Q$41>$Q2)*($AD$2:$AD$41<>"Internet")'
-                         '*($AD$2:$AD$41<>"")*$R$2:$R$41)/$B$5,"")')
-        self.assertEqual(fm[4].format(**ph),
-                         '=IFERROR(SUMPRODUCT(($Q$2:$Q$41>$Q2)*($AD$2:$AD$41="All Wireless")'
-                         '*$R$2:$R$41)/$B$7,"")')
-        self.assertEqual(len(S.LIST_HEADERS), 14)
-        self.assertEqual(S.LIST_HEADERS[3:6], ("All Orders % After Rolloff",
-                                               "All Wireless % After Rolloff", "Customer"))
-        self.assertNotIn("Notes", S.LIST_HEADERS)
-        # every other churn tab keeps the churn-after + notes defaults
-        self.assertEqual(VF.DEFAULT_FORMULAS, {3: VF.U_FORMULA_T, 13: VF.AC_FORMULA})
-        a16 = S.filter_formula("P", "AC", "AD", 41, "$B$3")
-        # the prefix fill.helper_bounds parses, the '=$B$3' viewing_cell finds
-        self.assertTrue(a16.startswith('=IFNA(FILTER($P$2:$AC$41,$AD$2:$AD$41<>"",('), a16)
-        self.assertIn('($AD$2:$AD$41=$B$3))),"no disconnects in this view")', a16)
+
+        def t(cls, n, act=10, disc=2):
+            return {"cls": cls, "title": C.TABLE_TITLES[cls], "act": act, "disc": disc,
+                    "pct": 100.0 * disc / act if act else None,
+                    "rows": [[f"{i}d", "11/20/2026", 1, 0.1, None, f"C{i}", "Rep", "11/1/2026",
+                              "11/2/2026", "11/3/2026", "port · OOF", "1 (1W)", "BYOD", "Wireless"]
+                             for i in range(n)]}
+        tables = [t("wireless", 2), t("byod", 0, act=0, disc=0), t("air", 1, act=4, disc=1)]
+        layout = S.table_layout(tables)
+        self.assertEqual(layout, [
+            {"band": 15, "header": 16, "first": 17, "last": 18, "n": 2},
+            {"band": 20, "header": 21, "first": 22, "last": 22, "n": 1},
+            {"band": 24, "header": 25, "first": 26, "last": 26, "n": 1}])
+        self.assertEqual(S.tables_end_row(layout), 26)
+        grid = S.tables_grid(tables, layout)
+        self.assertEqual(len(grid), 26 - 15 + 1)
+        self.assertEqual(grid[0][0], "ALL WIRELESS (non-BYOD) — 2 of 10 disconnected = 20.00%")
+        self.assertEqual(grid[1][4], "All Wireless % After Rolloff")
+        self.assertEqual(grid[2][4], "")                       # None -> blank cell
+        self.assertEqual(grid[5][0], "BYODs — no activations in the last 30 days")
+        self.assertEqual(grid[6][4], "BYODs % After Rolloff")
+        self.assertEqual(grid[7][0], S.NO_ROWS_TEXT)
+        self.assertEqual(grid[9][0], "AIR — 1 of 4 disconnected = 25.00%")
+        self.assertEqual(grid[10][4], "Air % After Rolloff")
+        self.assertTrue(all(len(r) == 14 for r in grid))
+        self.assertEqual(S.table_headers("wireless"), S.LIST_HEADERS)
+        reqs = S.table_format_requests(3, layout)
+        self.assertEqual(reqs[0]["repeatCell"]["range"],
+                         {"sheetId": 3, "startRowIndex": 14, "endRowIndex": 98,
+                          "startColumnIndex": 0, "endColumnIndex": 14})
+        ph = S.placeholder_requests(3, layout, tables)
+        self.assertEqual(len(ph), 1)
+        self.assertEqual(ph[0]["repeatCell"]["range"]["startRowIndex"], 21)   # row 22
 
     def test_pending_orders(self):
         # PEND P: sold 11/5, Shipped -> the one pending line; everything else
