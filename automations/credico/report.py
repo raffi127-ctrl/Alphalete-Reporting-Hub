@@ -683,6 +683,103 @@ def discover_screens(account="murrugarra", screens=SCREENS, verbose=True):
     return rows
 
 
+REPORT_CENTER_URL = f"{BASE}/#/dashboard/reporting-center"
+REPORT_PROBE_DEFAULT = ("Verizon Wireless Apps by Signed Date", "App History", "Submission Status Report")
+
+
+def discover_report(account="murrugarra", names=REPORT_PROBE_DEFAULT, days=14, verbose=True):
+    """Open Reporting Center reports under one saved login, run each for the
+    last `days` days and dump the grid's COLUMN NAMES plus a count of
+    phone-like cells -- never a value. READ-ONLY: viewing a report is a read;
+    nothing is exported or downloaded, nothing outside the report's own
+    date inputs and its run button is clicked.
+
+    Carlos 2026-11-15: the phone-number source before the pay file. The
+    screen walk (--screens) found these reports under Nico's login; the
+    Sales Verification masks the line and the Commissions file is two weeks
+    behind."""
+    import datetime as _dt
+    import re
+    rows = [["WHAT", "REPORT", "VALUE"], ["account", account, "Reporting Center probe, read-only, last %d days" % days]]
+    phone = re.compile(r"\b\(?\d{3}\)?[-. ]?\d{3}[-. ]?\d{4}\b")
+    end = _dt.date.today()
+    start = end - _dt.timedelta(days=days)
+
+    def dump(pg, tag):
+        body = " ".join((pg.inner_text("body") or "").split())
+        rows.append(["phone-like-values", tag, str(len(phone.findall(body)))])
+        for what, sel in (("button", "button"), ("select", "select"), ("input", "input"), ("link", "a")):
+            for el in pg.query_selector_all(sel)[:40]:
+                try:
+                    txt = (" ".join((el.inner_text() or "").split())[:60] or el.get_attribute("placeholder")
+                           or el.get_attribute("name") or el.get_attribute("type") or "")
+                    if txt and what != "link" or (what == "link" and any(k in txt.lower() for k in ("export", "download", "csv", "excel"))):
+                        rows.append([what, tag, txt + " ~ " + (el.get_attribute("ng-click") or el.get_attribute("class") or "")[:70]])
+                except Exception:  # noqa: BLE001
+                    continue
+        for t in pg.query_selector_all("table")[:6]:
+            hdr = [" ".join((h.inner_text() or "").split()) for h in t.query_selector_all("th")[:40]]
+            if hdr:
+                cells = " ".join((t.inner_text() or "").split())
+                n_rows = len(t.query_selector_all("tr"))
+                rows.append(["table-headers", tag, " | ".join(hdr)[:600]])
+                rows.append(["table-size", tag, "%d row(s), %d phone-like cell(s)" % (n_rows, len(phone.findall(cells)))])
+        # AngularJS grids are often divs: any header-ish row text
+        for sel in (".ui-grid-header-cell", "[role=columnheader]", "thead td", ".k-grid-header th"):
+            hs = [" ".join((h.inner_text() or "").split()) for h in pg.query_selector_all(sel)[:40]]
+            hs = [h for h in hs if h]
+            if hs:
+                rows.append(["grid-headers", tag, " | ".join(hs)[:600]])
+                break
+
+    with credico_session(headless=True, account=account) as page:
+        for name in names:
+            tag = name
+            try:
+                page.goto(REPORT_CENTER_URL, wait_until="domcontentloaded")
+                page.wait_for_timeout(5000)
+                link = page.get_by_text(name, exact=True).first
+                link.click()
+                page.wait_for_timeout(5000)
+                rows.append(["opened", tag, page.url[:160]])
+                dump(page, tag + " (controls)")
+                # date inputs: fill start/end; AngularJS 'calendar' inputs take text
+                dates = [el for el in page.query_selector_all("input") if "calendar" in (el.get_attribute("class") or "")
+                         or "date" in ((el.get_attribute("placeholder") or "") + (el.get_attribute("name") or "") + (el.get_attribute("type") or "")).lower()]
+                vals = [start.strftime("%m/%d/%Y"), end.strftime("%m/%d/%Y")]
+                for el, v in zip(dates[:2], vals):
+                    try:
+                        el.fill(v)
+                        el.dispatch_event("change")
+                    except Exception:  # noqa: BLE001
+                        pass
+                rows.append(["date-inputs", tag, "%d filled (%s..%s)" % (min(len(dates), 2), vals[0], vals[1])])
+                ran = False
+                for label in ("Load", "Run", "Search", "Submit", "Go", "View", "Generate"):
+                    btn = page.get_by_role("button", name=re.compile(r"^\s*%s\b" % label, re.I))
+                    if btn.count():
+                        btn.first.click()
+                        ran = True
+                        rows.append(["clicked", tag, label])
+                        break
+                page.wait_for_timeout(8000 if ran else 2000)
+                dump(page, tag + " (after run)" if ran else tag + " (no run button)")
+            except Exception as e:  # noqa: BLE001
+                rows.append(["error", tag, f"{type(e).__name__}: {str(e)[:200]}"])
+    if verbose:
+        for r in rows:
+            print("  ".join(str(c)[:80].ljust(26) for c in r))
+    OUT.mkdir(parents=True, exist_ok=True)
+    (OUT / f"discover_report_{account}.tsv").write_text(
+        "\n".join("\t".join(str(c) for c in r) for r in rows), encoding="utf-8")
+    try:
+        _dump_to_sheet(rows)
+        print(f"\n✓ {len(rows)} row(s) → '{DUMP_TAB}' tab")
+    except Exception as e:  # noqa: BLE001
+        print(f"\n⚠ couldn't write the '{DUMP_TAB}' tab ({e})")
+    return rows
+
+
 def inspect(verbose=True):
     """Dump EVERY sheet of the downloaded file(s) — the summary sheet is a
     per-campaign pivot, so the per-person rows (if any) are on another tab.
@@ -1018,8 +1115,13 @@ def main(argv=None):
     ap.add_argument("--week", help="sheet week label, e.g. 7.19.26")
     ap.add_argument("--screens", action="store_true",
                     help="walk ARC's top menu under --account and dump each screen (read-only)")
-    ap.add_argument("--account", default="murrugarra", help="saved Credico login for --screens")
+    ap.add_argument("--account", default="murrugarra", help="saved Credico login for --screens / --report")
+    ap.add_argument("--report", nargs="*", metavar="NAME",
+                    help="Reporting Center report(s) to open, run for the last 14 days and dump the columns of (read-only)")
     a = ap.parse_args(argv)
+    if a.report is not None:
+        discover_report(a.account, tuple(a.report) or REPORT_PROBE_DEFAULT)
+        return 0
     if a.screens:               # before --discover: `lucy rerun credico_discover --screens` carries both
         discover_screens(a.account)
         return 0
