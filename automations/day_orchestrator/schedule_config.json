@@ -18070,7 +18070,7 @@
    "verify": {
     "type": "not_configured"
    },
-   "timeout_minutes": 20
+   "timeout_minutes": 150
   },
   "verizon_inbox_probe": {
    "on_scheduler": false,
