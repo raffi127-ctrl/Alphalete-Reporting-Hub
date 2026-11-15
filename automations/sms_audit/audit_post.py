@@ -52,7 +52,9 @@ GRADES = (Path(__file__).resolve().parents[2]
 ACCOUNTS = {
     "11280": ("Rafael Hidalgo", "C0AUAS88FGW"),
     "11580": ("Carlos Hidalgo", "C09L1S3MQ1E"),
-    "23965": ("Tiffani Brown", "C0CAV0P4RRS"),
+    # #aglemar-kennel-recruiting since 2026-11-15 (Megan); the old
+    # C0CAV0P4RRS is gone (channel_not_found for Lucy).
+    "23965": ("Aglemar Kennel", "C0CFLK9MK4H"),
     # Keyed on the ACCOUNT number, which is what the bookings, the SMS
     # log and the grades are all keyed on. (This channel read 24064
     # until Megan renamed it 2026-10-20; the id was unaffected.)
