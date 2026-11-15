@@ -36,7 +36,7 @@ ROOT = Path(__file__).resolve().parents[2]
 SHEET_ID = "1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY"       # Vantura Master Sales Board
 TAB = "Verizon Payout"
 DOC_ID = "12LSUQ10vb-vdOfbbvL6USBuAfXxVV9lp0I25Osmt2u0"          # B2B Vantura (Google Doc)
-DOC_TAB_ID = "t.jf6uam6tjkig"                                     # its "Verizon Breakdowns" tab
+DOC_TAB_ID = "t.uofb92lc0bvk"                                     # its "Verizon Comp Grid" tab (made 2026-11-15, right after Office Payout)
 GDOCS_TOKEN = Path.home() / ".config" / "brand-audit" / "gdocs-token.json"
 TITLE = "Verizon Wireless Comp Grid"
 LEAD = ("Pay triggers on the APPROVAL date and runs ~2 weeks behind. (Approval is different than the activation date: "
@@ -350,8 +350,6 @@ def write_doc(status: Optional[List[str]] = None, doc_id: str = DOC_ID, tab_id: 
         j = doc(); i = end_index(j)
         text = "Where the office sits (approval-date windows, off the Verizon Order Log, %s):\n" % dt.date.today().strftime("%m/%d/%Y") + "\n".join("• " + s for s in status) + "\n"
         batch([{"insertText": {"location": loc(i), "text": text}}])
-    j = doc(); i = end_index(j)
-    batch([{"insertText": {"location": loc(i), "text": "Source: Credico SOW Schedule A (6.16.26), Churn Schedule Wireless 2026, Activation Bonus, AutoPay Bonus. Estimates — Credico's statement is the pay.\n"}}])
     log("[payout] section appended to the B2B Vantura doc tab %s" % tab_id)
     return True
 
@@ -362,6 +360,7 @@ def main(argv=None) -> int:
     ap.add_argument("--write-tab", action="store_true")
     ap.add_argument("--sheet-id", default=SHEET_ID)
     ap.add_argument("--doc", action="store_true")
+    ap.add_argument("--doc-tab", default=DOC_TAB_ID, help="the B2B Vantura doc tab to append to")
     ap.add_argument("--no-status", action="store_true", help="skip the live 'where the office sits' lines")
     a = ap.parse_args(argv)
     status = [] if a.no_status else office_status()
@@ -372,7 +371,7 @@ def main(argv=None) -> int:
     if a.write_tab:
         write_tab(a.sheet_id, status)
     if a.doc:
-        write_doc(status)
+        write_doc(status, tab_id=a.doc_tab)
     if not (a.png or a.write_tab or a.doc):
         for heading, rows, note in tables():
             print("\n" + heading)
