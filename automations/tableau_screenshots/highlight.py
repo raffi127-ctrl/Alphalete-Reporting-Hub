@@ -67,6 +67,7 @@ _API_EDGE = 1400         # the API shrinks images to ~1568px on the long edge
 _MIN_TILE_PX = 1000      # a slice is at least this tall (narrow boards)
 
 HL_COLOR = (255, 236, 64)   # highlighter yellow
+ORG_COLOR = (178, 214, 255)  # light blue: the rest of the org (Raf 11/15)
 
 
 def norm(s: str) -> str:
@@ -255,14 +256,15 @@ def tiles(im, bands: list) -> list:
     return out
 
 
-def paint(im, band):
-    """The image with one band tinted highlighter-yellow (text stays readable)."""
+def paint(im, band, color=HL_COLOR):
+    """The image with one band tinted (default highlighter-yellow; multiply,
+    so the text stays readable)."""
     from PIL import Image, ImageChops
     top, bot, segs = band
     out = im.convert("RGB").copy()
     for x0, x1 in segs:
         region = out.crop((x0, top, x1 + 1, bot))
-        tint = Image.new("RGB", region.size, HL_COLOR)
+        tint = Image.new("RGB", region.size, color)
         out.paste(ImageChops.multiply(region, tint), (x0, top))
     return out
 
@@ -383,12 +385,15 @@ def locate(png: Path, people: dict, cache_dir: Path | None = None) -> dict:
     return out
 
 
-def highlighted(png: Path, key: str, bands: list) -> Path:
-    """Write (once) and return the copy of `png` with `bands` painted."""
+def highlighted(png: Path, key: str, bands: list, blue: list = ()) -> Path:
+    """Write and return the copy of `png` with `bands` yellow and `blue` (the
+    rest of the org) light blue."""
     from PIL import Image
     png = Path(png)
     dest = png.with_name(f"{png.stem}__hl_{key}{png.suffix}")
     im = Image.open(png)
+    for b in blue:
+        im = paint(im, b, ORG_COLOR)
     for b in bands:
         im = paint(im, b)
     im.save(dest)
@@ -562,18 +567,31 @@ class Highlighter:
         if not owner or self._by_channel == {}:
             return png
         try:
+            org = org_members() if (ORG_BLUE or FORCE) else []
             key = str(png)
             if key not in self._located:
-                people = {o: spellings(o) for o in sorted(self._owners)}
+                names_all = set(self._owners) | set(org)
+                people = {o: spellings(o) for o in sorted(names_all)}
                 self._located[key] = locate(Path(png), people)
+            hits = self._located[key]
             names = (owner,) if isinstance(owner, str) else tuple(owner)
-            bands = [b for o in names for b in self._located[key].get(o) or []]
-            if not bands:
+            bands = [b for o in names for b in hits.get(o) or []]
+            blue = []
+            if org and any(in_org(o, org) for o in names):
+                mine = {(b[0], b[1]) for b in bands}
+                for who, bs in hits.items():
+                    if any(same_person(who, o) for o in names):
+                        continue
+                    if not in_org(who, org):
+                        continue
+                    blue += [b for b in bs if (b[0], b[1]) not in mine]
+            if not bands and not blue:
                 return png
-            out = highlighted(Path(png), "_".join(norm(o) for o in names), bands)
+            out = highlighted(Path(png), "_".join(norm(o) for o in names),
+                              bands, blue)
             owner = " + ".join(names)
             print(f"   highlight: {owner} on {(spec or {}).get('id', Path(png).name)}"
-                  f" ({len(bands)} row(s))", flush=True)
+                  f" ({len(bands)} yellow, {len(blue)} blue)", flush=True)
             return out
         except Exception as e:   # noqa: BLE001
             # One failure (no key, Claude down) turns it off for the rest of
@@ -582,6 +600,98 @@ class Highlighter:
                   f" - highlights off for this run", flush=True)
             self._by_channel, self._owners = {}, set()
             return png
+
+
+# ------------------------------------------------------------ the whole org
+# Raf 2026-11-15 (#lucy-projects "Trackers highlighting the org"): "highlight
+# blue the whole org ... where's the rest of the org at?" Megan, same day: each
+# owner's channel keeps THEIR row yellow and paints the rest of our org blue;
+# an owner who is NOT in our org keeps only their own yellow row. The owners'
+# iMessage PDF is built from #alphalete-sales' images, so it inherits it.
+# LIVE since Megan OKed the preview 2026-11-15 ("looks good, roll out").
+ORG_BLUE = True
+
+_ORG = None
+_ORG_MIRROR = Path(__file__).resolve().parents[2] / "output" / ".org_tree_cache.json"
+
+
+def org_members() -> list:
+    """Every name on the Org Tree tab (the RCs and NCs report's source), read
+    once per process. A mirror under a day old is used first; the Sheet when
+    it is older; the old mirror when the Sheet is down; [] if all fail
+    (= nobody blue, yellow highlights unchanged)."""
+    global _ORG
+    if _ORG is not None:
+        return _ORG
+    import time
+    vals = None
+    try:
+        if _ORG_MIRROR.exists() and time.time() - _ORG_MIRROR.stat().st_mtime < 86400:
+            vals = json.loads(_ORG_MIRROR.read_text(encoding="utf-8"))
+    except Exception:   # noqa: BLE001
+        vals = None
+    if vals is None:
+        try:
+            from automations.override_bulletin import dd_data as D
+            from automations.override_bulletin import rcs_ncs_data as R
+            from automations.recruiting_report import fill as F
+            sh = F._client().open_by_key(D.WORKBOOK_ID)
+            ws = next(w for w in sh.worksheets() if w.id == R.ORG_TREE_GID)
+            vals = ws.get_all_values()
+            try:
+                _ORG_MIRROR.parent.mkdir(parents=True, exist_ok=True)
+                _ORG_MIRROR.write_text(json.dumps(vals), encoding="utf-8")
+            except Exception:   # noqa: BLE001
+                pass
+        except Exception as e:   # noqa: BLE001
+            try:
+                vals = json.loads(_ORG_MIRROR.read_text(encoding="utf-8"))
+                print(f"   highlight: Org Tree unreachable ({type(e).__name__})"
+                      f" - using the last copy", flush=True)
+            except Exception:   # noqa: BLE001
+                print(f"   highlight: Org Tree unreachable ({type(e).__name__})"
+                      f" - no blue this run", flush=True)
+                vals = []
+    try:
+        from automations.override_bulletin import rcs_ncs_data as R
+        names = [n["name"] for n in R._parse_tree(vals)]
+    except Exception:   # noqa: BLE001
+        names = []
+    seen, out = set(), []
+    for n in names:
+        if norm(n) and norm(n) not in seen:
+            seen.add(norm(n))
+            out.append(n)
+    _ORG = out
+    return out
+
+
+def same_person(a: str, b: str) -> bool:
+    """Loose name match between the tracker owner list and the Org Tree:
+    'Nico Murrugarra' = 'Nicolas Murrugarra', 'Haytham' = 'Haytham Nagi',
+    'Salik Mallick' = 'Salik Malick', plus ICD Aliases."""
+    sa = {norm(x) for x in spellings(a)}
+    sb = {norm(x) for x in spellings(b)}
+    if sa & sb:
+        return True
+    pa, pb = (a or "").lower().split(), (b or "").lower().split()
+    if not pa or not pb:
+        return False
+    fa, fb = norm(pa[0]), norm(pb[0])
+    first = fa and fb and (fa.startswith(fb) or fb.startswith(fa))
+    if len(pa) == 1 or len(pb) == 1:          # one-word owner row ('Haytham')
+        return bool(first) and min(len(fa), len(fb)) >= 4
+    la, lb = norm(pa[-1]), norm(pb[-1])
+    # one letter apart ('mallick' / 'malick') still the same last name
+    import difflib
+    last = la == lb or (min(len(la), len(lb)) >= 5 and
+                        difflib.SequenceMatcher(None, la, lb).ratio() >= 0.85)
+    return bool(first and last)
+
+
+def in_org(owner: str, members: list | None = None) -> bool:
+    members = org_members() if members is None else members
+    return any(same_person(owner, m) for m in members)
 
 
 def main(argv=None) -> int:

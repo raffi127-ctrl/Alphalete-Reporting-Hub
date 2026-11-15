@@ -11,6 +11,8 @@ from PIL import Image, ImageDraw
 
 from automations.tableau_screenshots import highlight as H
 
+H._ORG = []          # no Org Tree read from tests; OrgBlueTest sets its own
+
 NAMES = ["CHAN PARK", "STARR RODENHURST", "TRANG CANAVAN", "SAHIL MULTANI"]
 
 
@@ -114,6 +116,54 @@ class TwoOwnerChannelTest(unittest.TestCase):
                     mock.patch.object(H, "highlighted", return_value=Path("x")) as hi:
                 hl.png_for("C067TTGFEFR", p)
             self.assertEqual(hi.call_args[0][2], [bands[0], bands[2]])
+
+
+class OrgBlueTest(unittest.TestCase):
+    """Raf/Megan 11/15: owner yellow + the rest of OUR org blue; an owner
+    outside the org keeps only their own yellow row."""
+    ORG = ["Rafael Hidalgo", "Starr Rodenhurst", "Trang Canavan"]
+
+    def setUp(self):
+        H._ORG = list(self.ORG)
+
+    def tearDown(self):
+        H._ORG = []
+        H.FORCE = False
+
+    def _run(self, channel_owner):
+        with tempfile.TemporaryDirectory() as d:
+            p = _board(Path(d) / "b.png")
+            b = H.rows_of(Image.open(p))
+            found = {"Starr Rodenhurst": [b[1]], "Trang Canavan": [b[2]],
+                     "Sahil Multani": [b[3]]}
+            H.FORCE = True
+            hl = H.Highlighter(rows=[{"key": "x", "owner": channel_owner,
+                                      "channel_ids": ["CX"]}])
+            with mock.patch.object(H, "org_channel_owners", return_value={}), \
+                    mock.patch.object(H, "locate", return_value=found), \
+                    mock.patch.object(H, "spellings", side_effect=lambda o: [o]), \
+                    mock.patch.object(H, "highlighted", return_value=Path("x")) as hi:
+                hl.png_for("CX", p)
+            _png, _key, yellow, blue = hi.call_args[0]
+            return yellow, blue, b
+
+    def test_org_owner_gets_rest_of_org_blue(self):
+        yellow, blue, b = self._run("Starr Rodenhurst")
+        self.assertEqual(yellow, [b[1]])
+        self.assertEqual(blue, [b[2]])          # Trang; Sahil is not org
+
+    def test_owner_outside_org_gets_only_yellow(self):
+        yellow, blue, b = self._run("Sahil Multani")
+        self.assertEqual(yellow, [b[3]])
+        self.assertEqual(blue, [])
+
+    def test_loose_name_match(self):
+        with mock.patch.object(H, "spellings", side_effect=lambda o: [o]):
+            self.assertTrue(H.same_person("Nico Murrugarra", "Nicolas Murrugarra"))
+            self.assertTrue(H.same_person("Haytham", "Haytham Nagi"))
+            self.assertTrue(H.same_person("Salik Mallick", "Salik Malick"))
+            self.assertFalse(H.same_person("Jairo Ruiz", "Lizette Ruiz-Conejo"))
+            self.assertFalse(H.same_person("Joseph Logan", "Joseph Delgado"))
 
 
 class WhoTest(unittest.TestCase):
