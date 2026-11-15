@@ -119,28 +119,51 @@ def office_status(today: Optional[dt.date] = None, log=print) -> List[str]:
 
 # ------------------------------------------------------------------ html ----
 
+RED, RED_DARK, INK = "#cd040b", "#8f0208", "#1b1b1b"
+_TIER_TINT = {1: "#d9f2dc", 2: "#e4f5e6", 3: "#f1f8e2", 4: "#fff3c4", 5: "#ffe6c2", 6: "#ffd9d2", 7: "#ffc9c2", 8: "#ffb3ab"}
+
+
 def render_html(status: List[str], today: Optional[dt.date] = None) -> str:
+    """Verizon red, everything centered, the tier rows tinted green -> red
+    (Carlos 2026-11-15: "add some more coloring (red, since that's Verizon's
+    colors ...) and center things overall")."""
     today = today or dt.date.today()
     parts = []
     for heading, rows, note in tables():
-        body = "".join("<tr>" + "".join(("<th>%s</th>" if i == 0 else "<td>%s</td>") % html.escape(c) for c in r) + "</tr>"
-                       for i, r in enumerate(rows))
-        parts.append(f'<h2>{html.escape(heading)}</h2><table>{body}</table>'
+        trs = []
+        for i, r in enumerate(rows):
+            if i == 0:
+                trs.append("<tr>" + "".join(f"<th>{html.escape(c)}</th>" for c in r) + "</tr>")
+                continue
+            tint = ""
+            if heading.startswith("NEW PORT-IN") and r[1].startswith("Tier "):
+                t = int(r[1].split()[1])
+                tint = f' style="background:{_TIER_TINT[t]}"'
+            elif heading.startswith("REP TIER"):
+                tint = ' class="bonus"'
+            cells = "".join(f'<td class="{"money" if c.startswith(("$", "+$")) else ""}">{html.escape(c)}</td>' for c in r)
+            trs.append(f"<tr{tint}>{cells}</tr>")
+        parts.append(f'<h2>{html.escape(heading)}</h2><table>{"".join(trs)}</table>'
                      + (f'<div class="note">{html.escape(note)}</div>' if note else ""))
-    stat = "".join(f"<li>{html.escape(s)}</li>" for s in status)
+    stat = "".join(f'<li class="{"now" if s.startswith("Paying now") else ""}">{html.escape(s)}</li>' for s in status)
+    day = today.strftime("%-m/%-d") if sys.platform != "win32" else today.strftime("%#m/%#d")
     return f"""<html><head><style>
-body{{margin:0;background:#fff;font-family:-apple-system,Helvetica,Arial,sans-serif;color:#222}}
-#card{{padding:26px 30px;display:inline-block;max-width:1180px}} h1{{font:800 24px Georgia;margin:0 0 4px}}
-.lead{{font-size:13px;color:#555;margin:0 0 14px;max-width:1100px}} h2{{font-size:14px;margin:18px 0 6px;color:#1f2a44;letter-spacing:.02em}}
-table{{border-collapse:collapse}} th{{background:#1f2a44;color:#fff;font-size:12.5px;padding:7px 14px;border:1px solid #1f2a44}}
-td{{border:1px solid #c9ced6;padding:6px 14px;text-align:center;font-size:13.5px;font-weight:600}}
-tr td:first-child{{text-align:left;font-weight:600}} .note{{font-size:11.5px;color:#555;margin-top:5px;max-width:1100px}}
-.status{{margin-top:16px;padding:10px 14px;background:#f3f5f8;border-left:4px solid #1f2a44;font-size:12.5px}}
-.status li{{margin:3px 0}} .foot{{font-size:11px;color:#777;margin-top:12px}}
+body{{margin:0;background:#fff;font-family:-apple-system,Helvetica,Arial,sans-serif;color:{INK}}}
+#card{{padding:0 0 22px;display:inline-block;width:1180px;text-align:center}}
+.top{{background:{RED};color:#fff;padding:22px 30px 18px}} h1{{font:800 26px/1.2 Georgia,serif;margin:0;letter-spacing:.01em}}
+.lead{{font-size:13px;color:#ffe3e3;margin:8px auto 0;max-width:1000px}}
+h2{{font-size:14px;margin:22px 0 8px;color:{RED_DARK};letter-spacing:.04em;text-transform:uppercase}}
+table{{border-collapse:collapse;margin:0 auto}} th{{background:{RED};color:#fff;font-size:12.5px;padding:8px 18px;border:1px solid {RED_DARK}}}
+td{{border:1px solid #d6d9de;padding:7px 18px;text-align:center;font-size:13.5px;font-weight:600}}
+td.money{{color:{RED_DARK};font-weight:800;font-size:14.5px}} tr.bonus td{{background:#fff3c4}}
+.note{{font-size:11.5px;color:#555;margin:6px auto 0;max-width:1000px}}
+.status{{margin:22px auto 0;width:1040px;text-align:left;border:2px solid {RED};border-radius:8px;padding:12px 18px;background:#fff7f7;font-size:12.5px}}
+.status b{{color:{RED_DARK}}} .status ul{{margin:6px 0 0;padding-left:18px}} .status li{{margin:4px 0}}
+.status li.now{{font-weight:800}} .foot{{font-size:11px;color:#777;margin:14px auto 0;max-width:1000px}}
 </style></head><body><div id="card">
-<h1>{html.escape(TITLE)}</h1><div class="lead">{html.escape(LEAD)}</div>
+<div class="top"><h1>{html.escape(TITLE)}</h1><div class="lead">{html.escape(LEAD)}</div></div>
 {''.join(parts)}
-{('<div class="status"><b>Where the office sits (approval-date windows, Order Log as of %s)</b><ul>%s</ul></div>' % (today.strftime('%-m/%-d') if sys.platform != 'win32' else today.strftime('%#m/%#d'), stat)) if status else ''}
+{('<div class="status"><b>WHERE THE OFFICE SITS</b> (approval-date windows, Order Log as of %s)<ul>%s</ul></div>' % (day, stat)) if status else ''}
 <div class="foot">Source: Credico SOW Schedule A (6.16.26), Churn Schedule Wireless 2026, Activation Bonus (4.19.26–12.31.26), AutoPay Bonus (1.1.26) — resources/verizon_comp. Estimates; Credico's statement is the pay.</div>
 </div></body></html>"""
 
@@ -204,7 +227,7 @@ def write_tab(sheet_id: str = SHEET_ID, status: Optional[List[str]] = None, log=
     _retry(lambda: ws.clear())
     _retry(lambda: ws.update(g, "A1", value_input_option="RAW"))
     sid = ws.id
-    NAVY, LIGHT = (0.12, 0.23, 0.37), (0.95, 0.96, 0.97)
+    NAVY, LIGHT = (0.80, 0.02, 0.04), (1.0, 0.95, 0.95)       # Verizon red
 
     def rng(r0, r1, c0, c1):
         return {"sheetId": sid, "startRowIndex": r0, "endRowIndex": r1, "startColumnIndex": c0, "endColumnIndex": c1}
@@ -218,11 +241,11 @@ def write_tab(sheet_id: str = SHEET_ID, status: Optional[List[str]] = None, log=
     for r in marks["title"]:
         reqs.append({"mergeCells": {"range": rng(r - 1, r, 0, 5), "mergeType": "MERGE_ALL"}})
         reqs.append({"repeatCell": {"range": rng(r - 1, r, 0, 5), "cell": {"userEnteredFormat": {"backgroundColor": {"red": NAVY[0], "green": NAVY[1], "blue": NAVY[2]},
-                     "horizontalAlignment": "LEFT", "textFormat": {"bold": True, "fontSize": 13, "foregroundColor": {"red": 1, "green": 1, "blue": 1}}}},
+                     "horizontalAlignment": "CENTER", "textFormat": {"bold": True, "fontSize": 13, "foregroundColor": {"red": 1, "green": 1, "blue": 1}}}},
                      "fields": "userEnteredFormat(backgroundColor,horizontalAlignment,textFormat)"}})
     for r in marks["notes"]:
         reqs.append({"mergeCells": {"range": rng(r - 1, r, 0, 5), "mergeType": "MERGE_ALL"}})
-        reqs.append({"repeatCell": {"range": rng(r - 1, r, 0, 5), "cell": {"userEnteredFormat": {"horizontalAlignment": "LEFT", "wrapStrategy": "WRAP",
+        reqs.append({"repeatCell": {"range": rng(r - 1, r, 0, 5), "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER", "wrapStrategy": "WRAP",
                      "textFormat": {"italic": True, "fontSize": 9, "foregroundColor": {"red": 0.3, "green": 0.3, "blue": 0.3}}}},
                      "fields": "userEnteredFormat(horizontalAlignment,wrapStrategy,textFormat)"}})
         reqs.append({"updateDimensionProperties": {"range": {"sheetId": sid, "dimension": "ROWS", "startIndex": r - 1, "endIndex": r},
@@ -236,8 +259,13 @@ def write_tab(sheet_id: str = SHEET_ID, status: Optional[List[str]] = None, log=
                                        "innerHorizontal": solid, "innerVertical": solid}})
         reqs.append({"repeatCell": {"range": rng(first, last, 0, ncols), "cell": {"userEnteredFormat": {"textFormat": {"bold": True}}},
                      "fields": "userEnteredFormat.textFormat.bold"}})
-        reqs.append({"repeatCell": {"range": rng(first, last, 0, 1), "cell": {"userEnteredFormat": {"horizontalAlignment": "LEFT", "backgroundColor": {"red": LIGHT[0], "green": LIGHT[1], "blue": LIGHT[2]}}},
-                     "fields": "userEnteredFormat(horizontalAlignment,backgroundColor)"}})
+        reqs.append({"repeatCell": {"range": rng(first, last, 0, 1), "cell": {"userEnteredFormat": {"backgroundColor": {"red": LIGHT[0], "green": LIGHT[1], "blue": LIGHT[2]}}},
+                     "fields": "userEnteredFormat.backgroundColor"}})
+        if ncols == 3 and last - first == 8:                     # the tier grid: green -> red by tier
+            tints = {1: (0.85, 0.95, 0.86), 2: (0.89, 0.96, 0.90), 3: (0.95, 0.97, 0.89), 4: (1, 0.95, 0.77), 5: (1, 0.90, 0.76), 6: (1, 0.85, 0.82), 7: (1, 0.79, 0.76), 8: (1, 0.70, 0.67)}
+            for t in range(1, 9):
+                reqs.append({"repeatCell": {"range": rng(first + t - 1, first + t, 0, 3), "cell": {"userEnteredFormat": {"backgroundColor": {"red": tints[t][0], "green": tints[t][1], "blue": tints[t][2]}}},
+                             "fields": "userEnteredFormat.backgroundColor"}})
     for c, px in ((0, 300), (1, 150), (2, 230), (3, 300), (4, 150)):
         reqs.append({"updateDimensionProperties": {"range": {"sheetId": sid, "dimension": "COLUMNS", "startIndex": c, "endIndex": c + 1},
                                                    "properties": {"pixelSize": px}, "fields": "pixelSize"}})
