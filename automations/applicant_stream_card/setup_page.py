@@ -460,12 +460,18 @@ def slot_rows(hours):
         lst = hours.get(day) or []
         am = _slot_list([x for x in lst if _ampm(x.get("start")) == "am"])
         pm = _slot_list([x for x in lst if _ampm(x.get("start")) == "pm"])
-        if rows and rows[-1][2:] == [am, pm]:
+        # Megan 2026-11-15: "how many total 1st rounds can happen that
+        # day? let's add that total" = every slot's seats added up.
+        total = sum(x.get("seats") or 1 for x in lst)
+        tot = ("<b>{}</b>".format(total) if lst
+               else "<span class='s'>0</span>")
+        if rows and rows[-1][2:] == [am, pm, tot]:
             rows[-1][1] = day
         else:
-            rows.append([day, day, am, pm])
+            rows.append([day, day, am, pm, tot])
     return [(DAY_SHORT[a] if a == b else "{}\u2013{}".format(
-        DAY_SHORT[a], DAY_SHORT[b]), am, pm) for a, b, am, pm in rows]
+        DAY_SHORT[a], DAY_SHORT[b]), am, pm, tot)
+        for a, b, am, pm, tot in rows]
 
 
 def _flags_html(flags):
@@ -576,12 +582,14 @@ def render_ai(setup):
             "\u2192 Hours.</p>")
     else:
         add("<div class='truth'><table class='list'><tr><th>Day</th>"
-            "<th>Morning</th><th>Afternoon</th></tr>")
-        for label, am, pm in slot_rows(s["hours"]):
-            add("<tr><td><b>{}</b></td><td>{}</td><td>{}</td></tr>".format(
-                label, am, pm))
+            "<th>Morning</th><th>Afternoon</th><th>Total / day</th>"
+            "</tr>")
+        for label, am, pm, tot in slot_rows(s["hours"]):
+            add("<tr><td><b>{}</b></td><td>{}</td><td>{}</td>"
+                "<td class='tot'>{}</td></tr>".format(label, am, pm, tot))
         add("</table><p class='s'>/ slot = how many people each time holds. "
-            "2nd-round times aren't pulled yet.</p></div>")
+            "Total / day = 1st rounds the day holds with every slot full. 2nd-round times aren't "
+            "pulled yet.</p></div>")
 
     add(_head("AI replies (escalations)", n.get("replies"), when.get("ai")))
     if "replies" not in s:
@@ -694,6 +702,7 @@ CSS = """
 #pg3:checked~.page3{display:block}
 .tabs .fl{font-size:.8em;margin-left:.3em}
 .okay{color:#156E46;font-weight:bold}
+.list td.tot{text-align:center;font-size:1.15em}
 h2 .okay{font-size:.85em;margin-left:.4em;text-transform:none;
      letter-spacing:0}
 .prefs td:nth-child(2),.prefs td:nth-child(3){white-space:nowrap}

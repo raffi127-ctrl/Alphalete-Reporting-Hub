@@ -459,6 +459,8 @@ class SetupPageTest(unittest.TestCase):
         self.assertIn("2 slots</b> \u00b7 24 / slot", rows[0][1])
         self.assertIn("8:15\u20138:45 AM", rows[0][1])
         self.assertIn("1 slot</b>", rows[0][2])
+        self.assertEqual(rows[0][3], "<b>72</b>")       # 3 slots x 24
+        self.assertIn(">0<", rows[1][3])
 
     def test_clean_buffers_check_green(self):
         from automations.applicant_stream_card import setup_page as P
