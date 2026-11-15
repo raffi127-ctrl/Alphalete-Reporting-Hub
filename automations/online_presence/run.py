@@ -88,6 +88,16 @@ def main(argv=None) -> int:
     a = ap.parse_args(argv)
     import time as _time
     started = _time.monotonic()
+    # Seconds per piece of the pass (timing.py names the slowest one when a
+    # pass runs long -- 11/14 a pass with no live offices took 7m 19s on
+    # Lucy 3 and nothing said where).
+    steps: Dict[str, float] = {}
+    _last = [started]
+
+    def lap(name: str) -> None:
+        now = _time.monotonic()
+        steps[name] = steps.get(name, 0.0) + (now - _last[0])
+        _last[0] = now
 
     allrows = offices.load()
     if a.office:
@@ -100,6 +110,7 @@ def main(argv=None) -> int:
         todo = list(allrows.values())
     if not todo:
         print("No offices set up yet (python -m automations.online_presence.setup add ...)")
+    lap("office list")
 
     # Rooms first: an office that said "create one for me" gets its channel
     # the next time this runs, whether or not it has an office row yet.
@@ -112,6 +123,7 @@ def main(argv=None) -> int:
                   + (" — invite by hand: " + ", ".join(r["missed"]) if r.get("missed") else ""))
     except Exception as e:
         print(f"[room] couldn't check for rooms to make ({type(e).__name__}: {str(e)[:80]})")
+    lap("sign-ups + rooms")
 
     # Can Lucy read Google reviews at all? One key covers Alphalete and every
     # office; a missing or dead key alerts the manager (key_watch, 11/10).
@@ -123,6 +135,7 @@ def main(argv=None) -> int:
                     print(f"[google key] {x['action']} · {x.get('why') or x.get('kind') or ''}")
         except Exception as e:
             print(f"[google key] check failed ({type(e).__name__}: {str(e)[:80]})")
+        lap("Google key check")
 
     # Alphalete's own bad Google reviews alert on the same 10 minutes (its
     # reply drafts still come from the noon brand_audit run, unchanged).
@@ -134,6 +147,7 @@ def main(argv=None) -> int:
                 print(f"[alphalete] bad reviews: {x['action']} · {x.get('note') or x.get('error') or ''}")
         except Exception as e:
             print(f"[alphalete] bad-review check failed ({type(e).__name__}: {str(e)[:80]})")
+        lap("Alphalete bad reviews")
 
     # Reddit / Indeed / Glassdoor mentions that reached Lucy's inbox
     # (email_alerts.py): live offices + Alphalete, once per pass.
@@ -146,6 +160,7 @@ def main(argv=None) -> int:
                 print(f"[mentions] {x['action']} · {x.get('note') or ''}")
         except Exception as e:
             print(f"[mentions] inbox check failed ({type(e).__name__}: {str(e)[:80]})")
+        lap("inbox mentions")
 
     # ONE read of the relay for every office (not one per office).
     answers: Dict[str, List[dict]] = {}
@@ -157,6 +172,7 @@ def main(argv=None) -> int:
         except Exception as e:
             print(f"relay read failed ({type(e).__name__}: {str(e)[:80]}) — "
                   "office answers wait for the next pass")
+        lap("relay read")
     read: List[str] = []
 
     failed = 0
@@ -178,6 +194,7 @@ def main(argv=None) -> int:
         except Exception:
             failed += 1
             print(f"[{p.key}] FAILED\n{traceback.format_exc()}")
+            lap(f"office {p.key}")
             continue
         tag = "DRY" if res.pop("dry_run") else "LIVE"
         for part, acts in res.items():
@@ -185,17 +202,22 @@ def main(argv=None) -> int:
                 what = (x.get("reply") or x.get("caption") or x.get("note")
                         or x.get("error") or "")
                 print(f"[{p.key}] {tag} {part}: {x.get('action')} · {str(what)[:90]}")
+        lap(f"office {p.key}")
     if read:
         from automations.online_presence import relay
         relay.mark_read(read)
+        lap("relay mark-read")
     # How long the whole pass took (timing.py): logged every time, and a
     # once-a-day heads-up past 5 minutes -- the "does LucyECO Social need its
     # own Lucy?" number. Only the full scheduled pass counts.
     if not a.office:
         from automations.online_presence import timing
         took = _time.monotonic() - started
-        timing.record("pass", took, offices=sum(1 for p in todo if p.is_live), live=a.live)
+        timing.record("pass", took, offices=sum(1 for p in todo if p.is_live), live=a.live,
+                      steps=steps)
         print(f"pass took {timing.fmt(took)}")
+        for name, secs in sorted(steps.items(), key=lambda kv: -kv[1])[:5]:
+            print(f"  {name}: {timing.fmt(secs)}")
     print("=== done ===")
     return 1 if failed else 0
 

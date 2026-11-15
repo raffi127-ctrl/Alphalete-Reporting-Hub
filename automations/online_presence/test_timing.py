@@ -62,6 +62,28 @@ class Timing(unittest.TestCase):
         T.record("pass", 999, cl=cl, live=False)
         self.assertEqual(cl.posts, [])
 
+    def test_warning_names_the_slowest_step(self):
+        cl = FakeSlack()
+        T.record("pass", 439, offices=0, cl=cl,
+                 steps={"sign-ups + rooms": 2, "inbox mentions": 431, "relay read": 6})
+        self.assertIn("Slowest part: *inbox mentions* (7m 11s)", cl.posts[0]["text"])
+        self.assertIn("inbox mentions 7m 11s", T.summary())
+
+    def test_one_stall_on_a_fast_week_is_not_a_new_lucy(self):
+        cl, day = FakeSlack(), dt.datetime(2026, 11, 14, 12, 29)
+        for m in range(5):
+            T.record("pass", 30, cl=cl, now=day - dt.timedelta(minutes=10 * (m + 1)))
+        T.record("pass", 439, cl=cl, now=day)
+        self.assertIn("one slow pass", cl.posts[0]["text"])
+        self.assertNotIn("its own Lucy", cl.posts[0]["text"])
+
+    def test_slow_week_still_says_own_lucy(self):
+        cl, day = FakeSlack(), dt.datetime(2026, 11, 14, 12, 29)
+        for m in range(5):
+            T.record("pass", 280, cl=cl, now=day - dt.timedelta(minutes=10 * (m + 1)))
+        T.record("pass", 439, cl=cl, now=day)
+        self.assertIn("its own Lucy", cl.posts[0]["text"])
+
     def test_summary_with_nothing(self):
         self.assertIn("no runs logged yet", T.summary())
 
