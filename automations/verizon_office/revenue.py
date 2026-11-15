@@ -32,7 +32,7 @@ def _week_lines(all_lines, start, end):
     return [l for l in all_lines if l["sold"] and start <= l["sold"] <= end]
 
 
-def revenue_board(owner: str, sv_path: Path, target: dt.date, out_dir: Path, layout: str = "right") -> Path:
+def revenue_board(owner: str, sv_path: Path, target: dt.date, out_dir: Path, layout: str = "left") -> Path:
     """Carlos's Vantura Revenue Board, Verizon's week: Sun-Sat columns by SALE
     date, the weekly activation-bonus tier, and the week total."""
     from automations.vantura_revenue_board import run as RB
@@ -96,8 +96,21 @@ def revenue_board(owner: str, sv_path: Path, target: dt.date, out_dir: Path, lay
                                 f"{a['protect']} Protect &nbsp;·&nbsp; {a['byod']} BYOD")
         n_reps = max(len(rows), 1)
         avg = sum(sold_lines.values()) / n_reps
-        reps_extra = (f' <span style="font-size:15px;color:#5b6770;font-weight:600">'
-                      f'· {avg:.1f} sales / rep this week</span>')
+        # reps + sales/rep ride INSIDE the week-total card (Carlos 2026-11-15:
+        # "add the reps on the board and the sales per rep average in one
+        # table next to the inside of the office week totals")
+        week_extra = (f' <span style="font-size:15px;color:#5b6770;font-weight:600">'
+                      f'· {len(rows)} rep{"" if len(rows) == 1 else "s"} · {avg:.1f} sales / rep</span>')
+        # the add-on mix card: % of this week's lines (cancelled out) that
+        # carry what pays -- AutoPay, Unlimited Plus/Ultimate, Protect, BYOD
+        n_lines = max(sum(sold_lines.values()), 1)
+        tot = {k: sum(a[k] for a in addons.values()) for k in ("autopay", "premium", "protect", "byod")}
+        def pct(k):
+            return "%.0f%%" % (100 * tot[k] / n_lines) if sum(sold_lines.values()) else "—"
+        mix_card = ('<div style="display:flex;gap:8px;margin-top:4px">' + "".join(
+            f'<div style="background:#eef0f2;border-radius:6px;padding:4px 10px;text-align:center;min-width:72px">'
+            f'<div style="font-size:11px;font-weight:600;color:#5b6770">{lab}</div><div style="font-size:19px;font-weight:800">{pct(k)}</div></div>'
+            for lab, k in (("AutoPay", "autopay"), ("Unlimited P/U", "premium"), ("Protect", "protect"), ("BYOD", "byod"))) + "</div>")
         note = ("Tier columns: unique customer orders this Sun–Sat sales week (cancelled ones out); "
                 "green ✓ = the tier you're on; yellow = one order away; +N = orders still needed; "
                 "$ = that tier's rate × the rep's lines activated this week (+1 line per order still "
@@ -108,12 +121,13 @@ def revenue_board(owner: str, sv_path: Path, target: dt.date, out_dir: Path, lay
         # the thread's rule) and the office's 0-30 day churn (the churn tab's
         # box: lines activated in the last 30 days that have disconnected).
         cards = [("ACTIVATION RATE BY WEEK-ENDING", _weeks_card(L, upto)),
-                 ("0–30 DAY CHURN", _churn_card(sv_path, target))]
+                 ("0–30 DAY CHURN", _churn_card(sv_path, target)),
+                 ("ADD-ON MIX THIS WEEK", mix_card)]
         return RB.render(rows, office, start, upto,
                          out_dir / f"verizon_revenue_board_{target.isoformat()}.png",
                          board_name="Verizon Revenue Board", tiered=True,
                          extra={"headers": headers, "cards": cards, "no_next": True,
-                                "reps_extra": reps_extra,
+                                "week_extra": week_extra, "hide_reps": True,
                                 "breakdown": {"header": 'ADD-ONS<br><span class="dd">this week</span>',
                                               "pos": "before_total" if layout == "left" else "right"}}, note=note)
     finally:
@@ -325,7 +339,7 @@ def main(argv=None) -> int:
                     default="activation_one",
                     help="churn_tab = a screenshot of the VERIZON CHURN tab (sandbox; --prod-tab for the master)")
     ap.add_argument("--prod-tab", action="store_true", help="with --board churn_tab: the Vantura Master's tab")
-    ap.add_argument("--layout", choices=["right", "left"], default="right",
+    ap.add_argument("--layout", choices=["right", "left"], default="left",
                     help="revenue_board: the add-on breakdown column far right, or LEFT of Week Total (Carlos 2026-11-15)")
     ap.add_argument("--dm", help="Slack user id(s) to DM the picture to, as Lucy (comma-separated)")
     a = ap.parse_args(argv)

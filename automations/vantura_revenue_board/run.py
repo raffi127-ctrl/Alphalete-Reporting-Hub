@@ -629,9 +629,8 @@ def _render_html(rows, office, monday: dt.date, upto: dt.date, dest: Path,
   {upto.strftime('%A, %b')} {upto.day}, {upto.year}</div></div></div>
  <div class="cards">
   <div class="card"><div class="clab">OFFICE WEEK TOTAL</div>
-   <div class="cval">{money(week_total)}</div></div>
-  <div class="card"><div class="clab">REPS ON THE BOARD</div>
-   <div class="cval">{len(rows)}{(extra or {}).get("reps_extra") or ""}</div></div>
+   <div class="cval">{money(week_total)}{(extra or {}).get("week_extra") or ""}</div></div>
+  {"" if (extra or {}).get("hide_reps") else f'<div class="card"><div class="clab">REPS ON THE BOARD</div><div class="cval">{len(rows)}{(extra or {}).get("reps_extra") or ""}</div></div>'}
  {next_card}
  </div>
  <table><tr><th class="lh">#</th><th class="lh">REP</th>{bd_th if bd and bd.get("pos") == "before_total" else ""}<th>WEEK TOTAL</th>
