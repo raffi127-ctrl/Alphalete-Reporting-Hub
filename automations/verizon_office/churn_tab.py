@@ -79,9 +79,11 @@ SOURCE = ("Verizon Wireless SOW Schedule A 6.16.26 + Churn Schedule Wireless 202
 # or whatever ... that should all just be one thing". The rolloff list still
 # says port / new and the device on each row.
 BOX_ROWS = (("All Lines", None),)
+# Approval Date between activation and disconnect, no Plan (Carlos 2026-11-15:
+# "They must have had an approved date if they're on this list")
 LIST_HEADERS = ("Days Left", "Fall-Off Date", "Lines", "% After Rolloff",
-                "Customer", "Sales Rep", "Order Date", "Activation Date", "Disconnect Date",
-                "Port / New", "Device", "Plan", "Status Reason")
+                "Customer", "Sales Rep", "Order Date", "Activation Date", "Approval Date", "Disconnect Date",
+                "Port / New", "Device", "Status Reason")
 # Credico's tier bands, best first, as the SOW prints them (comp.CHURN_TIERS ceilings)
 TIER_LABELS = {1: "0 – 4.99%", 2: "5 – 6.99%", 3: "7 – 8.99%", 4: "9 – 14.99%", 5: "15 – 19.99%",
                6: "20 – 26.99%", 7: "27 – 33.99%", 8: "34%+"}
@@ -198,7 +200,8 @@ def rolloff_rows(lines, today: dt.date) -> List[dict]:
             "days_left": (falloff - today).days, "falloff": falloff, "lines": 1,
             "pct_all": pct_after(posted),
             "customer": u.get("Customer", ""), "rep": u.get("Rep", ""),
-            "order_date": _d(u.get("Order Date")), "posted": posted, "disc_date": _d(u.get("Cancel Date")),
+            "order_date": _d(u.get("Order Date")), "posted": posted, "approved": _d(u.get("Approval Date")),
+            "disc_date": _d(u.get("Cancel Date")),
             "kind": ("BYOD" if (u.get("Device") or "").strip().upper() == "BYOD"
                      else "port" if u.get("Type") == "Port" else "new"),
             "device": u.get("Device", ""), "plan": u.get("Plan", ""), "reason": u.get("Status Reason", ""),
@@ -398,8 +401,8 @@ def build_grid(lines, today: dt.date, tier: dict) -> Tuple[List[List[str]], dict
     marks["headers"].append(h)
     for x in roll:
         r = row(["%dd" % x["days_left"], _fmt(x["falloff"]), x["lines"], _pct(x["pct_all"]),
-                 x["customer"], x["rep"], _fmt(x["order_date"]), _fmt(x["posted"]), _fmt(x["disc_date"]),
-                 x["kind"], x["device"], x["plan"], x["reason"]])
+                 x["customer"], x["rep"], _fmt(x["order_date"]), _fmt(x["posted"]), _fmt(x["approved"]),
+                 _fmt(x["disc_date"]), x["kind"], x["device"], x["reason"]])
         if x["quick"]:
             marks["quick_rows"].append(r)
     if not roll:
