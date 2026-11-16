@@ -23,6 +23,9 @@ from __future__ import annotations
 from automations.digi_docs import ownerville as ov
 
 CONFIRM_TEXT = "I confirm that this statement is accurate and true"
+# What OwnerVille shows TODAY in that section: a checkbox labelled "Submit",
+# with the old sentence gone (2026-11-16). Matched EXACTLY -- see _confirm_box.
+SUBMIT_LABEL = "Submit"
 SUBMITTED_STATES = ("REVIEW IN PROGRESS", "APPROVED", "COMPLETED")
 # The sections that must read COMPLETED before a submit. An EXPLICIT list, not
 # "everything except a few": an unsubmitted person's Owner Submit row carries
@@ -93,19 +96,61 @@ def blockers(states: dict) -> list:
 
 
 def _confirm_box(modal):
-    """The confirm checkbox INPUT in the Owner Submit section, or None."""
-    lab = modal.locator("label", has_text=CONFIRM_TEXT).first
+    """The confirm checkbox INPUT in the Owner Submit section, or None.
+
+    TWO WORDINGS, because OwnerVille changed this one under us (2026-11-16).
+    It used to be a label carrying a whole sentence -- "I confirm that this
+    statement is accurate and true" -- and is now a plain checkbox labelled
+    "Submit". Nothing announced the change; what it looked like from here was
+    "no confirm box in Owner Submit" on Sergio Bouquett and then Patricia
+    Yanez, while the day's post read "0 New Lucy Owner Submitted" both times.
+    It was never about those two people: Lucy could not submit ANYBODY.
+
+    The old sentence is still tried FIRST and kept, not replaced. It costs one
+    lookup, and if some office or campaign still renders the old attestation
+    this keeps working there rather than trading one broken wording for
+    another.
+
+    "SUBMIT" IS MATCHED EXACTLY, and that matters more than it looks. The
+    modal's own section heading is "OWNER SUBMIT" and its footer button is
+    "Save Changes"; a loose contains-match would find the heading, which is
+    always present whether the section is open or shut, and the run would
+    believe it had found an attestation it had not. `exact=True` matches the
+    label's own text and neither of those.
+    """
+    # COUNTED, NOT WAITED ON. The old sentence is gone from every rep's modal
+    # now, so a wait here is four seconds burnt per person before the real
+    # lookup -- two minutes across a thirty-rep sweep, spent proving a negative.
+    lab = None
     try:
-        lab.wait_for(state="attached", timeout=8000)
+        old_lab = modal.locator("label", has_text=CONFIRM_TEXT).first
+        if old_lab.count():
+            lab = old_lab
     except Exception:                                       # noqa: BLE001
-        return None, None
+        lab = None
+    if lab is None:
+        try:
+            lab = modal.get_by_text(SUBMIT_LABEL, exact=True).first
+            lab.wait_for(state="attached", timeout=4000)
+        except Exception:                                   # noqa: BLE001
+            return None, None
     box = lab.locator("input[type='checkbox']").first
     if not box.count():
         fid = lab.get_attribute("for") or ""
         box = modal.locator(f"input[type='checkbox'][id='{fid}']").first \
             if fid else modal.locator("input[type='checkbox']").filter(
                 has=lab).first
-    return lab, (box if box.count() else None)
+    if not box.count():
+        # The new control puts the input BESIDE its text rather than wrapping
+        # it, so walk out one level and look there. Scoped to the label's own
+        # parent, never the whole modal: other sections carry checkboxes too,
+        # and this one is an attestation that cannot be undone.
+        try:
+            box = lab.locator("xpath=..").locator(
+                "input[type='checkbox']").first
+        except Exception:                                   # noqa: BLE001
+            box = None
+    return lab, (box if (box is not None and box.count()) else None)
 
 
 def submit_one(page, name: str, *, dry_run: bool = True,
@@ -134,14 +179,38 @@ def submit_one(page, name: str, *, dry_run: bool = True,
                           f"{', '.join(bad)}"
     if st.get("BACKGROUND CHECK") != "COMPLETED":
         return "refused", f"{matched}: background check is not COMPLETED"
+    # OPEN THE SECTION, THEN LOOK FOR THE BOX -- not the other way round.
+    # `_expand` waits for a TEXT marker to prove it opened, and that marker was
+    # the old attestation sentence, which OwnerVille deleted (2026-11-16). It
+    # does not raise when the marker never shows; it prints and returns. So the
+    # run sailed past a section it had not confirmed open and then reported the
+    # thing it could not find, which read like a missing control rather than a
+    # changed one.
+    #
+    # The box itself is the only honest proof, so it is what we check. And if
+    # it is not there, the section is TOGGLED ONCE and checked again: a row
+    # that was already open is closed by the first click, and one click more is
+    # the difference between "no confirm box" and a submit.
     try:
-        ov._expand(modal, "OWNER SUBMIT", page, reveals=CONFIRM_TEXT[:24])
-    except Exception as e:                                  # noqa: BLE001
-        return "refused", f"{matched}: Owner Submit section would not open " \
-                          f"({type(e).__name__})"
+        ov._expand(modal, "OWNER SUBMIT", page, reveals=CONFIRM_TEXT[:24],
+                   verbose=False)
+    except Exception:                                       # noqa: BLE001
+        pass
     lab, box = _confirm_box(modal)
     if lab is None:
-        return "refused", f"{matched}: no confirm box in Owner Submit"
+        try:
+            for row in ov._status_rows(modal, "OWNER SUBMIT"):
+                if row.is_visible():
+                    row.click(timeout=6000)
+                    break
+            page.wait_for_timeout(1200)
+        except Exception:                                   # noqa: BLE001
+            pass
+        lab, box = _confirm_box(modal)
+    if lab is None:
+        return "refused", f"{matched}: no confirm box in Owner Submit " \
+                          f"(looked for {CONFIRM_TEXT[:28]!r} and an exact " \
+                          f"{SUBMIT_LABEL!r})"
     try:
         already_ticked = bool(box and box.is_checked())
     except Exception:                                       # noqa: BLE001

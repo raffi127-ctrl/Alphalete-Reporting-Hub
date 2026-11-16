@@ -365,6 +365,36 @@ def _lucy_rqst(page) -> str:
     return capture_rqst(page)
 
 
+# THE CAMPAIGN HEADSHOTS LOOKS ON (Megan, 2026-11-16: "we should just assume
+# headshots are for at&t for now to speed it up").
+#
+# This used to walk EVERY campaign in the dropdown, because a rep needing a
+# photo can legitimately sit on any of them. That cost one page load per
+# campaign per person on a job that ticks every five minutes -- and Raf's
+# office gained a third campaign on 2026-11-16 (Charter Communications D2D),
+# so the walk got longer and gained a new way to match a different rep who
+# shares a surname on a campaign this job has no business touching.
+#
+# An office may still name its own in `ov_program`; this is only the default
+# where none is set. A rep genuinely on another campaign now comes back
+# not_found, which is LOUD -- the Slack thread says so by name -- rather than
+# quietly uploading somebody's photo onto the wrong person's profile.
+HEADSHOT_CAMPAIGN = "RES-AT&T"
+
+
+def _campaign_for(office_key: str = ""):
+    """The campaign to look this office's rep up on, as find_rep wants it."""
+    want = ""
+    if office_key:
+        try:
+            from automations.office_admin import config as OC
+            o = OC.office(office_key)
+            want = (getattr(o, "ov_program", "") or "").strip() if o else ""
+        except Exception:                                   # noqa: BLE001
+            want = ""
+    return [want or HEADSHOT_CAMPAIGN]
+
+
 def find_rep(page, name: str, *, verbose: bool = True, campaigns=None,
              rqst: str | None = None):
     """Locate the rep across campaigns/filters, tolerating typos.
@@ -535,14 +565,16 @@ def upload(name: str, photo: Path | None, *, dry_run: bool = True,
 
 def upload_on_page(page, name: str, photo: Path | None, *,
                    dry_run: bool = True, verbose: bool = True,
-                   replace: bool = False, rqst: str | None = None) -> dict:
+                   replace: bool = False, rqst: str | None = None,
+                   office_key: str = "") -> dict:
     """upload(), on a page that is already signed in to OwnerVille.
 
     Split out so an ICD's own computer can run the SAME click-path with its
     own login (icd_alerts/headshot_jobs.py) -- one uploader, not a copy: a
     fix here reaches every office machine on its next self-update."""
     row, campaign, matched = find_rep(page, name, verbose=verbose,
-                                      rqst=rqst)
+                                      rqst=rqst,
+                                      campaigns=_campaign_for(office_key))
     if row is None:
         return {"status": "not_found", "name": name, "tried": campaign}
     # What OV calls them, when a typo was forgiven — surfaced so the
@@ -614,7 +646,8 @@ def upload_on_page(page, name: str, photo: Path | None, *,
     time.sleep(2)
 
     # Verify: back on the table, the pill should now be green.
-    row2, _, _ = find_rep(page, name, verbose=False)
+    row2, _, _ = find_rep(page, name, verbose=False,
+                          campaigns=_campaign_for(office_key))
     verified = row2 is not None and _photo_pill(row2) == "uploaded"
     return {"status": "uploaded", "name": name, "campaign": campaign,
             "verified": verified, "replaced": bool(replace and
