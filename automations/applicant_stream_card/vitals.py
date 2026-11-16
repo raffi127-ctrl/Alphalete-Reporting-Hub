@@ -193,8 +193,18 @@ def pull(office, n=WEEKS, page=None):
     if not rqst:
         raise RuntimeError("no rqst token after switching to {}".format(office))
     out = []
+    today = dt.date.today()
     for sunday in last_sundays(n):
-        days = FB.report_week(page, rqst, sunday, verbose=False)
+        # Ask for the week holding the MONDAY after each Sunday. The week's
+        # start is set per office: Sun-Sat offices get the same week back,
+        # and a Mon-Sun office (Carlos, 11580) now gets the Mon-Sun week
+        # that ENDS a day later. Asking by Sunday gave a Mon-Sun office the
+        # week before, so its newest finished week was never pulled
+        # (Megan 2026-11-16, 11580's card stopping at 11/8).
+        days = FB.report_week(page, rqst, sunday + dt.timedelta(days=1),
+                              verbose=False)
+        if days and max(days) >= today:
+            continue            # that week isn't over yet
         vals = from_days(days)
         out.append((min(days) if days else sunday, vals))
         print("[vitals] {} week of {}: {}".format(

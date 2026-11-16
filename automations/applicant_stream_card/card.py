@@ -279,8 +279,9 @@ def speed(st, ttb=None):
     if ttb:
         short += " · {:.1f} texts".format(ttb["average"])
     action = None if dot == GREEN or same is None else (
-        "\u27e6Only {} of your 1st rounds are booked for the same day the "
-        "resume is sent to the call list.\u27e7 Work on booking more of them for that "
+        "\u27e6Only {} of your 1st rounds over the last 6 weeks were booked "
+        "for the same day the resume was sent to the call list.\u27e7 The "
+        "Vitals tab shows it week by week. Work on booking more of them for that "
         "same day: they show up {}, vs {} the next day and {} 2+ days "
         "later.".format(_pct(same), _pct(iv[0]["show"]), _pct(iv[1]["show"]),
                         _pct(iv[2]["show"])))
@@ -555,16 +556,24 @@ ADVICE = {
 }
 
 
-def _processed_point(d, share=None):
-    """Same day vs the next day or later, or None."""
+def _processed_point(d, share=None, last_week=None, weeks=None):
+    """Same day vs the next day or later, or None.
+
+    `share` is the whole window's same-day share and `last_week` the
+    newest week's, the same numbers as the Vitals tile. Megan 2026-11-16,
+    11580: "they seem to be having different numbers" - the line said 26%
+    "now" while the tile's last week said 36%; 26% was the 6-week average."""
     v = d.get("vs_later")
     if not v or v["p"] is None or v["p"] >= 0.05 \
             or v["same"][0] <= v["later"][0] \
             or not _holds(v["won"], v["weeks"]):
         return None
-    now = ("\u27e6Only {:.0f}% of your 1st rounds are booked for that same "
-           "day now.\u27e7 ".format(share) if share is not None and share < SAME_OK
-           else "")
+    span = "over these {} weeks".format(weeks) if weeks else "overall"
+    lw = (" ({:.0f}% last week)".format(last_week)
+          if last_week is not None else "")
+    now = ("\u27e6Only {:.0f}% of your 1st rounds {} were booked for that "
+           "same day\u27e7{}. ".format(share, span, lw)
+           if share is not None and share < SAME_OK else "")
     return ("Book more 1st rounds for the same day the resume is sent to "
             "the call list: {:.0f}% show up, vs {:.0f}% when it's the next "
             "day or later. {}{}".format(v["same"][0], v["later"][0],
@@ -598,7 +607,14 @@ def advice(st, weeks=None):
         if d["key"] == "processed":
             share = (((st.get("days") or {}).get("interview_gap") or {})
                      .get(0) or {}).get("share")
-            say = _processed_point(d, share)
+            days = st.get("same_day_days") or {}
+            last_week = None
+            if days:
+                last = max(days)
+                last_week = S.same_day_week(
+                    days, last - dt.timedelta(days=(last.weekday() + 1) % 7))
+            say = _processed_point(d, share, last_week,
+                                   weeks or _weeks_in(st))
             if say:
                 pts.append(say)
             continue
@@ -786,7 +802,8 @@ def build(office, stats=None, ttb=None, recruiter_rows=None,
             "span": (stats or {}).get("span"),
             "booked": (stats or {}).get("n"),
             "todo": todo(lines), "sources": fresh,
-            "grading": list(grading), "setup": setup, "vitals": vitals,
+            "grading": list(grading), "setup": setup,
+            "vitals": _with_same_day(vitals, stats),
             "changes": changes,
             "advice": advice(stats, _weeks_in(stats)),
             "stale": [f for f in fresh if f["stale"]]}
@@ -996,6 +1013,36 @@ def _spark(points, pct, way="steady"):
     return "".join(out)
 
 
+SAME_DAY_KEY = "pct_same_day_stcl"
+# The card's own tile, after RTCL: from the bookings pull, not the
+# Retention report, so it is added here and never written to the sheet.
+CARD_VITALS_AFTER = ("pct_apps_booked_first",
+                     (SAME_DAY_KEY, "1st rounds booked for the same day "
+                      "as STCL", True))
+
+
+def _with_same_day(vitals, stats):
+    """Each vitals week + that week's same-day-as-STCL share."""
+    from automations.applicant_stream_card import stream_stats as S
+    weeks, stamp = vitals or ([], None)
+    sd = (stats or {}).get("same_day_days") or {}
+    if not weeks or not sd:
+        return vitals
+    # Each vitals week keys on its first day, whichever day the office's
+    # AppStream week starts on.
+    return ([(d, dict(v, **{SAME_DAY_KEY: S.same_day_week(sd, d)}))
+             for d, v in weeks], stamp)
+
+
+def _card_vitals(V):
+    out = []
+    for row in V.VITALS:
+        out.append(row)
+        if row[0] == CARD_VITALS_AFTER[0]:
+            out.append(CARD_VITALS_AFTER[1])
+    return out
+
+
 def trend_html(vitals):
     """Page 0: one tile per key vital — latest week, change, and a line of
     the last weeks for a glance at progression. Click a tile for the
@@ -1014,7 +1061,8 @@ def trend_html(vitals):
     labs = ["{}/{}".format(e.month, e.day) for e in ends]
     out = ["<h2 class='k'>Key vitals \u00b7 last {} weeks</h2>".format(
         len(weeks)), "<div class='vitals'>"]
-    for key, label, pct in V.VITALS:
+    have_sd = any(v.get(SAME_DAY_KEY) is not None for _d, v in weeks)
+    for key, label, pct in (_card_vitals(V) if have_sd else V.VITALS):
         latest, delta = V.trend(weeks, key)
         if latest is None:
             way, chg = "steady", "<span class='s'>no data</span>"

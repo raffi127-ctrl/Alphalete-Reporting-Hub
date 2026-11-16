@@ -633,8 +633,9 @@ class SetupPageTest(unittest.TestCase):
             "days": {"interview_gap": {0: {"share": 22.0}}}}
         head, pts = C.advice(st, 6)
         # Megan 2026-11-15: "22% is a low number" - say it
-        self.assertIn("Only 22% of your 1st rounds are booked for that same "
-                      "day now", " ".join(pts))
+        # Megan 2026-11-16: say it's the 6-week average, not "now"
+        self.assertIn("Only 22% of your 1st rounds over these 6 weeks were "
+                      "booked for that same day", " ".join(pts))
         got = " ".join(pts)
         self.assertIn("last 6 weeks", head)
         # same day vs EVERYTHING after it, not vs only the worst bucket
@@ -805,3 +806,32 @@ class SplitWeeksTest(unittest.TestCase):
         self.assertEqual(back[day]["k"]["texts"], 9)
         self.assertEqual(back[day]["k"]["issues"].most_common(1),
                          [("x", 2)])
+
+
+class SameDayWeeksTest(unittest.TestCase):
+    """Megan 2026-11-16: same-day-as-STCL % as a weekly vital."""
+
+    def test_by_the_week_of_the_1st_round(self):
+        import datetime as dt
+        from automations.applicant_stream_card import stream_stats as S
+        D = dt.datetime
+        tl = [{"pushed": D(2026, 11, 9, 9), "slot": D(2026, 11, 9, 14)},
+              {"pushed": D(2026, 11, 9, 9), "slot": D(2026, 11, 10, 9)},
+              {"pushed": D(2026, 11, 2, 9), "slot": D(2026, 11, 2, 10)},
+              {"pushed": None, "slot": D(2026, 11, 10, 9)}]
+        days = S.same_day_days(tl)
+        self.assertEqual(S.same_day_week(days, dt.date(2026, 11, 8)), 50.0)
+        # a Mon-Sun office's week starts Monday
+        self.assertEqual(S.same_day_week(days, dt.date(2026, 11, 2)), 100.0)
+        self.assertIsNone(S.same_day_week(days, dt.date(2026, 10, 1)))
+
+    def test_tile_sits_after_rtcl(self):
+        import datetime as dt
+        from automations.applicant_stream_card import card as C
+        v = ([(dt.date(2026, 11, 1), {"pull": 5}),
+              (dt.date(2026, 11, 8), {"pull": 6})], "x")
+        got = C._with_same_day(v, {"same_day_days": {
+            dt.date(2026, 11, 9): [1, 4]}})
+        page = C.trend_html(got)
+        self.assertIn("1st rounds booked for the same day as STCL", page)
+        self.assertLess(page.index("RTCL"), page.index("same day as STCL"))

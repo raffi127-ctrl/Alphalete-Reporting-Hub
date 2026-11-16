@@ -435,10 +435,40 @@ def retention_drivers(tl, min_n=MIN_N):
     return out
 
 
+def same_day_days(tl):
+    """{1st round day: [same day as STCL, all]}. Megan 2026-11-16: "add to
+    the vitals % of people booked for same day their resume is processed".
+    Per DAY, so the card can add up whatever week an office's AppStream
+    uses (Sun-Sat or Mon-Sun). Same count as Time to book's same-day
+    share."""
+    by = collections.defaultdict(lambda: [0, 0])
+    for t in tl:
+        if not (t["pushed"] and t["slot"]):
+            continue
+        g = (t["slot"].date() - t["pushed"].date()).days
+        if g < 0:
+            continue
+        d = t["slot"].date()
+        by[d][1] += 1
+        by[d][0] += g == 0
+    return dict(by)
+
+
+def same_day_week(days, first):
+    """% for the 7 days starting `first`, or None."""
+    a = n = 0
+    for i in range(7):
+        x = days.get(first + dt.timedelta(days=i))
+        if x:
+            a, n = a + x[0], n + x[1]
+    return round(100.0 * a / n, 1) if n else None
+
+
 def summary(recs, start=None, end=None):
     tl = timelines(recs, start, end)
     slots = [t["slot"] for t in tl if t["slot"]]
     return {
+        "same_day_days": same_day_days(tl),
         "n": len(tl),
         "span": (min(slots).date(), max(slots).date()) if slots else None,
         "who": ai_vs_human(tl),
