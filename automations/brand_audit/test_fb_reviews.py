@@ -35,5 +35,31 @@ class Offices(unittest.TestCase):
             self.assertEqual(F.process(live=False, profile=p), [{"action": "no_facebook_page"}])
 
 
+class ApprovalStands(unittest.TestCase):
+    """Megan 11/16: "I already approved these responses as they were posted before"."""
+    REVIEW = "This company is a giant pyramid scheme, instead of saying its door 2 door they say"
+
+    def _card(self, ts, reply, who=None):
+        rx = [{"name": "white_check_mark", "users": [who]}] if who else []
+        return {"ts": ts, "reactions": rx,
+                "text": (":speech_balloon: *Facebook review* (doesn't recommend)\n> " + self.REVIEW
+                         + " &amp; more\n\n*Lucy's reply:*\n" + reply
+                         + "\n\n:white_check_mark: approve &amp; post")}
+
+    def test_finds_the_approved_wording_on_an_earlier_card(self):
+        h = [self._card("2", "New draft"),
+             self._card("1", "Write to <mailto:hr@x.com|hr@x.com> please", who="UMEGAN")]
+        self.assertEqual(F.approved_before(h, self.REVIEW, ("UMEGAN",), skip_ts="2"),
+                         ("1", "Write to hr@x.com please"))
+
+    def test_a_check_from_someone_not_approving_does_not_count(self):
+        h = [self._card("1", "Old", who="UREP")]
+        self.assertIsNone(F.approved_before(h, self.REVIEW, ("UMEGAN",)))
+
+    def test_a_different_review_is_not_matched(self):
+        h = [self._card("1", "Old", who="UMEGAN")]
+        self.assertIsNone(F.approved_before(h, "Somebody else wrote a totally different review", ("UMEGAN",)))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -201,6 +201,20 @@ class Flow(Base):
         self.assertNotIn("paused", E._load(self.P))
         self.assertNotIn("s1", self._st()["reviews"], "a refused review comes back to be answered")
 
+    def test_signing_in_keeps_an_approved_card_and_its_check_mark(self):
+        # Megan 11/16: "I already approved these responses as they were posted before".
+        self._pass([{"open_graph_story": {"id": "s2"}, "recommendation_type": "negative"}])
+        st = self._st(); st["reviews"]["s2"]["posted"] = True
+        self.P.path("fb_review_replies.json").write_text(json.dumps(st))
+        E.collect(self.P, [_ans("fb_reply", status="error", error="(#200) Permissions error", story="s2")],
+                  self.cl, dry=False)
+        card = self._st()["reviews"]["s2"]["card_ts"]
+        E.collect(self.P, [_ans("fb_signin", status="signed_in")], self.cl, dry=False)
+        kept = self._st()["reviews"]["s2"]
+        self.assertEqual(kept["card_ts"], card, "same card, so its ✅ still counts")
+        self.assertFalse(kept["posted"])
+        self.assertNotIn("blocked", kept)
+
     def test_cant_comment_as_page_parks_it(self):
         self._two_thank_yous()
         E.send_next(self.P, live=True, now=1e9)

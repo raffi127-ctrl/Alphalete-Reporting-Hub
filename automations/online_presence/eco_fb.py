@@ -127,12 +127,20 @@ def _owner_dm(P, cl, s: Dict, why: str, dry: bool) -> Dict:
 def _unpark_refused(fb_state: Dict) -> int:
     """Reviews parked because Facebook's API refused them (written by a
     person) can be answered now the office computer is signed in to
-    facebook.com: drop them so the next read brings them back to be drafted."""
+    facebook.com. A thank-you is dropped so the next read re-drafts it. A
+    review with an approval card KEEPS its card: its ✅ stands and posts it
+    on the next pass (Megan 11/16: "I already approved these responses")."""
     revs = fb_state.get("reviews") or {}
     gone = [k for k, v in revs.items() if v.get("blocked") and _refused(v["blocked"])]
     for k in gone:
-        revs.pop(k, None)
         (fb_state.get("fails") or {}).pop(k, None)
+        v = revs[k]
+        if v.get("card_ts"):
+            for f in ("blocked", "fails", "post_error"):
+                v.pop(f, None)
+            v["posted"] = False
+        else:
+            revs.pop(k, None)
     return len(gone)
 
 

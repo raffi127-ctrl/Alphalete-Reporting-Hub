@@ -117,6 +117,46 @@ def connect(page_id: str) -> Dict:
     return {"ok": True, "reviews": n}
 
 
+def _plain(slack_text: str) -> str:
+    """A card's text as Slack stores it, back to what we posted: <mailto:a|a> -> a,
+    <url|label> -> label, <url> -> url, &amp;/&lt;/&gt; unescaped."""
+    t = re.sub(r"<[^<>|]+\|([^<>]+)>", r"\1", slack_text or "")
+    t = re.sub(r"<([^<>|]+)>", r"\1", t)
+    return t.replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&")
+
+
+def approved_before(history: List[Dict], review_text: str, approvers, skip_ts: str = ""):
+    """(card_ts, reply) of an EARLIER card for this same review that already has a ✅.
+
+    A review gets a fresh card when it comes back into line (Facebook refused
+    the reply, then the office signed in, 11/16) -- and Megan's ✅ on the first
+    card got thrown away with it: "I already approved these responses as they
+    were posted before". An approval stands: the approved wording goes out, no
+    second ✅ asked for."""
+    from automations.brand_audit import review_replies as RR
+    from automations.brand_audit.config import SOCIAL_APPROVE_EMOJI
+    key = (review_text or "")[:150]
+    if len(key) < 20:
+        return None                        # too short to be sure it's the same review
+    for m in history:
+        text = _plain(m.get("text") or "")
+        if m.get("ts") == skip_ts or "*Facebook review*" not in text or key not in text:
+            continue
+        if "*Lucy's reply:*\n" not in text or not RR._reacted(m.get("reactions"), SOCIAL_APPROVE_EMOJI, approvers):
+            continue
+        reply = text.split("*Lucy's reply:*\n", 1)[1].split("\n\n:white_check_mark:", 1)[0].strip()
+        if reply:
+            return m["ts"], reply
+    return None
+
+
+def _history(cl, channel: str) -> List[Dict]:
+    try:
+        return cl.conversations_history(channel=channel, limit=200).get("messages", []) or []
+    except Exception:  # noqa: BLE001 -- no history = just ask for the ✅ again
+        return []
+
+
 def process(*, live: bool = False, profile=None, reviews=None, post=None) -> List[Dict]:
     """profile = an ECO office (offices.Presence) with facebook_page_id; None = Alphalete.
 
@@ -148,6 +188,12 @@ def process(*, live: bool = False, profile=None, reviews=None, post=None) -> Lis
     drafted_today = state.setdefault("draft_counts", {}).get(today, 0)
     cl = RR._client() if live else None
     actions = []
+    _hist: List[List[Dict]] = []
+
+    def history() -> List[Dict]:                   # one read per pass, only if needed
+        if not _hist:
+            _hist.append(_history(cl, P.reviews_channel) if cl else [])
+        return _hist[0]
     for fb in (reviews if office_side else get_reviews(page_id, token)):
         sid = fb["open_graph_story"]["id"]
         if sid in state["reviews"]:
@@ -159,6 +205,14 @@ def process(*, live: bool = False, profile=None, reviews=None, post=None) -> Lis
         positive = rv["rating"] == 5
         if positive and posted_today >= cap:
             continue                               # tomorrow's run picks it up
+        if live and not positive:
+            earlier = approved_before(history(), rv["text"], P.counted_approvers)
+            if earlier:
+                _post(sid, earlier[1])
+                state["reviews"][sid] = {"reply": earlier[1], "card_ts": earlier[0], "review": rv,
+                                         "posted": True}
+                actions.append({"action": "approved_earlier", "story": sid})
+                continue
         if not positive and drafted_today >= dcap:
             continue
         reply = RR.draft_reply(rv, name, contact=P.contact_email)
@@ -196,6 +250,14 @@ def process(*, live: bool = False, profile=None, reviews=None, post=None) -> Lis
                 _post(sid, st["reply"])
                 st["posted"] = True
                 actions.append({"action": "approved", "story": sid})
+            elif not st.get("earlier_checked") and st.get("review"):
+                st["earlier_checked"] = True
+                earlier = approved_before(history(), st["review"].get("text", ""),
+                                          P.counted_approvers, skip_ts=st["card_ts"])
+                if earlier:
+                    _post(sid, earlier[1])
+                    st.update(reply=earlier[1], posted=True, approved_card=earlier[0])
+                    actions.append({"action": "approved_earlier", "story": sid})
         state["posted_counts"][today] = posted_today
         state["draft_counts"][today] = drafted_today
         state_file.parent.mkdir(parents=True, exist_ok=True)
