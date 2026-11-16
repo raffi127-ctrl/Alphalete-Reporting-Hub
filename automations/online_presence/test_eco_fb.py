@@ -79,6 +79,38 @@ class Flow(Base):
         st = json.loads(self.P.path("fb_review_replies.json").read_text())
         self.assertNotIn("s1", st["reviews"])
 
+    def _st(self):
+        return json.loads(self.P.path("fb_review_replies.json").read_text())
+
+    def test_facebook_refusal_parks_the_review_and_it_is_never_sent_again(self):
+        # 11/15-16: "Permissions error" thank-yous looped 140+ times.
+        self._pass([{"open_graph_story": {"id": "s1"}, "recommendation_type": "positive"}])
+        acts = E.collect(self.P, [_ans("fb_reply", status="error", error="Permissions error", story="s1")],
+                         self.cl, dry=False)
+        self.assertEqual(acts[0]["action"], "fb_reply_blocked")
+        self.assertIn("s1", self._st()["reviews"])
+        self.assertTrue(self._st()["reviews"]["s1"]["blocked"])
+        n = len(self.queued)
+        self.assertEqual(self._pass([{"open_graph_story": {"id": "s1"}, "recommendation_type": "positive"}]), [])
+        self.assertEqual(len(self.queued), n, "a blocked review was sent again")
+        E.ensure_read(self.P, live=True)
+        self.assertIn("s1", self.queued[-1][1]["skip"])
+
+    def test_second_failure_of_anything_parks_it(self):
+        revs = [{"open_graph_story": {"id": "s1"}, "recommendation_type": "positive"}]
+        self._pass(revs)
+        E.collect(self.P, [_ans("fb_reply", status="error", error="boom", story="s1")], self.cl, dry=False)
+        self._pass(revs)
+        acts = E.collect(self.P, [_ans("fb_reply", status="error", error="boom", story="s1")], self.cl, dry=False)
+        self.assertEqual(acts[0]["action"], "fb_reply_blocked")
+
+    def test_approved_card_refused_is_not_reposted_every_pass(self):
+        self._pass([{"open_graph_story": {"id": "s2"}, "recommendation_type": "negative"}])
+        st = self._st(); st["reviews"]["s2"]["posted"] = True; self.P.path("fb_review_replies.json").write_text(json.dumps(st))
+        E.collect(self.P, [_ans("fb_reply", status="error", error="(#200) Permissions error", story="s2")],
+                  self.cl, dry=False)
+        self.assertTrue(self._st()["reviews"]["s2"]["posted"])
+
     def test_answers_split_away_from_zoho(self):
         from automations.online_presence import eco_reviews
         ours, rest = eco_reviews.split([_ans("fb_reviews", status="ok"),

@@ -91,6 +91,10 @@ def connect(P, say=print) -> Dict:
 
 
 # ---- answers (Lucy 3) ------------------------------------------------------------
+def _refused(err: str) -> bool:
+    """Facebook's 'you may not comment here' answers -- no retry fixes them."""
+    e = (err or "").lower()
+    return "permission" in e or "(#10)" in e or "(#200)" in e
 def collect(P, rows: List[Dict], cl, *, dry: bool) -> List[Dict]:
     s = _load(P)
     fb_file = P.path("fb_review_replies.json")
@@ -123,13 +127,30 @@ def collect(P, rows: List[Dict], cl, *, dry: bool) -> List[Dict]:
             if status == "replied":
                 acts.append({"action": "fb_reply_posted", "note": story})
                 continue
-            acts.append({"action": "fb_reply_" + str(status), "note": res.get("error", "")})
+            err = res.get("error") or str(status)
+            # FACEBOOK SAYS NO FOR GOOD on some reviews ("Permissions error": the
+            # reviewer's post can't take a comment from the page). Retrying those
+            # looped 140+ times on 11/15-16 -- a thank-you was dropped, re-read,
+            # re-drafted and re-sent every 30 min. A refusal, or a second failure
+            # of anything, parks the review as "blocked": kept in the state (so the
+            # read skips it and nothing re-drafts it), never sent again.
+            fails = max(int((st or {}).get("fails") or 0),
+                        int((fb_state.get("fails") or {}).get(story) or 0)) + 1
+            if status != "signed_out" and (_refused(err) or fails >= 2):
+                fb_state.setdefault("reviews", {})[story] = dict(st or {}, posted=True, blocked=err[:200],
+                                                                 fails=fails)
+                acts.append({"action": "fb_reply_blocked", "note": "%s: %s" % (story, err[:120])})
+                continue
+            acts.append({"action": "fb_reply_" + str(status), "note": err})
             if st is not None:
+                st["fails"] = fails
                 if st.get("card_ts"):
                     st["posted"] = False               # its ✅ posts it again next pass
-                    st["post_error"] = res.get("error") or status
+                    st["post_error"] = err
                 else:
                     fb_state["reviews"].pop(story, None)   # a thank-you: re-read, re-drafted
+                    # (a pop loses the count, so remember it on the side)
+                    fb_state.setdefault("fails", {})[story] = fails
     if not dry:
         _save(P, s)
         fb_file.parent.mkdir(parents=True, exist_ok=True)
