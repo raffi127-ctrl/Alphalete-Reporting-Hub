@@ -591,6 +591,7 @@ _LIVE = {
     "tre",                             # 11/13: 10/1-11/13 loaded from Lucy 1, 20 threads (8 open pinned), 0 loose, Central
     "cody",                            # 11/16: loaded 10/19 but never switched on (Maddie: no pictures since), Central
     "algemar",                         # 11/16: 11/11-11/16 loaded from Lucy 1, 4 threads pinned, 0 loose, Mountain
+    "vincent",                         # 11/16: live from 11/17 (load 11/10-11/16 queued on Lucy 1), Central
 }
 
 # Spellings an office confirmed are one ad, {typed title: the ad's title}.
@@ -732,7 +733,9 @@ _TITLE_ONLY = {
 # --date` still posts). Khalil 10/2: his channel is re-posted 9/1 -> 10/2
 # from the queue in day order; the 4:30 tick posting 10/2 in the middle would
 # land it above September.
-_PAUSED_BEFORE = {"khalil": "2026-10-03"}
+_PAUSED_BEFORE = {"khalil": "2026-10-03",
+                  # 11/16: the 11/10-11/16 load is still running; the tick starts 11/17.
+                  "vincent": "2026-11-17"}
 
 # Offices whose 1st rounds are read off the Slack thread alone, not the sheet
 # (collect.slack_rows): one reply per candidate, "Name – Ad – YES – 1:15 –
