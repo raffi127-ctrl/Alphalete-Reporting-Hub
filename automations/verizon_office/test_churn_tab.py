@@ -19,23 +19,30 @@ def _file():
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Order Detail"
-    ws.append(BASE_COLS + ["CustomerName", "StatusReason"])
+    # Approval Date: Credico's approval, two days after activation on the
+    # approved lines; blank = never approved (outside the churn math)
+    ws.append(BASE_COLS + ["CustomerName", "StatusReason", "Approval Date"])
     D = dt.datetime
+
+    def appr(d, days=2):
+        return (d + dt.timedelta(days=days)) if d else None
     rows = [
         # port, activated 10/20, disconnected 11/01 -> in the 30-day window, dead, falls off 11/19 (4d)
-        _line("Will Bautista", D(2026, 10, 18), "Wireless Line", "CAN", "Disc. Post", D(2026, 11, 1), D(2026, 10, 20), "Q_1", "1", "Wireless Line - New", "IP17", "NEW", "Y") + ["ANA R", "Customer request"],
+        _line("Will Bautista", D(2026, 10, 18), "Wireless Line", "CAN", "Disc. Post", D(2026, 11, 1), D(2026, 10, 20), "Q_1", "1", "Wireless Line - New", "IP17", "NEW", "Y") + ["ANA R", "Customer request", appr(D(2026, 10, 20))],
         # port, activated 10/25, active
-        _line("Will Bautista", D(2026, 10, 22), "Wireless Line", "APPR", "Activated", None, D(2026, 10, 25), "Q_2", "1", "Wireless Line - New", "IP17", "NEW", "Y") + ["BOB S", ""],
+        _line("Will Bautista", D(2026, 10, 22), "Wireless Line", "APPR", "Activated", None, D(2026, 10, 25), "Q_2", "1", "Wireless Line - New", "IP17", "NEW", "Y") + ["BOB S", "", appr(D(2026, 10, 25))],
         # byod, activated 11/02, active
-        _line("Diego Chacon", D(2026, 11, 1), "Wireless Line", "APPR", "Activated", None, D(2026, 11, 2), "Q_3", "1", "Wireless Line - Byod", "BYOD", "BYOD", "Y") + ["CAL T", ""],
+        _line("Diego Chacon", D(2026, 11, 1), "Wireless Line", "APPR", "Activated", None, D(2026, 11, 2), "Q_3", "1", "Wireless Line - Byod", "BYOD", "BYOD", "Y") + ["CAL T", "", appr(D(2026, 11, 2))],
         # byod, activated 11/05, disconnected 11/10 -> dead in window, falls off 12/05 (20d)
-        _line("Diego Chacon", D(2026, 11, 3), "Wireless Line", "CAN", "Disc. Pre", D(2026, 11, 10), D(2026, 11, 5), "Q_4", "1", "Wireless Line - Byod", "BYOD", "BYOD", "N") + ["DEE U", "Non-pay"],
+        _line("Diego Chacon", D(2026, 11, 3), "Wireless Line", "CAN", "Disc. Pre", D(2026, 11, 10), D(2026, 11, 5), "Q_4", "1", "Wireless Line - Byod", "BYOD", "BYOD", "N") + ["DEE U", "Non-pay", appr(D(2026, 11, 5))],
         # activated 9/30 -> OUTSIDE the 30-day window
-        _line("Diego Chacon", D(2026, 9, 28), "Wireless Line", "APPR", "Activated", None, D(2026, 9, 30), "Q_5", "1", "Wireless Line - New", "IP17", "NEW", "Y") + ["EVE V", ""],
+        _line("Diego Chacon", D(2026, 9, 28), "Wireless Line", "APPR", "Activated", None, D(2026, 9, 30), "Q_5", "1", "Wireless Line - New", "IP17", "NEW", "Y") + ["EVE V", "", appr(D(2026, 9, 30))],
         # sold 11/12, pending (not activated)
-        _line("Will Bautista", D(2026, 11, 12), "Wireless Line", "APPR", "Submitted", None, None, "Q_6", "1", "Wireless Line - New", "IP17", "NEW", "Y") + ["FAY W", ""],
+        _line("Will Bautista", D(2026, 11, 12), "Wireless Line", "APPR", "Submitted", None, None, "Q_6", "1", "Wireless Line - New", "IP17", "NEW", "Y") + ["FAY W", "", None],
         # sold 11/13, cancelled never activated
-        _line("Will Bautista", D(2026, 11, 13), "Wireless Line", "REJ", "", D(2026, 11, 14), None, "Q_7", "1", "Wireless Line - New", "IP17", "NEW", "N") + ["GUS X", ""],
+        _line("Will Bautista", D(2026, 11, 13), "Wireless Line", "REJ", "", D(2026, 11, 14), None, "Q_7", "1", "Wireless Line - New", "IP17", "NEW", "N") + ["GUS X", "", None],
+        # activated 11/06, disconnected 11/09, NEVER APPROVED -> not in the churn math at all (Credico SOW; Carlos 2026-11-15)
+        _line("Will Bautista", D(2026, 11, 4), "Wireless Line", "CAN", "Disc. Pre", D(2026, 11, 9), D(2026, 11, 6), "Q_8", "1", "Wireless Line - New", "IP17", "NEW", "Y") + ["HAL Y", "Non-pay", None],
     ]
     for r in rows:
         ws.append(r)
@@ -67,11 +74,39 @@ class ChurnTabTest(unittest.TestCase):
         self.assertTrue(roll[1]["quick"] and not a["quick"])
 
     def test_activation_rates_by_order_age(self):
+        # APPROVAL rates since 2026-11-15: a line counts once Credico puts an
+        # Approval Date on it. The fixture has none, so stamp the activated
+        # (active / disconnected-after) lines approved and expect the same shape.
         office, reps = CT.activation_rates(self.lines, TODAY)
-        # 0-30 by ORDER date: Q_1 (10/18, 28d, disconnected=activated), Q_2, Q_3, Q_4, Q_6 (pending), Q_7 (cancelled)
-        self.assertEqual((office["0-30"]["activated"], office["0-30"]["sold"]), (4, 6))
+        # 0-30 by ORDER date: Q_1 (10/18, 28d, approved), Q_2, Q_3, Q_4 approved; Q_6 (pending), Q_7 (cancelled), Q_8 (never approved) not
+        self.assertEqual((office["0-30"]["activated"], office["0-30"]["sold"]), (4, 7))
         self.assertEqual((office["31-60"]["activated"], office["31-60"]["sold"]), (1, 1))  # Q_5 9/28 = 48d
         self.assertEqual((reps["Diego Chacon"]["0-30"]["activated"], reps["Diego Chacon"]["0-30"]["sold"]), (2, 2))
+
+    def test_unapproved_disconnect_is_outside_churn(self):
+        s = CT.churn_summary(self.lines, TODAY)["All Lines"]
+        self.assertEqual((s["base"], s["disc"]), (4, 2))         # Q_8 (activated, disconnected, no approval) counts nowhere
+        self.assertNotIn("HAL Y", [r["customer"] for r in CT.rolloff_rows(self.lines, TODAY)])
+
+    def test_disconnected_before_approval_list(self):
+        una = CT.unapproved_disconnects(self.lines)
+        self.assertEqual([(x["customer"], x["rep"], x["days_active"]) for x in una], [("Hal Y", "Will Bautista", 3)])
+        # its own picture, NOT on the tab (Carlos 2026-11-15)
+        grid, marks = CT.build_grid(self.lines, TODAY, CT.credico_tier(self.sv, TODAY))
+        self.assertFalse(any("DISCONNECTED BEFORE APPROVAL" in r[0] for r in grid))
+        self.assertNotIn("unpaid_list", marks)
+        # the per-rep missed-out revenue: Will's port IP17 at Tier 4 = $190
+        self.assertEqual(CT.unpaid_by_rep(self.lines, 190), [("OFFICE TOTAL", 1, 190), ("Will Bautista", 1, 190)])
+
+    def test_credico_scoring_blocks(self):
+        sc = CT.credico_scoring(self.lines, TODAY)
+        self.assertEqual([x["block"] for x in sc], [dt.date(2026, 10, 25), dt.date(2026, 11, 22), dt.date(2026, 12, 20)])
+        nxt = sc[1]                                   # window 9/22-10/21: Q_5 approved 10/2, active
+        self.assertEqual((nxt["base"], nxt["gone"], nxt["tier"], nxt["neutral"]), (1, 0, 4, True))
+        grid, marks = CT.build_grid(self.lines, TODAY, CT.credico_tier(self.sv, TODAY))
+        s0, s1 = marks["scoring"]
+        self.assertEqual(grid[s0 - 1][0:7], list(CT.SCORING_HEADERS))
+        self.assertTrue(grid[s0][0].startswith("10/25 (now)"))
 
     def test_credico_tier_neutral_under_15(self):
         t = CT.credico_tier(self.sv, TODAY)

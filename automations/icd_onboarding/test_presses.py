@@ -240,6 +240,23 @@ class Alerting(unittest.TestCase):
         self.assertIn("if real:", src)
         self.assertIn("elif real and outcome == \"refused\"", src)
 
+    def test_not_ready_is_never_alerted(self):
+        """11/15: raf's first live pass posted 10 people who simply were not
+        ready yet. Only a ready person's refusal needs a human."""
+        src = inspect.getsource(P._press)
+        self.assertIn("not is_not_ready(detail)", src)
+        for detail in (
+                "Aalya Vasquez: not every section is done — DRUG TEST=REQUIRED ACTION",
+                "Ada Lovelace: background check is not COMPLETED",
+                "could not open Jade Starkes: Refused: Jade Starkes: not found "
+                "in OwnerVille (tried ['RES-AT&T'])"):
+            self.assertTrue(P.is_not_ready(detail), detail)
+        for detail in ("Ada Lovelace: no confirm box in Owner Submit",
+                       "Ada Lovelace: Save Changes failed (TimeoutError)",
+                       "Ada Lovelace: saved, but Owner Submit reads PENDING",
+                       "could not open Ada Lovelace: TimeoutError: 20000ms"):
+            self.assertFalse(P.is_not_ready(detail), detail)
+
     def test_an_alert_failure_never_fails_the_run(self):
         src = inspect.getsource(P._alert)
         self.assertIn("except Exception", src)

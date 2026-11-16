@@ -110,6 +110,14 @@ def test_quantity_answer_wins():
     assert T.quantities("int 1 gig 1 dtv 1", {"Int": 1, "DTV": 1}) == ({"Int": 1, "DTV": 1}, "")
 
 
+def test_watches_and_tablets_move_nothing():
+    # The sweep keeps wearables/tablets off the board, so the form must too
+    # (Milandi <- Ana Griffin 11/12, row 279: board had 4 NL, form said 6).
+    assert T.quantities("NL-4 NL wearable -2 ", {"NL": 1}) == ({"NL": 4}, "")
+    assert T.quantities("NL - 3 | 2 watches", {"NL": 1}) == ({"NL": 3}, "")
+    assert T.quantities("Int - 1, tablet 1", {"Int": 1, "NL": 1}) == ({"Int": 1}, "")
+
+
 def test_quantity_answer_unreadable_or_off_moves_nothing():
     assert T.quantities("3", {"Int": 1, "DTV": 1})[1]          # which one?
     assert T.quantities("New Int - 2", {"Int": 1, "DTV": 1})[1]  # DTV missing

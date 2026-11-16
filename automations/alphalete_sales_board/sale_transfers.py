@@ -229,6 +229,13 @@ QTY_WORDS = (
 )
 
 
+# Lines the sweep never puts on the board -- watches, wearables, tablets are
+# not sales (Megan 2026-10-26, Raf 2026-10-27; sara.py drops them). A quantity
+# part naming one is read but moves nothing: 'NL-4 NL wearable -2' moves 4 NL,
+# not 6 (Milandi <- Ana Griffin, 11/12, form row 279).
+NOT_A_SALE = r"\b(?:wearables?|watch(?:es)?|tablets?|ipads?)\b"
+
+
 def _by_number(part: str) -> List[str]:
     """'new int 1 dtv 1' -> ['new int 1', 'dtv 1']; '1 int 2 dtv' ->
     ['1 int', '2 dtv']. With no comma/bar between products, each number
@@ -262,6 +269,11 @@ def quantities(text: str, ticked: Dict[str, int], vague: bool = False
         metric = next((m for w, m in QTY_WORDS
                        if re.search(r"\b(?:%s)\b" % w, part)), None)
         nums = re.findall(r"\d+", part)
+        not_sale = re.search(NOT_A_SALE, part)
+        if not_sale and len(nums) == 1:
+            # 'NL wearable - 2': read, but moves nothing -- see NOT_A_SALE.
+            covered.add(metric or "NL")
+            continue
         if metric is None or len(nums) != 1:
             return {}, "quantity %r: cannot read %r" % (raw, part.strip())
         covered.add(metric)

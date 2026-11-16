@@ -53,7 +53,10 @@ PRODUCT = "Product Type (Broken Out)"
 PACKAGE = "Package"
 TECH = "Tech Install"
 SPM = "sp.SPM Number"
+STATUS_DATE = "Status Date"   # per line; not in every crosstab
 LINES = "_wireless_lines"   # ours, set by wireless_pending (lines per order)
+LINE_NO = "_wireless_line_no"   # ours: 1..LINES inside the order
+ORDER_KEY = "_wireless_order"   # ours: rep|SPM, same for every line of an order
 
 # Crosstab exports sometimes leave a merged dimension blank on the rows under
 # its first one; carry the last value down for these.
@@ -167,29 +170,54 @@ def is_wireless(r: Dict[str, str]) -> bool:
     return r.get(PRODUCT, "").strip().upper() == "WIRELESS"
 
 
+def is_activated(r: Dict[str, str]) -> bool:
+    if parse_date(r.get(ACTIVATION)):
+        return True
+    return r.get(STATUS, "").strip().lower() == "active"
+
+
+def _dead(r: Dict[str, str]) -> bool:
+    s = r.get(STATUS, "").strip().lower()
+    return "cancel" in s or s == "disconnected"
+
+
 def wireless_pending(rows: List[Dict[str, str]]) -> List[Dict[str, str]]:
     """Raf 2026-11-12 ("Pending Orders for wireless"): wireless never carries
     an spe.Install Date (it ships), so it never made the install board. Every
-    open wireless line in the window (Delivered / Shipped / BYOD /
-    Backordered, no activation) rides along under its rep. Rep A-Z, then
-    oldest sale first."""
-    # Eve 11/12: one row per ORDER (SPM), not per line — the first sample was
-    # 391 rows for Raf because every line of a 5-line order was its own row.
-    orders: Dict[tuple, Dict[str, str]] = {}
+    wireless ORDER with at least one open line (Delivered / Shipped / BYOD /
+    Backordered / Porting..., no activation) rides along under its rep.
+
+    Raf 11/16: "every line is different... they have to each be an itemized
+    line" -> ONE ROW PER LINE, each with its own status, all lines of an
+    order together (open ones first, already-activated ones after so the rep
+    sees the whole order). Canceled / disconnected lines stay out. Rep A-Z,
+    then oldest sale first."""
+    def key(r):
+        return (r.get(REP, "").casefold(),
+                r.get(SPM, "") or (r.get(CUSTOMER, ""), r.get(SALE_DATE, "")))
+    orders: Dict[tuple, List[Dict[str, str]]] = {}
     for r in rows:
-        if not (is_wireless(r) and is_open(r)):
-            continue
-        key = (r.get(REP, "").casefold(),
-               r.get(SPM, "") or (r.get(CUSTOMER, ""), r.get(SALE_DATE, "")))
-        if key in orders:
-            orders[key][LINES] = str(int(orders[key][LINES]) + 1)
-        else:
-            orders[key] = dict(r, **{LINES: "1"})
-    hit = list(orders.values())
-    hit.sort(key=lambda r: (r.get(REP, "").casefold(),
+        if is_wireless(r) and not _dead(r):
+            orders.setdefault(key(r), []).append(r)
+    out: List[Dict[str, str]] = []
+    for k, lines in orders.items():
+        if not any(is_open(r) for r in lines):
+            continue   # every line already active: nothing to chase
+        lines = sorted(lines, key=is_activated)   # stable: open lines first
+        n = len(lines)
+        for i, r in enumerate(lines, 1):
+            out.append(dict(r, **{LINES: str(n), LINE_NO: str(i),
+                                  ORDER_KEY: "{}|{}".format(*k)}))
+    out.sort(key=lambda r: (r.get(REP, "").casefold(),
                             parse_date(r.get(SALE_DATE)) or dt.date.min,
-                            r.get(CUSTOMER, "").casefold()))
-    return hit
+                            r.get(CUSTOMER, "").casefold(),
+                            r[ORDER_KEY], int(r[LINE_NO])))
+    return out
+
+
+def wireless_orders(rows: List[Dict[str, str]]) -> int:
+    """How many wireless ORDERS (not lines) are in these board rows."""
+    return len({r.get(ORDER_KEY) or id(r) for r in rows if is_wireless(r)})
 
 
 def board_rows(rows: List[Dict[str, str]], day: dt.date) -> List[Dict[str, str]]:

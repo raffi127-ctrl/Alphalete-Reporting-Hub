@@ -15,10 +15,12 @@ class MatchTests(unittest.TestCase):
                    _reply(":chart_with_downwards_trend: Churn Rates by Rep — Nov 16", "cr.png"),
                    _reply(":wolf: *VERIZON CHURN* — 11/16", "ct.png"),
                    _reply(":clipboard: *Verizon Wireless Comp Grid*", "cg.png"),
+                   _reply(":no_entry: *Disconnected Before Approval* — 11/16", "db.png"),
                    _reply(":new: Rep Activations — Nov 16 (1 of 2)", "ra.png")]
         got = T.match_thread_items(replies, day)
         self.assertEqual({k: v["name"] for k, v in got.items()},
-                         {"revenue_board": "rb.png", "churn_by_rep": "cr.png", "churn_tab": "ct.png", "comp_grid": "cg.png"})
+                         {"revenue_board": "rb.png", "churn_by_rep": "cr.png", "churn_tab": "ct.png",
+                          "disc_before_approval": "db.png", "comp_grid": "cg.png"})
 
     def test_newest_matching_reply_wins(self):
         day = dt.date(2026, 11, 16)

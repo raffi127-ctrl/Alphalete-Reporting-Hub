@@ -19,11 +19,11 @@ disqualified. Credico's own notice is the official placement; this tab shows
 where the live number lands.
 
 WHAT THE TAB SHOWS (one Credico Order Detail pull, same as the Order Log):
-  * the top-left box: lines ACTIVATED in the last 30 days (rolling, by
+  * the top-left box: APPROVED lines activated in the last 30 days (rolling, by
     activation date) and how many of those have DISCONNECTED = churn %, for
     All Lines / Port (non-BYOD) / BYOD / New (non-BYOD), with pending counts
-    and the 0-30 / 31-60 day activation rates (sold by order-date age,
-    activated = active now or disconnected after activating -- the NDS rule);
+    and the 0-30 / 31-60 day APPROVAL rates (sold by order-date age,
+    approved = carries Credico's Approval Date; Carlos 2026-11-15);
   * the Credico tier chart, the live band marked "◀ now" off the calendar
     window Credico actually scores (comp.office_tier), and a status line
     with the window, its rate and the rules;
@@ -32,7 +32,7 @@ WHAT THE TAB SHOWS (one Credico Order Detail pull, same as the Order Log):
     disconnected line, soonest to fall off first: Days Left = (Activation
     Date + 30) - today, and what the churn % becomes once that line has aged
     off; red only when it disconnected within 7 days of activating;
-  * the per-rep 0-30 day activation rate list on the right.
+  * the per-rep 0-30 day APPROVAL rate list on the right (approved/sold).
 
 Customer names are on this tab (the Vantura Master is Carlos's own workbook,
 like the NDS CHURN tab). Nothing here posts to Slack.
@@ -79,9 +79,11 @@ SOURCE = ("Verizon Wireless SOW Schedule A 6.16.26 + Churn Schedule Wireless 202
 # or whatever ... that should all just be one thing". The rolloff list still
 # says port / new and the device on each row.
 BOX_ROWS = (("All Lines", None),)
+# Approval Date between activation and disconnect, no Plan (Carlos 2026-11-15:
+# "They must have had an approved date if they're on this list")
 LIST_HEADERS = ("Days Left", "Fall-Off Date", "Lines", "% After Rolloff",
-                "Customer", "Sales Rep", "Order Date", "Activation Date", "Disconnect Date",
-                "Port / New", "Device", "Plan", "Status Reason")
+                "Customer", "Sales Rep", "Order Date", "Activation Date", "Approval Date", "Disconnect Date",
+                "Port / New", "Device", "Status Reason")
 # Credico's tier bands, best first, as the SOW prints them (comp.CHURN_TIERS ceilings)
 TIER_LABELS = {1: "0 – 4.99%", 2: "5 – 6.99%", 3: "7 – 8.99%", 4: "9 – 14.99%", 5: "15 – 19.99%",
                6: "20 – 26.99%", 7: "27 – 33.99%", 8: "34%+"}
@@ -109,21 +111,35 @@ def is_activated(l) -> bool:
     return (l.get("Line Status") or "").lower() in ("active", "disconnected") and bool(_d(l.get("Activation Date")))
 
 
+def is_approved(l) -> bool:
+    """Credico has put an Approval Date on the line -- the compensable sale.
+    Carlos 2026-11-15: "We shouldn't even be looking at activation rate. We
+    should be looking at approval rate." The rate columns count this."""
+    return bool(_d(l.get("Approval Date")))
+
+
 def churn_units(lines, today: dt.date, days: int = WINDOW_DAYS) -> List[Dict[str, str]]:
-    """Lines ACTIVATED inside the rolling window (activation date within the
-    last `days` days, today included)."""
+    """The churn base: APPROVED lines activated inside the rolling window
+    (activation date within the last `days` days, today included). Credico's
+    SOW: "Churn will be calculated based on Compensable Sales ... that is
+    activated/installed and shows approval date" -- a line that activated,
+    never got an approval date and disconnected is outside the churn math
+    entirely (Carlos 2026-11-15: "Our churn is not the disconnects divided by
+    the activations. It's the disconnects divided by the approved
+    activations.")."""
     cutoff = today - dt.timedelta(days=days)
     out = []
     for l in lines:
         a = _d(l.get("Activation Date"))
-        if a and cutoff <= a <= today and is_activated(l):
+        if a and cutoff <= a <= today and is_activated(l) and is_approved(l):
             out.append(l)
     return out
 
 
 def churn_summary(lines, today: dt.date) -> Dict[str, dict]:
-    """{row label: {base, disc, rate, pending}} for the box rows. Pending =
-    sold in the last 30 days, not activated, not cancelled."""
+    """{row label: {base, disc, rate, pending}} for the box rows. Base = the
+    approved lines activated in the window; pending = sold in the last 30
+    days, no approval date yet, not cancelled / disconnected."""
     units = churn_units(lines, today)
     cutoff = today - dt.timedelta(days=WINDOW_DAYS)
     out = {}
@@ -131,7 +147,7 @@ def churn_summary(lines, today: dt.date) -> Dict[str, dict]:
         mine = [u for u in units if cls is None or line_class(u) == cls]
         disc = sum(1 for u in mine if is_dead(u))
         pend = sum(1 for l in lines if (cls is None or line_class(l) == cls)
-                   and not _d(l.get("Activation Date"))
+                   and not is_approved(l)
                    and (l.get("Line Status") or "").lower() not in ("cancelled", "canceled", "disconnected")
                    and _d(l.get("Order Date")) and cutoff <= _d(l.get("Order Date")) <= today)
         out[label] = {"base": len(mine), "disc": disc,
@@ -140,8 +156,9 @@ def churn_summary(lines, today: dt.date) -> Dict[str, dict]:
 
 
 def activation_rates(lines, today: dt.date) -> Tuple[dict, dict]:
-    """(office, reps): {'0-30': {activated, sold, rate}, '31-60': {...}} by
-    ORDER-date age, activated = is_activated (the NDS Activation Rate rule)."""
+    """APPROVAL rates: (office, reps): {'0-30': {activated, sold, rate},
+    '31-60': {...}} by ORDER-date age, where 'activated' counts lines that are
+    APPROVED (is_approved) -- the key name stays so the formatter's marks do."""
     def _blank():
         return {b: {"activated": 0, "sold": 0, "rate": None} for b in ("0-30", "31-60")}
     office, reps = _blank(), {}
@@ -155,7 +172,7 @@ def activation_rates(lines, today: dt.date) -> Tuple[dict, dict]:
             continue
         for slot in (office[b], reps.setdefault(l.get("Rep") or "(no rep)", _blank())[b]):
             slot["sold"] += 1
-            if is_activated(l):
+            if is_approved(l):
                 slot["activated"] += 1
     for d in [office] + list(reps.values()):
         for b in ("0-30", "31-60"):
@@ -183,7 +200,8 @@ def rolloff_rows(lines, today: dt.date) -> List[dict]:
             "days_left": (falloff - today).days, "falloff": falloff, "lines": 1,
             "pct_all": pct_after(posted),
             "customer": u.get("Customer", ""), "rep": u.get("Rep", ""),
-            "order_date": _d(u.get("Order Date")), "posted": posted, "disc_date": _d(u.get("Cancel Date")),
+            "order_date": _d(u.get("Order Date")), "posted": posted, "approved": _d(u.get("Approval Date")),
+            "disc_date": _d(u.get("Cancel Date")),
             "kind": ("BYOD" if (u.get("Device") or "").strip().upper() == "BYOD"
                      else "port" if u.get("Type") == "Port" else "new"),
             "device": u.get("Device", ""), "plan": u.get("Plan", ""), "reason": u.get("Status Reason", ""),
@@ -191,6 +209,159 @@ def rolloff_rows(lines, today: dt.date) -> List[dict]:
             # tab's 7-day flag; Carlos 2026-11-15)
             "quick": bool(_d(u.get("Cancel Date"))) and (_d(u.get("Cancel Date")) - posted).days <= QUICK_DAYS,
         })
+    return out
+
+
+UNAPPROVED_HEADERS = ("Customer", "Sales Rep", "Order Date", "Activation Date", "Disconnect Date",
+                      "Days Active", "Port / New", "Device")
+UNPAID_HEADERS = ("Rep Name", "Lines", "Missed-Out Revenue")
+UNPAID_COL = 9                       # J:L, right beside the list (Carlos 2026-11-15: "more to the left")
+
+
+def line_would_pay(l, tier_pay: int) -> int:
+    """What an order-log line would have paid at the office's current tier:
+    port smartphone = the tier rate, BYOD / no-port = the $25 flat, plus
+    AutoPay / Unlimited Plus-Ultimate / Protect (comp.py's terms)."""
+    dev = (l.get("Device") or "").strip().upper()
+    port = (l.get("Type") == "Port") and dev != "BYOD"
+    base = tier_pay if port else C.FLAT_LINE
+    plan = (l.get("Plan") or "").lower()
+    addons = (l.get("Add-ons") or "").lower()
+    return int(base + (C.AUTOPAY if (l.get("AutoPay") or "").lower() == "yes" else 0)
+               + (C.PREMIUM_PLAN if plan.startswith(("unlimited plus", "unlimited ultimate")) else 0)
+               + (C.PROTECT if ("protect" in addons or "secure" in addons) else 0))
+
+
+def unpaid_by_rep(lines, tier_pay: int) -> List[Tuple[str, int, int]]:
+    """[(rep, lines disconnected before approval, $ they are not getting
+    paid)] biggest $ first, plus ('OFFICE TOTAL', n, $) first (Carlos
+    2026-11-15: "all of the reps that have sales that disconnected before
+    the approval and the amount of revenue that they are not getting paid
+    out on")."""
+    per: Dict[str, List[int]] = {}
+    for l in lines:
+        if _d(l.get("Activation Date")) and is_dead(l) and not is_approved(l):
+            slot = per.setdefault(l.get("Rep") or "(no rep)", [0, 0])
+            slot[0] += 1
+            slot[1] += line_would_pay(l, tier_pay)
+    rows = sorted(((r, n, usd) for r, (n, usd) in per.items()), key=lambda t: (-t[2], -t[1], t[0].lower()))
+    total = ("OFFICE TOTAL", sum(n for _, n, _ in rows), sum(u for _, _, u in rows))
+    return [total] + rows
+
+
+def unapproved_disconnects(lines) -> List[dict]:
+    """Every line that ACTIVATED and then DISCONNECTED without Credico ever
+    putting an approval date on it -- newest disconnect first. Outside the
+    churn math and never paid, but the office should still see them (Carlos
+    2026-11-15: "people should be aware of those sales still")."""
+    out = []
+    for l in lines:
+        a, c = _d(l.get("Activation Date")), _d(l.get("Cancel Date"))
+        if a and is_dead(l) and not is_approved(l):
+            out.append({
+                "customer": l.get("Customer", ""), "rep": l.get("Rep", ""),
+                "order_date": _d(l.get("Order Date")), "posted": a, "disc_date": c,
+                "days_active": (c - a).days if c else None,
+                "kind": ("BYOD" if (l.get("Device") or "").strip().upper() == "BYOD"
+                         else "port" if l.get("Type") == "Port" else "new"),
+                "device": l.get("Device", ""), "plan": l.get("Plan", ""), "reason": l.get("Status Reason", ""),
+            })
+    return sorted(out, key=lambda x: (x["disc_date"] or dt.date.min, x["customer"]), reverse=True)
+
+
+def unapproved_png(lines, today: dt.date, out_path: Path, owner: str = "", tier_pay: Optional[int] = None) -> Path:
+    """Its own picture (Carlos 2026-11-15): a stat strip (lines, missed-out
+    revenue), the list of lines that activated then disconnected before
+    Credico put an approval date on them, and the per-rep missed-out revenue
+    table beside it. Days-active cells are banded (red = gone inside 7 days,
+    amber = inside 14), rows zebra'd, revenue in Verizon red."""
+    import html as H
+    from automations.b2b_metrics.rep_boards import _capture_board
+    rows = unapproved_disconnects(lines)
+    tier_pay = tier_pay if tier_pay is not None else C.PORT_TIER_PAY[C.NEUTRAL_TIER]
+    rep_rows = unpaid_by_rep(lines, tier_pay)
+    total_n, total_usd = rep_rows[0][1], rep_rows[0][2]
+
+    def days_td(d):
+        if d is None:
+            return "<td></td>"
+        cls = "d7" if d <= QUICK_DAYS else "d14" if d <= 14 else "d30"
+        return f'<td class="{cls}">{d}d</td>'
+    trs = []
+    for x in rows:
+        cells = [x["customer"], x["rep"], _fmt(x["order_date"]), _fmt(x["posted"]), _fmt(x["disc_date"])]
+        trs.append("<tr>" + "".join(f"<td>{H.escape(str(c))}</td>" for c in cells) + days_td(x["days_active"])
+                   + f'<td>{H.escape(x["kind"])}</td><td>{H.escape(x["device"])}</td></tr>')
+    if not rows:
+        trs.append(f'<tr><td colspan="{len(UNAPPROVED_HEADERS)}" style="color:#666">(no line has disconnected before approval)</td></tr>')
+    ths = "".join(f"<th>{h}</th>" for h in UNAPPROVED_HEADERS)
+    rep_trs = "".join(
+        f'<tr{" class=tot" if k == 0 else ""}><td>{H.escape(r)}</td><td>{n}</td><td class="usd">${usd:,}</td></tr>'
+        for k, (r, n, usd) in enumerate(rep_rows))
+    rep_tbl = (f'<table class="reps"><tr>{"".join(f"<th>{h}</th>" for h in UNPAID_HEADERS)}</tr>{rep_trs}</table>'
+               f'<div class="note">Missed-out revenue = what each line would have paid at the office\'s current tier '
+               f'(${tier_pay} a port smartphone, $25 BYOD / no-port, + AutoPay / Unlimited Plus / Protect).</div>')
+    sub = "%sas of %s %d, %d" % ((owner + " — ") if owner else "", today.strftime("%B"), today.day, today.year)
+    htm = f"""<html><head><meta charset='utf-8'><style>
+ body{{margin:0;font-family:'Helvetica Neue',Arial,sans-serif}}
+ .board{{display:inline-block;padding:16px;background:#f4f6f8}}
+ .title{{background:#12181d;color:#fff;text-align:center;font-weight:800;font-size:24px;padding:12px 18px;letter-spacing:.02em}}
+ .title span{{color:#cd040b}}
+ .sub{{color:#555;text-align:center;font-weight:600;font-size:14px;padding:8px 0 10px}}
+ .stats{{display:flex;gap:14px;justify-content:center;margin-bottom:14px}}
+ .stat{{background:#fff;border-radius:8px;padding:10px 22px;min-width:220px;text-align:center;
+        box-shadow:0 1px 3px rgba(0,0,0,.08);border-left:5px solid #cd040b}}
+ .stat .lab{{color:#5b6770;font-size:12px;letter-spacing:.06em;font-weight:600}}
+ .stat .val{{font-size:30px;font-weight:800;color:#12181d}} .stat .val.red{{color:#cd040b}}
+ .row{{display:flex;gap:22px;align-items:flex-start;justify-content:center}}
+ table{{border-collapse:collapse;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.08)}}
+ th{{background:#12181d;color:#fff;font-size:12px;letter-spacing:.04em;padding:8px 12px;border:1px solid #2a333b}}
+ td{{font-size:13px;padding:7px 12px;border:1px solid #e3e7eb;text-align:center;white-space:nowrap}}
+ tr:nth-child(even) td{{background:#f7f9fb}}
+ td:first-child{{text-align:left;font-weight:700}}
+ td.d7{{background:#f8d7da;color:#842029;font-weight:700}} td.d14{{background:#fff3cd;color:#664d03;font-weight:700}} td.d30{{color:#3c4650}}
+ tr.tot td{{background:#e9ecef;font-weight:800}}
+ .reps td.usd{{color:#cd040b;font-weight:800}}
+ .note{{color:#666;font-size:11px;max-width:420px;padding-top:8px}}
+ .legend{{color:#5b6770;font-size:11px;text-align:center;padding-top:10px}}
+ .sw{{display:inline-block;width:11px;height:11px;border-radius:2px;vertical-align:-1px;margin:0 3px 0 10px}}
+</style></head><body><div class="board"><div class="title">VERIZON <span>✓</span> DISCONNECTED BEFORE APPROVAL</div>
+<div class="sub">{H.escape(sub)} — lines that activated, then dropped before Credico put an approval date on them. Outside the churn math, and never paid.</div>
+<div class="stats"><div class="stat"><div class="lab">LINES</div><div class="val">{total_n}</div></div>
+<div class="stat"><div class="lab">MISSED-OUT REVENUE</div><div class="val red">${total_usd:,}</div></div></div>
+<div class="row"><table><tr>{ths}</tr>{"".join(trs)}</table><div>{rep_tbl}</div></div>
+<div class="legend">Days active:<span class="sw" style="background:#f8d7da"></span>gone within {QUICK_DAYS} days
+<span class="sw" style="background:#fff3cd"></span>within 14 days<span class="sw" style="background:#fff;border:1px solid #ccc"></span>longer</div>
+</div></body></html>"""
+    return _capture_board(htm, Path(out_path), width=1700)
+
+
+SCORING_HEADERS = ("Sales weeks from", "Approved window", "Approved lines", "Dropped within 30d",
+                   "Churn", "Tier → $ / port line", "Still inside 30 days")
+
+
+def credico_scoring(lines, today: dt.date, blocks: int = 3) -> List[dict]:
+    """How Credico will score the office, block by block (Carlos 2026-11-15:
+    "is the churn tab being made properly? based off of how the tiers are
+    determined"): for the current block and the next ones, the window of
+    APPROVED lines the Churn Schedule assigns, how many of those dropped
+    within 30 days of activating, the rate, the tier it lands on, and how
+    many lines have not yet had their full 30 days (the rate can still rise).
+    The box above is a rolling early-warning number; this is the scoring."""
+    out = []
+    cal = [c for c in C.CHURN_CALENDAR if c[0] <= today] [-1:] + [c for c in C.CHURN_CALENDAR if c[0] > today]
+    for blk, w0, w1 in cal[:blocks]:
+        base = [l for l in lines if _d(l.get("Approval Date")) and w0 <= _d(l.get("Approval Date")) <= w1
+                and _d(l.get("Activation Date"))]
+        gone = [l for l in base if is_dead(l) and _d(l.get("Cancel Date"))
+                and (_d(l.get("Cancel Date")) - _d(l.get("Activation Date"))).days <= 30]
+        young = [l for l in base if not is_dead(l) and (today - _d(l.get("Activation Date"))).days < 30]
+        rate = (len(gone) / len(base)) if base else None
+        tier = (next(t for ceil, t in C.CHURN_TIERS if rate < ceil)
+                if base and len(base) >= C.NEUTRAL_UNTIL_ACTIVATIONS else C.NEUTRAL_TIER)
+        out.append({"block": blk, "w0": w0, "w1": w1, "base": len(base), "gone": len(gone), "rate": rate,
+                    "tier": tier, "pay": C.PORT_TIER_PAY[tier], "young": len(young),
+                    "neutral": len(base) < C.NEUTRAL_UNTIL_ACTIVATIONS})
     return out
 
 
@@ -238,11 +409,12 @@ def build_grid(lines, today: dt.date, tier: dict) -> Tuple[List[List[str]], dict
     marks = {"bands": [], "headers": [], "churn_cells": [], "rate_cells": [], "quick_rows": [],
              "tables": [], "box": None, "tiers": None, "rep_list": None, "status_row": None}
     row([TITLE])
-    row(["Days left = (Activation Date + 30) − Today. Box = lines activated in the last 30 days and how many "
-         "have disconnected since; activation rates by order-date age (activated = active now, or disconnected after activating). "
+    row(["Days left = (Activation Date + 30) − Today. Box = APPROVED lines activated in the last 30 days and how many "
+         "have disconnected since (Credico scores churn on lines that show an approval date; an unapproved line that "
+         "disconnects is outside it); approval rates by order-date age (approved = Credico has put an Approval Date on the line). "
          "Red rows = disconnected within 7 days of activating."])
     row()
-    hdr = row(["Product", "Activations", "Disconnects", "Churn %", "0-30 Day Activation Rate", "31-60 Day Activation Rate"])
+    hdr = row(["Product", "Approved Lines", "Disconnects", "Churn %", "0-30 Day Approval Rate", "31-60 Day Approval Rate"])
     marks["headers"].append(hdr)
     # "Tier", not "Credico Tier" (Carlos 2026-11-15: "just call it tiers")
     g[hdr - 1][7:11] = ["Tier", "0-30 Day Churn", "$ / new port line", ""]
@@ -266,6 +438,27 @@ def build_grid(lines, today: dt.date, tier: dict) -> Tuple[List[List[str]], dict
         g[rr - 1][7:11] = ["Tier %d" % t, TIER_LABELS[t], "$%d" % C.PORT_TIER_PAY[t], mark]
         tier_rows.append(rr)
     marks["tiers"] = (hdr, tier_rows[-1])
+    # CREDICO SCORING under the box (A:G): the next blocks the way the Churn
+    # Schedule will score them (credico_scoring). Starts two rows under the
+    # box, inside the tier chart's height when it fits.
+    sc = credico_scoring(lines, today)
+    sh = max(marks["box"][1] + 2, len(g) + 1)
+    while len(g) < sh:
+        row()
+    g[sh - 1][0:7] = list(SCORING_HEADERS)
+    marks["headers"].append(sh)
+    marks["scoring_cells"] = []
+    for k, x in enumerate(sc, 1):
+        rr = sh + k
+        while len(g) < rr:
+            row()
+        g[rr - 1][0:7] = ["%d/%d%s" % (x["block"].month, x["block"].day, " (now)" if k == 1 else ""),
+                          "%d/%d – %d/%d" % (x["w0"].month, x["w0"].day, x["w1"].month, x["w1"].day),
+                          str(x["base"]), str(x["gone"]), _pct(x["rate"]) if x["rate"] is not None else "—",
+                          "T%d · $%d%s" % (x["tier"], x["pay"], " · neutral" if x["neutral"] else ""),
+                          "%d%s" % (x["young"], " — rate can still rise" if x["young"] else "")]
+        marks["scoring_cells"].append((rr, x["tier"]))
+    marks["scoring"] = (sh, sh + len(sc))
     row()
     w = tier["window"]
     win = "%d/%d–%d/%d" % (w[0].month, w[0].day, w[1].month, w[1].day) if w else "n/a"
@@ -276,28 +469,32 @@ def build_grid(lines, today: dt.date, tier: dict) -> Tuple[List[List[str]], dict
     row()
     rep_top = len(g) + 1
     s_all = summary["All Lines"]
-    b = row(["ALL LINES — 0–30 day churn %s (%d of %d activated in the last 30 days disconnected)"
+    b = row(["ALL LINES — 0–30 day churn %s (%d of %d approved lines activated in the last 30 days disconnected)"
              % (_pct(s_all["rate"]) or "0.00%", s_all["disc"], s_all["base"])])
     marks["bands"].append(b)
     h = row(list(LIST_HEADERS))
     marks["headers"].append(h)
     for x in roll:
         r = row(["%dd" % x["days_left"], _fmt(x["falloff"]), x["lines"], _pct(x["pct_all"]),
-                 x["customer"], x["rep"], _fmt(x["order_date"]), _fmt(x["posted"]), _fmt(x["disc_date"]),
-                 x["kind"], x["device"], x["plan"], x["reason"]])
+                 x["customer"], x["rep"], _fmt(x["order_date"]), _fmt(x["posted"]), _fmt(x["approved"]),
+                 _fmt(x["disc_date"]), x["kind"], x["device"], x["reason"]])
         if x["quick"]:
             marks["quick_rows"].append(r)
     if not roll:
         row(["(no disconnects in the 0-30 window)"])
     marks["tables"].append((h, len(g)))
     row()
+    # (the DISCONNECTED BEFORE APPROVAL list + the per-rep missed-out revenue
+    # table are their OWN picture now -- unapproved_png -- not on this tab:
+    # Carlos 2026-11-15, "that list is too long, so let's just remove it")
+
     rep_rows = [("OFFICE TOTAL (all reps)", office["0-30"]["rate"], office["0-30"]["activated"], office["0-30"]["sold"])]
     rep_rows += sorted(((r, v["0-30"]["rate"], v["0-30"]["activated"], v["0-30"]["sold"]) for r, v in reps.items()
                         if v["0-30"]["sold"]), key=lambda t: (-(t[1] or 0), t[0].lower()))
     need = rep_top + len(rep_rows) + 1
     while len(g) < need:
         row()
-    g[rep_top - 1][15:18] = ["Rep Name", "0-30 Day Activation Rate", "Activated / Sold"]
+    g[rep_top - 1][15:18] = ["Rep Name", "0-30 Day Approval Rate", "Approved / Sold"]
     marks["headers"].append(rep_top)
     for k, (name, rate, a, n) in enumerate(rep_rows, 1):
         g[rep_top - 1 + k][15:18] = [name, _rate(rate), "%d / %d" % (a, n)]
@@ -370,6 +567,11 @@ def _format_requests(sheet_id: int, marks: dict) -> List[dict]:
     reqs.append(box(b0 - 1, b1, 0, 6))
     t0, t1 = marks["tiers"]
     reqs.append(box(t0 - 1, t1, 7, 11))
+    if marks.get("scoring"):
+        s0, s1 = marks["scoring"]
+        reqs.append(box(s0 - 1, s1, 0, 7))
+        for rr, t in marks["scoring_cells"]:
+            reqs.append(fill(rr - 1, rr, 4, 6, GREEN if t <= 3 else YELLOW if t <= 5 else RED, True))
     for r in marks["tier_rows"]:
         t = r - marks["tier_rows"][0] + 1
         reqs.append(fill(r - 1, r, 8, 9, GREEN if t <= 3 else YELLOW if t <= 5 else RED))
@@ -380,19 +582,21 @@ def _format_requests(sheet_id: int, marks: dict) -> List[dict]:
         if v is not None:
             color = next(col for floor, col in _ACT_BANDS["0-30 Day"] if v >= floor)
             reqs.append(fill(r - 1, r, c, c + 1, {"Green": GREEN, "Yellow": YELLOW, "Red": RED}[color], c == 16))
-    for h, last in marks["tables"]:
-        reqs.append(box(h - 1, last, 0, 13))
+    for t in marks["tables"]:
+        h, last = t[0], t[1]
+        reqs.append(box(h - 1, last, 0, t[2] if len(t) > 2 else 13))
     for r in marks["quick_rows"]:
         reqs.append(fill(r - 1, r, 0, 13, RED))
     r0, r1 = marks["rep_list"]
     reqs.append(box(r0 - 1, r1, 15, 18))
     reqs.append(fill(r0, r0 + 1, 15, 18, (0.93, 0.93, 0.93), True))      # office total row
+
     # THE TWO TOP TABLES BIGGER (Carlos 2026-11-15: "the tiers table ... make
     # that all bigger ... the product / activations / disconnects / churn
     # table: make that one bigger as well"): larger type in the box (A:G) and
     # the tier chart (H:L), taller rows under them. fontSize only, so the
     # header fills / tints above keep their colours.
-    top0, top1 = marks["box"][0] - 1, max(marks["box"][1], marks["tiers"][1])
+    top0, top1 = marks["box"][0] - 1, max(marks["box"][1], marks["tiers"][1], (marks.get("scoring") or (0, 0))[1])
     reqs.append({"repeatCell": {"range": rng(top0, top1, 0, 12), "cell": {"userEnteredFormat": {"textFormat": {"fontSize": 13}}},
                                 "fields": "userEnteredFormat.textFormat.fontSize"}})
     reqs.append({"updateDimensionProperties": {"range": {"sheetId": sheet_id, "dimension": "ROWS", "startIndex": top0, "endIndex": top1},
@@ -400,8 +604,8 @@ def _format_requests(sheet_id: int, marks: dict) -> List[dict]:
     reqs.append({"autoResizeDimensions": {"dimensions": {"sheetId": sheet_id, "dimension": "COLUMNS", "startIndex": 0, "endIndex": 18}}})
     # A:N serve BOTH the box (Product .. 31-60 Day rate) and the rolloff tables
     # (Days Left .. Status Reason); O is the gap; P:R the rep list.
-    for c, px in ((0, 215), (1, 150), (2, 140), (3, 230), (4, 280), (5, 240), (6, 210), (7, 150), (8, 165), (9, 175),
-                  (10, 165), (11, 160), (12, 280), (13, 30), (14, 30), (15, 230), (16, 190), (17, 125)):
+    for c, px in ((0, 215), (1, 150), (2, 140), (3, 230), (4, 280), (5, 240), (6, 210), (7, 150), (8, 165), (9, 240),
+                  (10, 165), (11, 230), (12, 280), (13, 30), (14, 30), (15, 230), (16, 190), (17, 125)):
         reqs.append({"updateDimensionProperties": {"range": {"sheetId": sheet_id, "dimension": "COLUMNS", "startIndex": c, "endIndex": c + 1},
                                                    "properties": {"pixelSize": px}, "fields": "pixelSize"}})
     return reqs
@@ -424,7 +628,7 @@ def push(sv_path: Path, *, today: Optional[dt.date] = None, sheet_id: str = SAND
     _retry(lambda: sh.batch_update({"requests": _format_requests(ws.id, marks)}))
     s = churn_summary(lines, today)["All Lines"]
     where = "PROD" if sheet_id == PROD_SHEET_ID else "sandbox"
-    log("[verizon] %s tab (%s): %d activated / %d disconnected in the last 30 days (%s), Credico %s"
+    log("[verizon] %s tab (%s): %d approved lines activated / %d disconnected in the last 30 days (%s), Credico %s"
         % (TAB, where, s["base"], s["disc"], _pct(s["rate"]) or "0%", tier["why"]))
     return {"rows": len(grid), "summary": s, "tier": tier}
 

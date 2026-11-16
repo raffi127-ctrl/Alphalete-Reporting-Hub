@@ -135,8 +135,11 @@ def office_tier(all_lines: List[Dict], sales_day: dt.date) -> Tuple[int, str]:
     # "will be calculated based on Compensable Sales ... activated/installed
     # and shows approval date"). Activation date only where Credico left the
     # approval blank. resources/verizon_comp/README.md, 2026-11-15.
-    acts = [l for l in all_lines if l["activated"]
-            and w0 <= (l.get("approved") or l["activated"]) <= w1]
+    # APPROVED lines only (Carlos 2026-11-15: "If it activates but doesn't
+    # get approved, then it disconnects, it doesn't count towards our
+    # churn"): a line with no approval date is outside the window entirely.
+    acts = [l for l in all_lines if l["activated"] and l.get("approved")
+            and w0 <= l["approved"] <= w1]
     if len(acts) < NEUTRAL_UNTIL_ACTIVATIONS:
         return NEUTRAL_TIER, (f"{len(acts)} activations in the {w0.month}/{w0.day}-{w1.month}/{w1.day} churn "
                               f"window (under {NEUTRAL_UNTIL_ACTIVATIONS}) — Tier 4 neutral")
