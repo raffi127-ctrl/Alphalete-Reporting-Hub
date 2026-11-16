@@ -8376,6 +8376,50 @@
    "verify": null,
    "report_id": "nds-activation-rate-probe"
   },
+  "fiber_tier_bonus_probe": {
+   "close_on": "exit_zero",
+   "on_scheduler": false,
+   "display_name": "Fiber Tier Bonus breakdown - probe (build)",
+   "_note": "BUILD PROBE (Raf Loom 2026-11-16, 'sales away from tier bonus'). Reads Tableau ATTTRACKER2_1-D2D/NewFiberInternetRepBreakdown (HTTP csv + every Crosstab sheet + a screenshot) into output/fiber_tier_bonus/ and prints the shape (tier captions). Writes no Sheet, posts nothing. No machine on purpose: build runs go to the least-loaded Lucy. Read the result with logtail.",
+   "command": [
+    "automations.fiber_tier_bonus.probe"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": []
+   },
+   "data_sources": [],
+   "depends_on": [],
+   "after": [],
+   "freshness_target": null,
+   "priority": "P3",
+   "source_type": "tableau",
+   "timeout_minutes": 20,
+   "verify": null,
+   "report_id": "fiber-tier-bonus-probe"
+  },
+  "fiber_tier_bonus": {
+   "close_on": "exit_zero",
+   "on_scheduler": false,
+   "display_name": "Fiber Tier Bonus Breakdown (sales away from tier)",
+   "_note": "BUILD (Raf Loom 2026-11-16). One download of Tableau ATTTRACKER2_1-D2D/NewFiberInternetRepBreakdown (This Week, mon-sun) -> for every active Lucy Eco office on campaign 'att': its own thread '🏆 Tier Bonus Breakdown' in the office metrics channel = board image + 'you're X away from Tier N' line per rep (tagged only on a unique channel-member name match). Skips Mondays. Off the scheduler until Eve OKs the sample; runs default to dry run (pass --post-to D087ZGE2B0F or --live). No machine on purpose: build runs go to the least-loaded Lucy.",
+   "command": [
+    "automations.fiber_tier_bonus.run"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": []
+   },
+   "data_sources": [],
+   "depends_on": [],
+   "after": [],
+   "freshness_target": null,
+   "priority": "P3",
+   "source_type": "tableau",
+   "timeout_minutes": 30,
+   "verify": null,
+   "report_id": "fiber-tier-bonus"
+  },
   "fiber_activation_rate": {
    "close_on": "exit_zero",
    "order": 26.05,
