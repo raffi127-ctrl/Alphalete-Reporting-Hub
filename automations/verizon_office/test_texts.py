@@ -35,8 +35,18 @@ class MatchTests(unittest.TestCase):
         got = T.match_thread_items([_reply("Revenue Board — Nov 16")], dt.date(2026, 11, 17))
         self.assertIsNone(got["churn_by_rep"])
 
-    def test_groups_are_the_two_chats(self):
-        g = T.groups()
+    def test_groups_come_off_office_channels(self):
+        from unittest import mock
+        dests = [{"group": "Verizon", "chat_guid": "g1", "require_handles": ["+1555"], "cadence_min": 60},
+                 {"group": "VZ Leaders", "channel_id": "imessage:VZ Leaders"}]
+        with mock.patch("automations.icd_alerts.post.approved_texts", return_value={"nicolas": dests}):
+            g = T.groups(log=lambda *_: None)
+        self.assertEqual(g, [{"group": "Verizon", "chat_guid": "g1", "require_handles": ["+1555"]}, "VZ Leaders"])
+
+    def test_groups_fall_back_when_the_sheet_is_unreadable(self):
+        from unittest import mock
+        with mock.patch("automations.icd_alerts.post.approved_texts", side_effect=RuntimeError("403")):
+            g = T.groups(log=lambda *_: None)
         self.assertEqual(len(g), 2)
         self.assertEqual(g[0]["group"], "Verizon")
         self.assertTrue(g[0].get("require_handles"))

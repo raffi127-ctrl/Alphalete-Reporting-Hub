@@ -42,6 +42,7 @@ ROOT = Path(__file__).resolve().parents[2]
 OUT_DIR = ROOT / "output" / "verizon_texts"
 CHANNEL = "C07J46MQNUX"                       # #alphalete-gp-sales
 TRACKER_ID = "vzw_wireless"                   # tableau_screenshots.pages: Verizon Wireless Daily Scorecard (SCI)
+OFFICE_KEY = "nicolas"                        # icd_alerts.offices / Office Channels row
 
 # The comp grid is a ONE-TIME send (Carlos 2026-11-15: "Tomorrow ... just a
 # one-time thing. Send it out in both chats.")
@@ -57,11 +58,30 @@ THREAD_ITEMS = (
 )
 
 
-def groups() -> List:
-    """The two chats. A dict is a participant-pinned destination, a string a
-    name needle -- both are what text_post.send_to_group takes."""
+def groups(log=print) -> List:
+    """The chats Nico's knock boards already text -- his approved text
+    destinations on the 'Office Channels' tab (icd_alerts.post.approved_texts),
+    so this lands in exactly the rooms Lucy 1 already sends to (Carlos
+    2026-11-15: "how does she currently send stuff on there?"). A dict is a
+    participant-pinned destination, a string a name needle -- both are what
+    text_post.send_to_group takes. Sheet unreadable or nothing approved: the
+    pinned "Verizon" chat plus "Verizon Leaders" by name."""
     from automations.owner_sales_hourly.config import VERIZON_GROUP
-    return [VERIZON_GROUP, "Verizon Leaders"]
+    fallback = [VERIZON_GROUP, "Verizon Leaders"]
+    try:
+        from automations.icd_alerts import post as P
+        dests = [{k: d[k] for k in ("group", "chat_guid", "require_handles") if d.get(k)}
+                 for d in (P.approved_texts().get(OFFICE_KEY) or [])]
+        dests = [d for d in dests if d.get("require_handles") or d.get("group")]
+    except Exception as e:  # noqa: BLE001
+        log("  Office Channels unreadable (%s: %s) -- using the pinned Verizon chat + 'Verizon Leaders'" % (type(e).__name__, str(e)[:80]))
+        return fallback
+    if not dests:
+        log("  no approved text destination for %s on Office Channels -- using the pinned Verizon chat + 'Verizon Leaders'" % OFFICE_KEY)
+        return fallback
+    out = [d if d.get("require_handles") else d["group"] for d in dests]
+    log("  chats (Office Channels, %s): %s" % (OFFICE_KEY, ", ".join(d.get("group", "?") if isinstance(d, dict) else d for d in out)))
+    return out
 
 
 def _slug(s: str) -> str:
@@ -165,8 +185,9 @@ def collect(day: dt.date, log=print) -> List[Tuple[str, str, Path]]:
 def send(found, day: dt.date, *, dry_run: bool = True, log=print) -> dict:
     from automations.b2b_dispositions import text_post as tp
     out = {"sent": [], "skipped": [], "errors": []}
+    chats = groups(log)
     for key, caption, png in found:
-        for group in groups():
+        for group in chats:
             name = group.get("group", "") if isinstance(group, dict) else group
             m = _marker(key, name, day)
             if m.exists() and not dry_run:
