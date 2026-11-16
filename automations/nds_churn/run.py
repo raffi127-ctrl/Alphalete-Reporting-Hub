@@ -228,6 +228,33 @@ def view_probe(today: dt.date, log=print) -> int:
     return 0
 
 
+def rep_lines(lines, today: dt.date, name: str, log=print) -> int:
+    """One rep's lines posted in the 0-60 window, each with what the churn math
+    decides about it -- to find WHICH lines a view leaves out when RECONCILE
+    names that rep (2026-11-16: Esmeralda Gonzalez, view (0, 8) ours (2, 10)).
+    Read-only; only dates/product/status/kind, never customer fields."""
+    want = name.strip().lower()
+    base = {id(u) for u in C.churn_units(lines, today)}
+    cutoff = today - dt.timedelta(days=60)
+    out = [f"REP {name} -- {today.isoformat()} (0-30 base = in_base)"]
+    keep = ("posted", "prod", "product", "status", "tn_type")
+    for ln in sorted(lines, key=lambda x: (x.get("posted") or dt.date.min)):
+        if (ln.get("rep") or "").strip().lower() != want:
+            continue
+        if ln.get("posted") and ln["posted"] < cutoff:
+            continue
+        extra = {k: v for k, v in ln.items() if k not in keep
+                 and k not in ("customer", "tn", "spe", "spm", "rep", "raw")
+                 and isinstance(v, (str, int, float, dt.date)) and v not in ("", None)}
+        out.append(" | ".join([str(ln.get(k)) for k in keep]
+                              + [f"kind={C.line_kind(ln)}",
+                                 f"in_base={id(ln) in base}",
+                                 str(extra)[:400]]))
+    print("\n".join(out), flush=True)
+    write_diag(out, log=log, tab=PROBE_TAB)
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="nds_churn")
     ap.add_argument("--today", default=None, metavar="YYYY-MM-DD")
@@ -245,6 +272,10 @@ def main(argv=None) -> int:
                     help="write even when the CHURNRATES view disagrees")
     ap.add_argument("--from-file", default=None, metavar="CSV",
                     help="use this export instead of pulling Tableau")
+    ap.add_argument("--rep", default=None, metavar="NAME",
+                    help="list one rep's 0-30 lines (date, product, status, kind; "
+                         "no customer data) to the probe tab, then stop -- for a "
+                         "RECONCILE mismatch that names a rep")
     ap.add_argument("--dm", default=None, metavar="U...",
                     help="after writing, DM the tab's picture to this user")
     a = ap.parse_args(argv)
@@ -270,6 +301,8 @@ def main(argv=None) -> int:
         return view_probe(today, log=log)
     path = Path(a.from_file) if a.from_file else pull(today, log)
     header, ix, lines = C.load_owner_lines(path, log=log)
+    if a.rep:
+        return rep_lines(lines, today, a.rep, log=log)
     if a.probe:
         text = C.probe_text(header, ix, lines, today)
         print(text)
