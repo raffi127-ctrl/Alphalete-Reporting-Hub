@@ -36,6 +36,7 @@ READ_GIVE_UP_HOURS = 3
 OUTBOX_GAP_MIN = 20
 INFLIGHT_GIVE_UP_HOURS = 3
 CHECKPOINT_RETRY_HOURS = 24
+NOT_PAGE_RETRY_HOURS = 24
 
 
 def _file(P) -> Path:
@@ -161,6 +162,33 @@ def _ever_posted(fb_state: Dict) -> bool:
     return False
 
 
+def _retry_not_page(fb_state: Dict, now: float) -> int:
+    """"Can't comment as the page" is not forever: the owner fixes the Page
+    role, or WE fix the computer's side (raf's first browser reply, 11/16, was
+    our menu click, not his account). A day later the review goes back in line,
+    keeping its approval card like a refused one does."""
+    revs = fb_state.get("reviews") or {}
+    back = 0
+    for k, v in list(revs.items()):
+        if not isinstance(v, dict):
+            continue
+        if not v.get("not_page_at") and str(v.get("blocked", "")).startswith("this Facebook sign-in can't comment"):
+            # parked before this stamp existed (raf's, 11/16): back in about an
+            # hour, once his computer has the corrected menu click
+            v["not_page_at"] = now - (NOT_PAGE_RETRY_HOURS - 1) * 3600
+        at = v.get("not_page_at")
+        if not at or now - float(at) < NOT_PAGE_RETRY_HOURS * 3600:
+            continue
+        back += 1
+        if v.get("card_ts"):
+            for f in ("blocked", "not_page_at", "fails", "post_error"):
+                v.pop(f, None)
+            v["posted"] = False
+        else:
+            revs.pop(k, None)
+    return back
+
+
 def collect(P, rows: List[Dict], cl, *, dry: bool) -> List[Dict]:
     s = _load(P)
     fb_file = P.path("fb_review_replies.json")
@@ -169,6 +197,9 @@ def collect(P, rows: List[Dict], cl, *, dry: bool) -> List[Dict]:
     except Exception:  # noqa: BLE001
         fb_state = {"reviews": {}, "posted_counts": {}}
     acts: List[Dict] = []
+    n = _retry_not_page(fb_state, time.time())
+    if n:
+        acts.append({"action": "fb_not_page_retry", "note": "%d review(s) back in line" % n})
     for r in rows:
         res = r.get("result") or {}
         do, status = res.get("do"), res.get("status")
@@ -214,7 +245,8 @@ def collect(P, rows: List[Dict], cl, *, dry: bool) -> List[Dict]:
                 continue
             if status == "not_page":
                 fb_state.setdefault("reviews", {})[story] = dict(st or {}, posted=True,
-                                                                 blocked=res.get("error", "not_page"))
+                                                                 blocked=res.get("error", "not_page"),
+                                                                 not_page_at=time.time())
                 acts.append({"action": "fb_reply_not_page", "note": res.get("error", "")})
                 acts.append(_owner_dm(P, cl, s, status, dry))
                 continue

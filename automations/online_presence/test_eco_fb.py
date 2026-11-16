@@ -215,6 +215,26 @@ class Flow(Base):
         self.assertFalse(kept["posted"])
         self.assertNotIn("blocked", kept)
 
+    def test_cant_comment_as_page_comes_back_a_day_later_with_its_card(self):
+        self._pass([{"open_graph_story": {"id": "s2"}, "recommendation_type": "negative"}])
+        E.collect(self.P, [_ans("fb_reply", status="not_page", error="this Facebook sign-in can't comment as X",
+                                story="s2")], self.cl, dry=False)
+        card = self._st()["reviews"]["s2"]["card_ts"]
+        self.assertTrue(self._st()["reviews"]["s2"]["blocked"])
+        fb = self._st()
+        self.assertEqual(E._retry_not_page(fb, __import__("time").time() + 3600), 0, "not within the day")
+        self.assertEqual(E._retry_not_page(fb, __import__("time").time() + E.NOT_PAGE_RETRY_HOURS * 3600 + 5), 1)
+        self.assertEqual(fb["reviews"]["s2"]["card_ts"], card)
+        self.assertFalse(fb["reviews"]["s2"]["posted"])
+        self.assertNotIn("blocked", fb["reviews"]["s2"])
+
+    def test_cant_comment_as_page_parked_before_the_stamp_retries_within_hours(self):
+        fb = {"reviews": {"s": {"posted": True, "card_ts": "1",
+                                "blocked": "this Facebook sign-in can't comment as Alphalete Marketing"}}}
+        t = 1e9
+        self.assertEqual(E._retry_not_page(fb, t), 0)
+        self.assertEqual(E._retry_not_page(fb, t + 3601), 1)
+
     def test_cant_comment_as_page_parks_it(self):
         self._two_thank_yous()
         E.send_next(self.P, live=True, now=1e9)

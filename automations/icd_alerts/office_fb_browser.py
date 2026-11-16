@@ -114,17 +114,35 @@ def _comment_box(pg, page_name: str):
     # comments. Pick the Page there, then look again.
     # "Switch to a different profile or Page" is the name Facebook gave it on
     # 11/16 (read off Wanda Moore Price's review in Megan's own Chrome).
+    #
+    # Pick the Page INSIDE the menu that opens. The first "Alphalete Marketing"
+    # on the page is the left-hand Shortcuts link, and clicking that one is what
+    # sent raf's first browser reply off to the Page's own feed ("not_page",
+    # 11/16). In the menu each Page is a button labelled "<Page>" or
+    # "<Page>, 9 notifications". Choosing it switches the whole Facebook session
+    # to the Page and the post reloads -- so wait, then look again.
     for sel in ('[aria-label="Switch to a different profile or Page"]', '[aria-label*="Choose who"]',
                 '[aria-label*="Select profile"]', '[aria-label*="Voice selector"]'):
         try:
             btn = pg.locator(sel).first
-            if btn.count():
-                btn.click(timeout=4000)
-                pg.get_by_text(page_name, exact=True).first.click(timeout=6000)
-                pg.wait_for_timeout(1500)
-                break
+            if not btn.count():
+                continue
+            btn.click(timeout=4000)
+            menu = pg.locator('[role="dialog"]').last
+            menu.wait_for(timeout=6000)
+            pick = menu.locator('[role="button"][aria-label="%s"], [role="button"][aria-label^="%s,"]'
+                                % (page_name.replace('"', '\\"'), page_name.replace('"', '\\"'))).first
+            pick.click(timeout=6000)
+            pg.wait_for_timeout(2000)
+            try:
+                pg.wait_for_load_state("domcontentloaded", timeout=15000)
+            except Exception:  # noqa: BLE001 -- no reload is fine too
+                pass
+            pg.wait_for_timeout(4000)
+            break
         except Exception:  # noqa: BLE001
             continue
+    boxes = pg.locator('div[contenteditable="true"][role="textbox"]')
     for i in range(min(boxes.count(), 6)):
         b = boxes.nth(i)
         label = ((b.get_attribute("aria-label") or "") + " " + (b.inner_text() or "")).lower()
