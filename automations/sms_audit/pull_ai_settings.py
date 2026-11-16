@@ -105,11 +105,22 @@ def scrape_settings(page):
 
     Read off the label rather than an id: the ids are generated and the
     labels are what eStream's own walkthrough names, so a renamed id does
-    not silently empty the audit."""
+    not silently empty the audit.
+
+    ALSO RETURNS `blank`: the labels whose input IS on the page and holds
+    nothing (Megan 2026-11-16). A value-less field used to be dropped
+    entirely, which made two completely different situations identical from
+    the outside — "AppStream renamed the label" and "this office never filled
+    it in". 11280 came back `12 settings, 1 preferences` with both timeslot
+    buffers missing, and nothing in the log could say which it was, so the
+    ticket said "the window check can't run" and left a person to go look at
+    the page themselves. A label in `blank` means the page is fine and the
+    OFFICE is the fix; a label in neither `fields` nor `blank` means the
+    label moved and the code is the fix."""
     return page.evaluate("""() => {
       const norm = s => (s||'').replace(/[^A-Za-z0-9 ]/g,' ')
                                .replace(/\\s+/g,' ').trim().toLowerCase();
-      const out = {}, radios = {};
+      const out = {}, radios = {}, blank = {};
       document.querySelectorAll('input,select,textarea').forEach(el => {
         if (el.type === 'hidden') return;
         let label = '';
@@ -131,6 +142,7 @@ def scrape_settings(page):
         if (el.type === 'radio') { if (el.checked) out[key] = norm(el.value); return; }
         const v = (el.value || '').trim();
         if (v && !(key in out)) out[key] = v;
+        if (!v && !(key in out)) blank[key] = true;
       });
       // the Interview Type radios carry their choice in a sibling label
       const t = [...document.querySelectorAll('input[type=radio]')]
@@ -141,7 +153,9 @@ def scrape_settings(page):
           return l ? l.textContent.trim() : (r.value || '').trim();
         })
         .filter(Boolean);
-      return {fields: out, flags: radios, checked_radios: t};
+      // a label that got a value on a later element is not blank
+      Object.keys(out).forEach(k => delete blank[k]);
+      return {fields: out, flags: radios, checked_radios: t, blank: blank};
     }""")
 
 
@@ -208,15 +222,24 @@ def _probe(page, tok, office):
                   flush=True)
             continue
         fields = raw.get("fields") or {}
+        blank = raw.get("blank") or {}
         mapped = {FIELDS[k]: v for k, v in fields.items() if k in FIELDS}
-        print("[probe] {} pane {!r}: {} labelled fields, {} of them mapped"
-              .format(office, pane or "(default)", len(fields), len(mapped)),
+        print("[probe] {} pane {!r}: {} labelled fields, {} of them mapped, "
+              "{} on the page but empty"
+              .format(office, pane or "(default)", len(fields), len(mapped),
+                      len(blank)),
               flush=True)
         for label in sorted(fields):
             print("    {:<58} = {:<22} {}".format(
                 label[:58], str(fields[label])[:22],
                 "-> " + FIELDS[label] if label in FIELDS else "UNMAPPED"),
                 flush=True)
+        # The whole reason the probe exists is to tell a renamed label from a
+        # field the office left empty, so print the empty ones we care about
+        # by name rather than only counting them.
+        for label in sorted(k for k in blank if k in FIELDS):
+            print("    {:<58} = {:<22} -> {} (EMPTY ON THE PAGE)".format(
+                label[:58], "", FIELDS[label]), flush=True)
         tabs = page.evaluate(
             "() => Array.from(document.querySelectorAll("
             "'a,button,[role=tab]')).map(e => (e.textContent||'').trim())"
@@ -229,20 +252,37 @@ INFO_KEYS = sorted({k for k in FIELDS.values()
                     if not k.endswith(("_buffer", "_threshold"))})
 
 
-def office_holes(info, prefs, rows):
+def office_holes(info, prefs, rows, blank=()):
     """Why this office's pull can't be trusted as COMPLETE — [] when it is.
 
     What the audit can't run without: both timeslot buffers (the window
     check is skipped, not passed, without them), the escalation table, and
     most of Office Info — under half of it means the labels moved, not that
     the office left them blank. A FEW blank Office Info fields are a finding
-    for the audit itself, so they are reported, not failed."""
+    for the audit itself, so they are reported, not failed.
+
+    `blank`: the keys scrape_settings saw on the page with nothing in them.
+    A missing buffer that is in `blank` is an AppStream setting a PERSON has
+    to fill in for that office; one that is in neither is the page's labels
+    having moved, which is ours to fix. Same hole, two different jobs, so
+    the line says which (Megan 2026-11-16)."""
     holes = []
+    blank = set(blank or ())
     missing = [b for b in ("offered_buffer", "accepted_buffer")
                if not str((prefs or {}).get(b, "")).strip()]
     if missing:
-        holes.append("no {} — the window check can't run".format(
-            " / ".join(missing)))
+        unset = [b for b in missing if b in blank]
+        if len(unset) == len(missing):
+            holes.append(
+                "{} blank on the AppStream page — set {} on p=1504 (AI tab "
+                "-> AI Settings) for this office; the window an applicant "
+                "gets is offered minus accepted, so an empty one is not a "
+                "default".format(" / ".join(missing),
+                                 "them" if len(missing) > 1 else "it"))
+        else:
+            holes.append("no {} — the window check can't run (the label is "
+                         "not on the page at all, so check p=1504's wording "
+                         "against FIELDS)".format(" / ".join(missing)))
     if not rows:
         holes.append("escalations table came back empty")
     got = [k for k in INFO_KEYS if str((info or {}).get(k, "")).strip()]
@@ -317,6 +357,11 @@ def main(argv=None):
             _open(page, tok, "settings")
             raw = scrape_settings(page) or {}
             fields = raw.get("fields") or {}
+            # Which of OUR keys sit on the page with nothing in them — see
+            # scrape_settings / office_holes: that is the office's job to
+            # fill, not a scrape fault.
+            blank_keys = {FIELDS[k] for k in (raw.get("blank") or {})
+                          if k in FIELDS}
             info, prefs = {}, {}
             for label, value in fields.items():
                 key = FIELDS.get(label)
@@ -397,7 +442,7 @@ def main(argv=None):
                       "written: {}".format(e), flush=True)
                 _miss(office, "tab write failed — {}".format(type(e).__name__))
                 continue
-            holes = office_holes(info, prefs, rows)
+            holes = office_holes(info, prefs, rows, blank_keys)
             for h in holes:
                 print("[ai_settings] {}: INCOMPLETE — {}".format(office, h),
                       flush=True)

@@ -31,13 +31,14 @@ def _session(**_kw):
     yield _Page()
 
 
-def _main(fields=FULL_FIELDS, rows=ROWS, extra=(), write_err=None):
+def _main(fields=FULL_FIELDS, rows=ROWS, extra=(), write_err=None, blank=()):
     with mock.patch.object(P, "appstream_direct_session", _session), \
             mock.patch.object(P.fo, "_switch_office"), \
             mock.patch.object(P, "_open"), \
             mock.patch.object(P.time, "sleep"), \
             mock.patch.object(P, "scrape_settings",
-                              return_value={"fields": dict(fields)}), \
+                              return_value={"fields": dict(fields),
+                                            "blank": {b: True for b in blank}}), \
             mock.patch.object(P, "scrape_escalations", return_value=list(rows)), \
             mock.patch.object(P.Path, "write_text"), \
             mock.patch.object(TAB, "write", side_effect=write_err,
@@ -69,6 +70,33 @@ class Incomplete(unittest.TestCase):
                   if not k.startswith("timeslot buffer for times offered")}
         _rc, wm = _main(fields)
         self.assertIn("offered_buffer", wm.call_args.kwargs["failed"][0])
+
+    def test_a_buffer_blank_on_the_page_names_the_office_as_the_fix(self):
+        """11280, 2026-11-16: `12 settings, 1 preferences` and a line that read
+        like a broken scrape. If the field is ON the page and empty, the fix is
+        in AppStream, and the ticket has to say so."""
+        offered = "timeslot buffer for times offered by ai in minutes"
+        accepted = ("timeslot buffer for times accepted by candidates in "
+                    "minutes")
+        fields = {k: v for k, v in FULL_FIELDS.items()
+                  if k not in (offered, accepted)}
+        _rc, wm = _main(fields, blank=(offered, accepted))
+        failed = wm.call_args.kwargs["failed"][0]
+        self.assertIn("blank on the AppStream page", failed)
+        self.assertIn("p=1504", failed)
+        self.assertNotIn("can't run", failed)
+
+    def test_a_buffer_label_that_is_gone_blames_the_wording_not_the_office(self):
+        offered = "timeslot buffer for times offered by ai in minutes"
+        fields = {k: v for k, v in FULL_FIELDS.items() if k != offered}
+        _rc, wm = _main(fields)          # not blank: the label isn't there
+        failed = wm.call_args.kwargs["failed"][0]
+        self.assertIn("not on the page at all", failed)
+        self.assertIn("FIELDS", failed)
+
+    def test_a_filled_buffer_is_never_called_blank(self):
+        _rc, wm = _main(blank=("office zip",))
+        self.assertEqual(list(wm.call_args.kwargs["failed"]), [])
 
     def test_empty_escalations_is_a_failed_part(self):
         _rc, wm = _main(rows=[])

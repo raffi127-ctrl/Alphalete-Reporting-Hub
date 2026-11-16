@@ -17,6 +17,22 @@ sheet. This does the same for the AI Settings page, in one tab per office:
 
 Writing is best-effort on purpose. The local JSON is written first, so a
 sheet that is rate-limited costs a re-upload and never the pull.
+
+BUT "costs a re-upload" was costing a RED TICKET (Megan 2026-11-16). This
+writes to AUTOMATION MASTER, the 115-tab workbook every Lucy job, every queue
+tab and all three ICD forms share one per-user quota on, so a bare
+`open_by_key` / `clear` / `update` on it is a coin flip at a busy minute. At
+15:46 that minute arrived: 11580's write came back APIError, pull_ai_settings
+counted the office as a failed part, and `drop-sms_ai_settings` opened asking
+a person to act on a rate limit that had already passed. A re-run at 16:08
+wrote the same tab first try.
+
+So every call here now goes through `shared.sheets_retry`, which exists for
+this exact workbook — 6 tries, 1+2+4+8+16s, spanning most of a 60-second
+quota window, and failing fast on 403/404/401 where retrying only adds delay.
+The pull is still never at risk: the local JSON is written before this runs,
+and a write that genuinely cannot land still raises to the caller.
+[[reference_sheets_write_quota_429]] [[reference_sheets_per_user_read_cap]]
 """
 from __future__ import annotations  # Lucy runs Python 3.9 — keep lazy
 
@@ -57,18 +73,32 @@ def write(office, info, prefs, rows, gc=None, hours=None):
                      json.dumps({k: r.get(k) for k in ESC_FIELDS},
                                 ensure_ascii=False)[:CELL_CAP]])
 
+    from automations.shared import sheets_retry as _retry
+
+    # 6 tries (1+2+4+8+16s) rather than the default 4 (~7s): the quota here is
+    # per MINUTE, and nobody is watching this run, so it can afford to wait it
+    # out instead of handing back a ticket.
+    def _try(fn, *args, **kwargs):
+        return _retry.call(fn, *args, tries=6, **kwargs)
+
     gc = gc or _client()
-    sh = gc.open_by_key(CONTROL_SHEET_ID)
+    sh = _retry.open_sheet(gc, CONTROL_SHEET_ID, tries=6)
     tab = tab_for(office)
     try:
-        ws = sh.worksheet(tab)
-        ws.clear()
-    except Exception:  # noqa: BLE001  — gspread's missing-tab error varies
-        ws = sh.add_worksheet(tab, rows=max(len(body) + 10, 60),
-                              cols=len(COLUMNS))
+        ws = _try(sh.worksheet, tab)
+        _try(ws.clear)
+    except Exception as e:  # noqa: BLE001  — gspread's missing-tab error varies
+        # A 429 is NOT a missing tab. Letting it land here used to create a
+        # second tab of the same name on a rate-limited minute, or fail the
+        # add as well; the retry above has already spent its window, so a
+        # retryable error at this point is a real failure, not a new tab.
+        if _retry.is_retryable(e):
+            raise
+        ws = _try(sh.add_worksheet, tab, rows=max(len(body) + 10, 60),
+                  cols=len(COLUMNS))
     if ws.row_count < len(body) + 5:
-        ws.resize(rows=len(body) + 5, cols=len(COLUMNS))
-    ws.update(values=body, range_name="A1", raw=True)
+        _try(ws.resize, rows=len(body) + 5, cols=len(COLUMNS))
+    _try(ws.update, values=body, range_name="A1", raw=True)
     return tab, len(body)
 
 
