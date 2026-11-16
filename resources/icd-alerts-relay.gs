@@ -1928,7 +1928,16 @@ var BOARD_MACHINE_COLUMNS = ['Contact Added', 'BG Status', 'Digi Docs',
 // The two columns that carry an ANSWER rather than a tick, and how far along
 // each answer is. Mirrors bg_check_sync parse.RANK through board.status_rank;
 // test_relay_board.py fails if they drift. Blank, or a word not in here, is 0.
-var BOARD_STATUS_COLUMNS = ['BG Status', 'OV BG Status'];
+var BOARD_STATUS_COLUMNS = ['BG Status', 'OV BG Status', 'Showed Up'];
+
+// `Showed Up` carries an ANSWER, not a tick, and is ranked on its own scale:
+// blank = nobody has said yet (they may walk in on the Tuesday, so this must
+// never read as "did not come"), 'No Show' = ApplicantStream was marked No by
+// a person, a date = they turned up. A date outranks No Show deliberately --
+// the Tuesday walk-in is the case the board exists to survive. Mirrors
+// board.showed_up_rank; test_relay_board.py fails if they drift.
+var BOARD_SHOWED_UP = 'Showed Up';
+var BOARD_NO_SHOW = 'no show';
 
 // The same green every other tick on this board is tinted, so a cell written
 // from an office's own machine looks no different from one written by a Lucy.
@@ -1939,8 +1948,12 @@ var BOARD_STATUS_RANK = {
   'passed': 5, 'failed': 5, 'unperformable': 5
 };
 
-function _boardRank(text) {
+function _boardRank(text, column) {
   var want = String(text == null ? '' : text).trim().toLowerCase();
+  if (column === BOARD_SHOWED_UP) {
+    if (!want) return 0;
+    return want === BOARD_NO_SHOW ? 1 : 2;
+  }
   if (!want || want === 'not sent') return 0;
   return BOARD_STATUS_RANK[want] || 0;
 }
@@ -2058,7 +2071,9 @@ function _boardTick(office, a) {
     var have = String(r[colName] || '').trim();
     if (have) {
       if (!isStatus) { held++; return; }                // written once, never again
-      if (_boardRank(val) <= _boardRank(have)) { held++; return; }   // forwards only
+      if (_boardRank(val, colName) <= _boardRank(have, colName)) {
+        held++; return;                                  // forwards only
+      }
     }
     var cell = sh.getRange(r.__row, col + 1);
     cell.setValue(val);

@@ -119,7 +119,16 @@ def plan(rows: List[Dict], source: str,
                 continue                  # False = not done, None = unread
             answered = str(row.get(column) or "").strip()
             if answered and not is_alert(answered):
-                continue                  # already answered; nothing to do
+                # A TICK is written once. A STATUS may advance, and only
+                # advance -- so a late "Sent" email cannot pull somebody back
+                # from Passed, and a `Showed Up` date CAN replace an earlier
+                # No Show, because somebody marked absent on Monday walking in
+                # on the Tuesday is the case this board exists to survive.
+                if column not in B.STATUS_STEPS:
+                    continue
+                if (B.status_rank(text, column)
+                        <= B.status_rank(answered, column)):
+                    continue
             if is_alert(text) and answered:
                 continue                  # an ask does not replace an ask
             name = ("%s %s" % (row.get("Name", ""), row.get("Last Name", ""))).strip()

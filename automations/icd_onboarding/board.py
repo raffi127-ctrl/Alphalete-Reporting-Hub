@@ -120,16 +120,47 @@ TICKS: Sequence[str] = tuple(STEPS) + (SHOWED_UP,)
 # Passed/Failed/Unperformable, and never goes backwards. Blank means not sent.
 # Both background-check columns ADVANCE rather than tick: the useful thing is
 # which answer is showing, including the ones that are not an answer yet.
-STATUS_STEPS: Sequence[str] = ("BG Status", "OV BG Status")
+STATUS_STEPS: Sequence[str] = ("BG Status", "OV BG Status", SHOWED_UP)
 NOT_SENT = "Not sent"
 
+# WHAT APPLICANTSTREAM SAID ABOUT THE FIRST MORNING (Megan, 2026-11-16, asked
+# what should stop a send off this board: *"1 would be if they are marked no
+# show in app stream"*). The training calendar's Show Up control is a radio,
+# and a recruiter CHECKING No is a person stating they did not come -- which is
+# a different thing from the control being untouched, and the only one of the
+# two that may stop anything.
+#
+# So `Showed Up` carries an answer rather than a tick. Three states:
+#   blank      nobody has said yet. They may still walk in on the Tuesday, and
+#              nothing is allowed to read this as "did not come".
+#   No Show    ApplicantStream was marked No. They are not starting.
+#   a date     they turned up, and that beats an earlier No Show, because the
+#              Tuesday walk-in is exactly the case the board exists to survive.
+#
+# Hence the ranking below rather than the background-check one: a date outranks
+# No Show, and No Show outranks blank, and nothing ever goes backwards.
+NO_SHOW = "No Show"
 
-def status_rank(text) -> int:
+
+def showed_up_rank(text) -> int:
+    """0 nobody has said · 1 marked No in ApplicantStream · 2 they turned up."""
+    want = str(text or "").strip().lower()
+    if not want:
+        return 0
+    return 1 if want == NO_SHOW.lower() else 2
+
+
+def status_rank(text, column: str = "") -> int:
     """How far along a status is. 0 = blank, or a word we do not know.
 
-    The ranking is bg_check_sync's own, so the board and the OBCL agree about
-    what counts as further along.
+    For the two background-check columns the ranking is bg_check_sync's own, so
+    the board and the OBCL agree about what counts as further along. `Showed
+    Up` has its own three states and is ranked by `showed_up_rank`; pass the
+    column name to get it, because "11/16/2026" means nothing to the
+    background-check ranking and would score 0 there.
     """
+    if column == SHOWED_UP:
+        return showed_up_rank(text)
     from automations.bg_check_sync import parse
     want = str(text or "").strip().lower()
     if not want or want == NOT_SENT.lower():

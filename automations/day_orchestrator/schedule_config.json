@@ -15485,6 +15485,63 @@
    "timeout_minutes": 5,
    "verify": null
   },
+  "icd_onboarding_no_shows": {
+   "on_scheduler": false,
+   "machine": "Lucy 3",
+   "standalone_weekdays": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6
+   ],
+   "_standalone_weekdays_note": "EVERY DAY. The REAL schedule is com.alphalete.icd-onboarding-no-shows (no Weekday key, 19:30 machine-local), wrapper deploy/icd_onboarding_no_shows.sh. Declared here so machine_digest's error watcher doesn't infer the cadence from hand-reruns.",
+   "_note": "WHO WAS MARKED NO SHOW in ApplicantStream, onto the board's `Showed Up` column (Megan 2026-11-16: 'the rate of pay should be asked on the enrollment page' was #4; this is #1 -- 'if they are marked no show in app stream'). Writes ONE column and only forwards: blank -> No Show -> a date. A blank is NOT a no show (nobody has said yet) and a date beats a No Show, because somebody marked absent Monday walking in Tuesday is the case the board exists to survive. on_scheduler:false = the 4am orchestrator never runs it. ITS OWN CLOCK, not the hourly board run, because it is the SEVEN-page calendar walk the hourly run deliberately stopped doing when the two-page Retention Report turned out to answer the seed's question (Megan 2026-11-09); the answer only changes when a recruiter marks a radio. 7:30pm is after the office closes and before the next morning's sends -- Blue Ink goes out at 7:30am and this is the column that stops it mailing documents to somebody who did not come. Skips itself if the hourly board run is going: both drive the same ApplicantStream profile. Sends nothing. NO Hub Activity row -- it is a sub-step of the ICD Onboarding Board card, same shape as blueink-completed-sweep; it keeps its own silent_job_watch beat (icd_onboarding_no_shows) so a walk that stops firing is still noticed.",
+   "display_name": "ICD Onboarding — no shows (daily 7:30pm)",
+   "source_type": "appstream",
+   "data_sources": [],
+   "command": [
+    "automations.icd_onboarding.run"
+   ],
+   "base_args": [
+    "--only",
+    "no_shows",
+    "--write"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 45,
+   "verify": null
+  },
+  "install_icd_onboarding_no_shows_agent": {
+   "on_scheduler": false,
+   "machine": "Lucy 3",
+   "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_icd_onboarding_no_shows_agent --machine \"Lucy 3\"` can install/refresh the STANDALONE com.alphalete.icd-onboarding-no-shows LaunchAgent (19:30 machine-local, every day, deploy/icd_onboarding_no_shows.sh). install_agent is read-only w.r.t. any Sheet data; it only loads the plist. Lucy 3 because that is the box holding a warm ApplicantStream session for this office.",
+   "display_name": "Install ICD onboarding no-show walk (daily 7:30pm)",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.day_orchestrator.install_agent"
+   ],
+   "base_args": [
+    "icd-onboarding-no-shows"
+   ],
+   "cadence": {
+    "weekdays": [],
+    "not_before": "19:30"
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 5,
+   "verify": null
+  },
   "install_icd_onboarding_agent": {
    "on_scheduler": false,
    "machine": "Lucy 3",

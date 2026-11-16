@@ -137,6 +137,25 @@ READ_JS = r"""(want) => {
 }"""
 
 
+# THE WALK'S OWN ROWS, kept so ONE walk can answer both questions it already
+# has the answers to. `read` used to return only the people marked Yes and
+# throw the rest away, which meant asking "who was marked No" cost a second
+# seven-page walk of the same calendar. Keyed by day and overwritten each
+# read: this is a hand-off between `read` and `no_shows_for`, never a cache
+# anything is allowed to read later.
+_LAST_RAW: Dict = {}
+
+
+def no_shows_for(day) -> List[Dict]:
+    """Who the last `read` of that day saw marked Show Up = No.
+
+    Empty where the day has not been read, which is indistinguishable from
+    "nobody was marked No" ON PURPOSE: this never answers for a day nothing
+    looked at, and the caller only asks about days it just read.
+    """
+    return marked_no_show(_LAST_RAW.get(day) or [])
+
+
 def _in_section(row: Dict) -> bool:
     return str(row.get("section", "")).upper().startswith(SECTION)
 
@@ -154,6 +173,45 @@ def check_rows(rows: List[Dict]) -> None:
         raise RuntimeError(
             "%d rows under %s but no Show Up control in any of them -- the "
             "column moved or the page changed." % (len(mine), SECTION))
+
+
+def marked_no_show(rows: List[Dict]) -> List[Dict]:
+    """Training rows a recruiter marked Show Up = **No**, one per person.
+
+    The mirror of `showed_up`, and the distinction between them is the whole
+    point of reading this at all (Megan, 2026-11-16, on what should stop a send
+    off the onboarding board: *"1 would be if they are marked no show in app
+    stream"*).
+
+    AN EXPLICIT NO IS NOT AN ABSENCE. Nothing checked means nobody has said yet
+    -- the training day may not have happened, or the recruiter has not got to
+    it -- and somebody missing on Monday may walk in on the Tuesday. That is
+    why the board never marks anyone off for a blank. A checked No is different
+    in kind: a person looked at that row and stated they did not come. This
+    returns only those, so the two can never be confused.
+
+    It reads the same radio `showed_up` reads and the same walk already loads,
+    so this costs no extra page: the answer was being thrown away.
+    """
+    out, seen = [], set()
+    for r in rows:
+        if not _in_section(r):
+            continue
+        if str(r.get("show", "")).strip().lower() != "no":
+            continue
+        first = str(r.get("first") or "").strip()
+        last = str(r.get("last") or "").strip()
+        email = str(r.get("email") or "").strip()
+        phone = re.sub(r"\D", "", str(r.get("phone") or ""))[-10:]
+        if not first:
+            continue
+        key = email.lower() or (first.lower(), last.lower(), phone)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append({"first_name": first, "last_name": last, "email": email,
+                    "phone": phone, "stage": "Marked no show in ApplicantStream"})
+    return out
 
 
 def showed_up(rows: List[Dict]) -> List[Dict]:
@@ -215,8 +273,10 @@ def read(app, office_id: str, day: dt.date, log=print) -> List[Dict]:
         return []
     check_rows(rows)
     people = showed_up(rows)
-    log("  %s: %d training rows, %d showed up" % (
-        day, sum(1 for r in rows if _in_section(r)), len(people)))
+    nos = marked_no_show(rows)
+    log("  %s: %d training rows, %d showed up, %d marked no show" % (
+        day, sum(1 for r in rows if _in_section(r)), len(people), len(nos)))
+    _LAST_RAW[day] = rows
     return people
 
 
@@ -246,6 +306,52 @@ def read_week(app, office_id: str, week_start: dt.date, log=print,
     log("  week of %s: %d showed up (%d rows before de-duplicating)"
         % (sunday, len(pooled), len(out)))
     return pooled
+
+
+def no_shows_week(app, office_id: str, week_start: dt.date, log=print,
+                  days: int = 7) -> List[Dict]:
+    """Who was marked Show Up = **No** across that week, de-duplicated.
+
+    ONE WALK ANSWERS BOTH. This reads the same seven pages `read_week` reads
+    and keeps the answer it was throwing away, so asking the question costs
+    nothing on top of a walk that already happened -- call it straight after
+    `read_week` for the same week and it opens no pages at all.
+
+    SOMEBODY MARKED NO ON MONDAY AND YES ON TUESDAY IS NOT A NO SHOW. A person
+    rescheduled inside the week appears on the calendar twice, so a Yes
+    anywhere in the week beats a No earlier in it. That is the Tuesday
+    walk-in, and the board must never record it as an absence.
+    """
+    from automations.shared.onboarding_week import week_start_of
+    sunday = week_start_of(week_start)
+    nos, yes_keys = [], set()
+    for i in range(days):
+        day = sunday + dt.timedelta(days=i)
+        if day not in _LAST_RAW:
+            read(app, office_id, day, log=log)
+        rows = _LAST_RAW.get(day) or []
+        for r in showed_up(rows):
+            yes_keys.add(_person_key(r))
+        nos.extend(marked_no_show(rows))
+    dropped = sum(1 for r in nos if _person_key(r) in yes_keys)
+    out, seen = [], set()
+    for r in nos:
+        k = _person_key(r)
+        if k in yes_keys or k in seen:
+            continue
+        seen.add(k)
+        out.append(r)
+    log("  week of %s: %d marked no show (%d rows before de-duplicating, "
+        "%d dropped for a Yes elsewhere in the week)"
+        % (sunday, len(out), len(nos), dropped))
+    return out
+
+
+def _person_key(r: Dict):
+    email = str(r.get("email") or "").strip().lower()
+    return email or (str(r.get("first_name") or "").strip().lower(),
+                     str(r.get("last_name") or "").strip().lower(),
+                     str(r.get("phone") or "").strip())
 
 
 def main(argv=None) -> int:

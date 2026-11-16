@@ -351,7 +351,8 @@ def write_step(workbook, week_start: dt.date, column: str,
             # so a late "Sent" email can never pull somebody back from Passed.
             if not status_col:
                 continue
-            if B.status_rank(want[key]) <= B.status_rank(have):
+            if (B.status_rank(want[key], column)
+                    <= B.status_rank(have, column)):
                 continue
         row_no = FIRST_DATA_ROW + all_rows.index(r)
         writes.append({"range": "%s%d" % (a1, row_no), "values": [[want[key]]]})

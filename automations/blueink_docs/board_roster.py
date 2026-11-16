@@ -62,6 +62,33 @@ def _removal(row: Dict) -> str:
     return why or "taken off the board"
 
 
+def _not_starting(row: Dict) -> str:
+    """Why this row is not starting -- or "" if as far as we know they are.
+
+    TWO SIGNALS, both positive statements rather than inferences:
+
+      Terminated   a person clicked them off the board, with a reason. The GATE
+                   IS THE DATE, never the reason text: REMOVAL_REASONS offers
+                   "Left Classroom" and "Did not show to day 1 Classroom" and
+                   neither matches a marker in shared.new_start_eligibility
+                   ("no show" is not a substring of "did not show"), so a text
+                   gate would mail two people in five who had been removed.
+
+      Showed Up    ApplicantStream was marked No -- a recruiter stating they
+                   did not come (Megan, 2026-11-16: *"1 would be if they are
+                   marked no show in app stream"*). A BLANK is not this: it
+                   means nobody has said yet, and somebody missing Monday may
+                   walk in Tuesday. A date in that column means they turned
+                   up, which is the opposite of a block.
+    """
+    if str(row.get(B.TERMINATED_AT) or "").strip():
+        why = str(row.get(B.REMOVED_WHY) or "").strip()
+        return "Taken off the board: %s" % (why or "taken off the board")
+    if str(row.get(B.SHOWED_UP) or "").strip().lower() == B.NO_SHOW.lower():
+        return "Marked no show in ApplicantStream"
+    return ""
+
+
 def _one(row: Dict, week_start: dt.date) -> Optional[NewStart]:
     first = str(row.get(NAME) or "").strip()
     last = str(row.get(LAST) or "").strip()
@@ -69,15 +96,13 @@ def _one(row: Dict, week_start: dt.date) -> Optional[NewStart]:
         return None
     email = str(row.get(EMAIL) or "").strip()
     bg = str(row.get(BG) or "").strip()
-    gone = _removal(row)
+    gone = _not_starting(row)
 
     # Two layers, same as the tab reader: "they are not starting" first, then
-    # "we cannot reach them". A removal short-circuits, because somebody who
-    # has been clicked off is not starting whatever their BG Status says.
-    if gone:
-        reason = "Taken off the board: %s" % gone
-    else:
-        reason = _skip_reason("", bg, "", email)
+    # "we cannot reach them". Not-starting short-circuits, because somebody
+    # clicked off the board or marked No in ApplicantStream is not starting
+    # whatever their BG Status says.
+    reason = gone or _skip_reason("", bg, "", email)
 
     return NewStart(
         first=first, last=last, email=email,

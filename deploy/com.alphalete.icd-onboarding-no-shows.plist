@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alphalete.icd-onboarding-no-shows</string>
+
+    <!-- Install on the box holding this office's ApplicantStream session:
+             lucy rerun install_icd_onboarding_no_shows_agent (machine "Lucy 3")
+         NOTE ON COMMENTS IN THIS FILE: never write two hyphens together inside
+         an XML comment. It ends the comment early and makes the plist
+         unparseable to plistlib even though plutil still accepts it, which
+         shows up as a Hub card that cries wolf forever. The blueink docs plist
+         carried exactly that defect from the day it was written until
+         2026-11-16, so no command line flags are spelled out here. -->
+
+    <!-- Path is the laptop placeholder; install_agent.py rewrites it to that
+         machine's repo path. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/megan/1st Claude Folder/deploy/icd_onboarding_no_shows.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/megan/1st Claude Folder</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/megan/1st Claude Folder</string>
+    </dict>
+
+    <!-- 7:30pm EVERY DAY, machine LOCAL time. No Weekday key: a training day
+         can fall on any day of the week, and the board is seeded from whoever
+         is scheduled to start, not from a Monday.
+
+         THE EVENING is the point. The training day has to have happened and a
+         recruiter has to have marked the Show Up radio, so this runs after the
+         office closes. It lands before the next morning's sends: Blue Ink goes
+         out at 7:30am, and this is the column that stops it mailing documents
+         to somebody who did not come (Megan, 2026-11-16: "run it daily").
+
+         ONCE A DAY, not hourly, because it is the seven page calendar walk the
+         hourly board run deliberately stopped doing. TIME KNOB: edit
+         StartCalendarInterval here, not the wrapper. -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>19</integer>
+        <key>Minute</key>
+        <integer>30</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/icd-onboarding-no-shows.launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/icd-onboarding-no-shows.launchd.err.log</string>
+</dict>
+</plist>

@@ -165,3 +165,60 @@ class FromBoardReadsThroughTheRoutedReader(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MarkedNoShowInApplicantStreamStopsTheSend(unittest.TestCase):
+    """Megan, 2026-11-16, asked what should stop a send off this board:
+    "1 would be if they are marked no show in app stream"."""
+
+    def test_an_explicit_no_show_is_not_starting(self):
+        p = BR._one(row(**{B.SHOWED_UP: B.NO_SHOW}), MON)
+        self.assertFalse(p.eligible)
+        self.assertIn("no show in ApplicantStream", p.skip_reason)
+
+    def test_a_blank_showed_up_is_not_a_no_show(self):
+        """Nobody has said yet. Somebody missing Monday may walk in Tuesday,
+        and the board has never marked anyone off for a blank."""
+        for blank in ("", "   ", None):
+            with self.subTest(value=blank):
+                self.assertTrue(BR._one(row(**{B.SHOWED_UP: blank}), MON).eligible)
+
+    def test_a_date_means_they_turned_up_and_never_blocks(self):
+        p = BR._one(row(**{B.SHOWED_UP: "11/16/2026"}), MON)
+        self.assertTrue(p.eligible, p.skip_reason)
+
+    def test_the_words_are_matched_however_they_are_cased(self):
+        for said in ("No Show", "no show", "NO SHOW", " No Show "):
+            with self.subTest(value=said):
+                self.assertFalse(BR._one(row(**{B.SHOWED_UP: said}), MON).eligible)
+
+    def test_a_removal_still_wins_over_the_showed_up_column(self):
+        """Somebody clicked off AND marked present is still off."""
+        p = BR._one(row(**{B.SHOWED_UP: "11/16/2026",
+                           B.TERMINATED_AT: "11/16/2026",
+                           B.REMOVED_WHY: "Terminated"}), MON)
+        self.assertFalse(p.eligible)
+        self.assertIn("Taken off the board", p.skip_reason)
+
+
+class ShowedUpAdvancesRatherThanTicking(unittest.TestCase):
+    """blank -> No Show -> a date, and never backwards. The Tuesday walk-in is
+    the case this exists for."""
+
+    def test_a_date_outranks_no_show(self):
+        self.assertGreater(B.status_rank("11/16/2026", B.SHOWED_UP),
+                           B.status_rank(B.NO_SHOW, B.SHOWED_UP))
+
+    def test_no_show_outranks_nobody_having_said(self):
+        self.assertGreater(B.status_rank(B.NO_SHOW, B.SHOWED_UP),
+                           B.status_rank("", B.SHOWED_UP))
+
+    def test_it_is_a_status_column_not_a_tick(self):
+        self.assertIn(B.SHOWED_UP, B.STATUS_STEPS)
+
+    def test_the_background_check_ranking_is_untouched(self):
+        """Showed Up has its own scale; asking for it by column is what keeps
+        a date from scoring 0 against the background-check words."""
+        self.assertEqual(B.status_rank("11/16/2026"), 0)
+        self.assertEqual(B.status_rank("Passed"), 5)
+        self.assertGreater(B.status_rank("Passed"), B.status_rank("Sent"))

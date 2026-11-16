@@ -224,17 +224,37 @@ def test_every_routed_step_is_a_real_step():
 def test_the_routed_machines_cover_every_step_exactly_once():
     """A step nobody runs never fills; a step two boxes run races itself.
 
-    EXCEPT the ones in R.HAND_RUN_ONLY, which are read-only probes with a
-    reason written beside each. That list is the exception, so a new unrouted
-    step fails here until somebody says why it is not scheduled.
+    EXCEPT the ones in R.UNROUTED: R.HAND_RUN_ONLY (read-only probes) and
+    R.OWN_CLOCK (scheduled, but on their own LaunchAgent rather than hourly),
+    each with a reason written beside it. That list is the exception, so a new
+    unrouted step fails here until somebody says why it is not hourly.
     """
     seen = [s for steps in R.STEPS_BY_MACHINE.values() for s in steps]
-    scheduled = {n for n, _ in R.STEPS} - set(R.HAND_RUN_ONLY)
+    scheduled = {n for n, _ in R.STEPS} - set(R.UNROUTED)
     assert sorted(seen) == sorted(scheduled)
     assert len(seen) == len(set(seen)), "a step is routed to two machines"
-    for name in R.HAND_RUN_ONLY:
+    for name in R.UNROUTED:
         assert name in {n for n, _ in R.STEPS}, name
-        assert name not in seen, "%s is hand-run but routed" % name
+        assert name not in seen, "%s is unrouted but on a machine's list" % name
+
+
+def test_a_step_on_its_own_clock_has_a_launchagent_that_exists():
+    """OWN_CLOCK is a promise that something fires it. An entry here with no
+    plist on disk is a step nobody runs, dressed up as a scheduled one."""
+    import pathlib
+    import plistlib
+    deploy = pathlib.Path(__file__).resolve().parents[2] / "deploy"
+    for name in R.OWN_CLOCK:
+        hits = [p for p in deploy.glob("com.alphalete.*.plist")
+                if name.replace("_", "-") in p.name]
+        assert hits, "%s is on its own clock but has no LaunchAgent" % name
+        for p in hits:
+            d = plistlib.load(p.open("rb"))     # unparseable = a card that cries wolf
+            assert d.get("StartCalendarInterval"), "%s has no clock" % p.name
+
+
+def test_hand_run_and_own_clock_do_not_overlap():
+    assert not (set(R.HAND_RUN_ONLY) & set(R.OWN_CLOCK))
 
 
 def test_contacts_runs_where_the_contact_sync_runs():

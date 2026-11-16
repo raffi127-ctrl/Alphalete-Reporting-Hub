@@ -144,6 +144,55 @@ def seed(office_key: str, week_start: dt.date, *, dry_run: bool = True,
     return len(got.get("add") or [])
 
 
+def from_no_shows(office_key: str, week_start: dt.date, *,
+                  dry_run: bool = True, log=print) -> int:
+    """Who ApplicantStream says did NOT turn up, onto `Showed Up`.
+
+    Megan, 2026-11-16, asked what should stop a send off this board: *"1 would
+    be if they are marked no show in app stream"*.
+
+    AN EXPLICIT NO, NEVER AN ABSENCE. The training calendar's Show Up control
+    is a radio; a recruiter checking No is a person stating they did not come.
+    Nothing checked means nobody has said yet, and that is left alone -- the
+    board has never marked anybody off for a blank and must not start.
+
+    A YES ANYWHERE IN THE WEEK WINS. Somebody rescheduled is on the calendar
+    twice, so a later Yes beats an earlier No: the Tuesday walk-in. The column
+    advances (blank -> No Show -> a date) rather than ticking, so a date
+    written later replaces a No Show and never the other way round.
+
+    WHY IT IS ITS OWN STEP and not part of the seed: this is the SEVEN-page
+    calendar walk, which the seed deliberately stopped doing when the two-page
+    Retention Report turned out to answer the seed's question (Megan,
+    2026-11-09). Running it hourly would put that cost back. Whether the
+    Retention Report also carries a no-show row -- which would make this cheap
+    enough for the hourly run -- is a question for somebody with an
+    ApplicantStream session in front of them; the row labels this reads are
+    the calendar's, which are known.
+    """
+    from automations.applicant_tracker.applicantstream import session
+    from automations.office_admin import fdot
+
+    account = _appstream_id(office_key)
+    if not account:
+        log("  no_shows: %s has no ApplicantStream id" % office_key)
+        return 0
+    with session() as app:
+        app.select_office(account)
+        people = fdot.no_shows_week(app, account, week_start, log=log)
+    if not people:
+        log("  no_shows: nobody was marked No this week")
+        return 0
+    verdicts = {}
+    for p in people:
+        name = ("%s %s" % (p.get("first_name") or "",
+                           p.get("last_name") or "")).strip()
+        if name:
+            verdicts[name] = {B.SHOWED_UP: B.NO_SHOW}
+    return F.apply_anywhere(office_key, week_start, "appstream", verdicts,
+                            dry_run=dry_run, log=log)
+
+
 def _tick_showed_up(office_key: str, week_start: dt.date, showed,
                     *, dry_run: bool, log=print) -> int:
     """Tick `Showed Up` for the scheduled people who turned up.
@@ -502,7 +551,11 @@ STEPS = (("seed", seed), ("ownerville", from_ownerville),
          # press: OwnerVille's own section says the rep submits the ATTUID
          # form in the Candidate Roadmap Portal and the send to AT&T fires off
          # SaraPlus activation. This reads WHOSE MOVE each outstanding one is.
-         ("uid_reasons", uid_reasons))
+         ("uid_reasons", uid_reasons),
+         # WHO WAS MARKED NO in ApplicantStream -- the signal that somebody is
+         # not starting, which this board had no way to carry until now
+         # (Megan, 2026-11-16). Hand-run: it is the seven-page calendar walk.
+         ("no_shows", from_no_shows))
 
 # STEPS THAT NO MACHINE RUNS ON A SCHEDULE, each one listed with its reason.
 # Every other step must be routed to exactly one box, and the test that pins
@@ -513,6 +566,29 @@ STEPS = (("seed", seed), ("ownerville", from_ownerville),
 #                outstanding AT&T UID is. Useful before a nudge, not hourly --
 #                and it holds the one OwnerVille session while it runs.
 HAND_RUN_ONLY = ("uid_reasons",)
+
+# STEPS THAT RUN ON A CLOCK OF THEIR OWN rather than on the hourly board run.
+# Unrouted here for the same reason HAND_RUN_ONLY is -- so the coverage test
+# still fails for a NEW step nobody runs -- but these are scheduled, just not
+# hourly, and each one's LaunchAgent is named beside it.
+#
+#   no_shows     com.alphalete.icd-onboarding-no-shows, daily 19:30 on the box
+#                holding this office's ApplicantStream session. It is the
+#                SEVEN-page calendar walk; the hourly run stopped walking the
+#                calendar when the two-page Retention Report turned out to
+#                answer the seed's question (Megan, 2026-11-09), and putting
+#                the walk on an hourly clock would undo that. The answer only
+#                changes when a recruiter marks a radio, so daily is enough
+#                (Megan, 2026-11-16: "run it daily"). The evening matters: the
+#                training day has to have happened, and it lands before the
+#                next morning's 7:30am Blue Ink send, which is what this
+#                column stops for somebody who did not come.
+OWN_CLOCK = ("no_shows",)
+
+# Every step must be accounted for: routed to a machine, hand-run, or on its
+# own clock. The coverage test reads this, so a new step fails until it is
+# named somewhere.
+UNROUTED = HAND_RUN_ONLY + OWN_CLOCK
 
 
 def for_office(office_key: str, week_start: dt.date, *, dry_run: bool = True,
