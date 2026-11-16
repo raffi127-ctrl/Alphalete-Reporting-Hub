@@ -690,6 +690,17 @@ def _expand(modal, label: str, page, *, reveals: str = "",
     click worked.
     """
     marker = reveals or "Access Digital Doc Portal"
+    # ALREADY OPEN IS DONE. OwnerVille expands whichever section needs action
+    # first, and WHICH ONE that is differs per rep -- Patricia Yanez's modal
+    # opened on OWNER SUBMIT, the next rep's opened on SERVICE. Clicking the
+    # row of a section that is already open CLOSES it, and the run then looks
+    # for a control it just hid: _tick_one times out on visibility, that one
+    # box is missed, and the save still writes the others. That is how SERVICE
+    # came out ticked on some people and not others (Megan, 2026-11-16) with
+    # nothing in the log naming it, because _expand does not raise -- it prints
+    # and returns, and the caller reports whatever it could not find.
+    if _revealed(modal, marker, ms=1500):
+        return
     target = None
     for row in _status_rows(modal, label):
         try:
