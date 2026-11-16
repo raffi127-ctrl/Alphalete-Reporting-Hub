@@ -146,6 +146,31 @@ class NothingIsReplacedUntilItIsProven(unittest.TestCase):
             self.assertTrue(U.run(log=lambda *a: None, today=DAY))
         self.assertEqual(self._live(), "NEW")
 
+    # ---- a stale file list (2026-11-15: office_facebook.py never arrived) ----
+    def test_a_list_for_an_older_release_installs_nothing_and_stamps_nothing(self):
+        with mock.patch.object(U, "_fetch", self._fetch(
+                "# release: r1\nautomations/icd_alerts/run.py\n")), \
+             mock.patch.object(U, "_verify", return_value=True), \
+             mock.patch.object(U, "published_release", lambda: "r2"):
+            self.assertFalse(U.run(log=lambda *a: None, today=DAY))
+        self.assertEqual(self._live(), "ORIGINAL")
+        with mock.patch.object(U, "published_release", lambda: "r2"):
+            self.assertTrue(U.due(DAY), "a stale list must be asked for again next sweep")
+
+    def test_the_list_for_this_release_installs(self):
+        with mock.patch.object(U, "_fetch", self._fetch(
+                "# release: r2   <- note\nautomations/icd_alerts/run.py\n")), \
+             mock.patch.object(U, "_verify", return_value=True), \
+             mock.patch.object(U, "published_release", lambda: "r2"):
+            self.assertTrue(U.run(log=lambda *a: None, today=DAY))
+        self.assertEqual(self._live(), "NEW")
+
+    def test_a_list_without_the_line_still_installs(self):
+        with mock.patch.object(U, "_fetch", self._fetch("automations/icd_alerts/run.py\n")), \
+             mock.patch.object(U, "_verify", return_value=True), \
+             mock.patch.object(U, "published_release", lambda: "r2"):
+            self.assertTrue(U.run(log=lambda *a: None, today=DAY))
+
     def test_code_that_breaks_ONCE_INSTALLED_is_put_back(self):
         """The case a staging check cannot catch on its own.
 
@@ -168,3 +193,14 @@ class NothingIsReplacedUntilItIsProven(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ReleaseLineMatches(unittest.TestCase):
+    """Bumping agent_release.txt means bumping the "# release:" line in
+    agent_files.txt too -- otherwise every office refuses the list forever."""
+
+    def test_the_list_names_the_release_we_publish(self):
+        here = Path(U.__file__).resolve().parent
+        self.assertEqual(U.list_release((here / "agent_files.txt").read_text()),
+                         (here / "agent_release.txt").read_text().strip(),
+                         "bump the '# release:' line in agent_files.txt with agent_release.txt")

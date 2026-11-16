@@ -115,7 +115,8 @@ python -m automations.online_presence.run --office <key>             # dry run: 
 
 ## Before the first office goes live
 - **Deploy the relay** (`resources/icd-alerts-relay.gs`: new job kinds + the Drive photo folder) and
-  **release the agent** (bump `automations/icd_alerts/agent_release.txt`) so office computers get
+  **release the agent** (bump `automations/icd_alerts/agent_release.txt` AND the `# release:` line at the top of
+  `agent_files.txt` to the same number -- an office refuses a list for any other release) so office computers get
   `social_post.py`. Both need Megan's go.
 - Confirm Zoho's channel names on the first real `zoho-signin` (the check prints them). The page
   mapping (`zoho_draft.page_of`) is a best guess until then.

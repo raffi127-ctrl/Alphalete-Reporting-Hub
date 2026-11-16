@@ -151,6 +151,16 @@ def _stamp(today: Optional[dt.date] = None,
         pass
 
 
+def list_release(listing: str) -> str:
+    """The "# release: X" line in agent_files.txt, or "" when it has none."""
+    for ln in listing.splitlines():
+        ln = ln.strip()
+        if ln.lower().startswith("# release:"):
+            rest = ln.split(":", 1)[1].split()
+            return rest[0] if rest else ""
+    return ""
+
+
 def _ssl_ctx():
     from automations.icd_alerts import relay as R
     return R._ssl_context()
@@ -209,6 +219,23 @@ def run(log=print, today: Optional[dt.date] = None) -> bool:
     except Exception as e:  # noqa: BLE001 — no wifi is the usual reason
         log("self-update: could not reach the update server (%s)"
             % type(e).__name__)
+        return False
+
+    # THE LIST MUST BE THE ONE FOR THIS RELEASE (2026-11-15). GitHub's raw
+    # cache served yesterday's agent_files.txt for ~5 minutes after a release
+    # that ADDED office_facebook.py: this machine installed the new code
+    # without the new file, every import check still passed (run.py never
+    # imports it), and it stamped itself current -- so the first Facebook
+    # job died on an ImportError and nothing retried. The list now carries
+    # "# release: X"; a list for some other release is a stale copy, so
+    # nothing is installed and NOTHING IS STAMPED -- the next sweep asks again
+    # and gets the fresh one. A list without the line (older trees) goes
+    # ahead as before.
+    listed = list_release(listing)
+    if release and listed and listed != release:
+        log("self-update: the file list is still the one for %s, not %s "
+            "(GitHub's copy is catching up) -- trying again next sweep"
+            % (listed, release))
         return False
 
     wanted: List[str] = [ln.strip() for ln in listing.splitlines()
