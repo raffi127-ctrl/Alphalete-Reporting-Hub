@@ -1722,8 +1722,11 @@ def build_revenue_board(cols, crew, today, log=print) -> Path:
                  "tier_chip": True,
                  "week_extra": RX.week_extra(len(rows), off["apps"]),
                  "hide_reps": True,
-                 "breakdown": {"header": RX.BREAKDOWN_HEADER, "pos": "right"}}
-        note = RX.NOTE
+                 "breakdown": {"header": RX.BREAKDOWN_HEADER, "pos": "right"},
+                 # Carlos 2026-11-15 night: AT&T-blue header, "NDS Revenue
+                 # Sales Board" centred, the logo top-left, no footer / note.
+                 "brand": RX.BRAND}
+        note = ""
         log("[nds] revenue board: %d app(s) sold this week on his owner -- %d new phone, %d BYOD, "
             "%d Air (+%d tablet/wearable, %d new-number, %d upgrade); %d Next Up; plans %d Premium / "
             "%d Extra / %d Value; %d order(s); %d rep(s) on the board"

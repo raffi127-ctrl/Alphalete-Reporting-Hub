@@ -87,6 +87,30 @@ class TierChip(unittest.TestCase):
         self.assertNotIn("REPS ON THE BOARD", html)
         self.assertIn("$1,000 <span>x</span>", html)
 
+    def test_brand_header_no_footer(self):
+        captured = {}
+
+        def fake_write(self_path, text, encoding="utf-8"):
+            captured["html"] = text
+        with mock.patch("pathlib.Path.write_text", fake_write), \
+             mock.patch("pathlib.Path.mkdir", lambda *a, **k: None), \
+             mock.patch.dict("sys.modules", {"patchright": None, "patchright.sync_api": None}):
+            try:
+                V._render_html(ROWS, {"days": {"Mon": 1000.0}}, dt.date(2026, 11, 9), dt.date(2026, 11, 15),
+                               V.Path("/tmp/x.png"), "NDS Revenue Board", tiered=False,
+                               extra={"tier_chip": True,
+                                      "brand": {"title": "NDS Revenue Sales Board", "color": "#067ab4",
+                                                "logo": "<svg>globe</svg>"}}, note="")
+            except Exception:  # noqa: BLE001
+                pass
+        html = captured.get("html", "")
+        self.assertIn("NDS Revenue Sales Board", html)
+        self.assertIn("background:#067ab4", html)
+        self.assertIn("<svg>globe</svg>", html)
+        self.assertNotIn("NDS LEADERS", html)
+        self.assertNotIn('class="foot"', html)
+        self.assertNotIn("reps on the board", html)
+
     def test_plain_base_comp_board_unchanged(self):
         html = _html(None)
         self.assertNotIn(">TIER</th>", html)

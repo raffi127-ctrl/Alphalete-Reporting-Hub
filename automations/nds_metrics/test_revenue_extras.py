@@ -97,6 +97,12 @@ class Cards(unittest.TestCase):
                          ["ACTIVATION RATE BY WEEK-ENDING", "0\u201330 DAY CHURN \u00b7 WIRELESS NON-BYOD",
                           "APP MIX THIS WEEK"])
 
+    def test_brand_header(self):
+        self.assertEqual(RX.BRAND["title"], "NDS Revenue Sales Board")
+        self.assertEqual(RX.BRAND["color"], "#067ab4")
+        self.assertIn("<svg", RX.BRAND["logo"])
+        self.assertIn("AT&amp;T", RX.BRAND["logo"])
+
     def test_week_total_card_suffix(self):
         self.assertIn("\u00b7 19 reps \u00b7 7.1 sales / rep (134 apps)", RX.week_extra(19, 134))
         self.assertIn("\u00b7 1 rep \u00b7 0.0 sales / rep (0 apps)", RX.week_extra(1, 0))
