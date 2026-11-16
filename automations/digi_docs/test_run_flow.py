@@ -1703,8 +1703,11 @@ class OneBadPageDoesNotEndTheAdd(_NoNetwork):
 
     def test_the_rest_are_still_added(self):
         ov, added, refused = self._add("Ana Lopez")
-        self.assertEqual(["Ana Lopez", "Bo Diaz", "Cy Nguyen"], ov.asked,
-                         "the pass must go on to everybody else")
+        self.assertEqual(["Ana Lopez", "Bo Diaz", "Cy Nguyen", "Ana Lopez"],
+                         ov.asked,
+                         "the pass must go on to everybody else, and come "
+                         "back to the one that blipped once the queue has "
+                         "drained")
         self.assertEqual(["Bo Diaz", "Cy Nguyen"], added)
 
     def test_the_one_that_failed_is_named_with_its_reason(self):
@@ -1713,6 +1716,235 @@ class OneBadPageDoesNotEndTheAdd(_NoNetwork):
         self.assertIn("Bo Diaz", refused[0])
         self.assertIn("TimeoutError", refused[0])
         self.assertIn("send tick will try again", refused[0])
+
+
+class ASlowPageGetsOneMoreTry(_NoNetwork):
+    """2026-11-16: seven people were reported as failures on a single
+    `Locator.wait_for: Timeout 20000ms` and every one of them went through on
+    a second attempt minutes later, on the same session. The post read as 26
+    people with no documents when 43 of the 52 already had theirs."""
+
+    def _add(self, behaviour):
+        import contextlib
+        import automations.digi_docs as _pkg
+        from automations.digi_docs import ownerville as _real, run as _run
+
+        class _OV:
+            class Refused(RuntimeError):
+                pass
+            present = staticmethod(_real.present)
+
+            def __init__(s):
+                s.asked = []
+                s.known_absent = []
+
+            def snapshot(s, page, **kw):
+                return set(), False
+
+            def add_sales_rep(s, page, name, **kw):
+                s.asked.append(name)
+                s.known_absent.append(kw.get("known_absent"))
+                return behaviour(s, name)
+
+        ov = _OV()
+        stub = types.ModuleType("automations.digi_docs.slack_post")
+        stub.alert_failure = lambda line, dry_run=True: None
+        people = [type("C", (), {"name": n})()
+                  for n in ("Ana Lopez", "Bo Diaz")]
+        added, refused = [], []
+        with mock.patch.dict(
+                sys.modules, {"automations.digi_docs.slack_post": stub}), \
+             mock.patch.object(_pkg, "slack_post", stub, create=True):
+            _run._work(ov, page_ctx=contextlib.nullcontext(object()),
+                       do_add=True, do_send=False, send=[], add_list=people,
+                       dry=False, added=added, done=[], refused=refused)
+        return ov, added, refused
+
+    def test_a_timeout_that_clears_is_not_reported_as_a_failure(self):
+        seen = []
+
+        def behave(s, name):
+            if name == "Ana Lopez" and name not in seen:
+                seen.append(name)
+                raise TimeoutError(
+                    "Locator.wait_for: Timeout 20000ms exceeded.")
+            return "added"
+
+        ov, added, refused = self._add(behave)
+        self.assertEqual([], refused,
+                         "a blip that clears on the retry is not a failure")
+        self.assertIn("Ana Lopez", added)
+
+    def test_the_retry_re_checks_rather_than_trusting_a_roster(self):
+        """known_absent skips the are-they-already-here lookup. Safe the
+        first time; on a retry the attempt we are repeating may have timed
+        out AFTER submitting, and a second add mails a second onboarding
+        email that cannot be taken back."""
+        def behave(s, name):
+            if name == "Ana Lopez" and s.asked.count(name) == 1:
+                raise TimeoutError(
+                    "Locator.wait_for: Timeout 20000ms exceeded.")
+            return "added"
+
+        ov, _added, _refused = self._add(behave)
+        self.assertEqual(3, len(ov.asked))
+        self.assertFalse(ov.known_absent[-1],
+                         "the retry must re-check, never assume absent")
+
+    def test_it_retries_once_not_forever(self):
+        def behave(s, name):
+            if name == "Ana Lopez":
+                raise TimeoutError(
+                    "Locator.wait_for: Timeout 20000ms exceeded.")
+            return "added"
+
+        ov, _added, refused = self._add(behave)
+        self.assertEqual(2, ov.asked.count("Ana Lopez"),
+                         "one retry, then report it")
+        self.assertEqual(1, len(refused))
+        self.assertIn("Ana Lopez", refused[0])
+
+    def test_a_refusal_is_a_decision_and_is_never_retried(self):
+        """Refused means OwnerVille answered: not in the employee list, two
+        people share the name. Re-running one buys nothing and risks doing an
+        irreversible thing twice."""
+        def behave(s, name):
+            if name == "Ana Lopez":
+                raise s.Refused("Ana Lopez: not in the employee list")
+            return "added"
+
+        ov, _added, refused = self._add(behave)
+        self.assertEqual(1, ov.asked.count("Ana Lopez"))
+        self.assertEqual(1, len(refused))
+
+
+class ADeadSessionStopsTheRunEarly(_NoNetwork):
+    """Lucy 3's 10:30 pass on 2026-11-16 opened with a valid session, lost it
+    around 10:36, and had no way to notice: validity is checked once, when
+    the browser opens. It spent 73 minutes walking 26 people it could not
+    possibly add, 20 seconds each, then posted all 26 as failures."""
+
+    def _add(self, names, behaviour):
+        import contextlib
+        import automations.digi_docs as _pkg
+        from automations.digi_docs import ownerville as _real, run as _run
+
+        class _OV:
+            class Refused(RuntimeError):
+                pass
+            present = staticmethod(_real.present)
+
+            def __init__(s):
+                s.asked = []
+
+            def snapshot(s, page, **kw):
+                return set(), False
+
+            def add_sales_rep(s, page, name, **kw):
+                s.asked.append(name)
+                return behaviour(s, name)
+
+        ov = _OV()
+        stub = types.ModuleType("automations.digi_docs.slack_post")
+        stub.alert_failure = lambda line, dry_run=True: None
+        people = [type("C", (), {"name": n})() for n in names]
+        added, refused = [], []
+        with mock.patch.dict(
+                sys.modules, {"automations.digi_docs.slack_post": stub}), \
+             mock.patch.object(_pkg, "slack_post", stub, create=True):
+            _run._work(ov, page_ctx=contextlib.nullcontext(object()),
+                       do_add=True, do_send=False, send=[], add_list=people,
+                       dry=False, added=added, done=[], refused=refused)
+        return ov, added, refused
+
+    def test_three_in_a_row_stops_instead_of_grinding(self):
+        from automations.digi_docs import run as _run
+
+        def always_timeout(s, name):
+            raise TimeoutError("Locator.wait_for: Timeout 20000ms exceeded.")
+
+        names = ["A", "B", "C", "D", "E", "F", "G", "H"]
+        with self.assertRaises(_run.SessionLost):
+            self._add(names, always_timeout)
+
+    def test_it_stops_at_three_not_after_the_whole_cohort(self):
+        from automations.digi_docs import run as _run
+
+        def always_timeout(s, name):
+            raise TimeoutError("Locator.wait_for: Timeout 20000ms exceeded.")
+
+        names = ["A", "B", "C", "D", "E", "F", "G", "H"]
+        try:
+            self._add(names, always_timeout)
+        except _run.SessionLost as e:
+            self.assertIn("three people in a row", str(e))
+            self.assertIn("next tick", str(e),
+                          "the message has to say it heals itself")
+        else:
+            self.fail("expected SessionLost")
+
+    def test_ordinary_slowness_does_not_trip_it(self):
+        """One or two blips are what the retry is for — seven people cleared
+        on a second attempt that morning. Only three IN A ROW is the session."""
+        def every_other(s, name):
+            if name in ("B", "D") and s.asked.count(name) == 1:
+                raise TimeoutError(
+                    "Locator.wait_for: Timeout 20000ms exceeded.")
+            return "added"
+
+        ov, added, refused = self._add(["A", "B", "C", "D", "E"], every_other)
+        self.assertEqual([], refused)
+        self.assertEqual(5, len(added))
+
+
+class TheSessionIsCheckedBeforeTheBrowserOpens(_NoNetwork):
+    """2026-11-16: Lucy 3's OwnerVille session died ~10:36, part way through
+    the add pass. Every page after came back logged-out, the Add Sales Rep
+    modal never rendered, and 26 of 52 failed on a 20s wait. Nothing
+    recovered: the re-mint refuses to start inside a report already driving a
+    browser, so the only place it CAN run is before the browser opens."""
+
+    def test_a_live_session_is_left_alone(self):
+        from automations.digi_docs import run as _run
+        with mock.patch.object(_run, "_ownerville_session_alive",
+                               return_value=True), \
+             mock.patch("subprocess.run") as sp:
+            note = _run._ensure_ownerville_session(dry=False)
+        self.assertEqual("", note)
+        sp.assert_not_called()
+
+    def test_a_dry_run_never_mints(self):
+        from automations.digi_docs import run as _run
+        with mock.patch.object(_run, "_ownerville_session_alive",
+                               return_value=False), \
+             mock.patch("subprocess.run") as sp:
+            note = _run._ensure_ownerville_session(dry=True)
+        self.assertEqual("", note)
+        sp.assert_not_called()
+
+    def test_a_login_form_reads_as_dead(self):
+        from automations.digi_docs import run as _run
+        page = '<form><input type="password" name="pw"></form>'
+        with mock.patch("requests.get",
+                        return_value=types.SimpleNamespace(text=page)), \
+             mock.patch("pathlib.Path.exists", return_value=True), \
+             mock.patch("pathlib.Path.read_text",
+                        return_value='{"cookies": [{"name": "rqst", '
+                                     '"value": "x", '
+                                     '"domain": ".ownerville.com"}]}'):
+            self.assertFalse(_run._ownerville_session_alive())
+
+    def test_anything_unreadable_is_treated_as_alive(self):
+        """A wrong 'dead' costs a 90s mint and swaps the machine's OwnerVille
+        identity. A wrong 'alive' costs nothing we were not already paying."""
+        from automations.digi_docs import run as _run
+        with mock.patch("requests.get", side_effect=OSError("no route")), \
+             mock.patch("pathlib.Path.exists", return_value=True), \
+             mock.patch("pathlib.Path.read_text",
+                        return_value='{"cookies": [{"name": "rqst", '
+                                     '"value": "x", '
+                                     '"domain": ".ownerville.com"}]}'):
+            self.assertTrue(_run._ownerville_session_alive())
 
 
 class TheBoardKeepsUpWithTheSending(_NoNetwork):

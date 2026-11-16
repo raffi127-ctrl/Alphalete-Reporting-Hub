@@ -407,6 +407,220 @@ def _refuse(refused, line, dry, *, alert: bool = True):
         pass   # an alert that fails must never take the run down with it
 
 
+def _transient(e: Exception) -> bool:
+    """A blip worth one more try — not a decision about this person.
+
+    OwnerVille gets slow part-way through a long run. On 2026-11-16 seven
+    people came back as `TimeoutError: Locator.wait_for: Timeout 20000ms
+    exceeded` and every one of them went through on a second attempt minutes
+    later, on the SAME session: Ailonnie Moore, Emilee Bennett and Kimberly
+    Arreaga were all re-run by hand and all three answered COMPLETED at once.
+    So one timeout is not evidence that anything is wrong with the person or
+    the data, and reporting it as a failure is most of why that morning's
+    post read as 26 people with no documents when 43 of the 52 already had
+    theirs.
+
+    ov.Refused is caught BEFORE this everywhere it is used and never reaches
+    it. That matters: a Refused is a decision ("not in the Add Sales Rep
+    employee list", "two employees share this name"), and re-running one buys
+    nothing while risking doing it twice — and both of these loops do things
+    that cannot be taken back.
+    """
+    name = type(e).__name__
+    text = str(e)
+    return ("Timeout" in name or "Timeout" in text
+            or "Navigation" in text or "net::ERR" in text)
+
+
+def _retry_pass(first, parked):
+    """Yield everyone once, then anyone a transient error parked for one more
+    try.
+
+    A GENERATOR on purpose. The send loop's body is a couple of hundred lines
+    whose every branch is load-bearing and irreversible, and wrapping it in a
+    `for sweep in (1, 2)` would re-indent all of it for no behavioural gain.
+    `parked` is appended to DURING the first pass and drained after it, so the
+    retries run once the rest of the cohort is done — which is also the right
+    order: a person whose page was slow gets the second look after the queue
+    has drained, not immediately, when whatever slowed it down is still going.
+    """
+    for c in first:
+        yield c
+    i = 0
+    while i < len(parked):
+        yield parked[i]
+        i += 1
+
+
+def _park_or_refuse(e, c, parked, retried, refused, dry, *, what: str) -> bool:
+    """True if this person was parked for one more try; False to refuse now.
+
+    One retry, never a loop: a second failure is reported exactly as before,
+    so a genuinely broken run still says so at the same volume. The print is
+    deliberately not a ⛔ -- it is not a failure yet, and a line that looks
+    like one teaches people to read the real ones as noise.
+    """
+    if _transient(e) and c.name not in retried:
+        retried.add(c.name)
+        parked.append(c)
+        print(f"  ↻ {c.name}: {type(e).__name__} — slow page, one more try "
+              f"after the others ({what})", flush=True)
+        return True
+    return False
+
+
+class SessionLost(RuntimeError):
+    """Raised when a run concludes the OwnerVille session died UNDER it."""
+
+
+class _Streak:
+    """Counts transient failures in a row, so a dead session is caught in the
+    first minute instead of the fourth hour.
+
+    THE ACTUAL COST ON 2026-11-16. Lucy 3's 10:30 add pass opened with a
+    valid session — its log says `ownerville session valid (rqst in URL)` and
+    `session restored from storage_state (rqst present)` — and the session
+    died somewhere after that. The run had no way to notice: validity is
+    checked once, when the browser opens, and never again. So it spent from
+    ~10:36 to 11:49 walking 26 people it could not possibly add, 20 seconds
+    at a time, and then posted all 26 as failures.
+
+    Three in a row is the signal. One or two are ordinary slowness — that is
+    what _transient and the retry are for, and seven people cleared on a
+    second attempt that morning. But three consecutive people failing the
+    same way is not slowness, it is the session, and every further person
+    costs another 20 seconds to learn the same thing.
+
+    Stopping is the RIGHT answer rather than a sad one, because it is now
+    self-healing: the run aborts, and the next five-minute tick pre-flights
+    the session (_ensure_ownerville_session), finds it dead, mints a fresh
+    one before opening a browser, and works the cohort properly. Nobody has
+    to be watching.
+    """
+
+    LIMIT = 3
+
+    def __init__(self, where: str):
+        self.where = where
+        self.run = 0
+
+    def ok(self) -> None:
+        self.run = 0
+
+    def bad(self, name: str) -> None:
+        self.run += 1
+        if self.run >= self.LIMIT:
+            raise SessionLost(
+                f"three people in a row failed the same way in the {self.where} "
+                f"phase (last: {name}) — the OwnerVille session has almost "
+                f"certainly died under this run. Stopping rather than spending "
+                f"20 seconds per remaining person to learn it again; the next "
+                f"tick mints a fresh session before it opens a browser.")
+
+
+def _ownerville_session_alive() -> bool:
+    """Is the SAVED OwnerVille session still live? Asked over plain HTTP,
+    before any browser opens.
+
+    Why this exists: on 2026-11-16 Lucy 3's session died around 10:36, part
+    way through the add pass. Every page after that came back logged-out, so
+    the Add Sales Rep modal never rendered and 26 of 52 people failed on a
+    20-second wait for an element that was never going to appear. Nothing
+    recovered, because digi_docs' own re-mint CANNOT run from inside a report
+    that is already driving a browser -- it refuses, correctly, rather than
+    start a nested sync_playwright. So the dead session sat there for three
+    hours while every five-minute tick failed the same way.
+
+    Asking BEFORE the browser opens is what makes the fix possible: at that
+    point a mint is just a subprocess, with no playwright loop to nest inside.
+
+    Cheap on purpose -- the send tick fires every five minutes and must not
+    pay for a browser just to ask the question.
+
+    BIASED TOWARDS "ALIVE". A wrong "dead" costs a 90-second mint and swaps
+    the machine's OwnerVille identity; a wrong "alive" costs nothing we were
+    not already paying. So it says dead only when it is looking at a login
+    form, and anything it cannot read -- no cookies, a timeout, an odd
+    response -- is alive.
+    """
+    try:
+        import json as _json
+        import requests
+        from automations.shared.tableau_patchright import (
+            OWNERVILLE_STORAGE_STATE)
+        if not OWNERVILLE_STORAGE_STATE.exists():
+            return False        # nothing saved at all IS the dead case
+        state = _json.loads(OWNERVILLE_STORAGE_STATE.read_text())
+        jar = {c["name"]: c["value"] for c in state.get("cookies", [])
+               if "ownerville" in (c.get("domain") or "")}
+        if not jar:
+            return False
+        r = requests.get("https://v2.ownerville.com/index.cfm",
+                         cookies=jar, timeout=20, allow_redirects=True)
+        body = (r.text or "").lower()
+    except Exception:                                   # noqa: BLE001
+        return True             # cannot tell -> do not act on a guess
+    # A live session lands on a page carrying the rqst token; a dead one is
+    # handed the login form. Judge on the form, not on the token's absence:
+    # ownerville serves plenty of pages without one.
+    looks_like_login = ('name="password"' in body or "type=\"password\"" in body)
+    return not looks_like_login
+
+
+def _mint_cooldown_path() -> str:
+    import datetime as _dt
+    return (f"output/logs/.digi-docs-minted-"
+            f"{_dt.date.today().isoformat()}")
+
+
+def _ensure_ownerville_session(dry: bool) -> str:
+    """Mint a fresh OwnerVille session if the saved one is dead. Returns a
+    note for the log, or "" if nothing was done.
+
+    AT MOST ONCE EVERY 30 MINUTES. The tick fires twelve times an hour; if
+    the probe above ever misjudges a live session as dead, the cooldown is
+    what stops that becoming a mint every five minutes on a machine other
+    reports are trying to use.
+    """
+    if dry:
+        return ""
+    import os
+    import subprocess
+    import sys
+    import time
+    path = _mint_cooldown_path()
+    try:
+        if os.path.exists(path) and (time.time() - os.path.getmtime(path)) < 1800:
+            return ""
+    except OSError:
+        pass
+    if _ownerville_session_alive():
+        return ""
+    print("-> saved ownerville session looks DEAD — minting one before the "
+          "browser opens (a mint cannot run once a report is driving a "
+          "browser)", flush=True)
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        open(path, "w").write("minted\n")
+    except OSError:
+        pass
+    try:
+        r = subprocess.run(
+            [sys.executable, "-m", "automations.shared.appstream_autorenew",
+             "--ownerville-only"],
+            capture_output=True, text=True, timeout=8 * 60)
+    except Exception as e:                              # noqa: BLE001
+        return f"ownerville mint could not run ({type(e).__name__})"
+    tail = (r.stdout + r.stderr).strip().splitlines()
+    last = tail[-1][:160] if tail else ""
+    if r.returncode == 0:
+        print(f"-> ownerville re-minted before the run: {last}", flush=True)
+        return ""
+    # NOT FATAL. The saved cookies may still work -- the probe is a guess and
+    # the browser is the real judge -- so say so and let the run try.
+    return f"ownerville mint failed ({last})"
+
+
 def _phases(args) -> int:
     """Add every rep, then send every bundle — batched, never a full cycle per
     person. The two phases live on different pages, so interleaving pays the
@@ -547,6 +761,12 @@ def _phases(args) -> int:
     # Only the Hub card went red. Catch it, and fall through to the write-back
     # so the channel still hears about it.
     fatal = ""
+    # BEFORE THE BROWSER, NOT DURING IT. See _ensure_ownerville_session: a
+    # dead session is only fixable here, because once ov.session() below is
+    # driving a browser the mint can no longer start.
+    mint_note = _ensure_ownerville_session(dry)
+    if mint_note:
+        _refuse(refused, mint_note, dry, alert=False)
     try:
         _work(ov, page_ctx=ov.session(headless=not dry), do_add=do_add,
               do_send=do_send, send=send, add_list=add_list, dry=dry,
@@ -618,17 +838,27 @@ def _work(ov, *, page_ctx, do_add, do_send, send, add_list, dry,
             roster, trust = set(), False
             print("  checking each person in OwnerVille individually",
                   flush=True)
-            for c in add_list:
+            parked_add, retried_add = [], set()
+            streak_add = _Streak("add")
+            for c in _retry_pass(add_list, parked_add):
                 try:
                     if trust and ov.present(roster, c.name):
                         print(f"  {c.name}: already in OwnerVille")
+                        streak_add.ok()
                         continue
                     outcome = ov.add_sales_rep(
                         page, c.name, dry_run=dry,
                         employee_id=getattr(args_ns, "employee_id", "") or None,
-                        known_absent=trust)
+                        # A RETRY ALWAYS RE-CHECKS. known_absent skips the "is
+                        # this person already here?" lookup, which is only safe
+                        # the first time: the attempt we are retrying may have
+                        # timed out AFTER submitting, and adding somebody twice
+                        # mails them a second onboarding email that cannot be
+                        # taken back.
+                        known_absent=trust and c.name not in retried_add)
                     if outcome in ("added", "dry"):
                         added.append(c.name)
+                    streak_add.ok()
                 except ov.Refused as e:
                     # SECOND SWEEP: CREATE THE PERSON, THEN ADD THEM (Megan
                     # 2026-09-14: "that 11am needs a 2nd sweep to add the
@@ -709,6 +939,11 @@ def _work(ov, *, page_ctx, do_add, do_send, send, add_list, dry,
                     # person and left all 53 unadded — nobody got their
                     # onboarding email and every send tick then had to add,
                     # create and send inside somebody's last 30 minutes.
+                    if _transient(e):
+                        streak_add.bad(c.name)
+                    if _park_or_refuse(e, c, parked_add, retried_add, refused,
+                                       dry, what="add"):
+                        continue
                     _refuse(refused,
                             f"{c.name}: {type(e).__name__}: "
                             f"{str(e).splitlines()[0][:110]} — not added here; "
@@ -742,8 +977,11 @@ def _work(ov, *, page_ctx, do_add, do_send, send, add_list, dry,
             # nothing to click. find_rep already widens to Show All per search
             # when a rep isn't in the default 3-week window -- which is the
             # proven path and the one a just-added rep needs anyway.
-            for c in send:
+            parked_send, retried_send = [], set()
+            streak_send = _Streak("send")
+            for c in _retry_pass(send, parked_send):
                 tab = None
+                blipped = False
                 try:
                     try:
                         modal, matched = ov.open_set_status(page, c.name)
@@ -960,9 +1198,26 @@ def _work(ov, *, page_ctx, do_add, do_send, send, add_list, dry,
                     # so a stall costs one person, not the cohort. Anything
                     # unexpected is recorded against that rep and the run goes
                     # on; the summary still exits non-zero.
+                    #
+                    # Retrying here is safe BECAUSE of where the retry starts:
+                    # the body re-opens Set Status and re-reads Onboarding
+                    # Documents before it generates anything, so a bundle that
+                    # did go out before the timeout is seen as COMPLETED or
+                    # PENDING and skipped. The second attempt cannot double-send.
+                    if _transient(e):
+                        blipped = True
+                        streak_send.bad(c.name)
+                    if _park_or_refuse(e, c, parked_send, retried_send,
+                                       refused, dry, what="send"):
+                        continue
                     _refuse(refused, f"{c.name}: {type(e).__name__}: "
                                      f"{str(e).splitlines()[0][:120]}", dry)
                 finally:
+                    # Anything that was NOT a timeout-shaped failure proves the
+                    # session is still answering — including a Refused, which
+                    # OwnerVille had to be alive to give us.
+                    if not blipped:
+                        streak_send.ok()
                     # Close the portal tab on EVERY path. It only ever closed
                     # on the success path, so a batch of 30 left a tab open per
                     # refusal.
