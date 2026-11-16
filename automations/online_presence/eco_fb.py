@@ -136,6 +136,23 @@ def _unpark_refused(fb_state: Dict) -> int:
     return len(gone)
 
 
+def _ever_posted(fb_state: Dict) -> bool:
+    """Has a reply from this page ever landed?
+
+    The `ever_posted` counter only starts at the version that added it, so on
+    its own it reads FALSE for a page with a history -- raf's had two replies
+    land on 11/15, which is exactly the office the warning above was written
+    for, so the cold start would have made it cry wolf on day one. Fall back to
+    the state already on disk: a review marked posted and NOT blocked is one
+    that went out. A parked review carries `blocked`, so it never counts."""
+    if int(fb_state.get("ever_posted") or 0):
+        return True
+    for st in (fb_state.get("reviews") or {}).values():
+        if isinstance(st, dict) and st.get("posted") and not st.get("blocked"):
+            return True
+    return False
+
+
 def collect(P, rows: List[Dict], cl, *, dry: bool) -> List[Dict]:
     s = _load(P)
     fb_file = P.path("fb_review_replies.json")
@@ -215,24 +232,34 @@ def collect(P, rows: List[Dict], cl, *, dry: bool) -> List[Dict]:
                                                                  fails=fails)
                 acts.append({"action": "fb_reply_blocked",
                              "note": "%s: %s" % (story, err[:200])})
-                # A PAGE THAT HAS NEVER POSTED ONCE IS NOT A PER-REVIEW DEAD END.
-                # Parking is right for "Facebook won't take a comment on THIS
-                # review", and it is how the 140x retry loop was stopped -- so
-                # the parking above is untouched. But raf's page logged 70
-                # refusals and ZERO successes on 11-16: if the cause is the page
-                # token missing pages_manage_engagement, parking every review
-                # turns a loud loop into SILENT non-delivery -- reviews go
-                # unanswered, the pass still reports success, and nothing says
-                # so. One extra act per pass says that out loud. It is a
-                # separate act, not a renamed one, so anything reading
-                # fb_reply_blocked keeps working. [[feedback_green_means_delivered]]
-                if not int(fb_state.get("ever_posted") or 0):
+                # A PAGE WITH NO SUCCESSFUL REPLY ON RECORD IS NOT A PER-REVIEW
+                # DEAD END. Parking is right for "this one review won't take a
+                # comment" and it is how the 140x retry loop was stopped, so the
+                # parking above is untouched -- but parking EVERY review on a
+                # page that has never managed one turns a loud loop into SILENT
+                # non-delivery: reviews go unanswered and the pass still reports
+                # success. One extra act says that out loud, and it is a
+                # separate act rather than a renamed one so anything reading
+                # fb_reply_blocked keeps working.
+                # [[feedback_green_means_delivered]]
+                #
+                # WHAT IT POINTS AT, corrected 2026-11-16: this note used to
+                # blame the page token's pages_manage_engagement scope. That was
+                # my guess from raf's 70-refusals-zero-successes day and it was
+                # WRONG -- Graph never lets a Page comment on a review written
+                # by a PERSON, whatever scopes the token holds (fb4c8ae; Megan
+                # checked by hand). Since that commit a refusal falls through to
+                # office_fb_browser, so reaching here with nothing ever posted
+                # means NEITHER path has worked, and the thing a person can
+                # actually act on is the browser path's sign-in.
+                if not _ever_posted(fb_state):
                     acts.append({
                         "action": "fb_page_never_posted",
-                        "note": "this page has never posted a single reply, so "
-                                "this is likely the page key's reply permission "
-                                "(pages_manage_engagement), not this one review: "
-                                + err[:200]})
+                        "note": "no reply from this page has ever landed, by API "
+                                "or by browser, so this is the page's reply path "
+                                "and not this one review -- check that Lucy is "
+                                "signed in to facebook.com as the page "
+                                "(fb_signin). Last refusal: " + err[:200]})
                 continue
             acts.append({"action": "fb_reply_" + str(status), "note": err})
             if st is not None:

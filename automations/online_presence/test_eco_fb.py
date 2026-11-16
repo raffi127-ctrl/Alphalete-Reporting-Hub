@@ -120,7 +120,28 @@ class Flow(Base):
         self.assertIn("fb_reply_blocked", names, "the review must still be parked")
         self.assertIn("fb_page_never_posted", names)
         note = [a["note"] for a in acts if a["action"] == "fb_page_never_posted"][0]
-        self.assertIn("pages_manage_engagement", note)
+        # It must point at the REPLY PATH (the browser sign-in), not at the
+        # token scope. Blaming pages_manage_engagement was my wrong guess:
+        # Graph never lets a Page comment on a person's review whatever the
+        # scopes, which fb4c8ae established and routed to the browser.
+        self.assertIn("fb_signin", note)
+        self.assertNotIn("pages_manage_engagement", note)
+
+    def test_a_page_with_history_is_not_called_never_posted(self):
+        # The cold start that would have cried wolf: `ever_posted` begins at 0
+        # at the version that introduced it, so a page whose replies landed
+        # BEFORE then must still read as having posted. raf's did, twice, on
+        # 11/15 -- the very office this warning exists for.
+        self._pass([{"open_graph_story": {"id": "s1"}, "recommendation_type": "positive"}])
+        st = self._st()
+        st.pop("ever_posted", None)
+        st["reviews"]["s1"] = {"posted": True}        # landed, not blocked
+        self.P.path("fb_review_replies.json").write_text(json.dumps(st))
+        self.assertTrue(E._ever_posted(self._st()))
+
+    def test_a_parked_review_does_not_count_as_having_posted(self):
+        self.assertFalse(E._ever_posted(
+            {"reviews": {"s1": {"posted": True, "blocked": "Permissions error"}}}))
 
     def test_a_page_that_has_posted_before_does_not_cry_connection(self):
         # One review Facebook won't take a comment on is a dead end, not a
