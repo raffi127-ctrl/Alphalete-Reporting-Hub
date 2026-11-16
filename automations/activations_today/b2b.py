@@ -35,6 +35,17 @@ _MAP = {
 }
 
 
+# Eve 11/16 (Eveliz asked "what does Y, N mean?"): the B2B log's "Tech Install"
+# is a bare Y/N. Say it the way the D2D board does, so it reads plainly and
+# gets the same row color (run.status_color: Tech yellow, Self blue).
+_TECH_WORDS = {"y": "Tech Install", "yes": "Tech Install",
+               "n": "Self Install", "no": "Self Install"}
+
+
+def install_type(raw: str) -> str:
+    return _TECH_WORDS.get((raw or "").strip().lower(), raw or "")
+
+
 def to_pull_rows(lines: List[Dict], owner: str) -> List[Dict[str, str]]:
     out = []
     for ln in lines:
@@ -42,6 +53,7 @@ def to_pull_rows(lines: List[Dict], owner: str) -> List[Dict[str, str]]:
         for key, cols in _MAP.items():
             row[key] = next((str(ln.get(c) or "").strip() for c in cols
                              if str(ln.get(c) or "").strip()), "")
+        row[pull.TECH] = install_type(row[pull.TECH])
         out.append(row)
     return out
 
