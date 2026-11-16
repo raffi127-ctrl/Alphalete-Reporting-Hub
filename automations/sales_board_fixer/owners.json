@@ -16,7 +16,7 @@
   {"name": "Salik/Hammad", "sheet_id": "1HywODqAFpXP_Vn2uRAenie8nnvRPx90yBB6-KqJqq7U", "apply": true},
   {"name": "Colten/Jairo (Miami)", "sheet_id": "1KoKMoYy7oWWPHENFFvkT4qFg5z_m4m03nhvgvVTNKRY", "tabs": ["COLTEN", "Line Up NDS", "JAIRO", "Line Up NDS JAIRO"], "format_stop": "Campaign", "apply": true},
   {"name": "Eveliz Wright (Miami B2B)", "sheet_id": "1KoKMoYy7oWWPHENFFvkT4qFg5z_m4m03nhvgvVTNKRY", "tabs": ["Sales Board Miami B2B", "Car Rides B2B"], "apply": true},
-  {"name": "Valeria Tristan", "sheet_id": "1dmZgjafsVfhjbnRkal0VSV3ne0zGxBz-PifLWPFFS7g", "apply": true},
+  {"name": "Valeria Tristan", "sheet_id": "1dmZgjafsVfhjbnRkal0VSV3ne0zGxBz-PifLWPFFS7g", "no_dates": true, "apply": true},
   {"name": "Omar Mohammad", "sheet_id": "18rMGg6ZbUC6Dh5-sn4jRWsclaGK1Oj5S8AIaftq16OQ", "week_end": true, "lanes_roll": true, "new_week_tab": true, "tz": "America/Detroit", "apply": true}
  ]
 }

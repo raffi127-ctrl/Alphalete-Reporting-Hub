@@ -607,13 +607,14 @@ def _col_of(a1: str) -> int:
 
 def run_tabs(sh, titles, stamp: str, do_apply: bool, label: str = "",
              tenure=None, kinds=None, max_fixes: int = MAX_FIXES,
-             format_stop: str = "") -> dict:
+             format_stop: str = "", dates: bool = True) -> dict:
     """kinds: only these finding kinds get written, the rest is just reported
     (owners' boards: OWNER_KINDS, no notes).
     max_fixes: per-owner cap (owners.json 'max_fixes').
     format_stop: header (day-banner row) where the board's own section ends --
     font / number-format checks skip that column and everything right of it
-    (owners.json 'format_stop')."""
+    (owners.json 'format_stop').
+    dates: False skips the wrong-dates check (owners.json 'no_dates')."""
     results = {}
     owner = kinds is not None
     for title in titles:
@@ -638,7 +639,8 @@ def run_tabs(sh, titles, stamp: str, do_apply: bool, label: str = "",
                 sh.batch_update({"requests": clear})
                 print("  notas viejas de Lucy borradas: %d" % len(clear))
         found = _drop_past(audit(t, tenure, owner), t["values"], format_stop)
-        found += _wrong_dates(t["values"], title, t.get("formulas"))
+        if dates:
+            found += _wrong_dates(t["values"], title, t.get("formulas"))
         if owner:
             held = _hold_owner_cells(found, t["values"], kinds)
             if held:
@@ -1120,7 +1122,8 @@ def run_owners(only, do_apply: bool, stamp: str) -> dict:
             try:
                 res = run_tabs(sh, tabs, stamp, on, label=o["name"] + " · ", kinds=OWNER_KINDS,
                                max_fixes=o.get("max_fixes", MAX_FIXES),
-                               format_stop=o.get("format_stop", ""))
+                               format_stop=o.get("format_stop", ""),
+                               dates=not o.get("no_dates", False))
                 break
             except Exception as e:  # noqa: BLE001
                 if attempt == 1 and "429" in str(e):
