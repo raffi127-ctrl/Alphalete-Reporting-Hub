@@ -30,6 +30,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -169,6 +170,18 @@ def pull(today: dt.date, *, want_board: bool, headless: bool = True):
                 # reading an empty grid as "nobody knocked".
                 _log("GRID FAILED -- %s: %s" % (type(e).__name__, str(e)[:200]))
                 rows = None
+                try:    # what ownerville is actually showing, for the log
+                    seen = page.evaluate(
+                        """() => ({
+                            table: !!document.querySelector('#table-dispositions'),
+                            heads: document.querySelectorAll('#table-dispositions thead th').length,
+                            processing: (document.querySelector('.dataTables_processing') || {}).innerText || '',
+                            text: (document.body.innerText || '').replace(/\\s+/g, ' ').slice(0, 400)})""")
+                    _log("GRID FAILED -- page %s | title %r | %s"
+                         % (re.sub(r"rqst=[^&]+", "rqst=…", str(page.url)),
+                            page.title(), seen))
+                except Exception as e2:  # noqa: BLE001
+                    _log("GRID FAILED -- page unreadable (%s)" % type(e2).__name__)
     _log("gaps feed: %d rep(s), %d over %d min%s"
          % (len(raw), len(over), C.GAP_THRESHOLD_MIN,
             "" if not want_board else
