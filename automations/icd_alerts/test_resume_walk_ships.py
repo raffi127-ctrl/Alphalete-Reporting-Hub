@@ -512,6 +512,27 @@ class PictureResumesAreReadOnTheMac(unittest.TestCase):
         self.assertEqual(resets, [1])
         self.assertEqual(state["recheck_for"], RP.READ_FIX)
 
+    def test_one_office_can_ask_for_a_fresh_read_once(self):
+        """Carlos 11/15: his leftover queue re-read, nobody else's."""
+        state, resets = {"recheck_for": RP.READ_FIX}, []
+        oat = mock.Mock(reset_nophone_cache=lambda: resets.append(1) or 2)
+        with mock.patch.object(RP, "_state", side_effect=lambda: dict(state)), \
+             mock.patch.object(RP, "_save_state",
+                               side_effect=lambda st: state.update(st)), \
+             mock.patch.object(RP, "RECHECK_BY_OFFICE", {"11580": "stamp-1"}):
+            RP._recheck_once_per_fix(oat, "23467")     # not asked: untouched
+            self.assertEqual(resets, [])
+            RP._recheck_once_per_fix(oat, "11580")
+            RP._recheck_once_per_fix(oat, "11580")     # once, not every run
+            self.assertEqual(resets, [1])
+            self.assertEqual(state["recheck_office"], {"11580": "stamp-1"})
+        with mock.patch.object(RP, "_state", side_effect=lambda: dict(state)), \
+             mock.patch.object(RP, "_save_state",
+                               side_effect=lambda st: state.update(st)), \
+             mock.patch.object(RP, "RECHECK_BY_OFFICE", {"11580": "stamp-2"}):
+            RP._recheck_once_per_fix(oat, "11580")     # a new stamp asks again
+        self.assertEqual(resets, [1, 1])
+
 
 class TheMacReaderReallyReads(unittest.TestCase):
     """The real thing, on a real image: macOS only, skipped elsewhere."""

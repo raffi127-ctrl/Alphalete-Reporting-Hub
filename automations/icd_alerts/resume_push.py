@@ -1161,16 +1161,36 @@ def _walled() -> bool:
 #     computers have no PDF library, so every PDF read as "no phone".
 READ_FIX = "2026-10-22-mac-pdf"
 
+# ONE OFFICE ASKS FOR A FRESH READ (Carlos 2026-11-15, 30 still waiting at
+# 8:40pm, 19 of them filed "no phone number anywhere": "it just needs to try
+# to read through the resumes again to get all the information"). A confirmed
+# no-number resume is otherwise left alone for a week. Put the office here
+# with a new stamp and its NEXT walk re-reads everyone it had written off --
+# once, the same archive-not-delete reset as READ_FIX, and no other office is
+# touched. Bump the stamp to ask again.
+RECHECK_BY_OFFICE = {"11580": "2026-11-15"}
 
-def _recheck_once_per_fix(OAT) -> None:
+
+def _recheck_once_per_fix(OAT, office: Optional[str] = None) -> None:
     st = _state()
-    if st.get("recheck_for") == READ_FIX:
+    asked = RECHECK_BY_OFFICE.get(str(office or ""))
+    done = st.get("recheck_office") or {}
+    if not isinstance(done, dict):
+        done = {}
+    fix_due = st.get("recheck_for") != READ_FIX
+    office_due = bool(asked) and done.get(str(office)) != asked
+    if not (fix_due or office_due):
         return
     try:
         OAT.reset_nophone_cache()   # renames to .bak, never deletes
     except Exception as e:  # noqa: BLE001
         _log("could not clear the no-number list: %s" % type(e).__name__)
         return
+    if office_due:
+        _log("office %s asked for a fresh read (%s) -- re-reading everyone "
+             "filed as no number" % (office, asked))
+        done[str(office)] = asked
+        st["recheck_office"] = done
     st["recheck_for"] = READ_FIX
     _save_state(st)
 
@@ -1222,7 +1242,7 @@ def _walk(page, live: bool, record: dict) -> dict:
     if not ok:
         return {"reached": True, "office": seen, "rc": 2, "why": why}
     _point_walk_here(seen, record)
-    _recheck_once_per_fix(OAT)
+    _recheck_once_per_fix(OAT, seen)
     if live:
         # The Await text's interview times follow the clock (Carlos 10/28;
         # Megan: every office that pushes). Only offices with their windows on
