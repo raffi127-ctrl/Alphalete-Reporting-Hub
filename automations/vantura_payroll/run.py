@@ -198,13 +198,14 @@ DD_DETAIL_SHEET = "ICD dd Detail"
 # Any failure here warns in the kickoff DM and never blocks the main payroll.
 # Allowlist maintained by Carlos (sent 10/7); names match by token subset so
 # "Jorge Gramajo" still hits the board's "Jorge Luis Gramajo".
-RAF_DD_REPS = (
-    "Jorge Gramajo", "Rodolfo Bazan", "Christian Perez", "Jose Pimentel Lugo",
-    "Nicholas Smedra", "Aaron De La Torre", "Diego Del Pozo Borres",
-    "Yariel Caban", "Eduardo Alvarez", "Fernando Salazar", "Gavin Natividad",
-    "Andrew De La Torre", "Danniel Alvarenga", "Luis Servellon",
-    "Jacob Ortega", "Sebastian Avellaneda",
-)
+# SWEEP OFF 2026-11-16: Carlos approved the ORG DD sweep only through the
+# WE 11/8 load (extended 10/28); allowlist emptied so _load_raf_extra
+# short-circuits ("DISABLED"). The 16 names, if it ever comes back:
+# Jorge Gramajo, Rodolfo Bazan, Christian Perez, Jose Pimentel Lugo,
+# Nicholas Smedra, Aaron De La Torre, Diego Del Pozo Borres, Yariel Caban,
+# Eduardo Alvarez, Fernando Salazar, Gavin Natividad, Andrew De La Torre,
+# Danniel Alvarenga, Luis Servellon, Jacob Ortega, Sebastian Avellaneda.
+RAF_DD_REPS = ()
 # Exact value of the DD DETAIL Owner quick-filter for Raf's slice, and the
 # filter's field name as the URL param. A value that matches no member resets
 # EVERY filter on the view (blank board, empty export) — the loader detects
