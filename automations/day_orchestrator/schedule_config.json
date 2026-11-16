@@ -209,6 +209,20 @@
   }
  },
  "reports": {
+  "rc_bank_totals_security": {
+   "on_scheduler": false,
+   "machine": "Lucy 2",
+   "_off_scheduler_note": "READ-ONLY. Business Security (Tableau SFDC Total Balance) for Carlos + Raf, printed for the Monday R&C Weekly Bank Totals (automations/rc_bank_totals). Run from a Lucy when the Hub Mac's ownerville login fails (added 2026-11-16, Maud). Writes nothing to any sheet; the numbers are filled from the Hub Mac. on_scheduler:false, runs only through `lucy rerun`.",
+   "display_name": "R&C Bank Totals - Business Security (Tableau)",
+   "source_type": "tableau",
+   "data_sources": [],
+   "command": [
+    "automations.rc_bank_totals.run"
+   ],
+   "base_args": [
+    "tableau"
+   ]
+  },
   "fiber_churn_tiers_pull": {
    "on_scheduler": false,
    "_off_scheduler_note": "Build run: pulls each owner's Fiber churn tier from the Internet Only tracker and prints it. on_scheduler:false, runs only through `lucy rerun`.",
