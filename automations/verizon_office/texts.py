@@ -171,7 +171,7 @@ def _tracker_png(day: dt.date, log=print, any_edition: bool = False) -> Tuple[Op
     finally:
         doc.close()
     page_no = hits[0] if hits else 0
-    png = et.render_vzw_png(pdf, tmp / "scorecard_p%d.png" % (page_no + 1), verbose=False, page_no=page_no)
+    png = et.render_vzw_png(pdf, tmp / ("scorecard_p%d.png" % (page_no + 1)), verbose=False, page_no=page_no)
     log("  tracker: %s edition%s, page %d%s" % (rd, "" if rd == day else " (today's not in; newest used)", page_no + 1,
                                               "" if hits else " (office not found on any page)"))
     try:                                             # Nico's row in yellow; any trouble = the plain page
