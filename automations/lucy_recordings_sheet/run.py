@@ -1277,6 +1277,9 @@ def main(argv=None) -> int:
     ap.add_argument("--yesterday-edit", metavar="TS",
                     help="with --yesterday-slack: rewrite the list already posted at this ts "
                          "instead of posting a new one")
+    ap.add_argument("--ask-owners", action="store_true",
+                    help="send the 'who's your owner?' DMs for yesterday without posting the "
+                         "group list (Eve 11/16: group DM off, the questions stay)")
     ap.add_argument("--ask-owners-only", action="store_true",
                     help="only send the 'who's your owner?' DMs for --day (no list, no sheet)")
     ap.add_argument("--day", help="with --yesterday-slack / --dry-run: list this day (YYYY-MM-DD) instead of yesterday")
@@ -1357,6 +1360,8 @@ def main(argv=None) -> int:
         # Only with the real group list, never on a test or an in-place edit.
         if a.yesterday_slack == YESTERDAY_DM and not a.yesterday_edit:
             ask_owners(unknown, day)
+    elif a.ask_owners:
+        ask_owners(unknown, day)
 
     if a.dry_run:
         cur = month_list[0] if month_list else ""

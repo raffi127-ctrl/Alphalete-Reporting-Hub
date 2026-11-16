@@ -15,9 +15,10 @@
         <!-- Month-to-date summary to the whole org (Alphalete Org Owners distro, once a day).
              Raf 2026-11-11: "yes please lets send to everyone" -> was --email (Raf + Colten + Eve). -->
         <string>--email-org</string>
-        <!-- Who sent a recording yesterday, Raf's office, posted by Lucy in Raf's group DM
-             C0CGXQFPTAQ (Raf, JD, Basil, Algemar). Eve rolled it out 2026-11-11. -->
-        <string>--yesterday-slack</string>
+        <!-- Raf's group DM list (--yesterday-slack) OFF 2026-11-16 (Eve): the list now goes in
+             the "Lucy Second Round Scorecards" thread below. The "who's your owner?" DMs to
+             reps with no owner stay on. -->
+        <string>--ask-owners</string>
         <!-- "Lucy Second Round Scorecards" thread in the owner's recruiting channel: list +
              one PDF per day this week + month picture (Raf 2026-11-16). TRIAL: Raf only, in
              #rafs-office-recruiting-11280 (Eve 2026-11-16). Every owner = drop the next two lines. -->
