@@ -568,10 +568,37 @@ def _render_html(rows, office, monday: dt.date, upto: dt.date, dest: Path,
     note_html = (f'<div style="color:#cfd6dc;font-size:12px;margin-top:6px">{note}</div>'
                  if note else "")
 
+    # `extra["brand"]` (Verizon, Carlos 2026-11-15: "call it the Verizon
+    # Revenue Board, center the title, get rid of the section at the bottom
+    # ... add that to the top left ... make it red and add the Verizon logo"):
+    # {"title", "color", "logo" (inline svg/html), "note_top": True} -- the
+    # header takes the brand colour, the title is centred, the note rides
+    # under the title, and there is NO footer. Other boards are untouched.
+    brand = (extra or {}).get("brand") or {}
+    hdr_bg = brand.get("color") or "#12181d"
+    if brand:
+        hdr_html = (f'<div class="hdr brand"><div class="hrow" style="align-items:center">'
+                    f'<div>{brand.get("logo") or ""}</div>'
+                    f'<div class="date">Week of {monday.strftime("%b")} {monday.day} — through '
+                    f'{upto.strftime("%A, %b")} {upto.day}, {upto.year}</div></div>'
+                    f'<h1 style="text-align:center;margin-top:10px">{brand.get("title") or board_name}</h1>'
+                    + (f'<div style="color:rgba(255,255,255,.85);font-size:12px;margin-top:10px">{note}</div>' if note else "")
+                    + '</div>')
+        foot_html = ""
+    else:
+        hdr_html = (f'<div class="hdr"><div class="kick">{kick}</div>'
+                    f'<div class="hrow"><h1>Revenue Board</h1>'
+                    f'<div class="date">Week of {monday.strftime("%b")} {monday.day} — through '
+                    f'{upto.strftime("%A, %b")} {upto.day}, {upto.year}</div></div></div>')
+        foot_html = (f'<div class="foot"><div><span class="lab">{kick}</span>{note_html}</div>'
+                     f'<div style="color:#cfd6dc;font-size:13px;white-space:nowrap;margin-left:16px">{len(rows)} reps on the board</div>'
+                     '</div>')
+
     html = f"""<html><head><meta charset="utf-8"><style>
  body{{margin:0;font-family:'Helvetica Neue',Arial,sans-serif;background:#f4f6f8}}
  .wrap{{width:{wrap_w}px}}
- .hdr{{background:#12181d;color:#fff;padding:30px 40px}}
+ .hdr{{background:{hdr_bg};color:#fff;padding:30px 40px}}
+ .hdr.brand .date{{color:rgba(255,255,255,.9)}}
  .kick{{color:#f0b429;font-weight:700;letter-spacing:.08em;font-size:14px}}
  .hrow{{display:flex;justify-content:space-between;align-items:baseline}}
  h1{{margin:6px 0 0;font-size:46px}}
@@ -624,10 +651,7 @@ def _render_html(rows, office, monday: dt.date, upto: dt.date, dest: Path,
  .foot .lab{{color:#f0b429;font-weight:700;margin-right:8px}}
  .mx{{margin-left:12px;color:#cfd6dc;font-size:13px}} .mx b{{color:#fff}}
 </style></head><body><div class="wrap">
- <div class="hdr"><div class="kick">{kick}</div>
-  <div class="hrow"><h1>Revenue Board</h1>
-  <div class="date">Week of {monday.strftime('%b')} {monday.day} — through
-  {upto.strftime('%A, %b')} {upto.day}, {upto.year}</div></div></div>
+ {hdr_html}
  <div class="cards">
   <div class="card"><div class="clab">OFFICE WEEK TOTAL</div>
    <div class="cval">{money(week_total)}{(extra or {}).get("week_extra") or ""}</div></div>
@@ -637,9 +661,7 @@ def _render_html(rows, office, monday: dt.date, upto: dt.date, dest: Path,
  <table><tr><th class="lh">#</th><th class="lh">REP</th>{bd_th if bd and bd.get("pos") == "before_total" else ""}<th>WEEK TOTAL</th>
  {bd_th if bd and bd.get("pos") == "after_total" else ""}{tier_th}{day_ths}{next_th}{extra_th}{bd_th if bd and bd.get("pos") not in ("after_total", "before_total") else ""}</tr>
  {''.join(trs)}</table>
- <div class="foot"><div><span class="lab">{kick}</span>{note_html}</div>
- <div style="color:#cfd6dc;font-size:13px;white-space:nowrap;margin-left:16px">{len(rows)} reps on the board</div>
- </div></div></body></html>"""
+ {foot_html}{'<div style="height:26px"></div>' if not foot_html else ''}</div></body></html>"""
 
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest.with_suffix(".html")

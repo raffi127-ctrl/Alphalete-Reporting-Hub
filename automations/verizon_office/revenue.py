@@ -137,10 +137,18 @@ def revenue_board(owner: str, sv_path: Path, target: dt.date, out_dir: Path, lay
         cards = [("ACTIVATION RATE BY WEEK-ENDING", _weeks_card(L, upto)),
                  ("0–30 DAY CHURN", _churn_card(sv_path, target)),
                  ("ADD-ON MIX THIS WEEK", mix_card)]
+        # Verizon red header, centred title, the wordmark + check top-left,
+        # the note under the title, no footer (Carlos 2026-11-15)
+        logo = ('<svg width="190" height="46" viewBox="0 -12 190 58" xmlns="http://www.w3.org/2000/svg">'
+                '<text x="0" y="32" font-family="Helvetica Neue,Arial,sans-serif" font-weight="700" '
+                'font-size="38" fill="#fff" letter-spacing="-1.5">verizon</text>'
+                '<polyline points="140,0 152,34 188,-10" fill="none" stroke="#fff" stroke-width="7" '
+                'stroke-linecap="round" stroke-linejoin="round"/></svg>')
+        brand = {"title": "Verizon Revenue Board", "color": "#cd040b", "logo": logo}
         return RB.render(rows, office, start, upto,
                          out_dir / f"verizon_revenue_board_{target.isoformat()}.png",
                          board_name="Verizon Revenue Board", tiered=True,
-                         extra={"headers": headers, "cards": cards, "no_next": True,
+                         extra={"headers": headers, "cards": cards, "no_next": True, "brand": brand,
                                 "week_extra": week_extra, "hide_reps": True,
                                 "breakdown": {"header": 'ADD-ONS<br><span class="dd">this week</span>',
                                               "pos": "before_total" if layout == "left" else "right"}}, note=note)
