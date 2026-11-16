@@ -132,8 +132,8 @@ def seed(office_key: str, week_start: dt.date, *, dry_run: bool = True,
                 log("  (nobody could be ticked as shown up: %s — the rows ARE "
                     "on the board)" % type(e2).__name__)
                 showed = None
-    book = F.workbook_for(office_key)
-    got = S.seed(book, week_start, people, dry_run=dry_run, log=log)
+    got = F.seed_anywhere(office_key, week_start, people,
+                          dry_run=dry_run, log=log)
     _tick_showed_up(office_key, week_start, showed, dry_run=dry_run, log=log)
     # A step this office does not do is not an outstanding step. Marked at
     # seed time so the office never reads as behind on work that does not
@@ -170,8 +170,8 @@ def _tick_showed_up(office_key: str, week_start: dt.date, showed,
         log("  showed up: nobody yet this week")
         return 0
     try:
-        return F.apply(F.workbook_for(office_key), week_start, "appstream",
-                       verdicts, dry_run=dry_run, log=log)
+        return F.apply_anywhere(office_key, week_start, "appstream",
+                                verdicts, dry_run=dry_run, log=log)
     except Exception as e:      # noqa: BLE001
         log("  (Showed Up was not ticked: %s: %s)"
             % (type(e).__name__, str(e)[:120]))
@@ -195,11 +195,8 @@ def _board_names(office_key: str, week_start: dt.date,
     """
     from automations.icd_onboarding import sheet as S
 
-    ws = S.open_board(F.workbook_for(office_key), create=False)
-    if ws is None:
-        return []
     out = []
-    for r in B.for_week(S.rows_of(ws.get_all_values()), week_start):
+    for r in F.rows_anywhere(office_key, week_start):
         if not (r.get("Name") or r.get("Last Name")):
             continue
         if str(r.get(B.TERMINATED_AT) or "").strip():
@@ -281,8 +278,8 @@ def from_ownerville(office_key: str, week_start: dt.date, *,
         if said:
             v["OV BG Status"] = said
         verdicts[name] = v
-    return F.apply(F.workbook_for(office_key), week_start, "ownerville",
-                   verdicts, dry_run=dry_run, log=log)
+    return F.apply_anywhere(office_key, week_start, "ownerville",
+                            verdicts, dry_run=dry_run, log=log)
 
 
 def from_blueink(office_key: str, week_start: dt.date, *,
@@ -298,12 +295,10 @@ def from_blueink(office_key: str, week_start: dt.date, *,
             % office_key)
         return 0
 
-    book = F.workbook_for(office_key)
-    ws = S.open_board(book, create=False)
-    if ws is None:
-        log("  blueink: no board yet")
+    rows = F.rows_anywhere(office_key, week_start, log=log)
+    if not rows:
+        log("  blueink: nobody on the board for that week")
         return 0
-    rows = B.for_week(S.rows_of(ws.get_all_values()), week_start)
     people = [ECO.Starter(name=("%s %s" % (r.get("Name", ""),
                                            r.get("Last Name", ""))).strip(),
                           email=r.get("Email", ""))
@@ -331,8 +326,8 @@ def from_blueink(office_key: str, week_start: dt.date, *,
         for p in people:
             if (p.email or "").strip().lower() in done:
                 verdicts[p.name] = {"Blue Ink": True}
-    return F.apply(book, week_start, "blueink", verdicts,
-                   dry_run=dry_run, log=log)
+    return F.apply_anywhere(office_key, week_start, "blueink", verdicts,
+                            dry_run=dry_run, log=log)
 
 
 def from_sterling(office_key: str, week_start: dt.date, *,
@@ -435,11 +430,7 @@ def from_contacts(office_key: str, week_start: dt.date, *,
     # else's"), which is 17 pages, 29 times a day on the half-hourly run. A
     # tick never comes off, so once everybody on the week is ticked the answer
     # cannot change and the whole read is wasted work.
-    ws = S.open_board(F.workbook_for(office_key), create=False)
-    if ws is None:
-        log("  contacts: no board yet")
-        return 0
-    rows = B.for_week(S.rows_of(ws.get_all_values()), week_start)
+    rows = F.rows_anywhere(office_key, week_start, log=log)
     live = [r for r in rows if not str(r.get(B.TERMINATED_AT) or "").strip()]
     want = [r for r in live if not str(r.get("Contact Added") or "").strip()]
     if not want:
@@ -485,8 +476,8 @@ def from_contacts(office_key: str, week_start: dt.date, *,
                       or str(r.get("Email") or "").strip())
         log("    matched 0 of the %d still missing a tick (%d of them had a "
             "phone or an email to match on)" % (len(want), askable))
-    return F.apply(F.workbook_for(office_key), week_start, "contacts",
-                   verdicts, dry_run=dry_run, log=log)
+    return F.apply_anywhere(office_key, week_start, "contacts",
+                            verdicts, dry_run=dry_run, log=log)
 
 
 

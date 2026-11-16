@@ -124,6 +124,14 @@ function doPost(e) {
                                        mode: rq.mode, payload: rq.payload}));
     }
     if (body.office_job_status) return _reply(_officeJobStatus(office, String(body.office_job_status.job_id || '')));
+    // THE ONBOARDING BOARD, WRITTEN BY THIS OFFICE'S OWN MACHINE (2026-11-16).
+    // Before the day check, like headshots and the job queue: neither call
+    // carries a day, they carry the WEEK the board is keyed on. The office key
+    // has already been checked above, so a machine can only ever touch its own
+    // board. See "the board, written by an office's MACHINE" at the bottom.
+    if (body.board_read) return _reply(_boardWeek(office, body.board_read));
+    if (body.board_seed) return _reply(_boardSeed(office, body.board_seed));
+    if (body.board_tick) return _reply(_boardTick(office, body.board_tick));
     // THE SARAPLUS CODE, handed back to the Mac that asked for it
     // (icd_alerts.code_answer, 2026-10-29). Keyed like every other call, so
     // an office only ever sees an answer to its own request.
@@ -1875,6 +1883,192 @@ function _boardColumn(office, a, colName) {
 function _boardKey(name) {
   return String(name || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
 }
+
+
+// READING IT FROM THE MACHINE is the same function the extension uses
+// (_boardWeek) on the office-key path instead of an admin session. A step has
+// to know what a cell already says before it can obey the on-only rule, and an
+// unattended run has nobody to sign in. It is a read of this office's own
+// board and nothing else, so it needs no separate implementation.
+//
+// ---------------------------------- the board, written by an office's MACHINE
+//
+// Everything above this line is the EXTENSION's half of the board: a person
+// signed in, looking at a week, typing a classroom. These two are the other
+// half -- an unattended run on the office's OWN computer, which is the whole
+// point of LucyEco and the one thing the board could not do until now.
+//
+// WHY THEY HAVE TO EXIST (Megan, 2026-11-16: "we need Raf's fully running on
+// HIS ECO machine, not the Lucys"). An office Mac has no Google access at all;
+// it reaches these sheets only through this relay. So every onboarding step
+// ran on a Lucy instead, which is why one office's board lived on shared
+// machines signed in as somebody else -- and why Lucy 2, signed in as Carlos,
+// once read 0 of 10 on Raf's people.
+//
+// THEY ARE ON THE OFFICE-KEY PATH, not the admin session: nobody is sitting
+// there to sign in at 6:30am. doPost has already checked the key against THIS
+// office before either is called, so an office can only ever seed or tick its
+// own board -- the same rule the job queue has.
+//
+// WHAT THEY MAY NOT DO is as important as what they do. Neither one creates a
+// tab, adds a column, deletes a row, clears a cell, or writes a column a
+// person owns. A machine that can only add is a machine that cannot lose
+// somebody's work.
+
+// The columns an unattended run may write, and no others. Kept in step with
+// board.py TICKS (the nine steps plus Showed Up); test_relay_board.py fails if
+// the two lists drift. Classroom, Gender and Location are deliberately absent:
+// nothing we read holds them, so a machine writing one would be inventing a
+// fact that lands on a payroll record. Terminated and Removed Because are
+// absent too -- taking somebody off the board is a person's call.
+var BOARD_MACHINE_COLUMNS = ['Contact Added', 'BG Status', 'Digi Docs',
+  'Onboarding Quizzes', 'Blue Ink', 'Headshot Photo', 'UID Request',
+  'OV BG Status', 'Owner Submit', 'Added to APEX', 'Showed Up'];
+
+// The two columns that carry an ANSWER rather than a tick, and how far along
+// each answer is. Mirrors bg_check_sync parse.RANK through board.status_rank;
+// test_relay_board.py fails if they drift. Blank, or a word not in here, is 0.
+var BOARD_STATUS_COLUMNS = ['BG Status', 'OV BG Status'];
+
+// The same green every other tick on this board is tinted, so a cell written
+// from an office's own machine looks no different from one written by a Lucy.
+// board.py GREEN is the same colour as fractions (0.71, 0.87, 0.66).
+var BOARD_GREEN = '#b5dea8';
+var BOARD_STATUS_RANK = {
+  'sent': 1, 'taken - pending': 2, 'review': 3, 'complete': 4,
+  'passed': 5, 'failed': 5, 'unperformable': 5
+};
+
+function _boardRank(text) {
+  var want = String(text == null ? '' : text).trim().toLowerCase();
+  if (!want || want === 'not sent') return 0;
+  return BOARD_STATUS_RANK[want] || 0;
+}
+
+// ADD THIS WEEK'S PEOPLE. Idempotent on purpose, because the seed runs every
+// hour: a second pass adds whoever the calendar has gained since the last one
+// and touches nothing else. Somebody brought on board at 2pm for a 3pm start
+// is on the board by 3:30 without anybody opening a sheet.
+//
+// A ROW THAT IS ALREADY THERE IS NEVER REWRITTEN -- not even its email. A hand
+// correction on the board beats what the calendar says, and the calendar is
+// the thing that is usually out of date. That also means a person the ICD
+// marked off does not come back: their row still exists, so they count as
+// already there and are skipped.
+//
+// Only the identity columns are written. Every other column belongs to the
+// step that earns it, and writing a blank would be this call claiming to know
+// something it does not.
+function _boardSeed(office, a) {
+  var sh = _boardTab(office);
+  if (!sh) return {ok: false, error: 'No onboarding board for this office.'};
+  var week = String(a.week || '').trim();
+  if (!week) return {ok: false, error: 'board_seed needs a week.'};
+  var got = _boardRows(sh);
+  if (!got.head.length) return {ok: false, error: 'The board has no header row.'};
+
+  var here = {};
+  got.rows.forEach(function (r) {
+    if (String(r['Week of'] || '').trim() !== week) return;
+    here[_boardKey((r['Name'] || '') + ' ' + (r['Last Name'] || ''))] = true;
+  });
+
+  var FIELDS = {first: 'Name', last: 'Last Name', email: 'Email',
+                phone: 'Phone', start: 'Start'};
+  var add = [], names = [], seen = {};
+  (a.people || []).forEach(function (p) {
+    var first = String(p.first || '').trim(), last = String(p.last || '').trim();
+    if (!first && !last) return;
+    var k = _boardKey(first + ' ' + last);
+    if (here[k] || seen[k]) return;          // already on this week, or sent twice
+    seen[k] = true;
+    var line = [];
+    for (var c = 0; c < got.head.length; c++) line.push('');
+    var put = function (col, val) {
+      var i = got.head.indexOf(col);
+      if (i >= 0) line[i] = val;
+    };
+    put('Week of', week);
+    Object.keys(FIELDS).forEach(function (f) {
+      put(FIELDS[f], String(p[f] == null ? '' : p[f]).trim());
+    });
+    add.push(line);
+    names.push((first + ' ' + last).trim());
+  });
+  if (!add.length) return {ok: true, added: 0, names: [], already: Object.keys(here).length};
+
+  // APPENDED AFTER EVERY WEEK ALREADY ON THE TAB. One tab holds the weeks
+  // stacked, so the new block goes at the bottom and no existing row moves.
+  var at = sh.getLastRow() + 1;
+  if (at < BOARD_FIRST_ROW) at = BOARD_FIRST_ROW;
+  sh.getRange(at, 1, add.length, got.head.length).setValues(add);
+  return {ok: true, added: add.length, names: names,
+          already: Object.keys(here).length};
+}
+
+// TICK A STEP, or advance one of the two background-check answers.
+//
+// ON ONLY, like every other tick on this board: a cell that already says
+// something is left exactly as it is, and a person who is NOT in the call is
+// never cleared. A tick is evidence that something happened and nothing here
+// is entitled to say it did not -- which is also why an unread step must send
+// nothing at all rather than send a blank.
+//
+// The two status columns ADVANCE instead, and only forwards, so a late "Sent"
+// email can never pull somebody back from Passed.
+function _boardTick(office, a) {
+  var sh = _boardTab(office);
+  if (!sh) return {ok: false, error: 'No onboarding board for this office.'};
+  var week = String(a.week || '').trim();
+  if (!week) return {ok: false, error: 'board_tick needs a week.'};
+  var colName = String(a.column || '').trim();
+  if (BOARD_MACHINE_COLUMNS.indexOf(colName) < 0) {
+    return {ok: false, error: "'" + colName + "' is not a column a machine " +
+            'may write. The steps are: ' + BOARD_MACHINE_COLUMNS.join(', ')};
+  }
+  var got = _boardRows(sh);
+  var col = got.head.indexOf(colName);
+  if (col < 0) {
+    return {ok: false, error: "The board has no '" + colName + "' column. If " +
+            'it was renamed, rename it here too: this never guesses at a position.'};
+  }
+  var isStatus = BOARD_STATUS_COLUMNS.indexOf(colName) >= 0;
+
+  // A tick carries no value, so the relay stamps the date rather than letting
+  // a caller choose one: the useful fact is when WE saw it, in this sheet's
+  // own time zone, and a machine with a wrong clock cannot write a wrong date.
+  var stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(),
+                                   'MM/dd/yyyy');
+  var want = {};
+  if (isStatus) {
+    Object.keys(a.values || {}).forEach(function (k) {
+      want[_boardKey(k)] = String(a.values[k] == null ? '' : a.values[k]).trim();
+    });
+  } else {
+    (a.names || []).forEach(function (n) { want[_boardKey(n)] = stamp; });
+  }
+
+  var wrote = [], held = 0;
+  got.rows.forEach(function (r) {
+    if (String(r['Week of'] || '').trim() !== week) return;
+    var k = _boardKey((r['Name'] || '') + ' ' + (r['Last Name'] || ''));
+    if (!(k in want)) return;
+    var val = want[k];
+    if (!val) return;                                  // nothing to say
+    var have = String(r[colName] || '').trim();
+    if (have) {
+      if (!isStatus) { held++; return; }                // written once, never again
+      if (_boardRank(val) <= _boardRank(have)) { held++; return; }   // forwards only
+    }
+    var cell = sh.getRange(r.__row, col + 1);
+    cell.setValue(val);
+    cell.setBackground(BOARD_GREEN);
+    wrote.push((r['Name'] || '') + ' ' + (r['Last Name'] || ''));
+  });
+  return {ok: true, column: colName, changed: wrote.length, names: wrote,
+          left_alone: held};
+}
+
 
 function _admApexWeek(sess, office, a) {
   // "Run new starts -> Apex for the week of X" on the office's OWN computer:

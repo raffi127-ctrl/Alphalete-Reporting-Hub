@@ -14,7 +14,9 @@
          inside an XML comment. It ends the comment early and makes the plist
          unparseable to plistlib even though plutil still accepts it, which
          shows up as a Hub card that cries wolf forever. The sibling
-         blueink-docs-monday.plist has exactly that defect today. -->
+         blueink-docs-daily.plist carried exactly that defect from the day it
+         was written until 2026-11-16, which is why its label resolved to
+         no-plist and its Hub card was never wired to the run. -->
 
     <!-- Path is the laptop placeholder; on Lucy 3, install_agent.py rewrites
          it to that machine's repo path. -->

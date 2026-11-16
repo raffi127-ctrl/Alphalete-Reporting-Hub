@@ -602,6 +602,12 @@ def _main(argv=None) -> int:
                     help="actually send. Without it nothing leaves the building.")
     ap.add_argument("--dry-run", action="store_true",
                     help="explicit no-op (the default anyway)")
+    ap.add_argument("--office", default="",
+                    help="read that office's own onboarding board instead of "
+                         "Raf's D2D OBCL tab. This is how every office other "
+                         "than Alphalete gets documents at all: nobody else "
+                         "has an OBCL tab, the board we build IS theirs "
+                         "(Megan, 2026-11-16). Left out, nothing changes.")
     ap.add_argument("--tab", default="",
                     help="a specific week's tab, e.g. 'D2D OBCL 8.24'. "
                          "Default: the newest dated tab.")
@@ -675,11 +681,40 @@ def _main(argv=None) -> int:
     if args.sync_status:
         return _sync_status(workbook)
 
-    ws = current_tab(workbook, args.tab)
-    raw_values = ws.get_all_values()
-    people = parse_tab(raw_values, ws.title)
-    for line in describe_other_week_charts(raw_values, ws.title):
-        print(line)
+    if args.office:
+        # THE OFFICE'S OWN BOARD. Same NewStart shape, so the ledger, the
+        # duplicate guard and the send below are untouched -- only where the
+        # cohort came from changes. No "other week charts" note: the board has
+        # one row per person per week and no stacked charts to mis-read.
+        from automations.blueink_docs import board_roster as BOARD
+        from automations.icd_onboarding import board as OB
+        week = OB.week_start_of(dt.date.today())
+        people = BOARD.from_board(args.office.strip().lower(), week)
+        ws, raw_values = None, []
+        source = "%s's onboarding board, week of %s" % (
+            args.office.strip().lower(), OB.week_label(week))
+        # READ ONLY FOR NOW, DELIBERATELY. Everything above this point is
+        # settled: the cohort, the eligibility rule, who is held and why. What
+        # is NOT yet done is the other end of the send -- `_handle_held`,
+        # `_sync_completed` and `_send_via_ui` all write back into a chart's
+        # own cells, and a board has none of them. Rather than thread None
+        # through a path that mails people and cannot unmail them, the preview
+        # is the whole feature today: look at it, confirm the list is the list,
+        # and the send gets wired next with its own one-person verification
+        # (Megan's standing rule, and a Blue Ink bundle launches on creation).
+        if args.send:
+            print("--office previews only, for now. The list below is what "
+                  "WOULD be sent; the sending half still writes back into a "
+                  "D2D OBCL chart's cells and has to be pointed at the board "
+                  "first. Run it without --send to see the list.")
+            return 2
+    else:
+        ws = current_tab(workbook, args.tab)
+        raw_values = ws.get_all_values()
+        people = parse_tab(raw_values, ws.title)
+        for line in describe_other_week_charts(raw_values, ws.title):
+            print(line)
+        source = ws.title
     before = len(people)
     people = collapse_duplicates(people)
     if before != len(people):
@@ -689,7 +724,7 @@ def _main(argv=None) -> int:
         want = args.only.strip().lower()
         people = [p for p in people if want in p.name.lower()]
         if not people:
-            print(f"Nobody matching {args.only!r} on {ws.title!r}.")
+            print(f"Nobody matching {args.only!r} on {source!r}.")
             return 1
 
     if args.sync_completed:
@@ -719,7 +754,7 @@ def _main(argv=None) -> int:
                     dry_run=not args.slack)
             raise
         print(f"Checked off {n} completed packet(s) in {config.COL_BLUEINK!r} "
-              f"on {ws.title!r}.")
+              f"on {source!r}.")
         # AFTER the ticks, and API-only: the browser route can't read far
         # enough back to know an old tick is right, and a wrong untick fights
         # whoever ticked the box.
@@ -748,10 +783,20 @@ def _main(argv=None) -> int:
         return 0
 
     if args.highlight_only:
+        # Tinting a chart's first-name cell green. There is no such cell on the
+        # board: its `Blue Ink` column is the onboarding run's to tick, and
+        # nothing in this report may write it.
+        if ws is None:
+            print("--highlight-only tints a D2D OBCL chart. The board has no "
+                  "cell to tint — its Blue Ink column is ticked by "
+                  "`icd_onboarding.run --only blueink`.")
+            return 2
         return _highlight_only(workbook, ws, people)
 
-    # Anyone the parser didn't see is someone who silently gets no docs.
-    stray = unparsed_email_rows(raw_values, people, ws.title)
+    # Anyone the parser didn't see is someone who silently gets no docs. Only
+    # a hand-kept chart can hide somebody this way: the board has one row per
+    # person and no sections to reword, so there is nothing to miss.
+    stray = (unparsed_email_rows(raw_values, people, ws.title) if ws else [])
     if stray:
         print(f"⚠️  {len(stray)} row(s) hold an email but weren't read as "
               f"people. If a section was added or reworded, they are being "
@@ -764,7 +809,7 @@ def _main(argv=None) -> int:
     # who has already been sent, and which address the canary should ask about.
     ledger_rows = ledger.read(workbook)
     sent_map = ledger.already_sent(workbook, rows=ledger_rows)
-    to_send, already = _report(people, sent_map, ws.title)
+    to_send, already = _report(people, sent_map, source)
 
     # Carried over from an earlier week: our ledger already has their packet,
     # so they are correctly not sent again -- but they still have to SHOW. The
@@ -904,7 +949,11 @@ def _main(argv=None) -> int:
                 "(Google Sheets quota): %s. They are delivered -- nothing to "
                 "re-send -- just missing from the log."
                 % (len(unlogged), config.LEDGER_TAB, ", ".join(unlogged)))
-        if any(not pp.blueink_col for pp in to_send):
+        # Only about a chart's own column. On the board path nothing here
+        # tints anything -- the board's `Blue Ink` column is ticked by the
+        # onboarding run, which is the one place allowed to write it -- so a
+        # missing blueink_col is expected rather than a warning.
+        if ws and any(not pp.blueink_col for pp in to_send):
             warnings.append(
                 "No *%s* column on `%s`, so sent packets could not be marked "
                 "green or checked off. The sends themselves went out fine."

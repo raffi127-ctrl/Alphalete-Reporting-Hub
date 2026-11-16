@@ -29,7 +29,7 @@ Activity rows and this report has never written one. A card that looked watched
 and was structurally invisible.
 
 Five more had the same shape and were only quiet because they fire on one
-weekday: blueink_docs_monday, leaders_call_mon, new_start_followup_sat,
+weekday: leaders_call_mon, new_start_followup_sat,
 dd_bulletin_thu, and (by a different route) org_board_box_repull.
 
 No network, no Sheets — these read the committed plists off disk.
@@ -117,7 +117,7 @@ class NotAReportMeansTheRowDeleteSticks(unittest.TestCase):
     """_NOT_A_REPORT's docstring promises a plain row-delete STICKS."""
 
     def test_the_declared_substeps_are_internal(self):
-        """The four listed by hand. blueink_docs_monday and dd_bulletin_thu are
+        """The four listed by hand. blueink_docs_daily and dd_bulletin_thu are
         NOT here on purpose — the plist now resolves them to their real report
         (blueink_docs / dd_bulletin), which is the better mechanism: it wires
         the pill to the right card instead of only suppressing a wrong one."""
@@ -131,7 +131,7 @@ class NotAReportMeansTheRowDeleteSticks(unittest.TestCase):
         _INFRA_AGENTS (the plist label), never on is_internal — so a job listed
         in _NOT_A_REPORT was carded straight back on the next sync."""
         PHANTOM = {"blueink_completed_sweep", "org_board_box_repull",
-                   "blueink_docs_monday", "leaders_call_mon",
+                   "blueink_docs_daily", "leaders_call_mon",
                    "new_start_followup_sat", "dd_bulletin_thu"}
         real = hc.existing_card_ids
         hc.existing_card_ids = lambda: real() - PHANTOM   # pretend they're gone

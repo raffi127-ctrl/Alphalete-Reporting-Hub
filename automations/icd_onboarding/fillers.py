@@ -225,6 +225,103 @@ def workbook_for(office_key: str):
         % office_key)
 
 
+# ------------------------------------- reaching the board from either machine
+
+def on_office_machine(office_key: str = "") -> bool:
+    """Is this the office's OWN computer, the one with no Google access?
+
+    True only where a LucyEco enrolment for that office is installed, which is
+    exactly the machine that cannot open a Sheet. A Lucy has an admin key and
+    no office enrolment, so it answers False and keeps using gspread -- and so
+    does a dev checkout, which is why nothing changes for a hand run.
+    """
+    from automations.icd_onboarding import relay_board as RB
+    return RB.available(office_key)
+
+
+def rows_anywhere(office_key: str, week_start, *, log=print) -> List[Dict]:
+    """That office's rows for the week, read whichever way this machine can.
+
+    Every step reads the board before it writes it -- to obey on-only, to skip
+    anyone marked off, and to know who is even on the week. On a Lucy that is a
+    gspread read; on the office's own computer there is no such thing, so it
+    goes through the relay. An empty list means the week has nobody on it, and
+    a board that could not be read raises rather than answering "nobody"
+    ([[feedback_empty_means_proven_zero]]).
+    """
+    from automations.icd_onboarding import relay_board as RB
+    from automations.icd_onboarding import sheet as S
+
+    if on_office_machine(office_key):
+        return B.for_week(RB.week(office_key, week_start), week_start)
+    ws = S.open_board(workbook_for(office_key), create=False)
+    if ws is None:
+        log("  no %s tab on this workbook yet" % B.TAB)
+        return []
+    return B.for_week(S.rows_of(ws.get_all_values()), week_start)
+
+
+def apply_anywhere(office_key: str, week_start, source: str,
+                   verdicts, *, dry_run: bool = True, log=print) -> int:
+    """`apply`, aimed at whichever way THIS machine can reach the board.
+
+    On a Lucy that is gspread, unchanged. On the office's own computer it is
+    the relay, which is the whole point: an ICD's onboarding should run on the
+    ICD's machine, against the ICD's own logins (Megan, 2026-11-16).
+
+    The on-only rule is applied twice on the relay path, on purpose. Here,
+    because `plan` needs to know what a cell already says to handle an ask
+    that must not replace an ask; and again at the relay, which refuses a
+    rewrite whatever a caller sends. Two machines could be ticking the same
+    week at once during a changeover, and the write is the only place that can
+    settle it.
+    """
+    from automations.icd_onboarding import relay_board as RB
+
+    if not on_office_machine(office_key):
+        return apply(workbook_for(office_key), week_start, source, verdicts,
+                     dry_run=dry_run, log=log)
+
+    rows = B.for_week(RB.week(office_key, week_start), week_start)
+    got = plan(rows, source, verdicts)
+    log("%s, week of %s (through the relay):" % (source, B.week_label(week_start)))
+    log(describe(got))
+    if dry_run:
+        log("  (dry run — nothing written)")
+        return 0
+    n = 0
+    for column, people in got.items():
+        if column in B.STATUS_STEPS:
+            out = RB.advance(office_key, week_start, column, people,
+                             dry_run=False, log=log)
+        else:
+            out = RB.tick(office_key, week_start, column, list(people),
+                          dry_run=False, log=log)
+        n += int(out.get("changed") or 0)
+    log("  ticked %d" % n)
+    return n
+
+
+def seed_anywhere(office_key: str, week_start, people, *,
+                  dry_run: bool = True, log=print):
+    """`sheet.seed`, aimed the same way. Returns whatever that path returns.
+
+    Both sides are idempotent and both skip somebody already on the week, so
+    an hourly seed behaves the same wherever it runs.
+    """
+    from automations.icd_onboarding import relay_board as RB
+    from automations.icd_onboarding import sheet as S
+
+    if not on_office_machine(office_key):
+        return S.seed(workbook_for(office_key), week_start, people,
+                      dry_run=dry_run, log=log)
+    out = RB.seed(office_key, week_start, people, dry_run=dry_run, log=log)
+    # Same shape sheet.seed answers with, so callers counting `add` do not
+    # have to know which machine they are on.
+    return {"add": list(out.get("names") or []),
+            "keep": int(out.get("already") or 0), "left": []}
+
+
 def alert(office_key: str, week_start, source: str,
           asks: Mapping[str, str], *, dry_run: bool = True, log=print) -> int:
     """Write what a step is WAITING ON A PERSON FOR into its own column.
