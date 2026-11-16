@@ -54,6 +54,7 @@ THREAD_ITEMS = (
     ("revenue_board", "Revenue Board", "Verizon Revenue Sales Board"),
     ("churn_by_rep", "Churn Rates by Rep", "Verizon Churn Rates by Rep"),
     ("churn_tab", "VERIZON CHURN", "Verizon Churn (0-30 day)"),
+    ("disc_before_approval", "Disconnected Before Approval", "Verizon Disconnected Before Approval"),
     ("comp_grid", "Verizon Wireless Comp Grid", "Verizon Wireless Comp Grid"),
 )
 

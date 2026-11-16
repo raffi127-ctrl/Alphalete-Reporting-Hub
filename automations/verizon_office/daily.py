@@ -157,6 +157,13 @@ def main(argv=None) -> int:
             item = ("image", (png, f":wolf: *VERIZON CHURN* — {today.month}/{today.day}"))
             at = next((i + 1 for i, (k, pl) in enumerate(steps) if k == "image" and "Churn Rates by Rep" in pl[1]), len(steps))
             steps.insert(at, item)
+            # ... and the lines that disconnected BEFORE approval, its own
+            # picture right after (Carlos 2026-11-15: "people should be aware
+            # of those sales still")
+            from automations.verizon_office import order_log_tab as OL
+            una = CH.unapproved_png(OL.lines(Path(sv)), today,
+                                    out / f"verizon_disc_before_approval_{today.isoformat()}.png", owner=office.owner)
+            steps.insert(at + 1, ("image", (una, f":no_entry: *Disconnected Before Approval* — {today.month}/{today.day}")))
         except Exception as e:  # noqa: BLE001
             print("⚠ Verizon Churn tab picture skipped: %s" % e)
     post(office, today, steps)

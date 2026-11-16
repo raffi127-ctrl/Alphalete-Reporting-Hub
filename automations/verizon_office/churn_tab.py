@@ -209,6 +209,61 @@ def rolloff_rows(lines, today: dt.date) -> List[dict]:
     return out
 
 
+UNAPPROVED_HEADERS = ("Customer", "Sales Rep", "Order Date", "Activation Date", "Disconnect Date",
+                      "Days Active", "Port / New", "Device", "Plan", "Status Reason")
+
+
+def unapproved_disconnects(lines) -> List[dict]:
+    """Every line that ACTIVATED and then DISCONNECTED without Credico ever
+    putting an approval date on it -- newest disconnect first. Outside the
+    churn math and never paid, but the office should still see them (Carlos
+    2026-11-15: "people should be aware of those sales still")."""
+    out = []
+    for l in lines:
+        a, c = _d(l.get("Activation Date")), _d(l.get("Cancel Date"))
+        if a and is_dead(l) and not is_approved(l):
+            out.append({
+                "customer": l.get("Customer", ""), "rep": l.get("Rep", ""),
+                "order_date": _d(l.get("Order Date")), "posted": a, "disc_date": c,
+                "days_active": (c - a).days if c else None,
+                "kind": ("BYOD" if (l.get("Device") or "").strip().upper() == "BYOD"
+                         else "port" if l.get("Type") == "Port" else "new"),
+                "device": l.get("Device", ""), "plan": l.get("Plan", ""), "reason": l.get("Status Reason", ""),
+            })
+    return sorted(out, key=lambda x: (x["disc_date"] or dt.date.min, x["customer"]), reverse=True)
+
+
+def unapproved_png(lines, today: dt.date, out_path: Path, owner: str = "") -> Path:
+    """The list as its own picture in the tab's look (navy header, boxed),
+    for the thread and the chats."""
+    import html as H
+    from automations.b2b_metrics.rep_boards import _capture_board
+    rows = unapproved_disconnects(lines)
+    ths = "".join(f"<th>{h}</th>" for h in UNAPPROVED_HEADERS)
+    trs = []
+    for x in rows:
+        cells = [x["customer"], x["rep"], _fmt(x["order_date"]), _fmt(x["posted"]), _fmt(x["disc_date"]),
+                 "" if x["days_active"] is None else "%dd" % x["days_active"], x["kind"], x["device"], x["plan"], x["reason"]]
+        trs.append("<tr>" + "".join(f"<td>{H.escape(str(c))}</td>" for c in cells) + "</tr>")
+    if not rows:
+        trs.append(f'<tr><td colspan="{len(UNAPPROVED_HEADERS)}" style="color:#666">(no line has disconnected before approval)</td></tr>')
+    sub = ("%s%d line%s activated, then disconnected before Credico put an approval date on them — "
+           "outside the churn math and not paid, as of %s %d"
+           % ((owner + " — ") if owner else "", len(rows), "" if len(rows) == 1 else "s", today.strftime("%B"), today.day))
+    htm = f"""<html><head><meta charset='utf-8'><style>
+ body{{margin:0;font-family:'Helvetica Neue',Arial,sans-serif}}
+ .board{{display:inline-block;padding:14px;background:#fff}}
+ .title{{background:#1f3b64;color:#fff;text-align:center;font-weight:700;font-size:22px;padding:10px 18px}}
+ .sub{{color:#555;text-align:center;font-weight:700;font-size:15px;padding:8px 0}}
+ table{{border-collapse:collapse;margin:0 auto;border:2px solid #000}}
+ th{{background:#1f3b64;color:#fff;font-size:13px;padding:7px 12px;border:1px solid #999}}
+ td{{font-size:13px;padding:6px 12px;border:1px solid #999;text-align:center;white-space:nowrap}}
+ td:first-child{{text-align:left;font-weight:700}}
+</style></head><body><div class="board"><div class="title">VERIZON — DISCONNECTED BEFORE APPROVAL</div>
+<div class="sub">{H.escape(sub)}</div><table><tr>{ths}</tr>{"".join(trs)}</table></div></body></html>"""
+    return _capture_board(htm, Path(out_path), width=1700)
+
+
 def credico_tier(sv_path: Path, today: dt.date) -> dict:
     """Where the office sits on Credico's calendar window (comp.office_tier):
     {tier, why, window: (w0, w1) or None, pay}."""
@@ -306,6 +361,22 @@ def build_grid(lines, today: dt.date, tier: dict) -> Tuple[List[List[str]], dict
     if not roll:
         row(["(no disconnects in the 0-30 window)"])
     marks["tables"].append((h, len(g)))
+    row()
+    # DISCONNECTED BEFORE APPROVAL (Carlos 2026-11-15): activated, dropped
+    # before any approval date -- not in the churn above, never paid, listed
+    # so nobody loses sight of them.
+    una = unapproved_disconnects(lines)
+    b2 = row(["DISCONNECTED BEFORE APPROVAL — %d line%s (activated, then dropped before Credico put an approval date on them; "
+              "outside the churn math, not paid)" % (len(una), "" if len(una) == 1 else "s")])
+    marks["bands"].append(b2)
+    h2 = row(list(UNAPPROVED_HEADERS))
+    marks["headers"].append(h2)
+    for x in una:
+        row([x["customer"], x["rep"], _fmt(x["order_date"]), _fmt(x["posted"]), _fmt(x["disc_date"]),
+             "" if x["days_active"] is None else "%dd" % x["days_active"], x["kind"], x["device"], x["plan"], x["reason"]])
+    if not una:
+        row(["(no line has disconnected before approval)"])
+    marks["tables"].append((h2, len(g)))
     row()
     rep_rows = [("OFFICE TOTAL (all reps)", office["0-30"]["rate"], office["0-30"]["activated"], office["0-30"]["sold"])]
     rep_rows += sorted(((r, v["0-30"]["rate"], v["0-30"]["activated"], v["0-30"]["sold"]) for r, v in reps.items()

@@ -384,7 +384,7 @@ def main(argv=None) -> int:
     ap.add_argument("--sv", type=Path, help="local Sales Verification xlsx instead of the inbox")
     ap.add_argument("--date", help="YYYY-MM-DD (default today)")
     ap.add_argument("--board", choices=["activation_one", "activation", "revenue_board", "rep_tiers", "churn_tab", "payout",
-                                        "approval_rate", "approval_by_week", "churn_by_rep"],
+                                        "approval_rate", "approval_by_week", "churn_by_rep", "disc_before_approval"],
                     default="activation_one",
                     help="churn_tab = a screenshot of the VERIZON CHURN tab (sandbox; --prod-tab for the master)")
     ap.add_argument("--prod-tab", action="store_true", help="with --board churn_tab: the Vantura Master's tab")
@@ -407,6 +407,10 @@ def main(argv=None) -> int:
     elif a.board == "payout":
         from automations.verizon_office import payout as PO
         got = PO.render_png(out_dir / f"verizon_payout_{target.isoformat()}.png", today=target)
+    elif a.board == "disc_before_approval":
+        from automations.verizon_office import churn_tab as CH, order_log_tab as OL
+        got = CH.unapproved_png(OL.lines(Path(sv)), target, out_dir / f"verizon_disc_before_approval_{target.isoformat()}.png",
+                                owner=office.owner)
     elif a.board in ("approval_rate", "approval_by_week", "churn_by_rep"):
         from automations.verizon_office import thread_boards as TB
         h, rows = TB.nds_rows(Path(sv), date_col="Approval Date")
@@ -436,6 +440,7 @@ def main(argv=None) -> int:
                            "approval_rate": ":chart_with_upwards_trend: *Approval Rate by Rep* — %s (preview)" % day,
                            "approval_by_week": ":calendar: *Approval Rate by Week-Ending* — %s (preview)" % day,
                            "churn_by_rep": ":chart_with_downwards_trend: *Churn Rates by Rep* — %s (approved lines, preview)" % day,
+                           "disc_before_approval": ":no_entry: *Disconnected Before Approval* — %s (preview)" % day,
                            }.get(a.board, ":moneybag: *%s* — %s (preview)" % (a.board, day))
                 try:
                     r = S.dm_user_with_file(p, user=user, comment=comment)

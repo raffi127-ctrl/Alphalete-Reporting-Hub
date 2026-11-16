@@ -88,6 +88,12 @@ class ChurnTabTest(unittest.TestCase):
         self.assertEqual((s["base"], s["disc"]), (4, 2))         # Q_8 (activated, disconnected, no approval) counts nowhere
         self.assertNotIn("HAL Y", [r["customer"] for r in CT.rolloff_rows(self.lines, TODAY)])
 
+    def test_disconnected_before_approval_list(self):
+        una = CT.unapproved_disconnects(self.lines)
+        self.assertEqual([(x["customer"], x["rep"], x["days_active"]) for x in una], [("Hal Y", "Will Bautista", 3)])
+        grid, marks = CT.build_grid(self.lines, TODAY, CT.credico_tier(self.sv, TODAY))
+        self.assertTrue(any(r[0].startswith("DISCONNECTED BEFORE APPROVAL — 1 line") for r in grid))
+
     def test_credico_tier_neutral_under_15(self):
         t = CT.credico_tier(self.sv, TODAY)
         self.assertEqual((t["tier"], t["pay"]), (4, 190))
