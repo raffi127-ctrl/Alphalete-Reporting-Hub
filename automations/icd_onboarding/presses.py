@@ -58,6 +58,24 @@ def _ov_program(office_key: str) -> str:
     return (getattr(o, "ov_program", "") if o else "") or ""
 
 
+# NOT READY IS NOT A FAILURE (Eve 2026-11-16). The board hands the press
+# everybody with a blank column -- it does not know who is ready -- so most
+# refusals on any day just mean "not yet": sections still open, background
+# check still running, or not on the campaign yet (the board is seeded by who
+# is SCHEDULED to start; Digi Docs adds them nearer their start). On 11/15 the
+# first live pass for raf posted 10 of those to the corrections channel as if
+# they needed doing by hand, and it would repeat daily. Only a refusal from
+# somebody OwnerVille showed as READY -- the confirm box, the save, the
+# confirming re-open -- is something a person has to finish.
+NOT_READY = ("not every section is done",
+             "background check is not COMPLETED",
+             "not found in OwnerVille")
+
+
+def is_not_ready(detail: str) -> bool:
+    return any(m in str(detail) for m in NOT_READY)
+
+
 def candidates(office_key: str, week_start: dt.date, column: str) -> List[str]:
     """Who on this week's board has `column` still blank and is not marked off.
 
@@ -170,7 +188,7 @@ def _press(office_key: str, week_start: dt.date, *, column: str, what: str,
             log("  %s %s: %s" % (what.upper(), outcome.upper(), detail))
             if outcome in ("submitted", "requested", "already"):
                 verdicts[name] = {column: True}
-            elif real and outcome == "refused":
+            elif real and outcome == "refused" and not is_not_ready(detail):
                 failures.append((name, detail.split(": ", 1)[-1]))
 
     if real:
