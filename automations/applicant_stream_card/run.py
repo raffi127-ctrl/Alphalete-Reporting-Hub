@@ -38,6 +38,7 @@ REPLACED = {"WINDOW TOO SHORT", "GHOST TOO SOON"}
 # Template checks the card does not grade. Megan 2026-11-12, on "Add Reply
 # STOP to opt out to 30 templates": "we're not doing this anywhere".
 NOT_GRADED = {"NO OPT-OUT"}
+SAVED_MIN = 3      # sent to this many people = likely a saved reply
 TYPO_LIMIT = 10
 
 
@@ -260,13 +261,19 @@ def merge_slips(errs):
         # end ("...application!Bertha"), and the name on file doesn't
         # always match the one typed in.
         body = re.sub(r"^(Hi|Hey|Hello)[, ]+[A-Z][a-z]+", r"\1 {name}", body)
-        body = re.sub(r"([!?.])[A-Z][a-z]+\s*$", r"\1{name}", body)
+        body, glued = re.subn(r"([!?.])(?:[A-Z][a-z]+|\{name\})\s*$",
+                              r"\1{name}", body)
         detail = re.sub(r"[!?.][A-Z][a-z]$", "", e.get("detail") or "")
         key = (e.get("sender"), e.get("kind"), detail, body)
         if key not in groups:
             groups[key] = dict(e, sent=0)
             order.append(key)
         groups[key]["sent"] += e.get("sent") or 1
+        # Each copy ends with that applicant's own name glued on: a saved
+        # reply whose last name box is the APPLICANT's (Megan 2026-11-15:
+        # "did they retype the applicant's name at the end?" - no).
+        if glued and re.match(r"(Hi|Hey|Hello)[, ]+\{name\}", body):
+            groups[key]["name_at_end"] = True
     return [groups[k] for k in order]
 
 
@@ -344,14 +351,25 @@ def gather(oid, use_sheets=True):
         msgs = IA.message_findings(office) or {}
         median_reply = msgs.get("median_reply")
         humans = msgs.get("human_senders")
+        # Megan 2026-11-15: only a slip that went to SAVED_MIN+ people (so
+        # it's likely a saved reply) goes up top; every other one lives on
+        # that recruiter's own scorecard at the bottom (Typing and Grammar).
         errs = sorted(merge_slips(msgs.get("errors") or []),
                       key=lambda e: -(e.get("sent") or 1))
-        for e in errs[:TYPO_LIMIT]:
+        saved = [e for e in errs if (e.get("sent") or 1) >= SAVED_MIN]
+        for e in saved[:TYPO_LIMIT]:
             words.append(F.recruiter_text(e))
-        if len(errs) > TYPO_LIMIT:
-            words_skip.append("{} more typing slips on the recruiter "
-                              "scorecards".format(len(errs) - TYPO_LIMIT))
+
         for e in msgs.get("coaching") or []:
+            # Megan 2026-11-15: one-off shouting goes the way of one-off
+            # typos - to the recruiter's scorecard, not up top.
+            if "capitals" in (e.get("issue") or "").lower() and (
+                    (e.get("count") or 0) < SAVED_MIN
+                    # one capitalized word (TODAY) is on purpose (Megan
+                    # 2026-11-15: "this one is intentional")
+                    or all(len((x.get("hit") or "").split()) <= 1
+                           for x in e.get("examples") or [{}])):
+                continue
             words.append(F.house_rule(e))
     else:
         words_skip.append("recruiter texts not checked — no SMS log")

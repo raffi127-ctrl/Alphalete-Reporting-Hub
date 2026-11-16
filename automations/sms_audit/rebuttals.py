@@ -267,8 +267,10 @@ def shouts(text):
 # "base salary is determined on your background/experience" line, so this
 # is a wording bookers are being taught, and it needs naming wherever it
 # appears rather than quietly passing as a correct pay answer.
-SAYS_BASE = re.compile(r"\bbase\s+(weekly\s+)?(pay|salary|rate)\b|"
-                       r"\bbase\b(?=[^.?!]{0,30}\b(pay|salary))", re.I)
+# "touch base on the pay" is not a base pay (Megan 2026-11-15, 11280).
+SAYS_BASE = re.compile(r"(?<!touch\s)\bbase\s+(weekly\s+)?(pay|salary|rate)\b|"
+                       r"(?<!touch\s)\bbase\b(?=[^.?!]{0,30}\b(pay|salary))",
+                       re.I)
 
 
 def says_base_pay(text):
@@ -293,6 +295,15 @@ OFFICE_ADDRESS = {
     # Confirmed by Megan in her own words, 2026-09-27.
     "11580": "1901 N Highway 360, Suite 610, Grand Prairie, Texas 75050",
 }
+# A temporary spot the office is ALSO using, on top of its real address.
+# Megan 2026-11-16: 11280's recruiters send people to 6865 Windcrest Dr,
+# Suite 200, Plano, and that is right for now ("it's temporary") — the
+# Irving address stays the office's own. Texts naming either one pass.
+# Take an entry out when the office stops using the temporary spot.
+TEMP_ADDRESSES = {
+    "11280": ["6865 Windcrest Drive, Suite 200, Plano, Texas 75024"],
+}
+
 # \b on BOTH sides of the suffix. Without the leading one, "Rd" matched
 # the "rd" inside "forward", so "Meeting ID: 293 507 7152 We look forward
 # to speaking with you" was read as a street address and counted against
@@ -361,12 +372,12 @@ def wrong_address(office, text, when=None):
     m = _STREET.search(body)
     if not m:
         return None
-    if m.group(1) not in want:
-        return m.group(0).strip()
     unit = _UNIT.search(body)
-    if unit and unit.group(2).lower() not in want.lower():
-        return m.group(0).strip()
-    return None
+    for ok in [want] + TEMP_ADDRESSES.get(office, []):
+        if m.group(1) in ok and not (
+                unit and unit.group(2).lower() not in ok.lower()):
+            return None
+    return m.group(0).strip()
 
 
 # ---------------------------------------------------------------- Zoom

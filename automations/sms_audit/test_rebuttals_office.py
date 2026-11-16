@@ -103,6 +103,13 @@ class StreetBoundary(unittest.TestCase):
         self.assertIsNone(RB.wrong_address(
             "11280", "I look forward to it, 1234 is my code"))
 
+    def test_the_temporary_plano_spot_passes(self):
+        # Megan 2026-11-16: Windcrest Dr is temporary but correct.
+        self.assertIsNone(RB.wrong_address(
+            "11280", "We are at 6865 Windcrest Dr Ste 200 Plano, TX 75024"))
+        self.assertTrue(RB.wrong_address(
+            "11280", "We are at 6865 Windcrest Dr Ste 210 Plano, TX 75024"))
+
     def test_a_genuinely_wrong_address_still_fires(self):
         self.assertTrue(RB.wrong_address(
             "11280", "Our office is at 3100 Premier Drive, Suite 232 "

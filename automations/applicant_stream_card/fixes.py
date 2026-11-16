@@ -402,8 +402,24 @@ def recruiter_text(entry):
     who = entry.get("sender") or "a recruiter"
     saved = sent > 1
     fix = slip_fix(entry.get("kind"), entry.get("detail"))
-    steps = (["This exact wording went to {} people, so it is a saved "
-              "reply. In any applicant's text box click Load Template, "
+    if saved and entry.get("name_at_end"):
+        # Megan 2026-11-15: the saved reply greets them by name AND glues
+        # their name on the end - the end box was meant to be the sign-off.
+        return {"source": "Recruiter texts", "kind": "TYPO",
+                "title": "Applicant's name at the end \u2014 {}".format(who),
+                "where": who, "found": entry.get("body") or "",
+                "mark": slip_mark(entry.get("kind"), entry.get("detail")),
+                "why": "The text already greets the applicant by name, then "
+                       "glues their name onto the last word again. It reads "
+                       "like a mistake, not a sign-off.",
+                "steps": ["\u27e6This exact wording went to {} people\u27e7, so it "
+                          "is a saved reply. In any applicant's text box click "
+                          "Load Template and find it. At the end, swap the "
+                          "applicant's name for your own name (or delete "
+                          "it), with a space after the \u201c!\u201d. Then "
+                          "Save Template over it.".format(sent)]}
+    steps = (["\u27e6This exact wording went to {} people\u27e7, so it is "
+              "a saved reply. In any applicant's text box click Load Template, "
               "find it, {}, then Save Template over it.".format(sent, fix)]
              if saved else
              ["Show {} the text above: {}.".format(who, fix)])
@@ -418,13 +434,18 @@ def recruiter_text(entry):
 
 def house_rule(entry):
     """A who_to_talk_to entry: wrong address, no suite, "base", etc."""
+    who = entry.get("sender") or "them"
+    n = entry.get("count") or 1
+    exs = entry.get("examples") or []
+    ex = exs[0] if exs else {}
     return {"source": "Recruiter texts", "kind": "HOUSE RULE",
             "title": "{} — {}".format(entry.get("issue"),
                                            entry.get("sender")),
             "where": entry.get("sender") or "",
-            "found": "{} text{} — e.g. {}".format(
-                entry.get("count"), "" if entry.get("count") == 1 else "s",
-                (entry.get("example") or "")[:180]),
+            # Megan 2026-11-15: "this needs to show where it says base" -
+            # one real text with the part marked, not just the hit.
+            "found": ex.get("body") or entry.get("example") or "",
+            "mark": ex.get("hit") or entry.get("example"),
             # Megan 2026-11-15: not "Raf/Megan's rulings" - a wrong link or
             # address is checked against the office's saved profile.
             "why": ("It doesn't match this office's saved profile, so "
@@ -435,11 +456,13 @@ def house_rule(entry):
                                  entry.get("issue") or "", re.I)
                     else "It goes against our house rules for what goes out "
                          "to applicants."),
-            "steps": ["If it came from a saved reply, click Load Template "
+            "steps": ["\u27e6This came up in {} text{}.\u27e7 One is shown "
+                      "above; {}'s scorecard below has the rest.".format(
+                          n, "" if n == 1 else "s", who),
+                      "If it came from a saved reply, click Load Template "
                       "in the text box, fix the saved copy once, and Save "
-                      "Template over it.",
-                      "Otherwise walk {} through the rule with the example "
-                      "shown.".format(entry.get("sender") or "them")]}
+                      "Template over it. Otherwise walk {} through the rule "
+                      "with the example shown.".format(who)]}
 
 
 # --- the AI-reply rules, run on the office's templates too ----------------

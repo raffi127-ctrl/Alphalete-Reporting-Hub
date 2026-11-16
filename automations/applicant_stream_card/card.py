@@ -844,7 +844,7 @@ table.grouped tr.g1 td{background:rgba(170,140,70,.12)}
 table.grouped tr.g2 td{background:rgba(90,130,180,.10)}
 table.grouped tr.g3 td{background:rgba(150,110,160,.10)}
 details.drv>summary{flex-wrap:wrap;gap:.2em .6em}
-details.drv .note{margin:.2em 0 .5em;color:#666;font-size:.92em}
+.note{margin:.2em 0 .5em;color:#666;font-size:.92em}
 .advice ul{margin:.3em 0 0;padding-left:1.2em}
 .advice li{margin:.2em 0}
 .advice{background:#f1faf4;border:1px solid #9fd3b5;border-radius:10px;padding:.7em .9em;margin:.4em 0 .6em}
@@ -1067,6 +1067,10 @@ def _by_recruiter(items):
                             _e(_slip_kind(i).capitalize()), _fix_body(i))
                         for i in mine)))
     ln["items"] = []
+    html_.append("<p class='note'>Only typos sent to 3 or more people "
+                 "(likely a saved reply) are listed here. One-off typos are "
+                 "on each recruiter's own scorecard below, under Typing and "
+                 "Grammar.</p>")
     ln["extra_html"] = "".join(html_)
     ln["short"] = "{} to fix across {} {}".format(
         sum(len(v) for v in people.values()), len(people),
@@ -1190,7 +1194,7 @@ def _fix_body(i):
     rec = F.recommend(i)
     if rec:
         out.append("<p class='why'><b>We'd recommend:</b> {}</p>".format(
-            _e(rec)))
+            _red(rec)))
     link = F.howto(i)
     if link:
         out.append("<p><a class='opts-link' href='{}' target='_blank' "

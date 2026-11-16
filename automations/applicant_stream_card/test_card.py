@@ -609,6 +609,10 @@ class SetupPageTest(unittest.TestCase):
         got = R.merge_slips(errs)
         self.assertEqual(len(got), 1)
         self.assertEqual(got[0]["sent"], 3)
+        self.assertTrue(got[0].get("name_at_end"))
+        item = F.recruiter_text(got[0])
+        self.assertIn("swap the applicant's name for your own name",
+                      item["steps"][0])
 
     def test_advice_only_says_what_is_real(self):
         st = {"drivers": [
