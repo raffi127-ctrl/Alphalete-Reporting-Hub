@@ -609,9 +609,11 @@
   },
   {
     "key": "miguel",
-    "label": "Miguel's Local Office (channel from ECO sign-up)",
+    "label": "Miguel's Local Office",
     "owner": "Miguel Zaragoza",
-    "channel_ids": [],
+    "channel_ids": [
+      "C0CJ2RPD3EZ"
+    ],
     "trackers": [
       "att_country",
       "att_country_internet_only",
