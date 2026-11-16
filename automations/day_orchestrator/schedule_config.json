@@ -8434,6 +8434,28 @@
    "verify": null,
    "report_id": "fiber-tier-bonus"
   },
+  "fiber_tier_bonus_cleanup": {
+   "close_on": "exit_zero",
+   "on_scheduler": false,
+   "display_name": "Fiber Tier Bonus - retract test DMs (one-off)",
+   "_note": "ONE-OFF (Eve 2026-11-16): the --post-to test went out for all 19 offices into Eve's DM; she asked to keep only one. Arg: the user id whose DM to clean (U088E2KJEV8). Preview by default; --apply deletes Lucy's own Tier Bonus test posts from today there, keeping Raf's pair. Must run on the Lucy that posted (Lucy 4): chat.delete only works on the sender's own messages.",
+   "command": [
+    "automations.fiber_tier_bonus.cleanup_test_dm"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": []
+   },
+   "data_sources": [],
+   "depends_on": [],
+   "after": [],
+   "freshness_target": null,
+   "priority": "P3",
+   "source_type": "slack",
+   "timeout_minutes": 10,
+   "verify": null,
+   "report_id": "fiber-tier-bonus-cleanup"
+  },
   "fiber_activation_rate": {
    "close_on": "exit_zero",
    "order": 26.05,
