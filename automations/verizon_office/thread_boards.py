@@ -364,12 +364,24 @@ CHURN_BANDS = ((0.05, "Green"), (0.10, "Yellow"), (1.01, "Red"))
 CHURN_WINDOWS = (("0-30 Day", 0, 30), ("31-60 Day", 31, 60))
 
 
-def churn(owner, header, rows, target, out_dir) -> Tuple[Path, int]:
-    """Churn Rates by Rep (Carlos's "What's missing", 2026-11-07): of the lines
-    ACTIVATED 0-30 / 31-60 days ago, how many have since disconnected
-    (Credico: Status Code CAN with a Disc. line status). Office total + one
-    row per rep, the same table Carlos's B2B "CHURN RATES BY REP" uses, cells
-    (disconnected/activated) + rate.
+def approved_keys(header, arows) -> set:
+    """{(order, line)} of every line carrying Credico's Approval Date, off
+    rows built with nds_rows(..., date_col="Approval Date")."""
+    i = {c: header.index(c) for c in header}
+    return {(r[i["sp.SPM Number"]], r[i["spe.TN"]]) for r in arows if r[i["DTR Active Date"]]}
+
+
+def churn(owner, header, rows, target, out_dir, approved: Optional[set] = None) -> Tuple[Path, int]:
+    """Churn Rates by Rep (Carlos's "What's missing", 2026-11-07): of the
+    APPROVED lines activated 0-30 / 31-60 days ago, how many have since
+    disconnected (Credico: Status Code CAN with a Disc. line status). Office
+    total + one row per rep, the same table Carlos's B2B "CHURN RATES BY REP"
+    uses, cells (disconnected/approved) + rate.
+
+    `approved` = approved_keys(...): only those lines count, in the base and
+    as disconnects (Carlos 2026-11-15: "It's the disconnects divided by the
+    approved activations"; Credico's SOW scores churn on lines that show an
+    approval date). None = every activated line (the pre-11/15 board).
 
     From the daily Sales Verification, not the weekly Compliance Flags,
     whose churn columns Credico has been leaving blank. That file carries
@@ -384,6 +396,8 @@ def churn(owner, header, rows, target, out_dir) -> Tuple[Path, int]:
     for r in rows:
         act = N._parse_date(r[i["DTR Active Date"]])
         if not act:
+            continue
+        if approved is not None and (r[i["sp.SPM Number"]], r[i["spe.TN"]]) not in approved:
             continue
         age = (target - act).days
         oldest = max(oldest, age)
@@ -411,7 +425,7 @@ def churn(owner, header, rows, target, out_dir) -> Tuple[Path, int]:
     out = out_dir / f"verizon_churn_{target.isoformat()}.png"
     render_table_png("CHURN RATES BY REP",
                      f"{owner} — {target:%B} {target.day}, {target.year} "
-                     f"(disconnected/activated, by days since activation{partial})",
+                     f"(disconnected/approved lines, by days since activation{partial})",
                      cols, table, out)
     return out, len(table) - 1
 
@@ -491,7 +505,7 @@ def build(owner: str, sv_path: Path, target: dt.date, out_dir: Path) -> List[Dic
         elif slug == "activation_by_week":
             paths = [activation_by_week(owner, aheader, arows, target, out_dir)[0]]
         elif slug == "churn":
-            paths = [churn(owner, header, rows, target, out_dir)[0]]
+            paths = [churn(owner, header, rows, target, out_dir, approved=approved_keys(aheader, arows))[0]]
         elif slug in ("revenue_board", "activation_revenue", "rep_tiers"):
             # Priced on Credico's comp grid (verizon_office.comp); these read
             # the file themselves -- they need fields the NDS rows don't carry.

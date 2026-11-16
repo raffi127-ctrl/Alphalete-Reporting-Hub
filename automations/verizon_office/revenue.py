@@ -215,7 +215,7 @@ def _churn_card(sv_path: Path, target: dt.date) -> str:
     s = CH.churn_summary(OL.lines(Path(sv_path)), target)["All Lines"]
     pct = ("%.1f%%" % (100 * s["rate"])) if s["rate"] is not None else "—"
     return (f'<span style="color:#b3261e">{pct}</span> <span style="font-size:14px;color:#5b6770;font-weight:500">'
-            f'{s["disc"]} of {s["base"]} activated in the last 30 days</span>')
+            f'{s["disc"]} of {s["base"]} approved lines activated in the last 30 days</span>')
 
 
 _ACT_COLS = [("Rep Name", "rep", "left"), ("Activated $", "posted", "center"),
@@ -384,7 +384,7 @@ def main(argv=None) -> int:
     ap.add_argument("--sv", type=Path, help="local Sales Verification xlsx instead of the inbox")
     ap.add_argument("--date", help="YYYY-MM-DD (default today)")
     ap.add_argument("--board", choices=["activation_one", "activation", "revenue_board", "rep_tiers", "churn_tab", "payout",
-                                        "approval_rate", "approval_by_week"],
+                                        "approval_rate", "approval_by_week", "churn_by_rep"],
                     default="activation_one",
                     help="churn_tab = a screenshot of the VERIZON CHURN tab (sandbox; --prod-tab for the master)")
     ap.add_argument("--prod-tab", action="store_true", help="with --board churn_tab: the Vantura Master's tab")
@@ -407,11 +407,14 @@ def main(argv=None) -> int:
     elif a.board == "payout":
         from automations.verizon_office import payout as PO
         got = PO.render_png(out_dir / f"verizon_payout_{target.isoformat()}.png", today=target)
-    elif a.board in ("approval_rate", "approval_by_week"):
+    elif a.board in ("approval_rate", "approval_by_week", "churn_by_rep"):
         from automations.verizon_office import thread_boards as TB
         h, rows = TB.nds_rows(Path(sv), date_col="Approval Date")
-        fn = TB.activation_rate if a.board == "approval_rate" else TB.activation_by_week
-        got = fn(office.owner, h, rows, target, out_dir)[0]
+        if a.board == "churn_by_rep":
+            got = TB.churn(office.owner, *TB.nds_rows(Path(sv)), target, out_dir, approved=TB.approved_keys(h, rows))[0]
+        else:
+            fn = TB.activation_rate if a.board == "approval_rate" else TB.activation_by_week
+            got = fn(office.owner, h, rows, target, out_dir)[0]
     else:
         fn = {"activation_one": activation_revenue_one, "activation": activation_revenue,
               "revenue_board": revenue_board, "rep_tiers": rep_tiers}[a.board]
@@ -430,6 +433,7 @@ def main(argv=None) -> int:
                            "revenue_board": ":moneybag: *Verizon Revenue Board* — %s (preview)" % day,
                            "approval_rate": ":chart_with_upwards_trend: *Approval Rate by Rep* — %s (preview)" % day,
                            "approval_by_week": ":calendar: *Approval Rate by Week-Ending* — %s (preview)" % day,
+                           "churn_by_rep": ":chart_with_downwards_trend: *Churn Rates by Rep* — %s (approved lines, preview)" % day,
                            }.get(a.board, ":moneybag: *%s* — %s (preview)" % (a.board, day))
                 try:
                     r = S.dm_user_with_file(p, user=user, comment=comment)

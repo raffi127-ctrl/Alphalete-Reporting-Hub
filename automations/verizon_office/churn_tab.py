@@ -19,7 +19,7 @@ disqualified. Credico's own notice is the official placement; this tab shows
 where the live number lands.
 
 WHAT THE TAB SHOWS (one Credico Order Detail pull, same as the Order Log):
-  * the top-left box: lines ACTIVATED in the last 30 days (rolling, by
+  * the top-left box: APPROVED lines activated in the last 30 days (rolling, by
     activation date) and how many of those have DISCONNECTED = churn %, for
     All Lines / Port (non-BYOD) / BYOD / New (non-BYOD), with pending counts
     and the 0-30 / 31-60 day APPROVAL rates (sold by order-date age,
@@ -117,20 +117,27 @@ def is_approved(l) -> bool:
 
 
 def churn_units(lines, today: dt.date, days: int = WINDOW_DAYS) -> List[Dict[str, str]]:
-    """Lines ACTIVATED inside the rolling window (activation date within the
-    last `days` days, today included)."""
+    """The churn base: APPROVED lines activated inside the rolling window
+    (activation date within the last `days` days, today included). Credico's
+    SOW: "Churn will be calculated based on Compensable Sales ... that is
+    activated/installed and shows approval date" -- a line that activated,
+    never got an approval date and disconnected is outside the churn math
+    entirely (Carlos 2026-11-15: "Our churn is not the disconnects divided by
+    the activations. It's the disconnects divided by the approved
+    activations.")."""
     cutoff = today - dt.timedelta(days=days)
     out = []
     for l in lines:
         a = _d(l.get("Activation Date"))
-        if a and cutoff <= a <= today and is_activated(l):
+        if a and cutoff <= a <= today and is_activated(l) and is_approved(l):
             out.append(l)
     return out
 
 
 def churn_summary(lines, today: dt.date) -> Dict[str, dict]:
-    """{row label: {base, disc, rate, pending}} for the box rows. Pending =
-    sold in the last 30 days, not activated, not cancelled."""
+    """{row label: {base, disc, rate, pending}} for the box rows. Base = the
+    approved lines activated in the window; pending = sold in the last 30
+    days, no approval date yet, not cancelled / disconnected."""
     units = churn_units(lines, today)
     cutoff = today - dt.timedelta(days=WINDOW_DAYS)
     out = {}
@@ -138,7 +145,7 @@ def churn_summary(lines, today: dt.date) -> Dict[str, dict]:
         mine = [u for u in units if cls is None or line_class(u) == cls]
         disc = sum(1 for u in mine if is_dead(u))
         pend = sum(1 for l in lines if (cls is None or line_class(l) == cls)
-                   and not _d(l.get("Activation Date"))
+                   and not is_approved(l)
                    and (l.get("Line Status") or "").lower() not in ("cancelled", "canceled", "disconnected")
                    and _d(l.get("Order Date")) and cutoff <= _d(l.get("Order Date")) <= today)
         out[label] = {"base": len(mine), "disc": disc,
@@ -246,11 +253,12 @@ def build_grid(lines, today: dt.date, tier: dict) -> Tuple[List[List[str]], dict
     marks = {"bands": [], "headers": [], "churn_cells": [], "rate_cells": [], "quick_rows": [],
              "tables": [], "box": None, "tiers": None, "rep_list": None, "status_row": None}
     row([TITLE])
-    row(["Days left = (Activation Date + 30) − Today. Box = lines activated in the last 30 days and how many "
-         "have disconnected since; approval rates by order-date age (approved = Credico has put an Approval Date on the line). "
+    row(["Days left = (Activation Date + 30) − Today. Box = APPROVED lines activated in the last 30 days and how many "
+         "have disconnected since (Credico scores churn on lines that show an approval date; an unapproved line that "
+         "disconnects is outside it); approval rates by order-date age (approved = Credico has put an Approval Date on the line). "
          "Red rows = disconnected within 7 days of activating."])
     row()
-    hdr = row(["Product", "Activations", "Disconnects", "Churn %", "0-30 Day Approval Rate", "31-60 Day Approval Rate"])
+    hdr = row(["Product", "Approved Lines", "Disconnects", "Churn %", "0-30 Day Approval Rate", "31-60 Day Approval Rate"])
     marks["headers"].append(hdr)
     # "Tier", not "Credico Tier" (Carlos 2026-11-15: "just call it tiers")
     g[hdr - 1][7:11] = ["Tier", "0-30 Day Churn", "$ / new port line", ""]
@@ -284,7 +292,7 @@ def build_grid(lines, today: dt.date, tier: dict) -> Tuple[List[List[str]], dict
     row()
     rep_top = len(g) + 1
     s_all = summary["All Lines"]
-    b = row(["ALL LINES — 0–30 day churn %s (%d of %d activated in the last 30 days disconnected)"
+    b = row(["ALL LINES — 0–30 day churn %s (%d of %d approved lines activated in the last 30 days disconnected)"
              % (_pct(s_all["rate"]) or "0.00%", s_all["disc"], s_all["base"])])
     marks["bands"].append(b)
     h = row(list(LIST_HEADERS))
@@ -432,7 +440,7 @@ def push(sv_path: Path, *, today: Optional[dt.date] = None, sheet_id: str = SAND
     _retry(lambda: sh.batch_update({"requests": _format_requests(ws.id, marks)}))
     s = churn_summary(lines, today)["All Lines"]
     where = "PROD" if sheet_id == PROD_SHEET_ID else "sandbox"
-    log("[verizon] %s tab (%s): %d activated / %d disconnected in the last 30 days (%s), Credico %s"
+    log("[verizon] %s tab (%s): %d approved lines activated / %d disconnected in the last 30 days (%s), Credico %s"
         % (TAB, where, s["base"], s["disc"], _pct(s["rate"]) or "0%", tier["why"]))
     return {"rows": len(grid), "summary": s, "tier": tier}
 
