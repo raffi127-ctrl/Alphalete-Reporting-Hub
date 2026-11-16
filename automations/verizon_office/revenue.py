@@ -32,7 +32,7 @@ def _week_lines(all_lines, start, end):
     return [l for l in all_lines if l["sold"] and start <= l["sold"] <= end]
 
 
-def revenue_board(owner: str, sv_path: Path, target: dt.date, out_dir: Path, layout: str = "left") -> Path:
+def revenue_board(owner: str, sv_path: Path, target: dt.date, out_dir: Path, layout: str = "right") -> Path:
     """Carlos's Vantura Revenue Board, Verizon's week: Sun-Sat columns by SALE
     date, the weekly activation-bonus tier, and the week total."""
     from automations.vantura_revenue_board import run as RB
@@ -339,7 +339,7 @@ def main(argv=None) -> int:
                     default="activation_one",
                     help="churn_tab = a screenshot of the VERIZON CHURN tab (sandbox; --prod-tab for the master)")
     ap.add_argument("--prod-tab", action="store_true", help="with --board churn_tab: the Vantura Master's tab")
-    ap.add_argument("--layout", choices=["right", "left"], default="left",
+    ap.add_argument("--layout", choices=["right", "left"], default="right",
                     help="revenue_board: the add-on breakdown column far right, or LEFT of Week Total (Carlos 2026-11-15)")
     ap.add_argument("--dm", help="Slack user id(s) to DM the picture to, as Lucy (comma-separated)")
     a = ap.parse_args(argv)
