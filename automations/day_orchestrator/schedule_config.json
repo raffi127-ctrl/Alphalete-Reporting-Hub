@@ -13564,6 +13564,28 @@
    "verify": null,
    "machine": "Lucy 2"
   },
+  "refresh_ownerville": {
+   "on_scheduler": false,
+   "_note": "RECOVERY LEVER, not a scheduled report. Mints a FRESH OwnerVille session on ONE machine and writes it to that machine's storage_state, by running appstream_autorenew --refresh-ownerville in its own process. Added 2026-11-16 (Megan) after Lucy 3's OwnerVille session died mid-morning and took the whole Digi Docs cohort with it: 26 of 52 adds failed with 20s Locator.wait_for timeouts, because every page came back logged-out and the 'Add Sales Rep' modal never rendered. NOTHING SELF-HEALED. digi_docs DID try to re-mint and the re-mint declined, on purpose: refresh_ownerville cannot start a second sync_playwright inside a report that is already driving a browser ('Playwright Sync API inside the asyncio loop'), so it returns False and lets the caller report its own error. That is correct behaviour and must stay -- the gap was that no lever existed to do the mint OUTSIDE a report, so the dead session sat there for three hours while every five-minute send tick failed the same way. This entry is that lever. ALWAYS pass --machine: the session is per-machine, so an unpinned run would heal the wrong box. machine is null for exactly that reason, NOT because it is movable. It opens a real browser window (headless=False is deliberate -- a profile that is already signed in auto-resumes and the 'fresh' session is the stale one again) and takes about 90 seconds, most of it the two 30s Cloudflare pauses that resources/lucy-login-standard.md says never to shorten. It changes that machine's OwnerVille IDENTITY to whatever ownerville-creds.json holds, so check the machine's row in that doc first -- Lucy 2 is Carlos, every other Lucy is Raf.",
+   "display_name": "Re-mint OwnerVille session (one machine)",
+   "source_type": "browser",
+   "data_sources": [],
+   "command": [
+    "automations.shared.appstream_autorenew"
+   ],
+   "base_args": [
+    "--refresh-ownerville"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P2",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 10,
+   "machine": null
+  },
   "digi_docs": {
    "on_scheduler": false,
    "_note": "ARMED 2026-08-26 (Megan). Monday 7:45am on LUCY 3 via launchd com.alphalete.digi-docs-monday -> deploy/digi_docs_monday.sh. on_scheduler false and weekdays [] to match blueink_docs (Mon 7:30, Lucy 2) and the headshots jobs (Mon 8:30, Lucy 3): a self-scheduled launchd report is NOT the 4am orchestrator's to run, and `lucy rerun` finds it here regardless — the two digi docs probes are off-scheduler and rerun fine. Setting on_scheduler true instead makes it show up as a phantom '[on-demand]' row in hub_coverage that none of its siblings have. The Hub card carries self_scheduled true, which is what keeps it out of the due-today tallies. The nightly orchestrator-schedule-guard re-bootstraps every timed job, so launchd cannot hold a stale fire time. Install once per machine: `lucy rerun install_digi_docs_monday_agent --machine \"Lucy 3\"`. base_args --both --live runs phase 2 (add) then phase 3 (send); generating a bundle IS the send and cannot be undone.",
