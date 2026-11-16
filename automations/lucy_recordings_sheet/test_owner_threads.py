@@ -41,6 +41,9 @@ class ChannelFor(unittest.TestCase):
     def test_hammad_goes_to_salik_channel(self):
         self.assertEqual(ot.channel_for("Hammad Haque", self.CH, self.SAME), ("Salik Mallick", "C3"))
 
+    def test_extra_channel_for_owner_without_first_round_channel(self):
+        self.assertEqual(ot.channel_for("Valeria Tristan"), ("Valeria Tristan", "C0C70G1ENPK"))
+
     def test_unknown_owner(self):
         self.assertEqual(ot.channel_for("Nobody Here", self.CH, self.SAME), ("", ""))
 

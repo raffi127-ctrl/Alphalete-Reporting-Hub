@@ -34,6 +34,11 @@ PDF_DIR = ROOT / "output" / "lucy_scorecard_pdfs"
 # Bot owner name -> the name the channel list uses, when they differ.
 # Raf 11/13: everything of Salik's goes under Hammad; the channel is Salik's.
 CHANNEL_ALIASES = {"hammad haque": "Salik Mallick"}
+# Owners with no 1st Round Scorecards channel. Kept HERE, not in office_post.CHANNELS,
+# so adding one doesn't also start the 1st round post in that channel.
+EXTRA_CHANNELS = {
+    "Valeria Tristan": "C0C70G1ENPK",     # Eve 2026-11-16
+}
 PAUSE_S = 1.2
 
 
@@ -55,7 +60,7 @@ def channel_for(owner: str, channels: dict | None = None, same: dict | None = No
     owner, Frank Matos' finds 'Frank Matos'."""
     if channels is None:
         from automations.first_round_scorecards.office_post import CHANNELS, SAME_OFFICE
-        channels, same = CHANNELS, SAME_OFFICE
+        channels, same = {**CHANNELS, **EXTRA_CHANNELS}, SAME_OFFICE
     same = same or {}
     alias = CHANNEL_ALIASES.get(re.sub(r"\s+", " ", owner.strip().lower()))
     if alias and alias in channels:
