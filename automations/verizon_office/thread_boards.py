@@ -87,7 +87,15 @@ def nds_rows(sv_path: Path, date_col: str = "Activation Date") -> Tuple[List[str
     ws = openpyxl.load_workbook(sv_path, data_only=True, read_only=True)["Order Detail"]
     rows = [r for r in ws.iter_rows(values_only=True) if any(c is not None for c in r)]
     hi = next(i for i, r in enumerate(rows) if r and "Sales Agent Name" in r)
-    ix = {str(c): i for i, c in enumerate(rows[hi]) if c}
+    # FIRST column of a name wins, like order_log_tab._find. A dict
+    # comprehension kept the LAST: Credico's Order Detail repeats "LineID"
+    # and the second copy is mostly blank -- lines with a blank id all keyed
+    # (order, "") and one approved line approved its whole order
+    # (Churn Rates by Rep 30/366 vs the tab's 23/324, 2026-11-15).
+    ix: Dict[str, int] = {}
+    for i, c in enumerate(rows[hi]):
+        if c is not None and str(c).strip():
+            ix.setdefault(str(c).strip(), i)
     for need in ("Sales Agent Name", "Signed Date", "Product Category", "Status Code",
                  "Current Line Status", "Cancel Date", "Activation Date", "Order Number",
                  "LineID", "Product Name"):
@@ -134,11 +142,22 @@ def nds_rows(sv_path: Path, date_col: str = "Activation Date") -> Tuple[List[str
     # order log's merged lines gave 23/324). Last occurrence wins, the way
     # order_log_tab.merge keeps the newest state for a (order, line) key.
     uniq: Dict[Tuple[str, str], List[str]] = {}
+    keep: List[List[str]] = []
     for r in out:
-        uniq[(r[6], r[7])] = r                      # sp.SPM Number, spe.TN
-    if len(uniq) != len(out):
-        print("  nds_rows: %d row(s) -> %d unique line(s)" % (len(out), len(uniq)), flush=True)
-    return list(HEADER), list(uniq.values())
+        if not r[7]:                                # no line id: never collapse
+            keep.append(r)
+            continue
+        if (r[6], r[7]) in uniq:                    # sp.SPM Number, spe.TN
+            keep[keep.index(uniq[(r[6], r[7])])] = r
+        else:
+            keep.append(r)
+        uniq[(r[6], r[7])] = r
+    if len(keep) != len(out):
+        print("  nds_rows: %d row(s) -> %d unique line(s)" % (len(out), len(keep)), flush=True)
+    blank = sum(1 for r in keep if not r[7])
+    if blank:
+        print("  nds_rows: %d line(s) with no LineID" % blank, flush=True)
+    return list(HEADER), keep
 
 
 def activation_rate(owner: str, header, rows, target: dt.date, out_dir: Path) -> Tuple[Path, int]:
