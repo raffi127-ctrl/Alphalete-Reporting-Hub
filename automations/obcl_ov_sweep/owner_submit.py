@@ -217,6 +217,7 @@ def submit_one(page, name: str, *, dry_run: bool = True,
     if os_state in SUBMITTED_STATES:
         return "already", f"{matched}: Owner Submit already {os_state}"
     bad = blockers(st)
+    service_caught_up = False
     # SERVICE IS OURS TO FINISH, and only SERVICE. If it is the one thing in
     # the way, pick it, save, and read the page again -- a sweep that refused
     # on a radio nobody has to think about is a sweep that leaves people
@@ -227,12 +228,22 @@ def submit_one(page, name: str, *, dry_run: bool = True,
         if fixed is not None:
             st, modal = fixed
             bad = blockers(st)
+            # SAY IT, EVERY TIME. SERVICE belongs to the digi docs SEND
+            # (Megan, 2026-11-16: "when we send the digi docs is when the
+            # service is supposed to be checked"); this is a catch-up for
+            # people whose send missed it, not a second owner of the step.
+            # A catch-up that stayed quiet would let the send path rot --
+            # the sweep would paper over it person by person and the only
+            # sign would be that it never stopped doing so.
+            service_caught_up = True
             os_state = st.get("OWNER SUBMIT", "")
             if os_state in SUBMITTED_STATES:
                 return "already", f"{matched}: Owner Submit already {os_state}"
     if bad:
         return "refused", f"{matched}: not every section is done — " \
                           f"{', '.join(bad)}"
+    note = (" (SERVICE was still open — the digi docs send should have "
+            "ticked it)" if service_caught_up else "")
     if st.get("BACKGROUND CHECK") != "COMPLETED":
         return "refused", f"{matched}: background check is not COMPLETED"
     # OPEN THE SECTION, THEN LOOK FOR THE BOX -- not the other way round.
@@ -302,6 +313,6 @@ def submit_one(page, name: str, *, dry_run: bool = True,
         return "refused", f"{matched}: saved, but could not re-open to " \
                           f"confirm ({type(e).__name__}) — CHECK BY HAND"
     if after in SUBMITTED_STATES:
-        return "submitted", f"{matched}: Owner Submit now {after}"
+        return "submitted", f"{matched}: Owner Submit now {after}{note}"
     return "refused", f"{matched}: saved, but Owner Submit reads " \
                       f"{after or 'nothing'} — CHECK BY HAND"

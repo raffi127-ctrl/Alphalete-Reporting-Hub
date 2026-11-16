@@ -164,3 +164,26 @@ class TheServiceRadioCannotBeConfusedWithOutOfFootprint(unittest.TestCase):
         src = inspect.getsource(OV.tick_attestations)
         bg = src[:src.index("SERVICE")]
         self.assertNotIn("exact=True", bg)
+
+
+class TheServiceCatchUpIsNeverSilent(unittest.TestCase):
+    """Megan, 2026-11-16: "when we send the digi docs is when the service is
+    supposed to be checked." The send owns it. The sweep only catches up for
+    people whose send missed it, and every catch-up is a sign the send path
+    needs looking at -- so it says so on the person's own line."""
+
+    def test_the_submitted_line_carries_the_note(self):
+        src = code()
+        self.assertIn("Owner Submit now {after}{note}", src)
+
+    def test_the_note_names_the_send_as_the_owner(self):
+        src = code()
+        self.assertIn("digi docs send should have", src)
+
+    def test_the_flag_starts_false(self):
+        """A rep who needed no catch-up must not carry the note."""
+        src = code()
+        body = src[src.index("def submit_one"):]
+        self.assertIn("service_caught_up = False", body)
+        self.assertLess(body.index("service_caught_up = False"),
+                        body.index("service_caught_up = True"))
