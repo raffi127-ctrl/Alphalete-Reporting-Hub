@@ -96,14 +96,37 @@ class SearchStaysOnResAttTest(unittest.TestCase):
     photo can legitimately be anywhere."""
 
     def test_digi_docs_passes_only_res_att(self):
+        """EVERY find_rep call here scopes the search — asked of the syntax,
+        not of a literal string.
+
+        It used to count occurrences of "campaigns=[config.ADD_CAMPAIGN]" and
+        expect exactly two. That broke the day the bundle-generating call site
+        was widened to `campaigns=[campaign or config.ADD_CAMPAIGN]` so an
+        office could pass its own ov_program — a correct change that left the
+        campaign just as firmly pinned. The test failed for months of literal
+        mismatch while the behaviour it guards was fine, which is the way a
+        source-reading assertion goes stale and starts getting ignored.
+
+        What actually matters is that no call walks every campaign: with
+        Charter Communications – D2D added to the dropdown on 2026-11-16 there
+        are now three, and a same-surname hit on one of the others would
+        report "already in OwnerVille" for somebody who is not on ours — so
+        they would never be added, and never get their documents.
+        """
+        import ast
         import inspect
         from automations.digi_docs import ownerville
-        src = inspect.getsource(ownerville)
-        # Both call sites — the "already there?" probe and the one that goes on
-        # to generate a bundle — must scope the search.
-        self.assertEqual(2, src.count("campaigns=[config.ADD_CAMPAIGN]"),
-                         "both find_rep calls must pin the campaign")
-        self.assertNotIn("find_rep(page, name, verbose=verbose)\n", src)
+        tree = ast.parse(inspect.getsource(ownerville))
+        calls = [n for n in ast.walk(tree)
+                 if isinstance(n, ast.Call)
+                 and getattr(n.func, "id", getattr(n.func, "attr", ""))
+                 == "find_rep"]
+        self.assertTrue(calls, "no find_rep call found — did it get renamed?")
+        for call in calls:
+            kw = {k.arg for k in call.keywords}
+            self.assertIn("campaigns", kw,
+                          f"find_rep at line {call.lineno} does not pin the "
+                          f"campaign — it would walk all of them")
 
     def test_find_rep_still_walks_everything_by_default(self):
         """Headshots depends on the unrestricted walk — do not break it."""
