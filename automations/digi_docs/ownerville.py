@@ -61,10 +61,33 @@ class Refused(RuntimeError):
 def session(*, headless: bool = True, verbose: bool = True):
     """Our OWN browser profile, never a shared one. The headshots tick drives
     OwnerVille on this same box whenever photos are in the thread, and the
-    2026-08-19 profile-lock wedge is what separate profiles prevent."""
+    2026-08-19 profile-lock wedge is what separate profiles prevent.
+
+    priority="scheduled" (2026-11-16) — THIS IS AN ENROLLED JOB AND IT
+    OUTRANKS A CROSSTAB. The reservation machinery already exists for exactly
+    this call (OWNERVILLE_PRIORITY_FILE, Megan 2026-09-03: "the post should
+    take priority over the individual request… We shouldn't just go blank for
+    an enrolled service"), and this report never claimed it.
+
+    What that cost on Lucy 3, 2026-11-16: captainship_drafts took the session
+    at 10:18:39 and held it to 13:04, the 10:30 add pass fought it for the
+    whole window, and 26 of 52 new starts failed — the Slack post read as 26
+    people with no documents. A crosstab that lands twenty minutes later
+    costs nobody anything. A bundle that misses its start time means somebody
+    turns up to their first day without their paperwork, and generating a
+    bundle is a send with no unsend, so it cannot simply be retried later in
+    the day once the clock has passed.
+
+    A RESERVATION, NOT PREEMPTION. It never interrupts a run already holding
+    the session — yanking it out from under an impersonated pull is its own
+    disaster — it just means this pass gets the session the moment that
+    holder finishes, instead of losing a coin flip to whichever Tableau job
+    polls first.
+    """
     from automations.shared.tableau_patchright import ownerville_session
     return ownerville_session(headless=headless, verbose=verbose,
-                              profile_dir=PROFILE_DIR)
+                              profile_dir=PROFILE_DIR,
+                              priority="scheduled")
 
 
 # --- phase 2: add the reps ------------------------------------------------

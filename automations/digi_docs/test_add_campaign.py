@@ -18,6 +18,7 @@ well as their placement.
 from __future__ import annotations
 
 import unittest
+from unittest import mock
 
 from automations.digi_docs import config, ownerville as ov
 
@@ -123,3 +124,44 @@ class SearchStaysOnResAttTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TheAddPassOutranksACrosstab(unittest.TestCase):
+    """2026-11-16. captainship_drafts held Lucy 3's ownerville session from
+    10:18:39 to 13:04; the 10:30 add pass fought it for the whole window and
+    26 of 52 new starts failed. The reservation machinery for this existed
+    already (Megan 2026-09-03, "an enrolled post outranks an individual
+    request") — this report simply never claimed it.
+
+    A crosstab twenty minutes late costs nobody anything. A bundle that
+    misses a start time means somebody turns up without their paperwork, and
+    generating one is a send with no unsend, so it cannot be made good later
+    in the day."""
+
+    def test_the_session_is_opened_as_a_scheduled_job(self):
+        from automations.digi_docs import ownerville as ov
+        seen = {}
+
+        def _fake(**kw):
+            seen.update(kw)
+            return object()
+
+        with mock.patch(
+                "automations.shared.tableau_patchright.ownerville_session",
+                _fake):
+            ov.session(headless=True, verbose=False)
+        self.assertEqual("scheduled", seen.get("priority"),
+                         "the add/send pass must reserve the session, not "
+                         "race Tableau for it")
+
+    def test_it_still_uses_its_own_profile(self):
+        """A private profile is not a private session — both matter, and
+        neither implies the other."""
+        from automations.digi_docs import ownerville as ov
+        seen = {}
+
+        with mock.patch(
+                "automations.shared.tableau_patchright.ownerville_session",
+                lambda **kw: seen.update(kw) or object()):
+            ov.session(headless=True, verbose=False)
+        self.assertEqual(ov.PROFILE_DIR, seen.get("profile_dir"))
