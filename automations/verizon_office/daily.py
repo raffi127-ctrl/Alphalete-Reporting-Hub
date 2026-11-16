@@ -162,7 +162,8 @@ def main(argv=None) -> int:
             # of those sales still")
             from automations.verizon_office import order_log_tab as OL
             una = CH.unapproved_png(OL.lines(Path(sv)), today,
-                                    out / f"verizon_disc_before_approval_{today.isoformat()}.png", owner=office.owner)
+                                    out / f"verizon_disc_before_approval_{today.isoformat()}.png", owner=office.owner,
+                                    tier_pay=CH.credico_tier(Path(sv), today)["pay"])
             steps.insert(at + 1, ("image", (una, f":no_entry: *Disconnected Before Approval* — {today.month}/{today.day}")))
         except Exception as e:  # noqa: BLE001
             print("⚠ Verizon Churn tab picture skipped: %s" % e)

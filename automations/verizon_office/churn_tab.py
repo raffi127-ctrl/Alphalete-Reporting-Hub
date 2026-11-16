@@ -210,7 +210,39 @@ def rolloff_rows(lines, today: dt.date) -> List[dict]:
 
 
 UNAPPROVED_HEADERS = ("Customer", "Sales Rep", "Order Date", "Activation Date", "Disconnect Date",
-                      "Days Active", "Port / New", "Device", "Plan", "Status Reason")
+                      "Days Active", "Port / New", "Device")
+UNPAID_HEADERS = ("Rep Name", "Lines", "Unpaid $")
+
+
+def line_would_pay(l, tier_pay: int) -> int:
+    """What an order-log line would have paid at the office's current tier:
+    port smartphone = the tier rate, BYOD / no-port = the $25 flat, plus
+    AutoPay / Unlimited Plus-Ultimate / Protect (comp.py's terms)."""
+    dev = (l.get("Device") or "").strip().upper()
+    port = (l.get("Type") == "Port") and dev != "BYOD"
+    base = tier_pay if port else C.FLAT_LINE
+    plan = (l.get("Plan") or "").lower()
+    addons = (l.get("Add-ons") or "").lower()
+    return int(base + (C.AUTOPAY if (l.get("AutoPay") or "").lower() == "yes" else 0)
+               + (C.PREMIUM_PLAN if plan.startswith(("unlimited plus", "unlimited ultimate")) else 0)
+               + (C.PROTECT if ("protect" in addons or "secure" in addons) else 0))
+
+
+def unpaid_by_rep(lines, tier_pay: int) -> List[Tuple[str, int, int]]:
+    """[(rep, lines disconnected before approval, $ they are not getting
+    paid)] biggest $ first, plus ('OFFICE TOTAL', n, $) first (Carlos
+    2026-11-15: "all of the reps that have sales that disconnected before
+    the approval and the amount of revenue that they are not getting paid
+    out on")."""
+    per: Dict[str, List[int]] = {}
+    for l in lines:
+        if _d(l.get("Activation Date")) and is_dead(l) and not is_approved(l):
+            slot = per.setdefault(l.get("Rep") or "(no rep)", [0, 0])
+            slot[0] += 1
+            slot[1] += line_would_pay(l, tier_pay)
+    rows = sorted(((r, n, usd) for r, (n, usd) in per.items()), key=lambda t: (-t[2], -t[1], t[0].lower()))
+    total = ("OFFICE TOTAL", sum(n for _, n, _ in rows), sum(u for _, _, u in rows))
+    return [total] + rows
 
 
 def unapproved_disconnects(lines) -> List[dict]:
@@ -233,17 +265,25 @@ def unapproved_disconnects(lines) -> List[dict]:
     return sorted(out, key=lambda x: (x["disc_date"] or dt.date.min, x["customer"]), reverse=True)
 
 
-def unapproved_png(lines, today: dt.date, out_path: Path, owner: str = "") -> Path:
+def unapproved_png(lines, today: dt.date, out_path: Path, owner: str = "", tier_pay: Optional[int] = None) -> Path:
     """The list as its own picture in the tab's look (navy header, boxed),
-    for the thread and the chats."""
+    with the per-rep unpaid table beside it, for the thread and the chats."""
     import html as H
     from automations.b2b_metrics.rep_boards import _capture_board
     rows = unapproved_disconnects(lines)
+    tier_pay = tier_pay if tier_pay is not None else C.PORT_TIER_PAY[C.NEUTRAL_TIER]
+    rep_rows = unpaid_by_rep(lines, tier_pay)
+    rep_trs = "".join(
+        f'<tr{" class=tot" if k == 0 else ""}><td>{H.escape(r)}</td><td>{n}</td><td>${usd:,}</td></tr>'
+        for k, (r, n, usd) in enumerate(rep_rows))
+    rep_tbl = (f'<table><tr>{"".join(f"<th>{h}</th>" for h in UNPAID_HEADERS)}</tr>{rep_trs}</table>'
+               f'<div class="note">$ = what each line would have paid at the office\'s current tier (${tier_pay} a port smartphone, '
+               f'$25 BYOD / no-port, + AutoPay / Unlimited Plus / Protect)</div>')
     ths = "".join(f"<th>{h}</th>" for h in UNAPPROVED_HEADERS)
     trs = []
     for x in rows:
         cells = [x["customer"], x["rep"], _fmt(x["order_date"]), _fmt(x["posted"]), _fmt(x["disc_date"]),
-                 "" if x["days_active"] is None else "%dd" % x["days_active"], x["kind"], x["device"], x["plan"], x["reason"]]
+                 "" if x["days_active"] is None else "%dd" % x["days_active"], x["kind"], x["device"]]
         trs.append("<tr>" + "".join(f"<td>{H.escape(str(c))}</td>" for c in cells) + "</tr>")
     if not rows:
         trs.append(f'<tr><td colspan="{len(UNAPPROVED_HEADERS)}" style="color:#666">(no line has disconnected before approval)</td></tr>')
@@ -259,8 +299,11 @@ def unapproved_png(lines, today: dt.date, out_path: Path, owner: str = "") -> Pa
  th{{background:#1f3b64;color:#fff;font-size:13px;padding:7px 12px;border:1px solid #999}}
  td{{font-size:13px;padding:6px 12px;border:1px solid #999;text-align:center;white-space:nowrap}}
  td:first-child{{text-align:left;font-weight:700}}
+ .row{{display:flex;gap:22px;align-items:flex-start;justify-content:center}}
+ tr.tot td{{background:#eee;font-weight:700}}
+ .note{{color:#666;font-size:11px;max-width:420px;padding-top:6px}}
 </style></head><body><div class="board"><div class="title">VERIZON — DISCONNECTED BEFORE APPROVAL</div>
-<div class="sub">{H.escape(sub)}</div><table><tr>{ths}</tr>{"".join(trs)}</table></div></body></html>"""
+<div class="sub">{H.escape(sub)}</div><div class="row"><table><tr>{ths}</tr>{"".join(trs)}</table><div>{rep_tbl}</div></div></div></body></html>"""
     return _capture_board(htm, Path(out_path), width=1700)
 
 
@@ -373,10 +416,19 @@ def build_grid(lines, today: dt.date, tier: dict) -> Tuple[List[List[str]], dict
     marks["headers"].append(h2)
     for x in una:
         row([x["customer"], x["rep"], _fmt(x["order_date"]), _fmt(x["posted"]), _fmt(x["disc_date"]),
-             "" if x["days_active"] is None else "%dd" % x["days_active"], x["kind"], x["device"], x["plan"], x["reason"]])
+             "" if x["days_active"] is None else "%dd" % x["days_active"], x["kind"], x["device"]])
     if not una:
         row(["(no line has disconnected before approval)"])
     marks["tables"].append((h2, len(g)))
+    # beside it (P:R), per rep: lines disconnected before approval + the $
+    # they are not getting paid (Carlos 2026-11-15)
+    unpaid = unpaid_by_rep(lines, tier["pay"])
+    while len(g) < h2 + len(unpaid):
+        row()
+    g[h2 - 1][15:18] = list(UNPAID_HEADERS)
+    for k, (rep_name, n, usd) in enumerate(unpaid, 1):
+        g[h2 - 1 + k][15:18] = [rep_name, str(n), "$%s" % format(usd, ",")]
+    marks["unpaid_list"] = (h2, h2 + len(unpaid))
     row()
     rep_rows = [("OFFICE TOTAL (all reps)", office["0-30"]["rate"], office["0-30"]["activated"], office["0-30"]["sold"])]
     rep_rows += sorted(((r, v["0-30"]["rate"], v["0-30"]["activated"], v["0-30"]["sold"]) for r, v in reps.items()
@@ -474,6 +526,10 @@ def _format_requests(sheet_id: int, marks: dict) -> List[dict]:
     r0, r1 = marks["rep_list"]
     reqs.append(box(r0 - 1, r1, 15, 18))
     reqs.append(fill(r0, r0 + 1, 15, 18, (0.93, 0.93, 0.93), True))      # office total row
+    if marks.get("unpaid_list"):
+        u0, u1 = marks["unpaid_list"]
+        reqs.append(box(u0 - 1, u1, 15, 18))
+        reqs.append(fill(u0, u0 + 1, 15, 18, (0.93, 0.93, 0.93), True))  # office total row
     # THE TWO TOP TABLES BIGGER (Carlos 2026-11-15: "the tiers table ... make
     # that all bigger ... the product / activations / disconnects / churn
     # table: make that one bigger as well"): larger type in the box (A:G) and

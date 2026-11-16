@@ -410,7 +410,7 @@ def main(argv=None) -> int:
     elif a.board == "disc_before_approval":
         from automations.verizon_office import churn_tab as CH, order_log_tab as OL
         got = CH.unapproved_png(OL.lines(Path(sv)), target, out_dir / f"verizon_disc_before_approval_{target.isoformat()}.png",
-                                owner=office.owner)
+                                owner=office.owner, tier_pay=CH.credico_tier(Path(sv), target)["pay"])
     elif a.board in ("approval_rate", "approval_by_week", "churn_by_rep"):
         from automations.verizon_office import thread_boards as TB
         h, rows = TB.nds_rows(Path(sv), date_col="Approval Date")
