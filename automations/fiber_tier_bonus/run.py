@@ -312,7 +312,40 @@ _CSS = """<style>
 </style>"""
 
 
-def build_html(owner: str, week: str, days: List[str], reps: List[Rep], tiers) -> str:
+# A tier with more reps than this is split evenly across images (Eve 2026-11-16:
+# Raf's Tier 1 ran past 20 and the single image was too long to read in Slack).
+MAX_PER_IMAGE = 20
+
+
+def pages(reps: List[Rep], tiers) -> List[List[Rep]]:
+    """Reps -> one list per image, top tier first.
+
+    Tiers of MAX_PER_IMAGE or fewer stay whole, and consecutive ones share an
+    image. A bigger tier gets images of its own, split EVENLY (34 -> 17 + 17,
+    not 20 + 14), best sellers first."""
+    by_tier: Dict[int, List[Rep]] = {}
+    for rp in reps:
+        by_tier.setdefault(tier_of(rp.total, tiers), []).append(rp)
+    out: List[List[Rep]] = []
+    small: List[Rep] = []
+    for n, _lo, _hi in sorted(tiers, key=lambda t: -t[0]):
+        group = sorted(by_tier.get(n, []), key=lambda r: (-r.total, r.name.lower()))
+        if len(group) <= MAX_PER_IMAGE:
+            small.extend(group)
+            continue
+        if small:
+            out.append(small)
+            small = []
+        k = -(-len(group) // MAX_PER_IMAGE)          # images this tier needs
+        size = -(-len(group) // k)                   # even split, rounded up
+        out.extend(group[i:i + size] for i in range(0, len(group), size))
+    if small:
+        out.append(small)
+    return out or [[]]
+
+
+def build_html(owner: str, week: str, days: List[str], reps: List[Rep], tiers,
+               part: str = "") -> str:
     e = html.escape
     rows = []
     by_tier: Dict[int, List[Rep]] = {}
@@ -336,7 +369,7 @@ def build_html(owner: str, week: str, days: List[str], reps: List[Rep], tiers) -
     ladder = " · ".join(f"Tier {n}: {_range(lo, hi)}" for n, lo, hi in tiers)
     return (f"<html><head><meta charset='utf-8'>{_CSS}</head><body><div class='board'>"
             f"<div class='title'>TIER BONUS BREAKDOWN — NEW FIBER INTERNET</div>"
-            f"<div class='sub'>{e(owner)} · {e(week)}</div>"
+            f"<div class='sub'>{e(owner)} · {e(week)}{' · ' + e(part) if part else ''}</div>"
             f"<table><tr><th>Tier</th><th>Rep</th>{head}<th>Total</th><th>Away</th></tr>"
             f"{''.join(rows)}</table>"
             f"<div class='legend'>{e(ladder)} new Fiber sales (Mon-Sun) · "
@@ -444,20 +477,24 @@ def run(args) -> int:
                 print(f"  [{d.key}] could not read {d.channel_name} members ({e})", flush=True)
         tagged = sum(1 for v in ids.values() if v)
         slug = "_".join(_fold(d.owner).split())
-        img = render(build_html(d.owner, week, days, reps, tiers),
-                     OUT_DIR / f"tier_bonus_{slug}_{day.isoformat()}.png")
+        chunks = pages(reps, tiers)
+        imgs = [render(build_html(d.owner, week, days, chunk, tiers,
+                                  part=(f"image {i} of {len(chunks)}" if len(chunks) > 1 else "")),
+                       OUT_DIR / f"tier_bonus_{slug}_{day.isoformat()}_{i}.png")
+                for i, chunk in enumerate(chunks, 1)]
         lines = away_lines(reps, tiers, ids, tag=bool(args.live))
         title = TITLE + (f" — {d.owner}" if shared[d.channel_id] > 1 else "")
         text = "\n".join([f"*Sales away from the next tier bonus* ({week})", ""] + lines)
         print(f"\n[{d.key}] {d.owner} -> {d.channel_name}: {len(reps)} rep(s), "
-              f"{tagged} matched in Slack; image {img}", flush=True)
+              f"{tagged} matched in Slack; {len(imgs)} image(s) "
+              f"{[len(c) for c in chunks]} reps each: {[str(i) for i in imgs]}", flush=True)
         for r in reps:
             if not ids.get(r.name):
                 print(f"     no @ for {r.name!r}", flush=True)
         print("   " + text.replace("\n", "\n   "), flush=True)
         if not (args.live or args.post_to):
             continue
-        ok = post(d, title, day, img, text, post_to=args.post_to, week=week) and ok
+        ok = post(d, title, day, imgs, text, post_to=args.post_to, week=week) and ok
     if not (args.live or args.post_to):
         print("\n(dry run) rendered only — nothing posted.", flush=True)
     return 0 if ok else 1
@@ -468,28 +505,39 @@ def render(page_html: str, out: Path) -> Path:
     return render_png(page_html, out)
 
 
-def post(d: Dest, title: str, day: dt.date, img: Path, text: str, *, post_to: str = "",
-         week: str = "") -> bool:
+def post(d: Dest, title: str, day: dt.date, imgs: List[Path], text: str, *,
+         post_to: str = "", week: str = "") -> bool:
+    """Parent post, then every image in order, then the tagged list -- all in
+    the thread. A TEST (--post-to) builds the same thread in that DM, so the
+    sample looks like the real thing."""
     from automations.shared import slack_metrics_post as smp
+    week = week or week_label(day)
     if post_to:
-        r1 = smp.post_reply_with_image(img, comment=f"{title} — {d.owner} (TEST)",
-                                       channel_id=post_to, top_level=True, mirror=False,
-                                       wait_visible=True)
-        r2 = smp._client().chat_postMessage(channel=post_to, text=text)
-        good = bool(r1.get("ok")) and bool(r2.get("ok"))
-        print(f"   TEST post: {'OK' if good else 'FAILED'}", flush=True)
-        return good
-    th = smp.ensure_named_thread(title, day, channel_id=d.channel_id)
-    ts = th.get("thread_ts")
+        c = smp._client()
+        ch = smp._postable_channel(c, post_to)
+        parent = c.chat_postMessage(
+            channel=ch, text=f"*{title} — {d.owner}* (TEST, {week})")
+        ts, chan, react, mirror = parent.get("ts"), ch, None, False
+    else:
+        th = smp.ensure_named_thread(title, day, channel_id=d.channel_id)
+        ts, chan, react, mirror = th.get("thread_ts"), d.channel_id, EMOJI, True
     if not ts:
-        print(f"   FAILED to open the thread in {d.channel_name}: {th}", flush=True)
+        print(f"   FAILED to open the thread in {post_to or d.channel_name}", flush=True)
         return False
-    r1 = smp.post_reply_with_image(img, comment=f"{title} — {week or week_label(day)}",
-                                   thread_ts=ts, channel_id=d.channel_id,
-                                   wait_visible=True, react_emoji=EMOJI)
-    r2 = smp.post_reply_text_only(text, thread_ts=ts, channel_id=d.channel_id, today=day)
-    good = bool(r1.get("ok")) and bool(r2.get("ok"))
-    print(f"   {d.channel_name}: {'Posted' if good else 'FAILED ' + str((r1, r2))[:300]}", flush=True)
+    good = True
+    for i, img in enumerate(imgs, 1):
+        part = f" ({i}/{len(imgs)})" if len(imgs) > 1 else ""
+        r = smp.post_reply_with_image(img, comment=f"{title} — {week}{part}",
+                                      thread_ts=ts, channel_id=chan, wait_visible=True,
+                                      mirror=mirror,
+                                      react_emoji=react if i == len(imgs) else None)
+        good = good and bool(r.get("ok"))
+    if post_to:
+        r2 = smp._client().chat_postMessage(channel=chan, thread_ts=ts, text=text)
+    else:
+        r2 = smp.post_reply_text_only(text, thread_ts=ts, channel_id=chan, today=day)
+    good = good and bool(r2.get("ok"))
+    print(f"   {post_to or d.channel_name}: {'Posted' if good else 'FAILED'}", flush=True)
     return good
 
 

@@ -66,6 +66,23 @@ class TierBonus(unittest.TestCase):
         for r in self.data["Rafael Hidalgo"]:
             self.assertIn(r.name, h)
 
+    def test_big_tier_splits_evenly(self):
+        mk = lambda n, tot: R.Rep(f"Rep {n:02d}", [""] * 7, tot, "")
+        reps = [mk(i, 1) for i in range(34)] + [mk(90, 6), mk(91, 13)]
+        ps = R.pages(reps, self.tiers)
+        self.assertEqual([len(p) for p in ps], [2, 17, 17])    # T4+T2 together, T1 halves
+        self.assertEqual(sum(len(p) for p in ps), 36)
+
+    def test_small_office_one_image(self):
+        self.assertEqual(len(R.pages(self.data["Rafael Hidalgo"], self.tiers)), 1)
+
+    def test_split_keeps_tier_order(self):
+        mk = lambda n, tot: R.Rep(f"Rep {n:02d}", [""] * 7, tot, "")
+        reps = [mk(i, 1) for i in range(25)] + [mk(50 + i, 5) for i in range(25)]
+        ps = R.pages(reps, self.tiers)
+        self.assertEqual([len(p) for p in ps], [13, 12, 13, 12])
+        self.assertTrue(all(r.total == 5 for r in ps[0] + ps[1]))
+
     def test_owner_alias(self):
         self.assertTrue(R.same_owner("RAFAEL HIDALGO", "Rafael Hidalgo"))
         self.assertTrue(R.same_owner("Raf H", "Rafael Hidalgo", {"Rafael Hidalgo": ["Raf H"]}))
