@@ -577,13 +577,15 @@ def _render_html(rows, office, monday: dt.date, upto: dt.date, dest: Path,
     brand = (extra or {}).get("brand") or {}
     hdr_bg = brand.get("color") or "#12181d"
     if brand:
-        hdr_html = (f'<div class="hdr brand"><div class="hrow" style="align-items:center">'
-                    f'<div>{brand.get("logo") or ""}</div>'
-                    f'<div class="date">Week of {monday.strftime("%b")} {monday.day} — through '
-                    f'{upto.strftime("%A, %b")} {upto.day}, {upto.year}</div></div>'
-                    f'<h1 style="text-align:center;margin-top:10px">{brand.get("title") or board_name}</h1>'
-                    + (f'<div style="color:rgba(255,255,255,.85);font-size:12px;margin-top:10px">{note}</div>' if note else "")
-                    + '</div>')
+        # ONE row -- logo | title | date -- in a short band (Carlos: "too
+        # much red ... slightly smaller, and the letters could be bigger"),
+        # the note in a thin strip under it.
+        hdr_html = (f'<div class="hdr brand" style="padding:16px 40px"><div class="hrow" style="align-items:center">'
+                    f'<div style="flex:1">{brand.get("logo") or ""}</div>'
+                    f'<h1 style="flex:2;text-align:center;margin:0;font-size:56px">{brand.get("title") or board_name}</h1>'
+                    f'<div class="date" style="flex:1;text-align:right">Week of {monday.strftime("%b")} {monday.day} — through '
+                    f'{upto.strftime("%A, %b")} {upto.day}, {upto.year}</div></div></div>'
+                    + (f'<div style="background:#12181d;color:#cfd6dc;font-size:12px;padding:7px 40px">{note}</div>' if note else ""))
         foot_html = ""
     else:
         hdr_html = (f'<div class="hdr"><div class="kick">{kick}</div>'
@@ -599,6 +601,7 @@ def _render_html(rows, office, monday: dt.date, upto: dt.date, dest: Path,
  .wrap{{width:{wrap_w}px}}
  .hdr{{background:{hdr_bg};color:#fff;padding:30px 40px}}
  .hdr.brand .date{{color:rgba(255,255,255,.9)}}
+ {"th.lh.repc,td.rep{text-align:center}" if brand else ""}
  .kick{{color:#f0b429;font-weight:700;letter-spacing:.08em;font-size:14px}}
  .hrow{{display:flex;justify-content:space-between;align-items:baseline}}
  h1{{margin:6px 0 0;font-size:46px}}
@@ -658,7 +661,7 @@ def _render_html(rows, office, monday: dt.date, upto: dt.date, dest: Path,
   {"" if (extra or {}).get("hide_reps") else f'<div class="card"><div class="clab">REPS ON THE BOARD</div><div class="cval">{len(rows)}{(extra or {}).get("reps_extra") or ""}</div></div>'}
  {next_card}
  </div>
- <table><tr><th class="lh">#</th><th class="lh">REP</th>{bd_th if bd and bd.get("pos") == "before_total" else ""}<th>WEEK TOTAL</th>
+ <table><tr><th class="lh">#</th><th class="lh repc">REP</th>{bd_th if bd and bd.get("pos") == "before_total" else ""}<th>WEEK TOTAL</th>
  {bd_th if bd and bd.get("pos") == "after_total" else ""}{tier_th}{day_ths}{next_th}{extra_th}{bd_th if bd and bd.get("pos") not in ("after_total", "before_total") else ""}</tr>
  {''.join(trs)}</table>
  {foot_html}{'<div style="height:26px"></div>' if not foot_html else ''}</div></body></html>"""
