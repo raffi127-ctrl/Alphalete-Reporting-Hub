@@ -125,6 +125,10 @@ def collect(P, rows: List[Dict], cl, *, dry: bool) -> List[Dict]:
             story = res.get("story")
             st = (fb_state.get("reviews") or {}).get(story)
             if status == "replied":
+                # Remember that this page CAN post. The refusal branch below
+                # reads it to tell a per-review dead end from a page that has
+                # never managed a single reply.
+                fb_state["ever_posted"] = int(fb_state.get("ever_posted") or 0) + 1
                 acts.append({"action": "fb_reply_posted", "note": story})
                 continue
             err = res.get("error") or str(status)
@@ -137,9 +141,28 @@ def collect(P, rows: List[Dict], cl, *, dry: bool) -> List[Dict]:
             fails = max(int((st or {}).get("fails") or 0),
                         int((fb_state.get("fails") or {}).get(story) or 0)) + 1
             if status != "signed_out" and (_refused(err) or fails >= 2):
-                fb_state.setdefault("reviews", {})[story] = dict(st or {}, posted=True, blocked=err[:200],
+                fb_state.setdefault("reviews", {})[story] = dict(st or {}, posted=True, blocked=err[:400],
                                                                  fails=fails)
-                acts.append({"action": "fb_reply_blocked", "note": "%s: %s" % (story, err[:120])})
+                acts.append({"action": "fb_reply_blocked",
+                             "note": "%s: %s" % (story, err[:200])})
+                # A PAGE THAT HAS NEVER POSTED ONCE IS NOT A PER-REVIEW DEAD END.
+                # Parking is right for "Facebook won't take a comment on THIS
+                # review", and it is how the 140x retry loop was stopped -- so
+                # the parking above is untouched. But raf's page logged 70
+                # refusals and ZERO successes on 11-16: if the cause is the page
+                # token missing pages_manage_engagement, parking every review
+                # turns a loud loop into SILENT non-delivery -- reviews go
+                # unanswered, the pass still reports success, and nothing says
+                # so. One extra act per pass says that out loud. It is a
+                # separate act, not a renamed one, so anything reading
+                # fb_reply_blocked keeps working. [[feedback_green_means_delivered]]
+                if not int(fb_state.get("ever_posted") or 0):
+                    acts.append({
+                        "action": "fb_page_never_posted",
+                        "note": "this page has never posted a single reply, so "
+                                "this is likely the page key's reply permission "
+                                "(pages_manage_engagement), not this one review: "
+                                + err[:200]})
                 continue
             acts.append({"action": "fb_reply_" + str(status), "note": err})
             if st is not None:

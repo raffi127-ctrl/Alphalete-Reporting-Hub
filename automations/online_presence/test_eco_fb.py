@@ -104,6 +104,35 @@ class Flow(Base):
         acts = E.collect(self.P, [_ans("fb_reply", status="error", error="boom", story="s1")], self.cl, dry=False)
         self.assertEqual(acts[0]["action"], "fb_reply_blocked")
 
+    def test_a_page_that_never_posted_says_so_as_well_as_parking(self):
+        # raf 2026-11-16: 70 refusals, ZERO successful replies, all day. If
+        # that is the page key missing pages_manage_engagement, parking every
+        # review quietly stops answering Facebook altogether while the pass
+        # still reports success. The parking stays (no retry loop); this is the
+        # line that keeps it from being silent.
+        self._pass([{"open_graph_story": {"id": "s1"}, "recommendation_type": "positive"}])
+        acts = E.collect(self.P, [_ans("fb_reply", status="error",
+                                       error="(#200) Permissions error", story="s1")],
+                         self.cl, dry=False)
+        names = [a["action"] for a in acts]
+        self.assertIn("fb_reply_blocked", names, "the review must still be parked")
+        self.assertIn("fb_page_never_posted", names)
+        note = [a["note"] for a in acts if a["action"] == "fb_page_never_posted"][0]
+        self.assertIn("pages_manage_engagement", note)
+
+    def test_a_page_that_has_posted_before_does_not_cry_connection(self):
+        # One review Facebook won't take a comment on is a dead end, not a
+        # broken connection — this is the case the parking was built for.
+        self._pass([{"open_graph_story": {"id": "s1"}, "recommendation_type": "positive"}])
+        E.collect(self.P, [_ans("fb_reply", status="replied", story="s1")], self.cl, dry=False)
+        self._pass([{"open_graph_story": {"id": "s9"}, "recommendation_type": "positive"}])
+        acts = E.collect(self.P, [_ans("fb_reply", status="error",
+                                       error="(#200) Permissions error", story="s9")],
+                         self.cl, dry=False)
+        names = [a["action"] for a in acts]
+        self.assertIn("fb_reply_blocked", names)
+        self.assertNotIn("fb_page_never_posted", names)
+
     def test_approved_card_refused_is_not_reposted_every_pass(self):
         self._pass([{"open_graph_story": {"id": "s2"}, "recommendation_type": "negative"}])
         st = self._st(); st["reviews"]["s2"]["posted"] = True; self.P.path("fb_review_replies.json").write_text(json.dumps(st))

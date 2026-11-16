@@ -58,8 +58,44 @@ def _graph(method: str, path: str, params: Dict) -> Dict:
             out = {"error": {"message": "HTTP %s" % e.code}}
     if "error" in out:
         err = out["error"] if isinstance(out["error"], dict) else {"message": str(out["error"])}
-        raise RuntimeError("signed_out" if err.get("code") == 190 else str(err.get("message"))[:200])
+        if err.get("code") == 190:
+            raise RuntimeError("signed_out")
+        raise RuntimeError(_err_text(err))
     return out
+
+
+def _err_text(err: Dict) -> str:
+    """Everything Graph said, not just its headline.
+
+    WHY (2026-11-16): raf's page logged `fb_reply_error · Permissions error`
+    70 times in one day with ZERO successful replies, and that message alone
+    cannot tell the two causes apart -- a page token missing
+    pages_manage_engagement (every reply fails, it is a connection problem) or
+    Graph refusing a comment on one particular recommendation story (that one
+    review is a dead end). The fields that DO tell them apart are code,
+    error_subcode and error_user_msg, and this function used to drop all three
+    on the floor, keeping only err['message']. Same mistake as the knocks
+    alert truncating its own 'Headers seen:' list: the failure was reported
+    and its evidence was not. fbtrace_id is kept because it is what Meta
+    support asks for."""
+    msg = str(err.get("message") or "Graph error")
+    bits = []
+    code, sub = err.get("code"), err.get("error_subcode")
+    if code is not None:
+        bits.append("code %s" % code)
+    if sub:
+        bits.append("subcode %s" % sub)
+    etype = err.get("type")
+    if etype:
+        bits.append(str(etype))
+    trace = err.get("fbtrace_id")
+    if trace:
+        bits.append("fbtrace %s" % trace)
+    out_msg = msg if not bits else "%s [%s]" % (msg, ", ".join(bits))
+    user = err.get("error_user_msg") or err.get("error_user_title")
+    if user:
+        out_msg = "%s — %s" % (out_msg, user)
+    return out_msg[:400]
 
 
 def _secure_write(path, data: Dict) -> None:
@@ -156,6 +192,9 @@ def reply_job(payload: Dict, live: bool, log=print) -> Dict:
             return {"status": "replied", "story": story, "note": "already answered"}
         _graph("POST", "%s/comments" % story, {"access_token": k["token"], "message": text})
     except RuntimeError as e:
-        return {"status": "signed_out" if str(e) == "signed_out" else "error", "error": str(e)[:200],
+        # 400, not 200: _err_text now carries code/subcode/user message, and a
+        # 200-char cut would land in the middle of exactly those -- the whole
+        # point of keeping them (2026-11-16).
+        return {"status": "signed_out" if str(e) == "signed_out" else "error", "error": str(e)[:400],
                 "story": story}
     return {"status": "replied", "story": story}
