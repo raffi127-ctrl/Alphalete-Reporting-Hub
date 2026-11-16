@@ -98,10 +98,10 @@ class Cards(unittest.TestCase):
                           "APP MIX THIS WEEK"])
 
     def test_brand_header(self):
-        self.assertEqual(RX.BRAND["title"], "NDS Revenue Sales Board")
-        self.assertEqual(RX.BRAND["color"], "#067ab4")
-        self.assertIn("<svg", RX.BRAND["logo"])
-        self.assertIn("AT&amp;T", RX.BRAND["logo"])
+        self.assertTrue(RX.BRAND["title"].startswith("AT&amp;T<svg"))        # wordmark, globe, then the name
+        self.assertTrue(RX.BRAND["title"].endswith("NDS Revenue Sales Board"))
+        self.assertEqual((RX.BRAND["color"], RX.BRAND["fg"]), ("#000000", "#00a8e0"))   # black band, blue wording
+        self.assertEqual(RX.BRAND["logo"], "")                               # nothing top-left
 
     def test_week_total_card_suffix(self):
         self.assertIn("\u00b7 19 reps \u00b7 7.1 sales / rep (134 apps)", RX.week_extra(19, 134))

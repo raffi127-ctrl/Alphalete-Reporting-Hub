@@ -99,13 +99,14 @@ class TierChip(unittest.TestCase):
                 V._render_html(ROWS, {"days": {"Mon": 1000.0}}, dt.date(2026, 11, 9), dt.date(2026, 11, 15),
                                V.Path("/tmp/x.png"), "NDS Revenue Board", tiered=False,
                                extra={"tier_chip": True,
-                                      "brand": {"title": "NDS Revenue Sales Board", "color": "#067ab4",
-                                                "logo": "<svg>globe</svg>"}}, note="")
+                                      "brand": {"title": "NDS Revenue Sales Board", "color": "#000000",
+                                                "fg": "#00a8e0", "logo": "<svg>globe</svg>"}}, note="")
             except Exception:  # noqa: BLE001
                 pass
         html = captured.get("html", "")
         self.assertIn("NDS Revenue Sales Board", html)
-        self.assertIn("background:#067ab4", html)
+        self.assertIn("background:#000000", html)
+        self.assertIn(".hdr.brand{color:#00a8e0}", html)
         self.assertIn("<svg>globe</svg>", html)
         self.assertNotIn("NDS LEADERS", html)
         self.assertNotIn('class="foot"', html)

@@ -576,6 +576,7 @@ def _render_html(rows, office, monday: dt.date, upto: dt.date, dest: Path,
     # under the title, and there is NO footer. Other boards are untouched.
     brand = (extra or {}).get("brand") or {}
     hdr_bg = brand.get("color") or "#12181d"
+    brand_fg = brand.get("fg") or "#fff"        # NDS 2026-11-15: "background black and the wording blue"
     if brand:
         # ONE row -- logo | title | date -- in a short band (Carlos: "too
         # much red ... slightly smaller, and the letters could be bigger"),
@@ -602,6 +603,7 @@ def _render_html(rows, office, monday: dt.date, upto: dt.date, dest: Path,
  .hdr{{background:{hdr_bg};color:#fff;padding:30px 40px}}
  .hdr.brand .date{{color:rgba(255,255,255,.9)}}
  {"th.lh.repc,td.rep{text-align:center}" if brand else ""}
+ .hdr.brand{{color:{brand_fg}}} .hdr.brand .date{{color:{brand_fg};opacity:.9}}
  .kick{{color:#f0b429;font-weight:700;letter-spacing:.08em;font-size:14px}}
  .hrow{{display:flex;justify-content:space-between;align-items:baseline}}
  h1{{margin:6px 0 0;font-size:46px}}

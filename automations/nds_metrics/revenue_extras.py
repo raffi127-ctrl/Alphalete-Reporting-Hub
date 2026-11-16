@@ -408,7 +408,21 @@ BREAKDOWN_HEADER = 'WHAT SOLD<br><span class="dd">this week</span>'
 # Revenue Sales Board. Let's maybe make it blue, add in the AT&T logo up
 # there, and center it") -- the renderer's brand hook: AT&T blue band, the
 # globe + wordmark top-left, the title centred, no footer and no note.
-ATT_BLUE = "#067ab4"
+ATT_BLUE = "#00a8e0"          # the wording; the band is black (Carlos 2026-11-15: "background black and the wording blue")
+# The globe, drawn inline (no logo file in the repo); sits in the title line.
+ATT_GLOBE = ('<svg width="52" height="52" viewBox="0 0 100 100" aria-hidden="true" '
+             'style="vertical-align:middle;margin:0 14px 8px 10px">'
+             '<defs><clipPath id="attg"><circle cx="50" cy="50" r="47"/></clipPath>'
+             '<linearGradient id="attb" x1="0" y1="0" x2="1" y2="1">'
+             '<stop offset="0" stop-color="#9fe3ff"/><stop offset="1" stop-color="#00a8e0"/></linearGradient></defs>'
+             '<circle cx="50" cy="50" r="47" fill="url(#attb)"/>'
+             '<g clip-path="url(#attg)" fill="none" stroke="#fff" stroke-linecap="round">'
+             '<path d="M-5 26 Q50 6 105 26" stroke-width="4"/>'
+             '<path d="M-5 42 Q50 22 105 42" stroke-width="6"/>'
+             '<path d="M-5 59 Q50 39 105 59" stroke-width="8"/>'
+             '<path d="M-5 77 Q50 57 105 77" stroke-width="10"/>'
+             '<path d="M-5 96 Q50 76 105 96" stroke-width="12"/>'
+             '</g></svg>')
 ATT_LOGO = ('<div style="display:flex;align-items:center;gap:10px">'
             '<svg width="54" height="54" viewBox="0 0 100 100" aria-hidden="true">'
             '<defs><clipPath id="attg"><circle cx="50" cy="50" r="47"/></clipPath>'
@@ -423,7 +437,11 @@ ATT_LOGO = ('<div style="display:flex;align-items:center;gap:10px">'
             '<path d="M-5 96 Q50 76 105 96" stroke-width="12"/>'
             '</g></svg>'
             '<span style="font-size:30px;font-weight:800;letter-spacing:.02em">AT&amp;T</span></div>')
-BRAND = {"title": "NDS Revenue Sales Board", "color": ATT_BLUE, "logo": ATT_LOGO}
+# Carlos 2026-11-15, next pass: "get rid of the AT&T logo and the AT&T wording
+# at the top left, and let's call it 'AT&T [logo] NDS Revenue Sales Board'"
+# -- the title line carries the wordmark + globe, nothing top-left.
+BRAND = {"title": "AT&amp;T" + ATT_GLOBE + "NDS Revenue Sales Board", "color": "#000000",
+         "fg": ATT_BLUE, "logo": ""}
 
 
 # --------------------------------------------------------------- IO ----
