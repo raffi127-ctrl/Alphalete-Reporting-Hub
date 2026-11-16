@@ -94,6 +94,13 @@ def revenue_board(owner: str, sv_path: Path, target: dt.date, out_dir: Path, lay
             a = addons.get(row["rep"], {"autopay": 0, "premium": 0, "protect": 0, "byod": 0})
             row["breakdown"] = (f"{a['autopay']} AutoPay &nbsp;·&nbsp; {a['premium']} Unlimited Plus<br>"
                                 f"{a['protect']} Protect &nbsp;·&nbsp; {a['byod']} BYOD")
+        # the OFFICE TOTAL row carries the office's orders + lines the same
+        # way (Carlos 2026-11-15: "next to the office total, let's add in the
+        # total amount of orders and total amount of lines")
+        n_orders = sum(c[0] for c in counts.values())
+        n_sold = sum(sold_lines.values())
+        office["rep_badge"] = (f"{n_orders} order{'' if n_orders == 1 else 's'} · "
+                               f"{n_sold} line{'' if n_sold == 1 else 's'}")
         n_reps = max(len(rows), 1)
         avg = sum(sold_lines.values()) / n_reps
         # reps + sales/rep ride INSIDE the week-total card (Carlos 2026-11-15:
