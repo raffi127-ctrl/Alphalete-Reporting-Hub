@@ -233,7 +233,8 @@ def rep_lines(lines, today: dt.date, name: str, log=print) -> int:
     decides about it -- to find WHICH lines a view leaves out when RECONCILE
     names that rep (2026-11-16: Esmeralda Gonzalez, view (0, 8) ours (2, 10)).
     Read-only; only dates/product/status/kind, never customer fields."""
-    want = name.strip().lower()
+    # "Esmeralda_Gonzalez" too: a queued rerun's args split on spaces.
+    want = " ".join(name.replace("_", " ").split()).lower()
     base = {id(u) for u in C.churn_units(lines, today)}
     cutoff = today - dt.timedelta(days=60)
     out = [f"REP {name} -- {today.isoformat()} (0-30 base = in_base)"]
