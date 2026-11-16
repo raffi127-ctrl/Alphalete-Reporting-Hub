@@ -38,7 +38,8 @@ Customer names are on this tab (the Vantura Master is Carlos's own workbook,
 like the NDS CHURN tab). Nothing here posts to Slack.
 
 SANDBOX FIRST (Eve's rule): a bare --write goes to the Sales Board SANDBOX
-copy; --prod / daily.CHURN_TAB_PROD = True is the Vantura Master.
+copy; --prod / daily.CHURN_TAB_PROD = True is the Vantura Master. LIVE on the
+Master since 2026-11-15 (Carlos: "Yes, go live") -- the daily run passes prod.
 
     python -m automations.verizon_office.churn_tab --office nicolas            # dry run: prints the box + rolloff
     python -m automations.verizon_office.churn_tab --sv FILE.xlsx

@@ -37,9 +37,10 @@ LIVE_OFFICES: tuple = ("nicolas",)   # Nico on ECO 2026-11-07
 # (Carlos approved the sandbox preview 2026-11-14, 727 lines); False = the
 # Sales Board SANDBOX copy.
 ORDER_LOG_PROD = True
-# The 'VERIZON CHURN' tab (churn_tab.py): sandbox copy until Carlos approves
-# the preview; True = the Vantura Master.
-CHURN_TAB_PROD = False
+# The 'VERIZON CHURN' tab (churn_tab.py): True = the Vantura Master (Carlos
+# approved the preview 2026-11-15, "Yes, go live"); False = the Sales Board
+# SANDBOX copy.
+CHURN_TAB_PROD = True
 # The comp grid leads the thread each morning through this date (Carlos 2026-11-15).
 PAYOUT_IN_THREAD_UNTIL = dt.date(2026, 11, 22)
 
