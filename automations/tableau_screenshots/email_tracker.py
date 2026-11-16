@@ -307,13 +307,15 @@ def fetch_vzw_pdf(dest: str | Path, *, since_days: int = 10,
 
 
 def render_vzw_png(pdf_path: str | Path, out_path: str | Path, *,
-                   verbose: bool = True) -> Path:
-    """Page 1 (current week) of the scorecard PDF -> PNG, cropped to the content."""
+                   verbose: bool = True, page_no: int = 0) -> Path:
+    """One page of the scorecard PDF -> PNG, cropped to the content. Page 0 is
+    the current week; the Verizon texter picks the page an office is on
+    (Monday's page 0 is the new week, one owner, nobody else yet)."""
     import fitz
     out_path = Path(out_path)
     doc = fitz.open(str(pdf_path))
     try:
-        page = doc[0]
+        page = doc[page_no]
         box = fitz.Rect()
         for b in page.get_text("blocks"):
             box |= fitz.Rect(b[:4])
@@ -326,7 +328,7 @@ def render_vzw_png(pdf_path: str | Path, out_path: str | Path, *,
     finally:
         doc.close()
     if verbose:
-        print(f"  ✓ rendered Verizon Wireless page 1 -> {out_path.name}", flush=True)
+        print(f"  ✓ rendered Verizon Wireless page {page_no + 1} -> {out_path.name}", flush=True)
     return out_path
 
 

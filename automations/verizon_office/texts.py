@@ -137,23 +137,42 @@ def _metrics_thread_replies(client, day: dt.date) -> List[dict]:
             return out
 
 
-def _tracker_file(client, day: dt.date) -> Optional[dict]:
-    """Today's Verizon Wireless scorecard reply in the channel's tracker thread
-    (the copy posted there already carries Nico's row highlighted)."""
-    from automations.tableau_screenshots import pages as pages_mod
-    from automations.tableau_screenshots import slack_post as sp
-    spec = pages_mod.by_id(TRACKER_ID)
-    if not spec:
-        return None
-    ts, _legacy = sp.find_thread_ts(client, CHANNEL, day)
-    if not ts:
-        return None
-    for m in sp._image_replies(client, CHANNEL, ts):
-        if sp._reply_matches(m, spec, day):
-            f = next((f for f in (m.get("files") or []) if f.get("url_private")), None)
-            if f:
-                return f
-    return None
+OFFICE_NEEDLES = ("murrugarra", "high value acquisitions")
+
+
+def _tracker_png(day: dt.date, log=print) -> Tuple[Optional[Path], str]:
+    """(png, why-not) -- TODAY's edition of Credico's Verizon Wireless Daily
+    Scorecard, rendered from the PDF in the Hub inbox, the page Nico's office
+    is on, his row highlighted. NOT the copy in the Slack tracker thread: that
+    one is posted at ~7:08 from the PRIOR day's edition, and on a Monday its
+    page 1 is the brand-new week with one owner on it (2026-11-16: "the wrong
+    screenshot got sent out via text"). The fresh edition reaches the inbox
+    ~9:31 via Carlos's forward; until the file dated today is in, wait."""
+    from automations.org_sales_board import verizon_pull as vp
+    from automations.tableau_screenshots import email_tracker as et, pages as pages_mod
+    tmp = OUT_DIR / day.isoformat() / "vzw"
+    tmp.mkdir(parents=True, exist_ok=True)
+    pdf = et.fetch_vzw_pdf(tmp, since_days=3, verbose=False)
+    if not pdf:
+        return None, "no scorecard PDF in the inbox"
+    rd = vp.report_date(Path(pdf))
+    if rd != day:
+        return None, "newest scorecard is the %s edition; today's is not in yet" % rd
+    import fitz
+    doc = fitz.open(str(pdf))
+    try:
+        hits = [i for i in range(len(doc)) if any(n in (doc[i].get_text() or "").lower() for n in OFFICE_NEEDLES)]
+    finally:
+        doc.close()
+    page_no = hits[0] if hits else 0
+    png = et.render_vzw_png(pdf, tmp / "scorecard_p%d.png" % (page_no + 1), verbose=False, page_no=page_no)
+    log("  tracker: %s edition, page %d%s" % (rd, page_no + 1, "" if hits else " (office not found on any page)"))
+    try:                                             # Nico's row in yellow; any trouble = the plain page
+        from automations.tableau_screenshots.highlight import Highlighter
+        png = Path(Highlighter().png_for(CHANNEL, png, pages_mod.by_id(TRACKER_ID)))
+    except Exception as e:  # noqa: BLE001
+        log("  tracker: highlight skipped (%s: %s)" % (type(e).__name__, str(e)[:80]))
+    return png, ""
 
 
 def collect(day: dt.date, log=print) -> List[Tuple[str, str, Path]]:
@@ -164,13 +183,13 @@ def collect(day: dt.date, log=print) -> List[Tuple[str, str, Path]]:
     day_dir = OUT_DIR / day.isoformat()
     found: List[Tuple[str, str, Path]] = []
     try:
-        f = _tracker_file(client, day)
+        png, why = _tracker_png(day, log)
     except Exception as e:  # noqa: BLE001 -- the tracker leg never costs the thread leg
-        log("  tracker thread unreadable (%s: %s)" % (type(e).__name__, str(e)[:80]))
-        f = None
-    if f:
-        found.append(("tracker", "Verizon Wireless Daily Scorecard - %s" % _day_label(day),
-                      _download(f["url_private"], token, day_dir / "tracker.png")))
+        png, why = None, "%s: %s" % (type(e).__name__, str(e)[:80])
+    if png:
+        found.append(("tracker", "Verizon Wireless Daily Scorecard - %s" % _day_label(day), png))
+    else:
+        log("  tracker: not yet (%s)" % why)
     replies = _metrics_thread_replies(client, day)
     matched = match_thread_items(replies, day)
     for key, _needle, cap in wanted(day):
@@ -183,7 +202,7 @@ def collect(day: dt.date, log=print) -> List[Tuple[str, str, Path]]:
     return found
 
 
-def send(found, day: dt.date, *, dry_run: bool = True, log=print) -> dict:
+def send(found, day: dt.date, *, dry_run: bool = True, log=print, resend: Tuple[str, ...] = ()) -> dict:
     from automations.b2b_dispositions import text_post as tp
     out = {"sent": [], "skipped": [], "errors": []}
     chats = groups(log)
@@ -191,7 +210,9 @@ def send(found, day: dt.date, *, dry_run: bool = True, log=print) -> dict:
         for group in chats:
             name = group.get("group", "") if isinstance(group, dict) else group
             m = _marker(key, name, day)
-            if m.exists() and not dry_run:
+            if key in resend:
+                caption = caption if caption.endswith("(corrected)") else caption + " (corrected)"
+            if m.exists() and not dry_run and key not in resend:
                 out["skipped"].append("%s -> %s (sent %s)" % (key, name, m.read_text().strip()[:19]))
                 continue
             try:
@@ -214,13 +235,14 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--send", action="store_true", help="text the chats (default: dry run)")
     ap.add_argument("--date", help="YYYY-MM-DD (default today)")
+    ap.add_argument("--resend", default="", help="comma-separated picture keys to text again today, captioned '(corrected)'")
     a = ap.parse_args(argv)
     day = dt.date.fromisoformat(a.date) if a.date else dt.date.today()
     found = collect(day)
     if not found:
         print("nothing posted yet — nothing to text")
         return 0
-    res = send(found, day, dry_run=not a.send)
+    res = send(found, day, dry_run=not a.send, resend=tuple(k.strip() for k in a.resend.split(",") if k.strip()))
     return 1 if res["errors"] and not res["sent"] else 0
 
 
