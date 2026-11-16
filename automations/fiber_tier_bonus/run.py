@@ -55,6 +55,19 @@ WORKBOOK = "ATTTRACKER2_1-D2D"
 VIEW = "NewFiberInternetRepBreakdown"
 VIEW_URL = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
             f"{WORKBOOK}/{VIEW}")
+# The view's week picker, set through the URL for --last-week. Tableau takes a
+# filter/parameter by its caption; if it ignores this, the export comes back on
+# 'This Week' and the day headers in the log show it.
+TIME_FRAME = "Time Frame (order date) (mon-sun)"
+
+
+def view_url(last_week: bool = False) -> str:
+    if not last_week:
+        return VIEW_URL
+    from urllib.parse import quote
+    return f"{VIEW_URL}?{quote(TIME_FRAME)}={quote('Last Week')}&:iid=1"
+
+
 # The Crosstab dialog's caption for the rep table. Unknown until the probe
 # runs; empty = take the first sheet whose export has a 'Rep' column.
 WORKSHEET = ""
@@ -358,23 +371,24 @@ def week_label(today: dt.date) -> str:
 
 # --------------------------------------------------------------------- run ---
 
-def pull(day: dt.date, csv_path: Optional[str]) -> Path:
+def pull(day: dt.date, csv_path: Optional[str], last_week: bool = False) -> Path:
     if csv_path:
         return Path(csv_path)
     from automations.shared.tableau_patchright import (
         tableau_session, download_crosstab_patchright)
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    dst = OUT_DIR / f"tier_bonus_{day.isoformat()}.csv"
+    dst = OUT_DIR / f"tier_bonus_{day.isoformat()}{'_lw' if last_week else ''}.csv"
+    url = view_url(last_week)
     with tableau_session(verbose=True) as page:
         sheets = [WORKSHEET] if WORKSHEET else []
         if not sheets:
             from automations.recruiting_report.opt_phase import list_crosstab_sheets
-            sheets = list_crosstab_sheets(VIEW_URL, page=page, verbose=True)
+            sheets = list_crosstab_sheets(url, page=page, verbose=True)
             print(f"  crosstab sheets: {sheets}", flush=True)
         last = None
         for sh in sheets:
             try:
-                p = download_crosstab_patchright(VIEW_URL, sh, dst, verbose=False, page=page)
+                p = download_crosstab_patchright(url, sh, dst, verbose=False, page=page)
                 parse(read_csv(p))
                 print(f"  using sheet {sh!r}", flush=True)
                 return p
@@ -387,7 +401,7 @@ def pull(day: dt.date, csv_path: Optional[str]) -> Path:
 def run(args) -> int:
     day = (dt.date.fromisoformat(args.date) if args.date
            else dt.datetime.now(TZ).date())
-    if day.weekday() == 0 and not args.date and not args.csv:
+    if day.weekday() == 0 and not (args.date or args.csv or args.last_week):
         print("Monday: 'This Week' just restarted — nothing to post.", flush=True)
         return 0
     mode = "LIVE" if args.live else ("TEST -> " + args.post_to if args.post_to else "dry run")
@@ -395,11 +409,11 @@ def run(args) -> int:
 
     dests = fiber_eco_offices(args.office or None)
     print(f"  {len(dests)} Fiber Eco office(s): {[d.key for d in dests]}", flush=True)
-    days, data = parse(read_csv(pull(day, args.csv)))
+    days, data = parse(read_csv(pull(day, args.csv, args.last_week)))
     tiers = tiers_from_captions(data)
     print(f"  {len(data)} owner(s) in the view · days {days} · tiers {tiers}", flush=True)
     aliases = _load_aliases()
-    week = week_label(day)
+    week = week_label(day - dt.timedelta(days=7) if args.last_week else day)
 
     client = None
     if not args.no_tags:
@@ -443,7 +457,7 @@ def run(args) -> int:
         print("   " + text.replace("\n", "\n   "), flush=True)
         if not (args.live or args.post_to):
             continue
-        ok = post(d, title, day, img, text, post_to=args.post_to) and ok
+        ok = post(d, title, day, img, text, post_to=args.post_to, week=week) and ok
     if not (args.live or args.post_to):
         print("\n(dry run) rendered only — nothing posted.", flush=True)
     return 0 if ok else 1
@@ -454,7 +468,8 @@ def render(page_html: str, out: Path) -> Path:
     return render_png(page_html, out)
 
 
-def post(d: Dest, title: str, day: dt.date, img: Path, text: str, *, post_to: str = "") -> bool:
+def post(d: Dest, title: str, day: dt.date, img: Path, text: str, *, post_to: str = "",
+         week: str = "") -> bool:
     from automations.shared import slack_metrics_post as smp
     if post_to:
         r1 = smp.post_reply_with_image(img, comment=f"{title} — {d.owner} (TEST)",
@@ -469,7 +484,7 @@ def post(d: Dest, title: str, day: dt.date, img: Path, text: str, *, post_to: st
     if not ts:
         print(f"   FAILED to open the thread in {d.channel_name}: {th}", flush=True)
         return False
-    r1 = smp.post_reply_with_image(img, comment=f"{title} — {week_label(day)}",
+    r1 = smp.post_reply_with_image(img, comment=f"{title} — {week or week_label(day)}",
                                    thread_ts=ts, channel_id=d.channel_id,
                                    wait_visible=True, react_emoji=EMOJI)
     r2 = smp.post_reply_text_only(text, thread_ts=ts, channel_id=d.channel_id, today=day)
@@ -491,6 +506,8 @@ def main(argv=None) -> int:
                     help="only this Eco office key (repeatable), e.g. --office raf")
     ap.add_argument("--csv", default=None, help="parse this crosstab instead of pulling")
     ap.add_argument("--date", default=None, help="YYYY-MM-DD (default today, CT)")
+    ap.add_argument("--last-week", action="store_true",
+                    help="the view's 'Last Week' (Mon-Sun just closed) instead of This Week")
     ap.add_argument("--no-tags", action="store_true", help="skip the Slack member lookup")
     g = ap.add_mutually_exclusive_group()
     g.add_argument("--dry-run", action="store_true", help="(default) render + print, post nothing")
