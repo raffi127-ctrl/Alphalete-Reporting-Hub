@@ -137,6 +137,37 @@ class RosterTests(unittest.TestCase):
         self.assertFalse(O.is_enrolled(""))
 
 
+class PushTodoRidesTheWatchLeg(unittest.TestCase):
+    """The office computers' resume-push to-do lists (probe-push-todo rows)
+    are posted from the poster's --watch tick, like every other relayed
+    thing -- and like every other thing there, inside a try, so a Slack
+    hiccup on one list never costs an office its credit-check alerts.
+
+    A source check rather than a run of main(): main() opens the relay
+    workbook and a dozen posting legs, and the point here is only that the
+    call EXISTS where the schedule reaches it. The behaviour of the call is
+    test_push_todo's."""
+
+    def _watch_leg(self):
+        import pathlib
+        src = pathlib.Path(P.__file__).read_text()
+        body = src[src.index("def main("):]
+        return body[body.index("if args.watch:"):]
+
+    def test_the_watch_leg_posts_the_lists(self):
+        leg = self._watch_leg()
+        self.assertIn("push_todo.post_push_todo(day, send=args.send)", leg)
+
+    def test_inside_a_try_after_the_faults(self):
+        leg = self._watch_leg()
+        call = leg.index("push_todo.post_push_todo(")
+        self.assertLess(leg.index("notify_faults(day, send=args.send)"), call)
+        before = leg[:call]
+        self.assertIn("try:", before[-160:])
+        after = leg[call:]
+        self.assertIn("except Exception", after[:200])
+
+
 if __name__ == "__main__":
     unittest.main()
 

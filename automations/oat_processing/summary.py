@@ -344,9 +344,14 @@ def _account_name(to_email: str) -> str:
     Known domain roots → the clean name; unknown → a best-effort title-cased domain
     (readable enough to know which account, and easy to add to the map later)."""
     to_email = (to_email or "").strip().lower()
-    if "@" not in to_email:
+    # EITHER the address OR its bare domain. An office computer relays the
+    # account as the domain alone (resume_push._account_domain): the relay
+    # scrubs every email address off a fault before it leaves the machine, so
+    # a full address would arrive as "[email]" and every name would fall under
+    # "No account listed". The domain is all this function ever used anyway.
+    dom = (to_email.split("@", 1)[1] if "@" in to_email else to_email).strip()
+    if not dom or "." not in dom or " " in dom:
         return ""
-    dom = to_email.split("@", 1)[1].strip()
     root = re.sub(r"\.(com|net|org|co|us|io|biz|info)$", "", dom)
     if root in _ACCOUNT_NAMES:
         return _ACCOUNT_NAMES[root]
@@ -384,14 +389,14 @@ def _load_flagged_snapshot(date: dt.date) -> dict:
         return {}
 
 
-def _find_today_parent(c, date_str: str):
+def _find_today_parent(c, date_str: str, channel: str = None):
     """Return the ts of today's 'recruiting to-do' parent message (so the 4pm post
     replies into the SAME thread the noon post created), or None if not posted yet.
     Match on 'recruiting to-do' + the date text — Slack returns 📋 as :clipboard:, so
     an emoji match would miss. Only the parent carries 'recruiting to-do'; the replies
     hold the names, so a text match uniquely finds the parent."""
     try:
-        hist = c.conversations_history(channel=CHANNEL_ID, limit=60)
+        hist = c.conversations_history(channel=channel or CHANNEL_ID, limit=60)
     except Exception:  # noqa: BLE001
         return None
     for m in hist.get("messages", []):
@@ -433,7 +438,8 @@ def render_section(title, entries) -> str:
 
 
 def post_nophone_report(date: dt.date, t: dict, dry_run: bool = False,
-                        edit: bool = False, coverage: dict = None) -> dict:
+                        edit: bool = False, coverage: dict = None,
+                        channel: str = None, office_short: str = None) -> dict:
     """Post the daily 'manual to-do' report to #alphaletegp-recruiting as Lucy —
     REPLACES the scorecard (Megan 2026-08-06). It lists the ONLY two buckets the bot
     legitimately can't process, so a human can finish them by hand:
@@ -443,7 +449,14 @@ def post_nophone_report(date: dt.date, t: dict, dry_run: bool = False,
          this month, so the bot's texting widget can't see it to reply.
 
     Format: a HEADER parent with the totals, then the two labelled name lists as a
-    threaded reply (so the counts sit clean in the channel, the who is one tap in)."""
+    threaded reply (so the counts sit clean in the channel, the who is one tap in).
+
+    `channel` / `office_short` override the module's (activate()-set) office for a
+    caller posting for SEVERAL offices from one process -- Lucy 1's poster, which
+    renders the lists the office computers relay (icd_alerts/push_todo.py, since
+    2026-11-15). Left out, both behave exactly as before."""
+    ch = channel or CHANNEL_ID
+    short = office_short or OFFICE_SHORT
     no_number = _entries_of(t.get("nophone"))
     needs_text = _entries_of(t.get("retext"))
     n_num, n_txt = len(no_number), len(needs_text)
@@ -471,6 +484,17 @@ def post_nophone_report(date: dt.date, t: dict, dry_run: bool = False,
             _cov = f" · partial: walk covered {_seen} of {_tot} in the queue"
         else:
             _cov = f" · partial: walk covered {_seen} applicant(s)"
+    # A LIST THAT ARRIVED BY RELAY says two more things when they are true
+    # (2026-11-15, office computers). "as of" when the walk it came from is
+    # hours old -- the office machine may have stopped, and a noon list
+    # posted at 4pm must not read as current. "more not shown" when the relay
+    # row could not carry every name (resume_push.pack_todo cuts from the
+    # end rather than send half a name); a short list must never read as
+    # the whole backlog -- the 2026-08-27 lesson, again.
+    if coverage and coverage.get("as_of"):
+        _cov += " · as of %s" % coverage["as_of"]
+    if coverage and int(coverage.get("cut") or 0) > 0:
+        _cov += " · %d more not shown (the relay row was full)" % int(coverage["cut"])
     header = (f"\U0001F4CB {date_str} — recruiting to-do: "
               f"{n_num} need a number, {n_txt} need a manual text{_cov}")
 
@@ -483,7 +507,7 @@ def post_nophone_report(date: dt.date, t: dict, dry_run: bool = False,
     slot = dt.datetime.now().strftime("%I %p").lstrip("0")
 
     if dry_run:
-        print(f"[report] DRY-RUN — would post to {CHANNEL_ID} ({OFFICE_SHORT}):",
+        print(f"[report] DRY-RUN — would post to {ch} ({short}):",
               flush=True)
         print("  HEADER (parent, created once/day): " + header, flush=True)
         print(f"  REPLY (in today's thread, {slot}):\n    "
@@ -496,12 +520,12 @@ def post_nophone_report(date: dt.date, t: dict, dry_run: bool = False,
     # same parent and replies into it (Megan 2026-08-06 — admins get one running
     # to-do list, not two separate posts). Refresh the parent's counts each time so
     # the channel-visible header stays current.
-    parent_ts = _find_today_parent(c, date_str)
+    parent_ts = _find_today_parent(c, date_str, channel=ch)
     if parent_ts is None:
         if edit:
             print("[report] --edit: no thread today to edit", flush=True)
             return {"ok": False, "err": "no thread today"}
-        parent = c.chat_postMessage(channel=CHANNEL_ID, text=header)
+        parent = c.chat_postMessage(channel=ch, text=header)
         parent_ts = parent["ts"]
     else:
         # SAY WHETHER THIS LANDED (2026-09-13). This was `except: pass`, so a
@@ -512,7 +536,7 @@ def post_nophone_report(date: dt.date, t: dict, dry_run: bool = False,
         # Still best-effort (a stale header must never fail the post), just not
         # silent about it.
         try:
-            c.chat_update(channel=CHANNEL_ID, ts=parent_ts, text=header)
+            c.chat_update(channel=ch, ts=parent_ts, text=header)
             print(f"[report] header updated on {parent_ts}: {header}", flush=True)
         except Exception as e:  # noqa: BLE001 — best-effort, but now visible
             print(f"[report] WARN header refresh FAILED on {parent_ts}: "
@@ -523,7 +547,7 @@ def post_nophone_report(date: dt.date, t: dict, dry_run: bool = False,
         # account can be added without piling on a new reply). Keeps each reply's own
         # time label ("4 PM update"); replaces its body with the current one.
         try:
-            reps = c.conversations_replies(channel=CHANNEL_ID, ts=parent_ts)
+            reps = c.conversations_replies(channel=ch, ts=parent_ts)
         except Exception as e:  # noqa: BLE001
             print(f"[report] --edit: couldn't read thread: {e}", flush=True)
             reps = {"messages": []}
@@ -535,7 +559,7 @@ def post_nophone_report(date: dt.date, t: dict, dry_run: bool = False,
             if "need a number" in txt.lower() or "update" in txt.lower():
                 label = txt.split("\n", 1)[0] if txt.startswith("*") else f"*{slot} update*"
                 try:
-                    c.chat_update(channel=CHANNEL_ID, ts=m["ts"], text=label + "\n" + body)
+                    c.chat_update(channel=ch, ts=m["ts"], text=label + "\n" + body)
                     edited += 1
                 except Exception as e:  # noqa: BLE001
                     print(f"[report] --edit chat_update failed: {e}", flush=True)
@@ -543,7 +567,7 @@ def post_nophone_report(date: dt.date, t: dict, dry_run: bool = False,
               flush=True)
         return {"ok": edited > 0, "thread_ts": parent_ts, "edited": edited}
 
-    c.chat_postMessage(channel=CHANNEL_ID, thread_ts=parent_ts,
+    c.chat_postMessage(channel=ch, thread_ts=parent_ts,
                        text=f"*{slot} update*\n" + body)
     print(f"[report] posted {slot} — {n_num} need a number, {n_txt} need a manual "
           f"text (thread {parent_ts})", flush=True)

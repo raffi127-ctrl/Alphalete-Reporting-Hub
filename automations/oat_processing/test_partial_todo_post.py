@@ -140,5 +140,46 @@ check("a complete walk still says nothing about coverage",
       "partial" not in _header({"complete": True, "covered": 48, "queue_start": 48}),
       True)
 
+print("a list that came by RELAY from an office computer labels itself (2026-11-15):")
+# The office machines hold no Slack token, so their lists travel as a relay row
+# and Lucy 1 posts them (icd_alerts/push_todo). Two labels only that path needs:
+# "as of" when the walk is hours old (the machine may have stopped), and how
+# many names the row could not carry -- a short list must never read as the
+# whole backlog (the 2026-08-27 lesson). Neither appears unless asked for.
+check("as of the walk's time when the list is old",
+      "· as of 9:12 AM" in _header({"complete": True, "as_of": "9:12 AM"}), True)
+check("names the row left off are counted in the header",
+      "· 7 more not shown (the relay row was full)" in _header(
+          {"complete": True, "cut": 7}), True)
+check("a complete, fresh, whole list is labelled exactly as before",
+      _header({"complete": True, "covered": 48, "queue_start": 48, "cut": 0}),
+      _header({"complete": True}))
+
+print("one process can post for several offices (channel / office_short overrides):")
+
+
+def _dry_line(**kw):
+    import io, contextlib
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        _summary.post_nophone_report(_dt.date(2026, 9, 13), _t, dry_run=True, **kw)
+    return [l for l in buf.getvalue().splitlines() if "would post to" in l][0]
+
+
+check("the channel passed is the channel named",
+      "would post to C0B85KRS5FU (office 23467, Atef)" in _dry_line(
+          channel="C0B85KRS5FU", office_short="office 23467, Atef"), True)
+check("left out, the module's own office is used, as before",
+      "would post to %s (%s)" % (_summary.CHANNEL_ID, _summary.OFFICE_SHORT)
+      in _dry_line(), True)
+
+print("an account relayed as a bare domain groups like its email did:")
+_dom = _summary.render_section("t", [("Dana Reyes", "fasttrack-strategies.com", 3)])
+_eml = _summary.render_section("t", [("Dana Reyes", "jobs@fasttrack-strategies.com", 3)])
+check("same section either way", _dom, _eml)
+check("and a non-domain still lists no account",
+      "*No account listed*" in _summary.render_section("t", [("Dana Reyes", "Indeed", 3)]),
+      True)
+
 print("%d/%d passed" % (_passed, _passed + _failed))
 raise SystemExit(1 if _failed else 0)

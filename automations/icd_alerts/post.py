@@ -4658,6 +4658,18 @@ def main(argv=None) -> int:
                 except Exception as e:  # noqa: BLE001 — a "good to go" must never cost the alerts
                     print("could not check sign-ins: %s: %s"
                           % (type(e).__name__, str(e)[:100]))
+                # THE RESUME-PUSH TO-DO LISTS the office computers relay
+                # (probe-push-todo rows), posted into each office's own
+                # recruiting channel in the noon hour and the 4pm hour --
+                # the post Carlos's office lost the day its push left Lucy
+                # 2 (2026-10-20, found 11/15). Reads nothing outside those
+                # two hours; never costs the alerts.
+                try:
+                    from automations.icd_alerts import push_todo
+                    push_todo.post_push_todo(day, send=args.send)
+                except Exception as e:  # noqa: BLE001 — a to-do list must never cost the alerts
+                    print("could not post the push to-do lists: %s: %s"
+                          % (type(e).__name__, str(e)[:100]))
                 warn_quiet(day, send=args.send)
                 warn_stale_machines(day, send=args.send)
                 # BOTH OF THESE EXISTED AND NOTHING CALLED THEM. A machine

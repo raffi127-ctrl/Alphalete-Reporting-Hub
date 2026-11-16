@@ -1495,6 +1495,187 @@ def _file_stats(out: dict, live: bool, sent_today: int, result: str) -> None:
         pass
 
 
+# THE TO-DO LIST, FROM THE OFFICE'S OWN COMPUTER (Carlos 2026-11-15: the
+# noon/4pm "recruiting to-do" post in his channel -- who the walk could not
+# find a number for, grouped by the Indeed account they applied through --
+# stopped the day 11580 left Lucy 2 for his computer, 10/20, and nobody
+# noticed for 26 days). The walk still writes its flagged snapshot here
+# (oat_processing/run._write_flagged_snapshot), but an office machine holds
+# no Slack token by design, so the list sat on this disk. This files the
+# snapshot through the relay as a quiet probe row, one per office per day
+# (the relay upserts on office/day/stage/summary; Detail = the newest walk's
+# list), and Lucy 1's poster renders and posts it at noon and 4pm
+# (automations/icd_alerts/push_todo.py). A probe- stage is filed, never
+# posted as a fault (post.notify_faults).
+TODO_STAGE = "probe-push-todo"
+# relay._scrub cuts a detail at 6000 characters. Stay under it with room, and
+# say how many names were left off rather than let the cut land mid-name.
+TODO_DETAIL_MAX = 5500
+# What the walk writes when a record came back without a name: it falls
+# back to the applicant's EMAIL (oat_processing/run.py), and the relay
+# scrubs every email address off a fault before it leaves the machine, so
+# that would arrive as "[email]". Say the honest thing instead.
+UNREADABLE_NAME = "(name unreadable \u2014 find them in the queue)"
+
+
+def todo_summary(record: dict, office: Optional[str]) -> str:
+    """The relay row's summary for one office's list -- same shape and same
+    reason as stats_summary: a machine with several offices (Raf's) keeps
+    one row per office by putting the number in the SUMMARY, never in the
+    office key (the relay refuses a key that is not enrolled)."""
+    if len(office_ids(record)) > 1 and office:
+        return "push todo %s" % office
+    return "push todo"
+
+
+def _account_domain(account) -> str:
+    """'jobs@fasttrack-strategies.com' -> 'fasttrack-strategies.com'.
+
+    The relay scrubs EVERY email address off a fault before it leaves the
+    machine (relay._scrub, "no customer data leaves the laptop"), so an
+    account sent as its address would land as "[email]" and every name
+    would fall under "No account listed". The post groups by the DOMAIN
+    anyway (summary._account_name), so the domain is all that travels, and
+    it survives the scrub untouched. Not a weakening of the scrub: it
+    still runs on this, and an applicant's address never rides along."""
+    a = str(account or "").strip().lower()
+    return a.split("@", 1)[1].strip() if "@" in a else a
+
+
+def _todo_entries(bucket) -> list:
+    """[(name, domain, days)] for one snapshot bucket. Tolerates the older
+    shapes the snapshot has had (bare names; entries without days)."""
+    out = []
+    for it in bucket or []:
+        if isinstance(it, dict):
+            nm = str(it.get("name") or "").strip()
+            dom = _account_domain(it.get("account"))
+            days = it.get("days")
+        else:
+            nm, dom, days = str(it or "").strip(), "", None
+        if not nm:
+            continue
+        if "@" in nm:
+            nm = UNREADABLE_NAME
+        if not isinstance(days, int) or isinstance(days, bool):
+            days = None
+        out.append((nm, dom, days))
+    return out
+
+
+def todo_detail(body: dict) -> str:
+    """The row's Detail cell: the body as compact JSON. ensure_ascii off so a
+    name with an accent costs its own characters, not six (the 6000 cut
+    applies to THIS string)."""
+    return json.dumps(body, ensure_ascii=False, separators=(",", ":"))
+
+
+def pack_todo(snap: dict, office, live: bool) -> dict:
+    """The flagged snapshot, compact enough for one relay row.
+
+    Names grouped under their account's domain, each as [name, days], so a
+    hundred applicants across four accounts fit where a hundred
+    {"name","account","days"} dicts would not. Carries what the post needs
+    to label itself honestly (complete / covered / queue_start, the
+    2026-09-13 partial-walk rule). When even the compact form is too long
+    for the relay, names are dropped from the END of the longer bucket and
+    counted in "cut", so the post can say "N more not shown" instead of
+    arriving as half a JSON object."""
+    flat = {"nophone": _todo_entries(snap.get("nophone")),
+            "retext": _todo_entries(snap.get("retext"))}
+    body = {"office": str(office or ""), "date": snap.get("date"),
+            "at": snap.get("at"), "complete": bool(snap.get("complete", True)),
+            "covered": snap.get("covered"),
+            "queue_start": snap.get("queue_start"),
+            "queue_total": snap.get("queue_total"),
+            "live": bool(live), "nophone": {}, "retext": {}, "cut": 0}
+
+    def _grouped(entries):
+        groups = {}
+        for nm, dom, days in entries:
+            groups.setdefault(dom, []).append([nm, days])
+        return groups
+
+    while True:
+        body["nophone"] = _grouped(flat["nophone"])
+        body["retext"] = _grouped(flat["retext"])
+        if len(todo_detail(body)) <= TODO_DETAIL_MAX:
+            return body
+        if not flat["nophone"] and not flat["retext"]:
+            return body
+        longer = ("nophone" if len(flat["nophone"]) >= len(flat["retext"])
+                  else "retext")
+        flat[longer].pop()
+        body["cut"] += 1
+
+
+def unpack_todo(body: dict) -> dict:
+    """The poster's half: a relayed body back into the snapshot shape
+    summary._entries_of reads -- {"nophone": [{"name","account","days"}],
+    "retext": [...]} -- with the account as the domain the office sent
+    (summary._account_name takes either spelling). Order within an account
+    is the walk's own, which is all render_section keeps."""
+    out = {}
+    for bucket in ("nophone", "retext"):
+        groups = body.get(bucket) or {}
+        entries = []
+        if isinstance(groups, dict):
+            for dom, people in groups.items():
+                for p in people or []:
+                    if isinstance(p, (list, tuple)) and p:
+                        entries.append({"name": str(p[0]),
+                                        "account": str(dom or ""),
+                                        "days": p[1] if len(p) > 1 else None})
+        out[bucket] = entries
+    return out
+
+
+def _todo_snapshot(today: Optional[dt.date] = None) -> dict:
+    """The flagged snapshot this office's walk left today
+    (output/oat-flagged-<date><suffix>.json, suffix "-<office>" set by
+    _point_walk_here), or {}. Read back from disk rather than from the
+    walk's return: the FILE is the day's best list -- a partial walk never
+    overwrites a complete one (_write_flagged_snapshot), and that rule
+    should reach Slack unchanged."""
+    from automations.oat_processing import config as OC
+    today = today or dt.date.today()
+    path = Path("output") / ("oat-flagged-%s%s.json"
+                             % (today.isoformat(), OC.FILE_SUFFIX))
+    try:
+        return json.loads(path.read_text()) or {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _file_todo(out: dict, live: bool) -> None:
+    """After a walk that finished, relay its to-do list. LIVE walks only: a
+    dry-run office has nobody working a list we would post, and applicant
+    names leave this machine only for an office that is really being
+    pushed. Best effort, never raises -- the telling, never the work."""
+    try:
+        if not live or out.get("rc") != 0 or not out.get("office"):
+            return
+        snap = _todo_snapshot()
+        if not snap:
+            _log("no flagged snapshot today -- no to-do list to relay")
+            return
+        rec = push_record()
+        body = pack_todo(snap, out.get("office"), live)
+        from automations.icd_alerts import relay as R
+        ok = R.report_fault(TODO_STAGE, todo_summary(rec, out.get("office")),
+                            todo_detail(body), log=_log,
+                            office_key=str(rec.get("office_key") or ""))
+        n_num = sum(len(v) for v in body["nophone"].values())
+        n_txt = sum(len(v) for v in body["retext"].values())
+        _log("to-do list %s: %d need a number, %d need a manual text%s%s"
+             % ("relayed" if ok else "NOT accepted by the relay", n_num, n_txt,
+                "" if body["complete"] else " (partial walk)",
+                ", %d more left off (row full)" % body["cut"]
+                if body["cut"] else ""))
+    except Exception as e:  # noqa: BLE001 -- the telling, never the work
+        _log("could not relay the to-do list: %s" % type(e).__name__)
+
+
 def push(live: bool, scheduled: bool = False) -> int:
     """One push. 0 = done (or nothing to do), 1 = failed."""
     if not C.appstream_creds():
@@ -1638,6 +1819,7 @@ def push(live: bool, scheduled: bool = False) -> int:
                     ob["queue"] = out["queue_end"]   # for biggest-pile-first
             if out.get("reached") and out.get("office"):
                 _file_stats(out, live, sent_office_today, result)
+                _file_todo(out, live)
         if result == "ok":
             st.pop("reported", None)    # the next fault is news again
         _save_state(st)
