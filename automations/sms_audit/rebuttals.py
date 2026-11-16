@@ -289,19 +289,22 @@ def says_base_pay(text):
 # 24065 has never sent a correct one: 21 "Unit 232", 2 "3000 Premier Drive",
 # and 6 sending Raf's candidates to Carlos's Grand Prairie office.
 OFFICE_ADDRESS = {
-    "11280": "3100 Premier Drive, Suite 207, Irving, Texas 75063",
+    # Moved to Plano; Megan 2026-11-16: "fully the tennyson one".
+    "11280": "5217 Tennyson Pkwy, Suite 100, Plano, Texas 75024",
     "23965": "3100 Premier Drive, Suite 207, Irving, Texas 75063",
     "24065": "3100 Premier Drive, Suite 207, Irving, Texas 75063",
     # Confirmed by Megan in her own words, 2026-09-27.
     "11580": "1901 N Highway 360, Suite 610, Grand Prairie, Texas 75050",
 }
-# A temporary spot the office is ALSO using, on top of its real address.
-# Megan 2026-11-16: 11280's recruiters send people to 6865 Windcrest Dr,
-# Suite 200, Plano, and that is right for now ("it's temporary") — the
-# Irving address stays the office's own. Texts naming either one pass.
-# Take an entry out when the office stops using the temporary spot.
+# A temporary spot an office used for a while, on top of its real address:
+# {office: [(address, last_day_it_was_right or None)]}. A text naming it
+# passes if it was sent on or before that day (None = still in use).
+# Megan 2026-11-16: 11280's 6865 Windcrest Dr, Suite 200, Plano was
+# temporary, and "the address now is fully" 5217 Tennyson Pkwy — so a
+# Windcrest text from today on is wrong.
 TEMP_ADDRESSES = {
-    "11280": ["6865 Windcrest Drive, Suite 200, Plano, Texas 75024"],
+    "11280": [("6865 Windcrest Drive, Suite 200, Plano, Texas 75024",
+               __import__('datetime').date(2026, 11, 15))],
 }
 
 # \b on BOTH sides of the suffix. Without the leading one, "Rd" matched
@@ -373,7 +376,11 @@ def wrong_address(office, text, when=None):
     if not m:
         return None
     unit = _UNIT.search(body)
-    for ok in [want] + TEMP_ADDRESSES.get(office, []):
+    import datetime as _d
+    day = when.date() if isinstance(when, _d.datetime) else when
+    temps = [a for a, last in TEMP_ADDRESSES.get(office, [])
+             if last is None or (day is not None and day <= last)]
+    for ok in [want] + temps:
         if m.group(1) in ok and not (
                 unit and unit.group(2).lower() not in ok.lower()):
             return None
