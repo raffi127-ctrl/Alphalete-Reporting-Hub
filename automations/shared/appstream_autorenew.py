@@ -409,6 +409,9 @@ def main(argv=None) -> int:
                          "fails. OFF by default: it swaps the machine's "
                          "ownerville identity and breaks impersonating reports, "
                          "and it does not extend the token anyway.")
+    ap.add_argument("--ownerville-only", action="store_true",
+                    help="re-mint the OwnerVille session and nothing else. "
+                         "Exit 0 only if a live session was written.")
     a = ap.parse_args(argv)
 
     left = token_minutes_left()
@@ -420,6 +423,22 @@ def main(argv=None) -> int:
         # incident about a probe that worked perfectly — the same crying-wolf
         # that appstream_selfheal --check had to have removed on 2026-08-31.
         return 0
+
+    # --ownerville-only IS NOT --refresh-ownerville (2026-11-16). That flag is
+    # a FALLBACK inside the AppStream renewal: it is only reached when the
+    # token is already under the threshold AND the warm-profile capture fails.
+    # On a machine whose AppStream token is healthy, `--refresh-ownerville`
+    # exits at "still healthy — nothing to do" and re-mints NOTHING, while
+    # still reporting exit 0. That is exactly what happened on Lucy 3 the day
+    # this was added: its OwnerVille session was dead, the AppStream token had
+    # 101 minutes left, and the run came back green having done nothing.
+    #
+    # A dead OwnerVille session has nothing to do with AppStream's clock, so
+    # this branch sits ABOVE both gates and asks for the one thing it names.
+    # Exit code follows the mint, because a green run that minted nothing is
+    # the failure mode this exists to end.
+    if a.ownerville_only:
+        return 0 if refresh_ownerville(verbose=True) else 1
 
     if left >= a.under and not a.force:
         _log("still healthy — nothing to do, staying silent")
