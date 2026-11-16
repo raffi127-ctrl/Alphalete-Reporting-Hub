@@ -234,6 +234,11 @@ PORT = "port"
 _NON_PHONE_WORDS = ("ipad", "tablet", " tab ", "tab a", "galaxy tab", "watch",
                     "ultra 2", "wearable", "nighthawk", "hotspot")
 _NON_PHONE_TYPES = ("tablet", "wearable", "watch", "hotspot", "data", "connected")
+# Samsung model codes with no word in them (2026-11-16: two BYOD "SM-X238U" --
+# a Galaxy Tab A9+ typed "Phone" -- sat in Esmeralda Gonzalez's churn and not
+# in Smart Circle's). SM-X/T/P = Galaxy Tab, SM-R = Galaxy Watch; phones are
+# SM-S/G/A/F/N and stay phones.
+_NON_PHONE_MODEL_RE = re.compile(r"\bsm-[xtpr]\d{3}", re.I)
 
 
 def is_non_phone(ln: dict) -> bool:
@@ -242,7 +247,8 @@ def is_non_phone(ln: dict) -> bool:
     wt = (ln.get("wireless_type") or "").strip().lower()
     blob = " %s %s " % ((ln.get("device") or "").lower(), (ln.get("package") or "").lower())
     return (any(w in wt for w in _NON_PHONE_TYPES)
-            or any(w in blob for w in _NON_PHONE_WORDS))
+            or any(w in blob for w in _NON_PHONE_WORDS)
+            or bool(_NON_PHONE_MODEL_RE.search(blob)))
 
 
 def line_kind(ln: dict) -> str:

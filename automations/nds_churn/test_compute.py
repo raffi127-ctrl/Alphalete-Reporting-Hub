@@ -306,5 +306,24 @@ class Compute(unittest.TestCase):
         self.assertIsNone(comp.rep_dnq(7.0, 25, 60.0, 25))
 
 
+class SamsungModelCodes(unittest.TestCase):
+    """2026-11-16: two BYOD 'SM-X238U' (Galaxy Tab A9+) typed 'Phone' were in
+    Esmeralda Gonzalez's churn base and not in Smart Circle's view."""
+
+    def _ln(self, device):
+        return {"wireless_type": "Phone", "device": device,
+                "package": "AT&T Value 2.0", "tn_type": "Port"}
+
+    def test_galaxy_tab_and_watch_codes_are_not_phones(self):
+        for d in ("SM-X238U", "SM-T220", "SM-P613", "SM-R960 BYO"):
+            self.assertTrue(C.is_non_phone(self._ln(d)), d)
+            self.assertEqual(C.line_kind(self._ln(d)), "device", d)
+
+    def test_samsung_phone_codes_stay_phones(self):
+        for d in ("SM-G991U BYO", "SM-S928U", "SM-A156U", "SM-F946U", "SM-N986U"):
+            self.assertFalse(C.is_non_phone(self._ln(d)), d)
+            self.assertEqual(C.line_kind(self._ln(d)), "port", d)
+
+
 if __name__ == "__main__":
     unittest.main()
