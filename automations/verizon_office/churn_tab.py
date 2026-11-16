@@ -336,6 +336,35 @@ def unapproved_png(lines, today: dt.date, out_path: Path, owner: str = "", tier_
     return _capture_board(htm, Path(out_path), width=1700)
 
 
+SCORING_HEADERS = ("Sales weeks from", "Approved window", "Approved lines", "Dropped within 30d",
+                   "Churn", "Tier → $ / port line", "Still inside 30 days")
+
+
+def credico_scoring(lines, today: dt.date, blocks: int = 3) -> List[dict]:
+    """How Credico will score the office, block by block (Carlos 2026-11-15:
+    "is the churn tab being made properly? based off of how the tiers are
+    determined"): for the current block and the next ones, the window of
+    APPROVED lines the Churn Schedule assigns, how many of those dropped
+    within 30 days of activating, the rate, the tier it lands on, and how
+    many lines have not yet had their full 30 days (the rate can still rise).
+    The box above is a rolling early-warning number; this is the scoring."""
+    out = []
+    cal = [c for c in C.CHURN_CALENDAR if c[0] <= today] [-1:] + [c for c in C.CHURN_CALENDAR if c[0] > today]
+    for blk, w0, w1 in cal[:blocks]:
+        base = [l for l in lines if _d(l.get("Approval Date")) and w0 <= _d(l.get("Approval Date")) <= w1
+                and _d(l.get("Activation Date"))]
+        gone = [l for l in base if is_dead(l) and _d(l.get("Cancel Date"))
+                and (_d(l.get("Cancel Date")) - _d(l.get("Activation Date"))).days <= 30]
+        young = [l for l in base if not is_dead(l) and (today - _d(l.get("Activation Date"))).days < 30]
+        rate = (len(gone) / len(base)) if base else None
+        tier = (next(t for ceil, t in C.CHURN_TIERS if rate < ceil)
+                if base and len(base) >= C.NEUTRAL_UNTIL_ACTIVATIONS else C.NEUTRAL_TIER)
+        out.append({"block": blk, "w0": w0, "w1": w1, "base": len(base), "gone": len(gone), "rate": rate,
+                    "tier": tier, "pay": C.PORT_TIER_PAY[tier], "young": len(young),
+                    "neutral": len(base) < C.NEUTRAL_UNTIL_ACTIVATIONS})
+    return out
+
+
 def credico_tier(sv_path: Path, today: dt.date) -> dict:
     """Where the office sits on Credico's calendar window (comp.office_tier):
     {tier, why, window: (w0, w1) or None, pay}."""
@@ -409,6 +438,27 @@ def build_grid(lines, today: dt.date, tier: dict) -> Tuple[List[List[str]], dict
         g[rr - 1][7:11] = ["Tier %d" % t, TIER_LABELS[t], "$%d" % C.PORT_TIER_PAY[t], mark]
         tier_rows.append(rr)
     marks["tiers"] = (hdr, tier_rows[-1])
+    # CREDICO SCORING under the box (A:G): the next blocks the way the Churn
+    # Schedule will score them (credico_scoring). Starts two rows under the
+    # box, inside the tier chart's height when it fits.
+    sc = credico_scoring(lines, today)
+    sh = max(marks["box"][1] + 2, len(g) + 1)
+    while len(g) < sh:
+        row()
+    g[sh - 1][0:7] = list(SCORING_HEADERS)
+    marks["headers"].append(sh)
+    marks["scoring_cells"] = []
+    for k, x in enumerate(sc, 1):
+        rr = sh + k
+        while len(g) < rr:
+            row()
+        g[rr - 1][0:7] = ["%d/%d%s" % (x["block"].month, x["block"].day, " (now)" if k == 1 else ""),
+                          "%d/%d – %d/%d" % (x["w0"].month, x["w0"].day, x["w1"].month, x["w1"].day),
+                          str(x["base"]), str(x["gone"]), _pct(x["rate"]) if x["rate"] is not None else "—",
+                          "T%d · $%d%s" % (x["tier"], x["pay"], " · neutral" if x["neutral"] else ""),
+                          "%d%s" % (x["young"], " — rate can still rise" if x["young"] else "")]
+        marks["scoring_cells"].append((rr, x["tier"]))
+    marks["scoring"] = (sh, sh + len(sc))
     row()
     w = tier["window"]
     win = "%d/%d–%d/%d" % (w[0].month, w[0].day, w[1].month, w[1].day) if w else "n/a"
@@ -517,6 +567,11 @@ def _format_requests(sheet_id: int, marks: dict) -> List[dict]:
     reqs.append(box(b0 - 1, b1, 0, 6))
     t0, t1 = marks["tiers"]
     reqs.append(box(t0 - 1, t1, 7, 11))
+    if marks.get("scoring"):
+        s0, s1 = marks["scoring"]
+        reqs.append(box(s0 - 1, s1, 0, 7))
+        for rr, t in marks["scoring_cells"]:
+            reqs.append(fill(rr - 1, rr, 4, 6, GREEN if t <= 3 else YELLOW if t <= 5 else RED, True))
     for r in marks["tier_rows"]:
         t = r - marks["tier_rows"][0] + 1
         reqs.append(fill(r - 1, r, 8, 9, GREEN if t <= 3 else YELLOW if t <= 5 else RED))
@@ -541,7 +596,7 @@ def _format_requests(sheet_id: int, marks: dict) -> List[dict]:
     # table: make that one bigger as well"): larger type in the box (A:G) and
     # the tier chart (H:L), taller rows under them. fontSize only, so the
     # header fills / tints above keep their colours.
-    top0, top1 = marks["box"][0] - 1, max(marks["box"][1], marks["tiers"][1])
+    top0, top1 = marks["box"][0] - 1, max(marks["box"][1], marks["tiers"][1], (marks.get("scoring") or (0, 0))[1])
     reqs.append({"repeatCell": {"range": rng(top0, top1, 0, 12), "cell": {"userEnteredFormat": {"textFormat": {"fontSize": 13}}},
                                 "fields": "userEnteredFormat.textFormat.fontSize"}})
     reqs.append({"updateDimensionProperties": {"range": {"sheetId": sheet_id, "dimension": "ROWS", "startIndex": top0, "endIndex": top1},

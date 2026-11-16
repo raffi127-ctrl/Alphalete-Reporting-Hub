@@ -98,6 +98,16 @@ class ChurnTabTest(unittest.TestCase):
         # the per-rep missed-out revenue: Will's port IP17 at Tier 4 = $190
         self.assertEqual(CT.unpaid_by_rep(self.lines, 190), [("OFFICE TOTAL", 1, 190), ("Will Bautista", 1, 190)])
 
+    def test_credico_scoring_blocks(self):
+        sc = CT.credico_scoring(self.lines, TODAY)
+        self.assertEqual([x["block"] for x in sc], [dt.date(2026, 10, 25), dt.date(2026, 11, 22), dt.date(2026, 12, 20)])
+        nxt = sc[1]                                   # window 9/22-10/21: Q_5 approved 10/2, active
+        self.assertEqual((nxt["base"], nxt["gone"], nxt["tier"], nxt["neutral"]), (1, 0, 4, True))
+        grid, marks = CT.build_grid(self.lines, TODAY, CT.credico_tier(self.sv, TODAY))
+        s0, s1 = marks["scoring"]
+        self.assertEqual(grid[s0 - 1][0:7], list(CT.SCORING_HEADERS))
+        self.assertTrue(grid[s0][0].startswith("10/25 (now)"))
+
     def test_credico_tier_neutral_under_15(self):
         t = CT.credico_tier(self.sv, TODAY)
         self.assertEqual((t["tier"], t["pay"]), (4, 190))
