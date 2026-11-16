@@ -20,10 +20,10 @@
              reps with no owner stay on. -->
         <string>--ask-owners</string>
         <!-- "Lucy Second Round Scorecards" thread in the owner's recruiting channel: list +
-             one PDF per day this week + month picture (Raf 2026-11-16). TRIAL: Raf only, in
-             #rafs-office-recruiting-11280 (Eve 2026-11-16). Every owner = drop the next two lines. -->
+             one PDF per day this week + month picture (Raf 2026-11-16). Trial on Raf 11/16, every
+             owner from 11/17 (Eve 2026-11-16). Owners with no channel in
+             first_round_scorecards/office_post.CHANNELS are skipped (logged). -->
         <string>--owner-threads</string>
-        <string>--owner-threads-only=Rafael Hidalgo</string>
     </array>
 
     <key>WorkingDirectory</key>
