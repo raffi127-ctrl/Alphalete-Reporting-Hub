@@ -18174,6 +18174,52 @@
    },
    "timeout_minutes": 40
   },
+  "verizon_texts": {
+   "on_scheduler": false,
+   "_off_scheduler_note": "NOT in the 4am batch: its own LaunchAgent on Lucy 1 (com.alphalete.verizon-texts, 9:45 through 17:20). Carlos 2026-11-15: the Verizon Revenue Sales Board, Churn Rates by Rep and the VERIZON CHURN tab picture (every day), the comp grid (11/16 only) and the 9:30 Verizon Wireless scorecard tracker (Nico's row highlighted) texted to the 'Verizon' and 'Verizon Leaders' iMessage chats. Pulls the posted PNGs out of #alphalete-gp-sales; one text per picture per chat per day. Here so `lucy rerun verizon_texts -- --send` texts by hand (bare = dry run). Lucy 1: Messages signed in as alphaletereporting@, in the 'Verizon' chat.",
+   "machine": "Lucy 1",
+   "display_name": "Verizon texts — board, churn, tracker to the Verizon chats (iMessage)",
+   "source_type": "api",
+   "data_sources": [
+    "slack:#alphalete-gp-sales"
+   ],
+   "command": [
+    "automations.verizon_office.texts"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P2",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": {
+    "type": "not_configured"
+   }
+  },
+  "install_verizon_texts_agent": {
+   "on_scheduler": false,
+   "_off_scheduler_note": "NOT in the 4am batch. Installs com.alphalete.verizon-texts on Lucy 1: deploy/verizon_texts.sh --send -> verizon_office.texts, 9:45/10:15/11:35/12:05/12:50/13:50/14:50/15:50/17:20 local.",
+   "machine": "Lucy 1",
+   "display_name": "Install Verizon texts agent (Lucy 1)",
+   "command": [
+    "automations.day_orchestrator.install_agent"
+   ],
+   "base_args": [
+    "verizon-texts"
+   ],
+   "source_type": "local",
+   "data_sources": [],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": {
+    "type": "not_configured"
+   }
+  },
   "verizon_review_post": {
    "on_scheduler": false,
    "_off_scheduler_note": "HAND-RUN ONLY. Posts Nico's Verizon report EXAMPLES (resources/verizon_review/, built on Megan's laptop with `python -m automations.verizon_office.review --build`) to the review group DM C0CFN3SBFCM (Alphalete GP, Carlos, Evelyn, Lucy, Lucy Reporting, Megan, Nico): an intro explaining the reactions, then one post per report. A checkmark from Carlos or Nico = approved; an X = reply in the thread with what to change (Megan 2026-11-07). Lucy 4 so the posts come from Lucy, and pinned there because output/verizon_review_posted.json (what already went out) lives on that box: a retry posts only what is missing. Default (no --send) prints only.",

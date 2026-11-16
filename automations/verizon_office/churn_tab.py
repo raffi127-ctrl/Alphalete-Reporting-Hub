@@ -244,7 +244,8 @@ def build_grid(lines, today: dt.date, tier: dict) -> Tuple[List[List[str]], dict
     row()
     hdr = row(["Product", "Activations", "Disconnects", "Churn %", "0-30 Day Activation Rate", "31-60 Day Activation Rate"])
     marks["headers"].append(hdr)
-    g[hdr - 1][7:11] = ["Credico Tier", "0-30 Day Churn", "$ / new port line", ""]
+    # "Tier", not "Credico Tier" (Carlos 2026-11-15: "just call it tiers")
+    g[hdr - 1][7:11] = ["Tier", "0-30 Day Churn", "$ / new port line", ""]
     for label, cls in BOX_ROWS:
         s = summary[label]
         r = row([label, s["base"], s["disc"], _pct(s["rate"]),
@@ -386,10 +387,20 @@ def _format_requests(sheet_id: int, marks: dict) -> List[dict]:
     r0, r1 = marks["rep_list"]
     reqs.append(box(r0 - 1, r1, 15, 18))
     reqs.append(fill(r0, r0 + 1, 15, 18, (0.93, 0.93, 0.93), True))      # office total row
+    # THE TWO TOP TABLES BIGGER (Carlos 2026-11-15: "the tiers table ... make
+    # that all bigger ... the product / activations / disconnects / churn
+    # table: make that one bigger as well"): larger type in the box (A:G) and
+    # the tier chart (H:L), taller rows under them. fontSize only, so the
+    # header fills / tints above keep their colours.
+    top0, top1 = marks["box"][0] - 1, max(marks["box"][1], marks["tiers"][1])
+    reqs.append({"repeatCell": {"range": rng(top0, top1, 0, 12), "cell": {"userEnteredFormat": {"textFormat": {"fontSize": 13}}},
+                                "fields": "userEnteredFormat.textFormat.fontSize"}})
+    reqs.append({"updateDimensionProperties": {"range": {"sheetId": sheet_id, "dimension": "ROWS", "startIndex": top0, "endIndex": top1},
+                                               "properties": {"pixelSize": 36}, "fields": "pixelSize"}})
     reqs.append({"autoResizeDimensions": {"dimensions": {"sheetId": sheet_id, "dimension": "COLUMNS", "startIndex": 0, "endIndex": 18}}})
     # A:N serve BOTH the box (Product .. 31-60 Day rate) and the rolloff tables
     # (Days Left .. Status Reason); O is the gap; P:R the rep list.
-    for c, px in ((0, 175), (1, 110), (2, 95), (3, 200), (4, 240), (5, 200), (6, 190), (7, 125), (8, 130), (9, 135),
+    for c, px in ((0, 215), (1, 150), (2, 140), (3, 230), (4, 280), (5, 240), (6, 210), (7, 150), (8, 165), (9, 175),
                   (10, 165), (11, 160), (12, 280), (13, 30), (14, 30), (15, 230), (16, 190), (17, 125)):
         reqs.append({"updateDimensionProperties": {"range": {"sheetId": sheet_id, "dimension": "COLUMNS", "startIndex": c, "endIndex": c + 1},
                                                    "properties": {"pixelSize": px}, "fields": "pixelSize"}})

@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alphalete.verizon-texts</string>
+
+    <!-- Path is the laptop's; on Lucy 1, install via
+         `lucy rerun install_verizon_texts_agent`. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/megan/1st Claude Folder/deploy/verizon_texts.sh</string>
+        <string>--send</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/megan/1st Claude Folder</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/megan/1st Claude Folder</string>
+    </dict>
+
+    <!-- The tracker posts ~9:35 CT; the Verizon Metrics thread fills from
+         11:15 (Lucy 4 retries until 17:00). Each tick texts only what is new. -->
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>45</integer></dict>
+        <dict><key>Hour</key><integer>10</integer><key>Minute</key><integer>15</integer></dict>
+        <dict><key>Hour</key><integer>11</integer><key>Minute</key><integer>35</integer></dict>
+        <dict><key>Hour</key><integer>12</integer><key>Minute</key><integer>5</integer></dict>
+        <dict><key>Hour</key><integer>12</integer><key>Minute</key><integer>50</integer></dict>
+        <dict><key>Hour</key><integer>13</integer><key>Minute</key><integer>50</integer></dict>
+        <dict><key>Hour</key><integer>14</integer><key>Minute</key><integer>50</integer></dict>
+        <dict><key>Hour</key><integer>15</integer><key>Minute</key><integer>50</integer></dict>
+        <dict><key>Hour</key><integer>17</integer><key>Minute</key><integer>20</integer></dict>
+    </array>
+
+    <key>StandardOutPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/verizon-texts.launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/verizon-texts.launchd.err.log</string>
+</dict>
+</plist>

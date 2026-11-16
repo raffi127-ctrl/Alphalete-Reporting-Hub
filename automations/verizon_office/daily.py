@@ -143,6 +143,22 @@ def main(argv=None) -> int:
     if marker.exists():
         print("already posted today (%s) — nothing to do" % marker.name)
         return 0
+    # THE VERIZON CHURN TAB PICTURE, every day (Carlos 2026-11-15: "The Verizon
+    # churn screenshot: let's add that one every day"): refresh the tab off
+    # this same file, then shoot it, right after Churn Rates by Rep. Its
+    # failure never costs the thread.
+    if office.key == "nicolas":
+        try:
+            from automations.verizon_office import churn_tab as CH
+            CH.refresh(Path(sv), today=today, prod=CHURN_TAB_PROD)
+            out = ROOT / "output" / "verizon_office" / office.key / "boards"
+            png = CH.screenshot(out / f"verizon_churn_tab_{today.isoformat()}.png",
+                                sheet_id=CH.PROD_SHEET_ID if CHURN_TAB_PROD else CH.SANDBOX_SHEET_ID)
+            item = ("image", (png, f":wolf: *VERIZON CHURN* — {today.month}/{today.day}"))
+            at = next((i + 1 for i, (k, pl) in enumerate(steps) if k == "image" and "Churn Rates by Rep" in pl[1]), len(steps))
+            steps.insert(at, item)
+        except Exception as e:  # noqa: BLE001
+            print("⚠ Verizon Churn tab picture skipped: %s" % e)
     post(office, today, steps)
     marker.write_text(dt.datetime.now().isoformat())
     # THE OPT TAB rides the same pull (Megan 2026-11-08: "wire the weekly
@@ -165,15 +181,7 @@ def main(argv=None) -> int:
             OL.refresh(Path(sv), today=today, prod=ORDER_LOG_PROD)
         except Exception as e:  # noqa: BLE001
             print("⚠ Verizon Order Log tab failed (the thread posted fine): %s" % e)
-        # THE VERIZON CHURN TAB too (Carlos 2026-11-15: "NDS has this NDS churn
-        # tab ... can we make one for Verizon as well?"): the 0-30 day rolloff
-        # list, the box and Credico's tier chart off the same file
-        # (verizon_office.churn_tab). Sandbox until CHURN_TAB_PROD flips.
-        try:
-            from automations.verizon_office import churn_tab as CH
-            CH.refresh(Path(sv), today=today, prod=CHURN_TAB_PROD)
-        except Exception as e:  # noqa: BLE001
-            print("⚠ Verizon Churn tab failed (the thread posted fine): %s" % e)
+        # (the VERIZON CHURN tab is refreshed + pictured BEFORE the post, above)
     return 0
 
 
