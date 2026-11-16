@@ -522,6 +522,15 @@ _MORE = [
     # #indeed-photos-algemar-kennels-office created by Eve 11/6.
     ("algemar", "Algemar Kennel", ARS_A_TO_C, "Algemar Kennel", "23965", "Se7en Summit Acquisitions",
      "C0CFLK9MK4H", "C0CGFV9U6DN", r"se7en\s*summit.*1st\s*round"),
+    # Vincent Dodson (Maddie 11/16), Relevant Specialized Connections, Lubbock
+    # TX. Daily thread ":zap:*RELEVANT SPECIALIZED CONNECTIONS- 1st ROUNDS -
+    # NOVEMBER 16TH*:zap:" in #24290-vincent-s-funnel-rafael-hidalgo since
+    # 11/10; the "EOD-RELEVANT ... 1st ROUNDS" recap carries the same words, so
+    # it is ruled out. ARS R-Z tab "Vincent Dodson" (Angela). AppStream 24290
+    # "Vincent's Funnel" until his own 24332 is used. Photos channel created by
+    # Eve 11/11.
+    ("vincent", "Vincent Dodson", ARS_R_TO_Z, "Vincent Dodson", "24290", "Relevant Specialized Connections",
+     "C0CDETE7Z61", "C0CGVRSGKMX", r"^(?!.*\beod\b).*relevant\s*specialized.*1st\s*round"),
 ]
 
 # Zones the office_tz table (knocks, by owner name) can't place, cross-checked
@@ -543,6 +552,7 @@ _TZ = {
     "hasan": "America/Chicago",        # Waco, TX (OFFICES INFO GENERAL: CST)
     "tre": "America/Chicago",          # Houston, TX (Mission III)
     "algemar": "America/Denver",       # El Paso, TX (Mountain; slots in MST)
+    "vincent": "America/Chicago",      # Lubbock, TX (Central)
 }
 
 # Offices whose channel is loaded 9/14 onward, checked and pinned; the rest
