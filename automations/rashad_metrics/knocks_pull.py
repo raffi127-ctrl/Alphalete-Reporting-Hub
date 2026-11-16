@@ -1233,7 +1233,19 @@ def _scrape_day_on_page(page, rqst: str, target: dt.date, *,
         # Under impersonation the campaign can silently stay where it was, and
         # a board with the right title and another campaign's numbers is worse
         # than no board — nobody reading it can tell.
-        assert_campaign_grid(idx, expect_campaign)
+        #
+        # NAME THE DAY (2026-11-16). A weekly pull walks Mon-Sat inside one
+        # impersonation, and this raise used to say only which CAMPAIGN was
+        # pinned -- never which day's grid refused. Carlos Hidalgo's weekly
+        # pull failed this way on 11-12, 11-15 and 11-16, and the capture runs
+        # non-verbose, so the log had "Disposition by Rep 2026-11-09 →
+        # 2026-11-14 — day by day" and then the failure, with nothing in
+        # between. Finding the day took SIX separate probe_knocks runs; the
+        # date was in a local variable the whole time.
+        try:
+            assert_campaign_grid(idx, expect_campaign)
+        except KnocksPullFailed as e:
+            raise KnocksPullFailed("%s (reading %s)" % (e, mdy))
         # A WIRELESS (NDS) office's Disposition table has its own shape —
         # scrape it with the wireless column set instead of letting the house
         # scrape raise "missing expected column(s)". The wireless rows keep
