@@ -381,8 +381,13 @@ def wrong_address(office, text, when=None):
     temps = [a for a, last in TEMP_ADDRESSES.get(office, [])
              if last is None or (day is not None and day <= last)]
     for ok in [want] + temps:
+        # A suite is only judged when the address on file has one. 19833's
+        # AI Settings say "12727 Featherwood Dr, Houston" with no suite, so
+        # every email naming "Suite 106" there was called the wrong
+        # address (Megan 2026-11-16: "this is confusing").
         if m.group(1) in ok and not (
-                unit and unit.group(2).lower() not in ok.lower()):
+                unit and _UNIT.search(ok)
+                and unit.group(2).lower() not in ok.lower()):
             return None
     return m.group(0).strip()
 

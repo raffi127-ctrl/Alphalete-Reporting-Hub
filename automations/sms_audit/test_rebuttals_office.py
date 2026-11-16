@@ -114,6 +114,19 @@ class StreetBoundary(unittest.TestCase):
             "11280", "We are at 6865 Windcrest Dr Ste 210 Plano, TX 75024",
             dt.date(2026, 11, 10)))
 
+    def test_a_suite_passes_when_the_address_on_file_has_none(self):
+        # Megan 2026-11-16, 19833: AI Settings have no suite, the emails
+        # say Suite 106 — the right building, not a wrong address.
+        RB.set_address_history("TESTNOSUITE",
+                               "12727 Featherwood Dr, Houston, TX 77034")
+        try:
+            self.assertIsNone(RB.wrong_address(
+                "TESTNOSUITE", "12727 Featherwood Drive Suite 106, Houston"))
+            self.assertTrue(RB.wrong_address(
+                "TESTNOSUITE", "1650 E Sand Lake Rd Suite 212, Orlando, FL"))
+        finally:
+            RB.ADDRESS_HISTORY.pop("TESTNOSUITE", None)
+
     def test_a_genuinely_wrong_address_still_fires(self):
         self.assertTrue(RB.wrong_address(
             "11280", "Our office is at 3100 Premier Drive, Suite 232 "

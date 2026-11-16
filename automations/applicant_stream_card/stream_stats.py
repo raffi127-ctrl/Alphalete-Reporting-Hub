@@ -498,7 +498,13 @@ def delivery(log, min_sent=100):
     numbers = sorted(((num, s, 100.0 * f / s) for num, (s, f) in
                       by_num.items() if s >= min_sent),
                      key=lambda x: -x[2])
+    # The dates the count covers (Megan 2026-11-16: "the 29.9k texts sent
+    # were from just this last completed week?" - it was six weeks).
+    when = [w for w in (_when(r.get("sent_at") or r.get("queued_at"))
+                        for r in outs) if w]
     return {"ok": True, "sent": n, "failed": ours + theirs,
+            "first": min(when).date() if when else None,
+            "last": max(when).date() if when else None,
             "rate": 100.0 * (ours + theirs) / n,
             "ours": ours, "ours_rate": 100.0 * ours / n,
             "theirs": theirs, "reasons": reasons.most_common(),
@@ -515,6 +521,21 @@ def _clock(t):
         return None
     h = int(m.group(1)) % 12 + (12 if m.group(3).upper() == "P" else 0)
     return h * 60 + int(m.group(2))
+
+
+def _span(lst):
+    """'8:15–11:45 AM' from the first start to the last end, or ''."""
+    if not lst:
+        return ""
+    lst = sorted(lst, key=lambda x: _clock(x.get("start")) or 0)
+
+    def t(s):
+        return (s or "").strip().lstrip("0")
+    a, b = t(lst[0].get("start")), t(lst[-1].get("end") or
+                                       lst[-1].get("start"))
+    if a[-2:] == b[-2:] and a[-2:] in ("AM", "PM"):
+        a = a[:-3]
+    return "{}\u2013{}".format(a, b)
 
 
 def slots(hours, recs=None):
@@ -543,7 +564,8 @@ def slots(hours, recs=None):
         per.append({"day": day, "morning": len(am), "afternoon": len(pm),
                     "seats": seats,
                     "booked": booked_on.get(day, 0) / nweeks if recs else None,
-                    "times": [x.get("start") for x in lst]})
+                    "times": [x.get("start") for x in lst],
+                    "am_span": _span(am), "pm_span": _span(pm)})
     n = len(per)
     out = {"days": n, "per_day": per,
            "morning": sum(p["morning"] for p in per) / n,

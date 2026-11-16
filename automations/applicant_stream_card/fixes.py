@@ -71,8 +71,8 @@ def recommend(item):
 TEMPLATE_HOW = {
     "WRONG ROOM": "Replace the Zoom link with this office's room: {want_zoom}.",
     "WRONG MEETING ID": "Change the Meeting ID to {want_zoom_id}.",
-    "WRONG ADDRESS": "Change the address to {want_address} (street, suite, "
-                     "city). Same address for every round.",
+    "WRONG ADDRESS": "Replace it with this office's address: "
+                     "{want_address}.",
     "CHECK PHONE": "Change the phone number to {want_phone}, or confirm "
                    "the number shown is meant to be there.",
     "SHOUTING": "Retype the words in capitals in normal case "

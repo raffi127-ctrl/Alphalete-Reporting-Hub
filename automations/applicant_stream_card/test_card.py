@@ -270,8 +270,8 @@ class VitalsTest(unittest.TestCase):
         self.assertIn("<details class='vital'>", page0)
         # opened: weeks left to right, oldest first, numbers coloured
         self.assertIn("<div class='weeks'", page0)
-        self.assertLess(page0.index("<span class='wl'>10/4</span>"),
-                        page0.index("<span class='wl'>11/1</span>"))
+        self.assertLess(page0.index("<span class='wl'>10/10</span>"),  # week ending
+                        page0.index("<span class='wl'>11/7</span>"))
         self.assertIn("<b style='color:#1f8a4c'>44%</b>", page0)  # best wk
         self.assertIn("<b style='color:#c0392b'>40%</b>", page0)  # worst wk
         # coloured by height: red low weeks -> orange -> green best weeks

@@ -347,7 +347,14 @@ def texts_arrived(dv):
     title = "Texts that didn't arrive"
     if not dv or not dv.get("ok"):
         return _line("delivery", "\U0001F4F5", title, GREY, "Not checked")
-    facts = [("Texts sent", "{:,}".format(dv["sent"])),
+    span = ""
+    if dv.get("first") and dv.get("last"):
+        weeks = max(1, round(((dv["last"] - dv["first"]).days + 1) / 7))
+        span = " ({}–{}, {} week{})".format(
+            "{}/{}".format(dv["first"].month, dv["first"].day),
+            "{}/{}".format(dv["last"].month, dv["last"].day),
+            weeks, "" if weeks == 1 else "s")
+    facts = [("Texts sent" + span, "{:,}".format(dv["sent"])),
              ("Didn't arrive", "{:,} ({:.0f}%)".format(dv["failed"],
                                                       dv["rate"]))]
     facts += [("  " + why, "{:,}".format(n)) for why, n in dv["reasons"]]
@@ -387,19 +394,30 @@ def slot_line(sl):
         return _line("slots", "\U0001F4C5", title, GREY,
                      "Not pulled yet")
     am, pm = sl["morning"], sl["afternoon"]
-    short = "1st rounds: {:.1f} morning · {:.1f} afternoon a day".format(am, pm)
+    short = "1st rounds: {:g} times before noon · {:g} after noon a day".format(
+        round(am, 1), round(pm, 1))
     facts = [("Days with interviews", "{} a week".format(sl["days"])),
-             ("Morning times a day (before noon)", "{:.1f}".format(am)),
-             ("Afternoon times a day", "{:.1f}".format(pm)),
+             ("Interview times a day before noon", "{:g}".format(
+                 round(am, 1))),
+             ("Interview times a day after noon", "{:g}".format(
+                 round(pm, 1))),
              ("Seats a day (people the slots can hold)",
               "{:.0f}".format(sl["seats"]))]
     if sl.get("fill") is not None:
         facts.append(("Booked a day, on average", "{:.1f} ({} of seats)".format(
             sl["booked"], _share(sl["fill"]))))
         short += " · {} booked".format(_share(sl["fill"]))
+    # Megan 2026-11-16: "what does 7 morning mean?" — say it's interview
+    # times, and when they run.
+    def _half(n, span, when):
+        if not n:
+            return "none {}".format(when)
+        return "{} time{} {}{}".format(n, "" if n == 1 else "s", when,
+                                       " ({})".format(span) if span else "")
     for p in sl["per_day"]:
-        facts.append((p["day"], "{} morning · {} afternoon".format(
-            p["morning"], p["afternoon"])))
+        facts.append((p["day"], "{} · {}".format(
+            _half(p["morning"], p.get("am_span"), "before noon"),
+            _half(p["afternoon"], p.get("pm_span"), "after noon"))))
     facts.append(("2nd rounds", "Not pulled yet"))
     action, text, dot = None, "", GREEN
     few = [w for w, n in (("morning", am), ("afternoon", pm)) if n < FEW_SLOTS]
@@ -409,9 +427,8 @@ def slot_line(sl):
                  "to offer".format(" and ".join(few))
         text = ("Recruiters and the AI can only offer what's open. With "
                 "under {} {} times a day, an applicant who can't make those "
-                "gets pushed to another day, and same-day bookings show up "
-                "57% against 42% next day.".format(FEW_SLOTS,
-                                                    " or ".join(few)))
+                "gets pushed to another day, and same-day bookings show "
+                "up best.".format(FEW_SLOTS, " or ".join(few)))
     elif sl.get("fill") is not None and sl["fill"] < EMPTY_FILL:
         dot = YELLOW
         action = "Fewer interview times would fill the ones you keep"
@@ -674,8 +691,17 @@ def fold(items):
         w = first["where"]
         steps = [s.replace("“{}”".format(w), "each one listed")
                  .replace(w, "each one listed") for s in first["steps"]]
-        out.append(dict(first, where="{} of them".format(len(g)),
-                        found="\n".join("• " + x["where"] for x in g),
+        # Each one with what it sends, not just its name (Megan
+        # 2026-11-16: a list of five names "is confusing").
+        def _line(x):
+            m = re.search(r"(?:sends|says) (\u201c[^\u201d]*\u201d|\S+)",
+                          x.get("found") or "")
+            return "• {}{}".format(x["where"],
+                                   " \u2014 sends " + m.group(1) if m else "")
+        emails = all("email" in (x["where"] or "").lower() for x in g)
+        out.append(dict(first, where="{} {}".format(
+                            len(g), "emails" if emails else "of them"),
+                        found="\n".join(_line(x) for x in g),
                         steps=steps, count=len(g)))
     return out
 
@@ -962,7 +988,7 @@ def _spark(points, pct, way="steady"):
             continue
         fill = MID if flat else _heat((v - lo) / span)
         out.append("<circle cx='{:.1f}' cy='{:.1f}' r='{}' fill='{}' "
-                   "stroke='#fff' stroke-width='1.5'><title>Week of {}: {}"
+                   "stroke='#fff' stroke-width='1.5'><title>Week ending {}: {}"
                    "</title></circle>".format(x, y, 4 if i == last else 2.8,
                                                fill, lab,
                                                html.unescape(_vfmt(v, pct))))
@@ -981,7 +1007,11 @@ def trend_html(vitals):
                 "They come from AppStream's Retention Details report, week by week."
                 "</p>")
     weeks = weeks[-TREND_WEEKS:]
-    labs = ["{}/{}".format(d.month, d.day) for d, _v in weeks]
+    # Each week by the Saturday it ENDS on. "Week of 11/8" (the Sunday it
+    # starts) read as the week before, so last week looked unpulled
+    # (Megan 2026-11-16: "you didn't pull last week, week ending 11/13").
+    ends = [d + dt.timedelta(days=6) for d, _v in weeks]
+    labs = ["{}/{}".format(e.month, e.day) for e in ends]
     out = ["<h2 class='k'>Key vitals \u00b7 last {} weeks</h2>".format(
         len(weeks)), "<div class='vitals'>"]
     for key, label, pct in V.VITALS:
@@ -1254,9 +1284,16 @@ def render(card, scorecard_css=""):
     span = card.get("span")
     sub = "Office {}".format(_e(card["office"]))
     if span:
+        # Weeks end on Saturday, like AppStream (Megan 2026-11-16). The
+        # raw first/last interview dates ("10/5 – 11/13") read as a week
+        # ending Friday, so the newest week looked missing.
+        def _sat(d):
+            return d + dt.timedelta(days=(5 - d.weekday()) % 7)
+        a, b = _sat(span[0]), _sat(span[1])
+        n = (b - a).days // 7 + 1
         # No %-m: it does not exist on Windows.
-        sub += " · {}/{} – {}/{}".format(
-            span[0].month, span[0].day, span[1].month, span[1].day)
+        sub += " · {} week{} ending {}/{} – {}/{}".format(
+            n, "" if n == 1 else "s", a.month, a.day, b.month, b.day)
     add("<!doctype html><html><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width,initial-scale=1'>"
         "<title>Applicant Stream Card {}</title><style>{}{}</style></head>"
