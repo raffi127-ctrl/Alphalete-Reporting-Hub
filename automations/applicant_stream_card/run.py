@@ -39,6 +39,9 @@ REPLACED = {"WINDOW TOO SHORT", "GHOST TOO SOON"}
 # STOP to opt out to 30 templates": "we're not doing this anywhere".
 NOT_GRADED = {"NO OPT-OUT"}
 SAVED_MIN = 3      # sent to this many people = likely a saved reply
+# A house-rule slip goes up top only past this many texts; 3 or fewer
+# live on that recruiter's own scorecard (Megan 2026-11-16).
+HOUSE_MIN = 4
 TYPO_LIMIT = 10
 
 
@@ -162,21 +165,135 @@ def grading_facts(office, sinfo, zooms):
     ]
 
 
-def _recruiters(oid):
-    """One row per graded recruiter, from the per-recruiter scorecards."""
-    from automations.sms_audit import scorecard as SC
+RECRUITER_WEEKS = 6   # weeks of history on each scorecard
+
+
+def _rec_day(r):
+    for fmt in ("%m-%d-%Y", "%Y-%m-%d", "%m/%d/%Y"):
+        try:
+            return dt.datetime.strptime((r.get("date") or "").strip(),
+                                        fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def split_weeks(recs, log):
+    """{saturday: (recs, log)} for every whole Sunday-Saturday week in
+    this pull, oldest first. The newest week is the one the card is about.
+
+    A week the pull only half covers is dropped: grading three days as if
+    they were seven would sink everyone's numbers, and a saved full copy
+    of that week (see _week_store) is better than a fresh partial one."""
+    from automations.applicant_stream_card.stream_stats import _when
+
+    def sunday(d):
+        return d - dt.timedelta(days=(d.weekday() + 1) % 7)
+
+    by, first, last_t = {}, None, None
+    for row in log or []:
+        t = _when(row.get("sent_at") or row.get("queued_at"))
+        if not t:
+            continue
+        first = t if first is None or t < first else first
+        last_t = t if last_t is None or t > last_t else last_t
+        by.setdefault(sunday(t.date()), ([], []))[1].append(row)
+    if not by:
+        return {}
+    for r in recs or []:
+        d = _rec_day(r)
+        if d and sunday(d) in by:
+            by[sunday(d)][0].append(r)
+    # the pull started after that week's Monday: its first week is partial
+    if len(by) > 1 and first.date() > min(by) + dt.timedelta(days=1):
+        by.pop(min(by))
+    # the pull ended before Saturday, and that Saturday hasn't come yet
+    newest = max(by)
+    if (len(by) > 1 and last_t.date() < newest + dt.timedelta(days=6)
+            and dt.date.today() <= newest + dt.timedelta(days=6)):
+        by.pop(newest)
+    return {s + dt.timedelta(days=6): by[s] for s in sorted(by)}
+
+
+def _week_store(oid):
+    return OUTPUT / "recruiter_weeks" / "{}.json".format(oid)
+
+
+def _load_weeks(oid):
+    """{saturday: {person key: stats}} saved by earlier runs. Megan
+    2026-11-16: a recruiter can work the account one week, skip two, and
+    come back in week four - their week over week still needs the weeks
+    the current pull no longer reaches."""
+    import collections
+    import json
+    path = _week_store(oid)
+    if not path.exists():
+        return {}
     try:
-        people = SC.collect(oid)
+        raw = json.loads(path.read_text())
+    except Exception as e:  # noqa: BLE001
+        print("[card] saved recruiter weeks unreadable: {}".format(e))
+        return {}
+    out = {}
+    for day, people in raw.items():
+        for d in people.values():
+            for k in ("issues", "kinds"):
+                d[k] = collections.Counter(d.get(k) or {})
+        out[dt.date.fromisoformat(day)] = people
+    return out
+
+
+def _save_weeks(oid, weeks):
+    import json
+    path = _week_store(oid)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(
+        {d.isoformat(): v for d, v in sorted(weeks.items())},
+        default=str))
+
+
+def _recruiters(oid, recs=None, log=None):
+    """One row per recruiter who worked the account in the card's week.
+
+    Megan 2026-11-16: "This should only show those recruiters who worked
+    on the account the week we're sending". The list used to come from
+    the kept-aside August-September pulls, so it named everyone who had
+    ever touched the account. Now it grades this pull, week by week,
+    keeps every whole week it grades (output/recruiter_weeks/), and lists
+    only people who texted or booked in the newest one. Each scorecard
+    shows up to RECRUITER_WEEKS weeks, from this pull and saved ones."""
+    from automations.sms_audit import scorecard as SC
+    data = split_weeks(recs, log) if recs and log else None
+    if not data:
+        print("[card] recruiter scorecards: no pull to grade")
+        return None
+    stats = _load_weeks(oid)
+    try:
+        for day, (r, l) in data.items():
+            stats[day] = SC.week_stats(oid, None, r, l)
     except Exception as e:  # noqa: BLE001
         print("[card] recruiter scorecards unavailable: {}".format(e))
         return None
+    try:
+        _save_weeks(oid, stats)
+    except Exception as e:  # noqa: BLE001
+        print("[card] recruiter weeks not saved: {}".format(e))
+    newest_day = max(data)
+    days = [d for d in sorted(stats) if d <= newest_day][-RECRUITER_WEEKS:]
+    tags = {d: "w" + d.strftime("%m%d") for d in days}
+    order = [tags[d] for d in days]
+    newest = tags[newest_day]
+    people = SC.people_from({tags[d]: stats[d] for d in days}, order)
     if not people:
         return None
     rows = []
     for key, p in people.items():
         if SC.is_ai(p["display"]):
             continue
-        weeks = sorted(p["weeks"])
+        now = p["weeks"].get(newest) or {}
+        if not (now.get("texts") or now.get("booked")):
+            continue
+        weeks = [t for t in order if t in p["weeks"]]  # oldest first
         if sum(w.get("texts", 0) for w in p["weeks"].values()) < SC.MIN_TEXTS:
             continue
         g = SC.grade_of(p, weeks)
@@ -344,7 +461,7 @@ def gather(oid, use_sheets=True):
     recs, _src = A.load_office(oid)
     log, _src2 = A.load_log(oid)
     stats = S.summary(recs) if recs else None
-    ttb, median_reply, humans = None, None, None
+    ttb, median_reply, humans, rec_rows = None, None, None, None
     if recs and log:
         convos = A.log_conversations(log, A.booked_index(recs))
         ttb = A.texts_to_book(convos)
@@ -354,13 +471,27 @@ def gather(oid, use_sheets=True):
         # Megan 2026-11-15: only a slip that went to SAVED_MIN+ people (so
         # it's likely a saved reply) goes up top; every other one lives on
         # that recruiter's own scorecard at the bottom (Typing and Grammar).
-        errs = sorted(merge_slips(msgs.get("errors") or []),
+        # Megan 2026-11-16: the card is about the week it's sent for, so
+        # only recruiters who worked that week get an item up top (each
+        # one points to their scorecard below, which only they have).
+        from automations.sms_audit import scorecard as SC
+        rec_rows = _recruiters(oid, recs, log)
+        on_list = ({SC.key_of(r["name"]) for r in rec_rows}
+                   if rec_rows else None)
+
+        def _worked(e):
+            return on_list is None or SC.key_of(e.get("sender") or "") in on_list
+
+        errs = sorted(merge_slips([e for e in msgs.get("errors") or []
+                                   if _worked(e)]),
                       key=lambda e: -(e.get("sent") or 1))
         saved = [e for e in errs if (e.get("sent") or 1) >= SAVED_MIN]
         for e in saved[:TYPO_LIMIT]:
             words.append(F.recruiter_text(e))
 
         for e in msgs.get("coaching") or []:
+            if not _worked(e):
+                continue
             # Megan 2026-11-15: one-off shouting goes the way of one-off
             # typos - to the recruiter's scorecard, not up top.
             if "capitals" in (e.get("issue") or "").lower() and (
@@ -369,6 +500,10 @@ def gather(oid, use_sheets=True):
                     # 2026-11-15: "this one is intentional")
                     or all(len((x.get("hit") or "").split()) <= 1
                            for x in e.get("examples") or [{}])):
+                continue
+            # Megan 2026-11-16: "if it's 3 or less texts then it should
+            # only be in their individual scorecard".
+            if (e.get("count") or 0) < HOUSE_MIN:
                 continue
             words.append(F.house_rule(e))
     else:
@@ -451,7 +586,7 @@ def gather(oid, use_sheets=True):
 
     return C.build(oid, stats=stats, ttb=ttb, setup=setup, slots=slots,
                    vitals=vitals, changes=changes,
-                   recruiter_rows=_recruiters(oid),
+                   recruiter_rows=rec_rows,
                    info_items=info, info_skipped=info_skip,
                    word_items=words, word_skipped=words_skip,
                    ai_items=ai, ai_skipped=ai_skip, sources=sources,

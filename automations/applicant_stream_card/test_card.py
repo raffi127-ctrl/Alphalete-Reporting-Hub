@@ -761,3 +761,47 @@ class CardTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SplitWeeksTest(unittest.TestCase):
+    """Megan 2026-11-16: recruiters on the card = the week it's sent for,
+    with saved weeks behind it for week over week."""
+
+    def test_sunday_to_saturday_newest_last(self):
+        import datetime as dt
+        from automations.applicant_stream_card import run as RUN
+        log = [{"sent_at": "11/02/2026 09:00 AM"},   # Mon, week of 11/1
+               {"sent_at": "11/08/2026 09:00 AM"},   # Sun, week of 11/8
+               {"sent_at": "11/14/2026 11:00 PM"}]   # Sat, week of 11/8
+        recs = [{"date": "11-09-2026"}, {"date": "11-03-2026"}]
+        got = RUN.split_weeks(recs, log)
+        sat = dt.date(2026, 11, 14)
+        self.assertEqual(list(got), [dt.date(2026, 11, 7), sat])
+        self.assertEqual(len(got[sat][1]), 2)
+        self.assertEqual(got[sat][0], [{"date": "11-09-2026"}])
+
+    def test_a_pull_starting_midweek_drops_that_week(self):
+        import datetime as dt
+        from automations.applicant_stream_card import run as RUN
+        log = [{"sent_at": "11/05/2026 09:00 AM"},   # Thu: partial week
+               {"sent_at": "11/14/2026 11:00 PM"}]
+        self.assertEqual(list(RUN.split_weeks([], log)),
+                         [dt.date(2026, 11, 14)])
+
+    def test_saved_weeks_round_trip(self):
+        import collections
+        import datetime as dt
+        import tempfile
+        from pathlib import Path
+        from unittest import mock
+        from automations.applicant_stream_card import run as RUN
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.object(RUN, "OUTPUT", Path(tmp)):
+            day = dt.date(2026, 10, 24)
+            RUN._save_weeks("1", {day: {"k": {
+                "display": "A B", "texts": 9,
+                "issues": collections.Counter({"x": 2}), "kinds": {}}}})
+            back = RUN._load_weeks("1")
+        self.assertEqual(back[day]["k"]["texts"], 9)
+        self.assertEqual(back[day]["k"]["issues"].most_common(1),
+                         [("x", 2)])

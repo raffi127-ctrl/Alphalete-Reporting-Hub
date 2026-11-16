@@ -1044,7 +1044,10 @@ def _by_recruiter(items):
     """Recruiter typing + wording as ONE row per person, their slips inside
     (Megan 2026-11-15: "This should just have 1 per recruiter with their
     breakdown")."""
-    ln = _checked_line("words", "\u270d\ufe0f", "Recruiter typing + wording",
+    # Megan 2026-11-16: the title says WHY this is its own section - these
+    # are repeat mistakes, most likely living in a recruiter's saved reply.
+    ln = _checked_line("words", "\u270d\ufe0f",
+                       "Likely saved replies to fix ASAP",
                        items, [], set())
     if not ln["items"]:
         return ln
@@ -1067,10 +1070,12 @@ def _by_recruiter(items):
                             _e(_slip_kind(i).capitalize()), _fix_body(i))
                         for i in mine)))
     ln["items"] = []
-    html_.append("<p class='note'>Only typos sent to 3 or more people "
-                 "(likely a saved reply) are listed here. One-off typos are "
-                 "on each recruiter's own scorecard below, under Typing and "
-                 "Grammar.</p>")
+    html_.insert(0, "<p class='note'>These mistakes went out over and over "
+                 "(a typo to 3 or more people, or a house rule in 4 or more "
+                 "texts), so they most likely live in a recruiter's saved "
+                 "reply. Fix the saved copy once and it stops everywhere. "
+                 "One-off mistakes are on each recruiter's own scorecard "
+                 "below.</p>")
     ln["extra_html"] = "".join(html_)
     ln["short"] = "{} to fix across {} {}".format(
         sum(len(v) for v in people.values()), len(people),

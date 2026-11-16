@@ -111,12 +111,16 @@ def _median(xs):
     return statistics.median(xs) if xs else None
 
 
-def week_stats(office, tag):
-    """{key: {...}} for one week, or {} when that week was not pulled."""
+def week_stats(office, tag, recs=None, log=None):
+    """{key: {...}} for one week, or {} when that week was not pulled.
+
+    `recs`/`log` already cut to that week skip the per-week files (the
+    grade card splits its own current pull into weeks)."""
     oid = office if isinstance(office, str) else office["office"]
     _load_office_facts(oid)
-    recs, _s = A.load_office(oid, tag)
-    log, _s2 = A.load_log(oid, tag)
+    if recs is None or log is None:
+        recs, _s = A.load_office(oid, tag)
+        log, _s2 = A.load_log(oid, tag)
     if not recs or not log:
         return {}                      # never borrow another week's answer
     convos = A.log_conversations(log, A.booked_index(recs))
@@ -291,12 +295,22 @@ def week_stats(office, tag):
     return dict(out)
 
 
-def collect(office, weeks=None):
-    """{key: {'display', 'weeks': {tag: stats}}} across every pulled week."""
-    weeks = weeks or R.WEEKS
+def collect(office, weeks=None, data=None):
+    """{key: {'display', 'weeks': {tag: stats}}} across every pulled week.
+
+    `data` = {tag: (recs, log)} grades those instead of the kept-aside
+    weekly pulls."""
+    weeks = list(data) if data else (weeks or R.WEEKS)
+    return people_from({tag: (week_stats(office, tag, *data[tag]) if data
+                              else week_stats(office, tag))
+                        for tag in weeks}, weeks)
+
+
+def people_from(by_week, weeks):
+    """{key: {'display', 'weeks': {tag: stats}}} from {tag: week_stats}."""
     people = {}
     for tag in weeks:
-        for k, d in week_stats(office, tag).items():
+        for k, d in (by_week.get(tag) or {}).items():
             p = people.setdefault(k, {"display": "", "weeks": {}})
             if (sum(c.isalpha() for c in d["display"]),
                     len(d["display"])) > (
