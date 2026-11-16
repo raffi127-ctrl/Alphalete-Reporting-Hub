@@ -222,10 +222,19 @@ def test_every_routed_step_is_a_real_step():
 
 
 def test_the_routed_machines_cover_every_step_exactly_once():
-    """A step nobody runs never fills; a step two boxes run races itself."""
+    """A step nobody runs never fills; a step two boxes run races itself.
+
+    EXCEPT the ones in R.HAND_RUN_ONLY, which are read-only probes with a
+    reason written beside each. That list is the exception, so a new unrouted
+    step fails here until somebody says why it is not scheduled.
+    """
     seen = [s for steps in R.STEPS_BY_MACHINE.values() for s in steps]
-    assert sorted(seen) == sorted({n for n, _ in R.STEPS})
+    scheduled = {n for n, _ in R.STEPS} - set(R.HAND_RUN_ONLY)
+    assert sorted(seen) == sorted(scheduled)
     assert len(seen) == len(set(seen)), "a step is routed to two machines"
+    for name in R.HAND_RUN_ONLY:
+        assert name in {n for n, _ in R.STEPS}, name
+        assert name not in seen, "%s is hand-run but routed" % name
 
 
 def test_contacts_runs_where_the_contact_sync_runs():

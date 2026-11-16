@@ -469,19 +469,31 @@ def _select_person(picker, name: str, *, employee_id: str | None = None) -> None
 
 # --- phase 3: generate the bundle ----------------------------------------
 
-def open_set_status(page, name: str, *, verbose: bool = True):
+def open_set_status(page, name: str, *, verbose: bool = True,
+                    campaign: str = ""):
     """Search the rep, click Edit, return (modal, matched_name).
 
     find_rep does the short probes and the Show All widen — a just-added rep is
     often outside the default 3-week activation window, which is exactly the
     case that widen exists for.
 
-    The campaign is PINNED to RES-AT&T, not walked (Megan 2026-09-07). This is
-    the path that goes on to generate a bundle, so a hit on the wrong campaign
-    would send the wrong person's documents.
+    THE CAMPAIGN IS PINNED TO EXACTLY ONE, never walked (Megan 2026-09-07).
+    This is the path that goes on to generate a bundle and to owner-submit, so
+    a hit on the wrong campaign would send the wrong person's documents or
+    attest for somebody else's rep.
+
+    `campaign` says WHICH one, and defaults to Alphalete's RES-AT&T so every
+    caller written before this reads exactly as it did. An ICD is on its own
+    campaign, so this had to become the caller's to name: hardcoding
+    RES-AT&T here is what made the Owner Submit press Alphalete-only, and a
+    silent fallback to it would have searched an ICD's new start on Alphalete's
+    roster, found nobody, and called that "not in OwnerVille".
+    Pass the office's own `ov_program`
+    ([[reference_campaign_picks_the_workbook]] is the same lesson on Tableau).
     """
-    row, campaign, matched = find_rep(page, name, verbose=verbose,
-                                      campaigns=[config.ADD_CAMPAIGN])
+    row, campaign, matched = find_rep(
+        page, name, verbose=verbose,
+        campaigns=[campaign or config.ADD_CAMPAIGN])
     if row is None:
         raise Refused(f"{name}: not found in OwnerVille (tried {campaign})")
     _click_any(row, "Edit", page=page)

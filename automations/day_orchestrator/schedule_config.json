@@ -3779,6 +3779,56 @@
    "depends_on": [],
    "verify": null
   },
+  "probe_uid_control": {
+   "_note": "READ-ONLY probe (2026-11-15): what OwnerVille's AT&T UID REQUEST section actually says and what it offers to click, for everyone on an office's board whose UID Request is still open. Runs icd_onboarding.run --only uid_look with NO --write; that step presses nothing and writes nothing WHATEVER --write says -- it calls uid_request.describe_one and prints the section's state plus every clickable label in it. THE QUESTION IT ANSWERS, and the reason uid_request.py ships gated: nobody has seen that section expanded, so the request control is searched for rather than hardcoded, and a run that cannot find exactly one candidate refuses. This says what it is called. Read the result with `lucy logtail rerun probe_uid_control 200`, then set config.UID_REQUEST_LIVE = True. source_type ownerville: it needs the office's own OwnerVille session, and the campaign comes from its ov_program -- never Alphalete's. weekdays [] = manual only.",
+   "on_scheduler": true,
+   "hand_run_only": true,
+   "display_name": "Probe the UID request control (read-only)",
+   "source_type": "ownerville",
+   "data_sources": [],
+   "command": [
+    "automations.icd_onboarding.run"
+   ],
+   "base_args": [
+    "--office",
+    "raf",
+    "--only",
+    "uid_look"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "timeout_minutes": 25,
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null
+  },
+  "probe_icd_owner_submit": {
+   "_note": "DRY WALK (2026-11-15): who on an office's board OwnerVille would owner-submit, and why it refuses the rest. Runs icd_onboarding.run --only owner_submit with NO --write, so every person is walked up to the attestation box and NOBODY is submitted -- the log says 'WOULD SUBMIT' with every section's state, or names the sections that are not COMPLETED. THE PRESS ITSELF IS NOT NEW: it has been live for Alphalete since 2026-09-22 (config.OWNER_SUBMIT_LIVE). What is new is the office: open_set_status pinned the campaign to RES-AT&T, so an ICD's new start was looked up on Alphalete's roster, found nobody, and reported 'not in OwnerVille'. This confirms the re-point finds the office's own people on its own ov_program before a live pass presses anything. Read with `lucy logtail rerun probe_icd_owner_submit 200`. weekdays [] = manual only.",
+   "on_scheduler": true,
+   "hand_run_only": true,
+   "display_name": "Dry-walk the ICD owner submit (read-only)",
+   "source_type": "ownerville",
+   "data_sources": [],
+   "command": [
+    "automations.icd_onboarding.run"
+   ],
+   "base_args": [
+    "--office",
+    "raf",
+    "--only",
+    "owner_submit"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "timeout_minutes": 25,
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null
+  },
   "probe_onboarding_seed": {
    "_note": "READ-ONLY probe (2026-11-15): what an office's onboarding board WOULD be seeded with. Runs icd_onboarding.run --only seed with NO --write, so it reads the Retention Report twice -- Total New Starts Scheduled for the rows and each person's start date, then New Starts Showed Up for the Showed Up tick -- and writes no cell, no header and no manifest. THE QUESTION IT ANSWERS: does the scheduled row's date column hold the day they are due in? The parse refuses any date outside the week asked for, so a wrong column shows up as 'had no readable date' rather than as wrong Starts. Read the result with `lucy logtail rerun probe_onboarding_seed 200`. No machine: it needs an AppStream session, and any Lucy holding one can select the office. weekdays [] = manual only.",
    "on_scheduler": true,

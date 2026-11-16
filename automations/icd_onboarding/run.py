@@ -17,6 +17,18 @@ afterwards. This runs the three that have to be gone and LOOKED for:
     blueink     Blue Ink                (the office's API key)
     sterling    BG Status               (the ICDs' forwarded results inbox)
 
+AND TWO THAT ACT rather than look (2026-11-15) -- the only steps here that
+press a button on somebody's behalf, which is why they live apart in
+presses.py and run last, after `ownerville` has said what is true right now:
+
+    uid           request the AT&T UID    -> UID Request
+    owner_submit  attest and submit       -> Owner Submit
+
+Both are GATED, both are refused by OwnerVille's own section states rather
+than by anything the board says, and both believe only what the page reads on
+a fresh re-open. A board cell can never cause a press: people type in that
+sheet, and a typed cell must not be able to attest for a rep.
+
 EVERY STEP IS INDEPENDENT. One source being down is not a reason to skip the
 others: OwnerVille having a bad morning should not stop Blue Ink ticking, and
 a step that fails says so and the run carries on. A step that cannot be read
@@ -472,9 +484,36 @@ def from_contacts(office_key: str, week_start: dt.date, *,
 
 
 
+# THE TWO THAT ACT, kept LAST and in this order (Megan, 2026-11-15: "do 1
+# and 2"). Both live in presses.py; see there for why the re-point was the
+# campaign and not the press.
+#
+# ORDER MATTERS AND IS THE WHOLE REASON THEY SIT HERE. `ownerville` reads
+# first, so both presses work off what OwnerVille says this minute rather than
+# off a board that is up to an hour old. `uid` runs before `owner_submit`
+# because a requested UID is one of Owner Submit's own prerequisites: pressed
+# the other way round, every person whose only gap was the UID would be
+# refused, and then requested, and would wait a whole pass to be submitted.
+from automations.icd_onboarding.presses import (look_uid, press_owner_submit,
+                                                press_uid)
+
 STEPS = (("seed", seed), ("ownerville", from_ownerville),
          ("blueink", from_blueink), ("sterling", from_sterling),
-         ("contacts", from_contacts))
+         ("contacts", from_contacts),
+         ("uid", press_uid), ("owner_submit", press_owner_submit),
+         # Read-only, hand-run, and in no machine's list: it answers what the
+         # UID control is called so `uid` can come off its gate.
+         ("uid_look", look_uid))
+
+# STEPS THAT NO MACHINE RUNS ON A SCHEDULE, each one listed with its reason.
+# Every other step must be routed to exactly one box, and the test that pins
+# that reads this list -- so a new hand-run step fails until it is named here
+# rather than quietly joining the ones nobody runs.
+#
+#   uid_look  read-only. It opens OwnerVille to answer ONE question (what the
+#             UID control is called) and presses nothing. Scheduling it would
+#             spend the session every hour to re-read a constant.
+HAND_RUN_ONLY = ("uid_look",)
 
 
 def for_office(office_key: str, week_start: dt.date, *, dry_run: bool = True,
@@ -549,10 +588,15 @@ OFFICES_BY_MACHINE = {
 #
 # The tick itself goes through Sheets, so a step reaches any office's board
 # from whichever machine runs it.
+# The two presses go where the OwnerVille session already is -- Lucy 3 holds
+# it, and a second machine driving OwnerVille is the profile collision this
+# fleet has paid for before ([[reference_browser_profile_collisions]]). They
+# are also the only steps here that ACT, so keeping them on one box keeps
+# "who pressed this" answerable.
 STEPS_BY_MACHINE = {
     "Lucy 1": ("contacts", "sterling"),
     "Lucy 2": ("blueink",),
-    "Lucy 3": ("seed", "ownerville"),
+    "Lucy 3": ("seed", "ownerville", "uid", "owner_submit"),
 }
 
 # A machine that is neither a Lucy nor an ECO box can still name its offices,

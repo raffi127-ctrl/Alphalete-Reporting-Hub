@@ -1,0 +1,263 @@
+"""The two steps on an ICD's board that ACT in OwnerVille, not just read it.
+
+Megan, 2026-11-15: "do 1 and 2" — point the Owner Submit press at the office
+boards, and request the UID.
+
+Everything else in this package LOOKS and ticks. These two press a button on
+somebody's behalf, which is why they are here on their own and read with the
+rest of the module in mind:
+
+    uid           AT&T UID REQUEST   ->  UID Request
+    owner_submit  OWNER SUBMIT       ->  Owner Submit
+
+THE PRESSES THEMSELVES ARE NOT WRITTEN HERE. `obcl_ov_sweep.owner_submit` has
+been pressing Owner Submit for Alphalete since 22 September, attestation, gate
+and confirming re-open and all; `obcl_ov_sweep.uid_request` is the same shape
+for the UID. This module is the RE-POINT Megan asked for: which office, which
+campaign, which board, and whose session.
+
+WHAT MADE IT ALPHALETE-ONLY, since that is the whole of gap #1. Not the press.
+`ownerville.open_set_status` pinned the campaign to RES-AT&T, so the lookup
+always ran against Alphalete's roster — an ICD's new start simply was not
+there, and that reads identically to "not in OwnerVille". The campaign is now
+the caller's to name and comes from the office's own `ov_program`, the same
+value `from_ownerville` already reads the table with.
+
+WHO GETS LOOKED UP. The board decides that, cheaply: anybody not marked off
+whose column is still blank. OWNERVILLE DECIDES WHETHER TO PRESS — its own
+section states are the gate, exactly as they are for Alphalete. The board is
+never allowed to be the reason something is pressed: it is a sheet, people
+type in it, and a hand-typed cell must not be able to cause an attestation.
+
+A REFUSAL IS NOT A FAILURE. Somebody whose sections are not all COMPLETED is
+not ready, which is the normal case on most days; the run says so and carries
+on. A refusal only becomes an alert when the press was LIVE and OwnerVille
+still would not take it — then it goes to the corrections channel as one
+incident thread per office, so a person finishes it by hand and the next pass
+ticks the board off OwnerVille.
+"""
+from __future__ import annotations
+
+import datetime as dt
+import time
+from typing import Dict, List, Optional, Sequence
+
+from automations.icd_onboarding import board as B
+from automations.icd_onboarding import fillers as F
+
+# Who to tag when a live press is refused, and where. Same channel and the
+# same two people as Alphalete's (Megan, Eve) — a refusal here needs the same
+# pair of eyes, and one channel is the one surface they read.
+ALERT_CHANNEL = "C0BK5PRG259"          # #claudecorrections-and-requests
+ALERT_TAGS = ("<@U04G5HJBGFN>", "<@U088E2KJEV8>")   # Megan, Eve
+
+
+def _ov_program(office_key: str) -> str:
+    from automations.office_admin import config as OC
+    o = OC.office(office_key)
+    return (getattr(o, "ov_program", "") if o else "") or ""
+
+
+def candidates(office_key: str, week_start: dt.date, column: str) -> List[str]:
+    """Who on this week's board has `column` still blank and is not marked off.
+
+    The same filter `_board_names` uses, for the same reason: a lookup is one
+    request against a slow server (~23s measured), so asking about people who
+    can gain nothing is how a run spends its budget and still leaves somebody
+    out. An `ALERT_PREFIX` cell counts as blank — it is an ask, not an answer.
+    """
+    from automations.icd_onboarding import sheet as S
+
+    ws = S.open_board(F.workbook_for(office_key), create=False)
+    if ws is None:
+        return []
+    out = []
+    for r in B.for_week(S.rows_of(ws.get_all_values()), week_start):
+        if not (r.get("Name") or r.get("Last Name")):
+            continue
+        if str(r.get(B.TERMINATED_AT) or "").strip():
+            continue
+        said = str(r.get(column) or "").strip()
+        if said and not F.is_alert(said):
+            continue
+        out.append(("%s %s" % (r.get("Name", ""),
+                               r.get("Last Name", ""))).strip())
+    return out
+
+
+def _alert(office_key: str, what: str, failures: Sequence, log=print) -> None:
+    """A live press OwnerVille would not take goes to the corrections channel.
+
+    One incident thread PER OFFICE and per press, so Alphalete's refusals and
+    an ICD's never land in each other's thread and a same-day repeat updates
+    the post instead of making a second one somebody has to choose between.
+    Never fails the run: the ticks and the rest of the board already landed.
+    """
+    if not failures:
+        return
+    body = [" ".join(ALERT_TAGS) + " — %s needs doing by hand in OwnerVille "
+            "for %s (then Lucy ticks the board on the next pass):"
+            % (what, office_key)]
+    body += ["• %s — %s" % (n, why) for n, why in failures]
+    title = ("%s: couldn't %s %d new start%s in OwnerVille"
+             % (office_key, what, len(failures),
+                "s" if len(failures) != 1 else ""))
+    try:
+        from automations.shared import incident_thread as inc
+        res = inc.open_or_followup(
+            key="failure-icd_%s-%s" % (what.replace(" ", "_"), office_key),
+            title=title, body=body, channel=ALERT_CHANNEL,
+            subjects=[n for n, _ in failures],
+            label="%s %s" % (office_key, what))
+        log("  alert %s: %s" % ("posted" if res else "NOT confirmed", title))
+    except Exception as e:                                  # noqa: BLE001
+        log("  ⚠ %s alert FAILED to post (%s: %s)"
+            % (what, type(e).__name__, str(e)[:160]))
+
+
+def _press(office_key: str, week_start: dt.date, *, column: str, what: str,
+           press, live_gate: bool, dry_run: bool, log,
+           budget_s: Optional[float]) -> int:
+    """The shared half of both presses: open the office's own OwnerVille once,
+    walk its candidates, tick what OwnerVille confirms, alert what it refused.
+
+    `live_gate` is the module-level switch for this press. A press is REAL only
+    when the run is writing AND its gate is on — so `--write` alone cannot fire
+    something Megan has not switched on, and a gate being on cannot make a dry
+    run press anything. Both have to agree.
+    """
+    from automations.obcl_ov_sweep import config as OVC
+    from automations.obcl_ov_sweep.run import PROFILE_DIR
+    from automations.shared.tableau_patchright import ownerville_session
+
+    programme = _ov_program(office_key)
+    if not programme:
+        # The campaign IS the roster. Falling back to Alphalete's would look
+        # up an ICD's new start on somebody else's campaign, find nobody, and
+        # report "not in OwnerVille" — which is exactly the wrong answer to
+        # act on ([[reference_campaign_picks_the_workbook]]).
+        log("  %s: %s has no ov_program set — skipped rather than guessing "
+            "at Alphalete's" % (what, office_key))
+        return 0
+
+    wanted = candidates(office_key, week_start, column)
+    if not wanted:
+        log("  %s: nobody on this week's board with %s still open"
+            % (what, column))
+        return 0
+
+    real = bool(not dry_run and live_gate)
+    if not dry_run and not live_gate:
+        log("  %s is GATED — dry walk only, nothing pressed" % what)
+    budget = OVC.SEARCH_BUDGET_S if budget_s is None else budget_s
+    verdicts: Dict[str, Dict[str, object]] = {}
+    failures: List = []
+    t0 = time.monotonic()
+    done = 0
+    with ownerville_session(headless=True, verbose=False,
+                            profile_dir=PROFILE_DIR) as page:
+        for name in wanted:
+            if time.monotonic() - t0 >= budget:
+                log("    time budget reached; %d not reached this run"
+                    % (len(wanted) - done))
+                break
+            done += 1
+            try:
+                outcome, detail = press(page, name, dry_run=not real,
+                                        campaign=programme)
+            except Exception as e:      # noqa: BLE001 — one name, not the run
+                outcome, detail = "refused", "%s: %s" % (type(e).__name__, e)
+            log("  %s %s: %s" % (what.upper(), outcome.upper(), detail))
+            if outcome in ("submitted", "requested", "already"):
+                verdicts[name] = {column: True}
+            elif real and outcome == "refused":
+                failures.append((name, detail.split(": ", 1)[-1]))
+
+    if real:
+        _alert(office_key, what, failures, log=log)
+    # Ticked off what OWNERVILLE says, through the one place a tick is decided.
+    return F.apply(F.workbook_for(office_key), week_start, "ownerville",
+                   verdicts, dry_run=dry_run, log=log)
+
+
+def press_uid(office_key: str, week_start: dt.date, *, dry_run: bool = True,
+              log=print, budget_s: Optional[float] = None) -> int:
+    """Request the AT&T UID for anyone on this week's board who still needs one.
+
+    Gated by `config.UID_REQUEST_LIVE` until one supervised run has said what
+    the control in that section is called — see uid_request's docstring for why
+    this one was not built from a screenshot like Owner Submit was.
+    """
+    from automations.obcl_ov_sweep import config as OVC
+    from automations.obcl_ov_sweep import uid_request
+
+    return _press(office_key, week_start, column="UID Request",
+                  what="uid request", press=uid_request.request_one,
+                  live_gate=OVC.UID_REQUEST_LIVE, dry_run=dry_run, log=log,
+                  budget_s=budget_s)
+
+
+def press_owner_submit(office_key: str, week_start: dt.date, *,
+                       dry_run: bool = True, log=print,
+                       budget_s: Optional[float] = None) -> int:
+    """Owner-submit anyone on this week's board OwnerVille says is ready.
+
+    THE GATE IS THE ONE MEGAN ALREADY DECIDED. She reviewed the dry walk in
+    September and switched `config.OWNER_SUBMIT_LIVE` on on the 22nd; this
+    inherits that switch rather than adding a second one, because it is the
+    same attestation on the same form with the same refusal alert. There is
+    nothing new to approve — only a different office's campaign.
+    """
+    from automations.obcl_ov_sweep import config as OVC
+    from automations.obcl_ov_sweep import owner_submit
+
+    return _press(office_key, week_start, column="Owner Submit",
+                  what="owner submit", press=owner_submit.submit_one,
+                  live_gate=OVC.OWNER_SUBMIT_LIVE, dry_run=dry_run, log=log,
+                  budget_s=budget_s)
+
+
+def look_uid(office_key: str, week_start: dt.date, *, dry_run: bool = True,
+             log=print, budget_s: Optional[float] = None) -> int:
+    """READ ONLY: what each candidate's AT&T UID REQUEST section says, and what
+    it offers to click. Presses nothing and writes nothing, whatever --write
+    says — this is the one step here that ignores it.
+
+    It exists because `press_uid` ships gated on a fact nobody has yet: what
+    that section's control is called. This answers it in one run, which is
+    cheaper and safer than another round of guessing at the markup.
+    Hand-run only — deliberately not in STEPS_BY_MACHINE, so no schedule picks
+    it up.
+    """
+    from automations.obcl_ov_sweep import config as OVC
+    from automations.obcl_ov_sweep import uid_request
+    from automations.obcl_ov_sweep.run import PROFILE_DIR
+    from automations.shared.tableau_patchright import ownerville_session
+
+    programme = _ov_program(office_key)
+    if not programme:
+        log("  uid look: %s has no ov_program set" % office_key)
+        return 0
+    wanted = candidates(office_key, week_start, "UID Request")
+    if not wanted:
+        log("  uid look: nobody on this week's board with UID Request open")
+        return 0
+    budget = OVC.SEARCH_BUDGET_S if budget_s is None else budget_s
+    t0, seen = time.monotonic(), 0
+    with ownerville_session(headless=True, verbose=False,
+                            profile_dir=PROFILE_DIR) as page:
+        for name in wanted:
+            if time.monotonic() - t0 >= budget:
+                log("    time budget reached; %d not looked at"
+                    % (len(wanted) - seen))
+                break
+            seen += 1
+            try:
+                detail, controls = uid_request.describe_one(
+                    page, name, campaign=programme)
+            except Exception as e:      # noqa: BLE001 — one name, not the run
+                detail, controls = "%s: %s" % (type(e).__name__, e), []
+            log("  UID LOOK %s" % detail)
+            log("    offers: %s" % (", ".join(repr(c) for c in controls)
+                                    or "nothing clickable"))
+    return 0

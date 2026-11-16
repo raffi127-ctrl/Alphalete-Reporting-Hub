@@ -105,3 +105,17 @@ CAMPAIGN = "RES-AT&T"
 # NOT submitted — they stay BLUE on the OBCL and the log says "WOULD SUBMIT".
 # Megan reviews that first dry run; only on her OK does this flip to True.
 OWNER_SUBMIT_LIVE = True
+
+# REQUESTING THE AT&T UID (Megan, 2026-11-15) — uid_request.py. The last step
+# before Owner Submit that nothing presses, so a forgotten one holds a
+# finished new start out of Owner Submit.
+#
+# GATED, and for a different reason than Owner Submit was. That one was gated
+# because the ACTION is irreversible and Megan wanted to see a dry walk first.
+# This is gated because the CONTROL HAS NEVER BEEN SEEN: Owner Submit was built
+# off Megan's click path and a screenshot of the modal, and nobody has shown me
+# this section expanded. While False, a ready person is walked up to the
+# control and the log says "WOULD REQUEST: ... offers 'Request UID'" — which is
+# the one fact needed to flip it. `uid_request.describe_one` is the read-only
+# probe that answers it without pressing anything.
+UID_REQUEST_LIVE = False

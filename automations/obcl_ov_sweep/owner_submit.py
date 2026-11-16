@@ -53,11 +53,19 @@ def _section(line: str):
     return None
 
 
-def section_states(modal) -> dict:
+def section_states(modal, states: tuple = STATES) -> dict:
     """{SECTION: STATE} off the Set Status modal's own text. A section is its
     label line; the next state word belongs to it. Lines that are neither
     (headings, the attestation paragraph, "Review is in progress.") are
-    ignored, which is what keeps "NOT SUBMITTED" from becoming a section."""
+    ignored, which is what keeps "NOT SUBMITTED" from becoming a section.
+
+    `states` is the vocabulary of words that count as a state, and it defaults
+    to this module's own. A caller reading a DIFFERENT section can widen it --
+    uid_request does, because the UID row has wording of its own -- without
+    changing what Owner Submit recognises. That matters: this press has been
+    live since 22 September, and a word added to the shared vocabulary would
+    change which sections `blockers` thinks it has seen.
+    """
     out, current = {}, None
     for ln in (modal.inner_text() or "").splitlines():
         ln = ln.strip()
@@ -68,7 +76,7 @@ def section_states(modal) -> dict:
             current = sec
             continue
         up = " ".join(ln.upper().split())
-        if up in STATES and current and current not in out:
+        if up in states and current and current not in out:
             out[current] = up
     return out
 
@@ -100,11 +108,20 @@ def _confirm_box(modal):
     return lab, (box if box.count() else None)
 
 
-def submit_one(page, name: str, *, dry_run: bool = True) -> tuple:
+def submit_one(page, name: str, *, dry_run: bool = True,
+               campaign: str = "") -> tuple:
     """(outcome, detail). outcome: 'submitted' | 'would submit' | 'already' |
-    'refused'. Only 'submitted' and 'already' mean OwnerVille shows it done."""
+    'refused'. Only 'submitted' and 'already' mean OwnerVille shows it done.
+
+    `campaign` is the OwnerVille campaign to look the person up on, and
+    defaults to Alphalete's. An ICD's new start is on the office's own
+    campaign, so an ICD caller passes its `ov_program` -- and it is passed to
+    BOTH opens, the confirming re-open included: confirming on a different
+    campaign would be reading a different roster.
+    """
     try:
-        modal, matched = ov.open_set_status(page, name, verbose=False)
+        modal, matched = ov.open_set_status(page, name, verbose=False,
+                                           campaign=campaign)
     except Exception as e:                                  # noqa: BLE001
         return "refused", f"could not open {name}: {type(e).__name__}: {e}"
     st = section_states(modal)
@@ -153,7 +170,8 @@ def submit_one(page, name: str, *, dry_run: bool = True) -> tuple:
         return "refused", f"{matched}: Save Changes failed ({type(e).__name__})"
     # CONFIRM on a fresh open — the click is not the evidence, the page is.
     try:
-        modal2, _ = ov.open_set_status(page, name, verbose=False)
+        modal2, _ = ov.open_set_status(page, name, verbose=False,
+                                       campaign=campaign)
         after = section_states(modal2).get("OWNER SUBMIT", "")
     except Exception as e:                                  # noqa: BLE001
         return "refused", f"{matched}: saved, but could not re-open to " \
