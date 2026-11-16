@@ -413,10 +413,32 @@ def _prune_results(merged: dict, live_tabs, is_terminated) -> dict:
             if o in live_tabs and not is_terminated(o)}
 
 
-def _not_found_reason(near: list) -> str:
+def _not_found_reason(near: list, account: str = "") -> str:
     """The 'name not found' reason, carrying the near-matches when there are
     any — the caller writes it verbatim into scrape_results.json and the
-    captainship email's note, so the report itself says what to alias."""
+    captainship email's note, so the report itself says what to alias.
+
+    `account`: the office's onboarded ownerville account number, when we have
+    one and it was ALSO not on the Office Access list. That changes what the
+    reason means and what fixes it (Megan 2026-11-16). An account number
+    cannot be misspelled, so a search for it that comes back empty is not a
+    spelling drift — that office is not on this login's Office Access list as
+    this session sees it, and no alias will ever bring it back. Eveliz
+    Wright's and Valeria Tristan's B2B knocks had been failing on Lucy 2 since
+    2026-11-15 and the red ticket said "add an alias and re-run to backfill"
+    every morning, which nobody could act on. Two things can put a row out of
+    reach and this wording covers both: the office really is off that login's
+    list (request Office Access for it in ownerville, exactly like a row that
+    reads 'Request Sent'), or the session is only half-authorized — Lucy 2's
+    `refresh_ownerville` that afternoon ended "ownerville login did NOT reach
+    a live session", while cookies kept some offices resolving. So check the
+    login before chasing the access: see
+    [[reference_ownerville_dead_session]].
+    """
+    if account:
+        return ("not on this login's ownerville Office Access list — office "
+                "%s is not listed, so this is access, not a spelling: request "
+                "Office Access for it in ownerville" % account)
     if not near:
         return "name not found in ownerville"
     return ("name not found in ownerville — it lists: "
@@ -505,6 +527,7 @@ def _find_owner_and_impersonate(page, sheet_tab_name: str, aliases_raw: dict) ->
     # Every spelling missed: an ONBOARDED office still has its account number
     # (ownerville_office_pins.account_fallback — Omar 10/26 was "Mohammad" in
     # our config, "Mohamad" in ownerville). The number cannot be misspelled.
+    unlisted_account = ""
     if owner_row is None and not pin:
         acct = account_fallback(sheet_tab_name)
         if acct:
@@ -513,6 +536,14 @@ def _find_owner_and_impersonate(page, sheet_tab_name: str, aliases_raw: dict) ->
                 print(f"  ✓ '{sheet_tab_name}' not found by name — matched "
                       f"onboarded account {acct}. Fix the spelling in its "
                       "onboarding row (or add an ICD alias).")
+            else:
+                # The number missed too — see _not_found_reason(account=…):
+                # this is an Office Access gap, not a spelling one.
+                unlisted_account = acct
+                print(f"  ❌ Office {acct} ('{sheet_tab_name}'s onboarded "
+                      "ownerville account) is not on this login's Office "
+                      "Access list either — an alias cannot fix this; the "
+                      "office needs Office Access requested in ownerville.")
 
     # Fall back: interactively prompt for an unknown name, save it as an alias.
     if owner_row is None:
@@ -522,12 +553,13 @@ def _find_owner_and_impersonate(page, sheet_tab_name: str, aliases_raw: dict) ->
             print(f"     ownerville shows, searching just the surname: {near}")
         new_alias = _prompt_for_unknown_owner(sheet_tab_name)
         if not new_alias:
-            return None, _not_found_reason(near)
+            return None, _not_found_reason(near, unlisted_account)
         owner_row, last_visible_names = _try_search(new_alias)
         if owner_row is None:
             print(f"  ❌ '{new_alias}' also not found — skipping {sheet_tab_name}.")
             return None, _not_found_reason(_near_matches(_try_search,
-                                                         sheet_tab_name))
+                                                         sheet_tab_name),
+                                           unlisted_account)
         save_alias(sheet_tab_name, new_alias)
         # Refresh local map so subsequent searches in this run pick it up.
         aliases_raw.setdefault(sheet_tab_name, []).append(new_alias)

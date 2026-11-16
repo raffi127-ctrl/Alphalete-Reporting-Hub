@@ -57,7 +57,9 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import json
 import sys
+from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
 
 from automations.owner_sales_hourly import config as cfg
@@ -186,14 +188,81 @@ def _load_aliases() -> Dict:
         return {}
 
 
+#: Last good org-owner roster, so a Sheets blip can't silence a whole pass.
+_ROSTER_CACHE = (Path(__file__).resolve().parents[2] / "output" / "state"
+                 / "owner_sales_hourly_org_owners.json")
+#: How old a cached roster may be before we'd rather fail loud. The top boxes
+#: change when a campaign or an owner moves — weeks apart, not hours — so a
+#: few days old is still the right answer about who is in our org.
+_ROSTER_MAX_AGE_DAYS = 7
+
+
+def _cache_roster(names: set) -> None:
+    try:
+        _ROSTER_CACHE.parent.mkdir(parents=True, exist_ok=True)
+        _ROSTER_CACHE.write_text(json.dumps(
+            {"saved": _now().isoformat(timespec="seconds"),
+             "names": sorted(names)}, indent=1), encoding="utf-8")
+    except OSError as e:  # noqa: BLE001 — the text already went out
+        print("couldn't cache the org roster (%s)" % e)
+
+
+def _cached_roster() -> set:
+    """The last roster we read successfully, or an empty set."""
+    try:
+        blob = json.loads(_ROSTER_CACHE.read_text(encoding="utf-8"))
+        names = {str(n) for n in (blob.get("names") or []) if str(n).strip()}
+        saved = dt.datetime.fromisoformat(blob["saved"])
+    except Exception:  # noqa: BLE001 — no cache / unreadable / no timestamp
+        return set()
+    if not names:
+        return set()
+    now = _now()
+    if saved.tzinfo is None and now.tzinfo is not None:
+        now = now.replace(tzinfo=None)
+    age = (now - saved).days
+    if age > _ROSTER_MAX_AGE_DAYS:
+        print("cached org roster is %d day(s) old — too stale to trust" % age)
+        return set()
+    print("using the org roster cached %s (%d owner(s))"
+          % (blob.get("saved"), len(names)))
+    return names
+
+
 def read_org_owners() -> set:
+    """Who is in our org, off the Org Sales Board's top boxes.
+
+    THE BOARD READ IS NOT ALLOWED TO BE THE WHOLE PASS'S SINGLE POINT OF
+    FAILURE (Megan 2026-11-16). This runs every 30 minutes on Lucy 1, whose
+    Sheets login is shared with Megan's laptop, and one `ws.get` of the whole
+    board is two API calls against a 60-read/min PER-USER cap. On 2026-11-16
+    the 15:15 pass spent four minutes in fill._retry's 429 backoff, lost, and
+    texted nobody — a quota blip two machines away silenced every owner chat
+    and opened a red ticket. The roster itself had not changed.
+
+    So a failed read now falls back to the last roster we read successfully.
+    Raf's rule is untouched: with no board AND no cache we still refuse to
+    text, because a list with no owner filter is exactly the "everyone" text
+    he asked us to stop. See [[reference_sheets_per_user_read_cap]].
+    """
     from automations.org_sales_board.grid import read_grid
     from automations.org_sales_board.run import SHEET_ID
     from automations.org_sales_board.tabs import BOARD_TAB
     from automations.recruiting_report.fill import open_by_key
 
-    ws = open_by_key(SHEET_ID).worksheet(BOARD_TAB)
-    return org_owners(read_grid(ws, unformatted=False), _load_aliases())
+    try:
+        ws = open_by_key(SHEET_ID).worksheet(BOARD_TAB)
+        names = org_owners(read_grid(ws, unformatted=False), _load_aliases())
+    except Exception as e:  # noqa: BLE001 — quota, timeout, transient 5xx
+        cached = _cached_roster()
+        print("Org Sales Board unreadable (%s: %s) — %s"
+              % (type(e).__name__, str(e)[:160],
+                 "texting off the cached roster" if cached
+                 else "no cached roster either, so not texting"))
+        return cached
+    if names:
+        _cache_roster(names)
+    return names
 
 
 def _clock(now: dt.datetime) -> str:

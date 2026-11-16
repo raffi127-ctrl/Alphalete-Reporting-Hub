@@ -263,5 +263,59 @@ class HalfHourPass(unittest.TestCase):
             self.assertTrue(run.in_window(now), now)
 
 
+class OrgRosterCache(unittest.TestCase):
+    """A Sheets blip must not silence a pass, and must not text everyone."""
+
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+        self._dir = tempfile.TemporaryDirectory()
+        self._saved = run._ROSTER_CACHE
+        run._ROSTER_CACHE = Path(self._dir.name) / "org_owners.json"
+
+    def tearDown(self):
+        run._ROSTER_CACHE = self._saved
+        self._dir.cleanup()
+
+    def test_no_cache_yet_means_empty_so_the_pass_still_refuses(self):
+        self.assertEqual(run._cached_roster(), set())
+
+    def test_a_good_read_is_cached_and_read_back(self):
+        run._cache_roster({"jairo ruiz", "colten wright"})
+        self.assertEqual(run._cached_roster(), {"jairo ruiz", "colten wright"})
+
+    def test_a_roster_older_than_the_cap_is_not_trusted(self):
+        import json
+        stale = (run._now() - dt.timedelta(days=run._ROSTER_MAX_AGE_DAYS + 1))
+        run._ROSTER_CACHE.write_text(json.dumps(
+            {"saved": stale.isoformat(timespec="seconds"),
+             "names": ["jairo ruiz"]}), encoding="utf-8")
+        self.assertEqual(run._cached_roster(), set())
+
+    def test_an_empty_roster_is_never_cached_over_a_good_one(self):
+        run._cache_roster({"jairo ruiz"})
+        self.assertEqual(run._cached_roster(), {"jairo ruiz"})
+
+
+class OfficeAccessReason(unittest.TestCase):
+    """An unlisted account number is access, not a spelling (2026-11-16)."""
+
+    def test_unlisted_account_says_request_access_not_add_an_alias(self):
+        from automations.focus_office_att.run_all_owners import (
+            _not_found_reason)
+        reason = _not_found_reason([], "22850")
+        self.assertIn("Office Access", reason)
+        self.assertIn("22850", reason)
+        self.assertNotIn("alias", reason.lower())
+
+    def test_without_an_account_the_old_alias_wording_stands(self):
+        from automations.focus_office_att.run_all_owners import (
+            _not_found_reason)
+        self.assertEqual(_not_found_reason([]),
+                         "name not found in ownerville")
+        self.assertIn("'valeria valencia'",
+                      _not_found_reason(["valeria valencia"]))
+
+
 if __name__ == "__main__":
     unittest.main()
