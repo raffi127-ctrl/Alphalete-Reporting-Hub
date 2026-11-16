@@ -570,6 +570,7 @@ _LIVE = {
     "frank",                           # 10/29: 10/1-10/29 loaded from Lucy 1, Eastern (Eve: "dejalo corriendo diario")
     "hasan",                           # 11/3: 11/3 loaded from Lucy 1, 1 thread, 22 photos, 0 loose, Central
     "tre",                             # 11/13: 10/1-11/13 loaded from Lucy 1, 20 threads (8 open pinned), 0 loose, Central
+    "cody",                            # 11/16: loaded 10/19 but never switched on (Maddie: no pictures since), Central
 }
 
 # Spellings an office confirmed are one ad, {typed title: the ad's title}.
