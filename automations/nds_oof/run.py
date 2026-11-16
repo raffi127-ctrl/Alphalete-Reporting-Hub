@@ -155,10 +155,25 @@ def pull(today: dt.date, *, want_board: bool, headless: bool = True):
         over = [r for r in raw
                 if cap._int(r.get("minutesSinceLastKnock")) > C.GAP_THRESHOLD_MIN]
         if want_board:
-            rows = KP._scrape_day_on_page(page, rqst, today, verbose=True)
+            try:
+                rows = KP._scrape_day_on_page(page, rqst, today, verbose=True)
+            except Exception as e:  # noqa: BLE001
+                # THE GAPS DO NOT WAIT ON THE GRID (2026-11-16). Ownerville's
+                # Disposition by Rep grid never built from 1:30pm on, the
+                # raise left this function, and thirteen ticks in a row sent
+                # NOTHING -- no board, and no 15 min gaps either, though the
+                # gaps come off the Time Tracker feed that had just been read
+                # fine (Carlos: "wheres the knocks board?" ... "and the 15 min
+                # gaps?"). `None` (not []) tells the tick the grid FAILED, so
+                # it skips the board and the no-dispositions check instead of
+                # reading an empty grid as "nobody knocked".
+                _log("GRID FAILED -- %s: %s" % (type(e).__name__, str(e)[:200]))
+                rows = None
     _log("gaps feed: %d rep(s), %d over %d min%s"
          % (len(raw), len(over), C.GAP_THRESHOLD_MIN,
-            ("; board rows: %d" % len(rows)) if want_board else ""))
+            "" if not want_board else
+            "; board rows: GRID FAILED" if rows is None else
+            "; board rows: %d" % len(rows)))
     return over, rows
 
 
@@ -838,10 +853,17 @@ def tick(*, send: bool, force: bool, board: bool, headless: bool = True,
     # 2:45 on 2026-11-09 (no board due) the pull skipped the grid, `rows`
     # was empty, and 17 reps who HAD knocked were texted as "no dispositions".
     over, rows = pull(today, want_board=(want_board or want_nodispo), headless=headless)
+    # `None` = the disposition grid failed (see pull). The gaps and the
+    # call-out still go out; the board and the no-dispositions check do not,
+    # and the tick still ends non-zero so the failure shows on Hub Activity.
+    grid_failed = rows is None
+    rows = rows or []
     # Cinthya + Nathaly, knocking on Raf's Ownerville (config.BORROWED_ROWS):
     # on OUR board picture only. `rows` (our own) is what goes to the owners'
     # board share below -- Raf's row there already carries them.
     board_rows = (rows + borrowed_rows(today, rows)) if want_board else rows
+    if grid_failed:
+        board_rows = []     # never a board of the borrowed reps alone
     if send and want_board and rows:
         # Carlos's NDS crew on the owners' hourly knocks board (Eve
         # 2026-10-29) -- that board runs on Lucy 1 and cannot see this disk.
@@ -866,10 +888,13 @@ def tick(*, send: bool, force: bool, board: bool, headless: bool = True,
             p.replace(q)
             renamed.append(q)
         pngs30 = renamed
-    if want_board and not board_rows:
+    if grid_failed:
+        _log("board: the grid failed -- not drawn; no-dispo skipped; gaps go on")
+    elif want_board and not board_rows:
         _log("board: no rows on the grid -- not drawn (never post blank)")
     callout = "" if no_gaps else _callout(over, today, now, send=send)
-    no_dispo = _no_dispo_message(today, now, rows, state, send=send and C.NO_DISPO_SEND)
+    no_dispo = "" if grid_failed else _no_dispo_message(
+        today, now, rows, state, send=send and C.NO_DISPO_SEND)
 
     if want_board and C.GPS_ALERTS:
         # Every board tick (:00/:30), like Raf's: 3 failed-GPS knocks in a row.
@@ -882,7 +907,7 @@ def tick(*, send: bool, force: bool, board: bool, headless: bool = True,
         _log("  gaps:\n%s" % (body or "(nobody over 15 min)"))
         _log("  call-out: %s" % (callout or "(none)"))
         _log("  no-dispo: %s" % (no_dispo or "(none)"))
-        return 0
+        return 1 if grid_failed else 0
 
     from automations.icd_alerts import post as P
     if pngs:
@@ -912,7 +937,7 @@ def tick(*, send: bool, force: bool, board: bool, headless: bool = True,
         else:
             _log("no-dispo (NO_DISPO_SEND off, not sent): %s" % no_dispo)
     _save(state)
-    return 0
+    return 1 if grid_failed else 0
 
 
 # --- GPS alerts (3 failed knocks in a row) -------------------------------------

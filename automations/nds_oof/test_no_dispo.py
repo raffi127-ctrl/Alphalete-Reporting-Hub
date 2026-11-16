@@ -122,6 +122,36 @@ class SlotPulls(unittest.TestCase):
         self.assertTrue(seen.get("pulled"), "the slot did not make the tick pull")
         self.assertTrue(seen.get("grid"), "the slot pull must fetch the grid rows")
 
+    def test_a_failed_grid_still_sends_the_gaps_and_never_the_lineup(self):
+        """2026-11-16: the disposition grid never built from 1:30pm, the raise
+        killed the tick, and the 15 min gaps (a different feed, read fine)
+        went down with the board. A failed grid (rows None) must skip the
+        board and the no-dispo check, keep the gaps, and still end non-zero."""
+        now = dt.datetime(2026, 11, 16, 14, 30, 5)
+        over = [{"name": "A B", "minutesSinceLastKnock": 40}]
+        logged = []
+        with mock.patch.object(R, "_state", lambda: {}), \
+             mock.patch.object(R, "_save", lambda st: None), \
+             mock.patch.object(R, "in_window", lambda n: True), \
+             mock.patch.object(R, "_week_due", lambda st, n: False), \
+             mock.patch.object(R, "_week_monday_due", lambda st, n: False), \
+             mock.patch.object(R, "wait_for_fresh_share", lambda *a, **k: None), \
+             mock.patch.object(R, "pull", lambda today, **k: (over, None)), \
+             mock.patch.object(R, "_read_station_names", lambda: ["A B", "C D"]), \
+             mock.patch.object(R, "borrowed_rows",
+                               lambda today, own: [{"Rep": "X Y", "Total Knocks": 9}]), \
+             mock.patch.object(R, "render_board",
+                               lambda *a, **k: self.fail("a board was drawn")), \
+             mock.patch.object(R, "gps_check", lambda *a, **k: None), \
+             mock.patch.object(R, "_callout", lambda *a, **k: ""), \
+             mock.patch.object(R, "_log", lambda m: logged.append(str(m))):
+            rc = R.tick(send=False, force=False, board=True, now=now)
+        text = "\n".join(logged)
+        self.assertEqual(rc, 1, "a failed grid must still show as a failed run")
+        self.assertIn("A B - 40 min", text)             # the gaps survived
+        self.assertIn("no-dispo: (none)", text)         # nobody called out
+        self.assertIn("board: (none)", text)
+
     def test_no_slot_and_nothing_due_still_skips(self):
         now = dt.datetime(2026, 11, 6, 15, 40, 5)   # past the last slot + grace
         state = {"board_at": "2026-11-06T15:05:10", "gaps_at": "2026-11-06T15:20:10"}
