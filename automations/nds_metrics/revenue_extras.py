@@ -24,12 +24,18 @@ activated this week"):
     no Air, no BYOD, no tablets / watches / upgrades).
   * "sales per rep" after the REPS ON THE BOARD count (renderer
     extra["reps_extra"]): this week's apps over the reps listed.
-  * (11/15 pm) the name cell stacked: first name / rest of the name, the
-    "N orders · M apps" badge (orders = the Sun-Sat tier count, apps = port
-    phones + BYODs + Airs sold this Mon-Sun week) and two lines of what
-    sold -- new phones / BYOD / Air, then Next Up / Premium / Extra / Value
-    -- the payout variables; the OFFICE TOTAL row carries the sums. Each
-    sold line is priced like the deposit (board_line_price).
+  * (11/15 pm) the "N orders · M apps" badge after the name (orders = the
+    Sun-Sat tier count, apps = port phones + BYODs + Airs sold this Mon-Sun
+    week) and a WHAT SOLD column on the far right, two lines -- new phones /
+    BYOD / Air, then Next Up / Premium / Extra / Value -- the payout
+    variables; the OFFICE TOTAL row carries the sums. Each sold line is
+    priced like the deposit (board_line_price).
+  * (11/15 night, the Verizon board's look, Carlos: "make those changes with
+    our version equivalent") single-line names (the stacked cell made
+    everything too small), reps + sales/rep inside the week-total card, the
+    week-ending rates as coloured boxes, the churn % coloured by the SOW
+    chart, an APP MIX card (share of the week's apps by BYOD / Air /
+    Premium / Extra / Next Up).
 
 Every extra is best-effort: a source that cannot be read logs a NOTE and
 leaves its column / card blank -- the board itself never waits on it.
@@ -45,7 +51,7 @@ from automations.nds_metrics.run import (OUT_DIR, _c, _parse_date, load_soh,
 
 ACTIVATED_HEADER = 'LINES ACTIVATED<br><span class="dd">this week ($)</span>'
 NOTE = ("Orders = this Sun–Sat bonus week (double-tier days count twice); apps = port lines + BYODs + "
-        "Airs sold this Mon–Sun week, breakdown under the name (Next Up shows once the line's installment "
+        "Airs sold this Mon–Sun week, what sold on the right (Next Up shows once the line's installment "
         "plan posts). Tier T1 4 · T2 5–6 · T3 7–8 · T4 9+ orders. Lines activated = wireless lines that "
         "went active this week on SaraPlus, ($) = all $ that activated with them. Tier columns: green ✓ = "
         "your tier; yellow = one order away; +N = orders still needed; $ = that tier's rate × your port "
@@ -295,8 +301,8 @@ def badge(n_orders: int, c) -> str:
 
 
 def tags_html(c) -> str:
-    """Two lines under the badge: what sold, then the add-ons that move the
-    payout."""
+    """The WHAT SOLD cell, two lines: what sold, then the add-ons that move
+    the payout."""
     c = c or {}
     n = int(c.get("new phone", 0))
     return ("%d new phone%s · %d BYOD · %d Air<br>%d Next Up · %d Premium · %d Extra · %d Value"
@@ -312,33 +318,90 @@ def reps_extra(n_reps: int, n_apps: int) -> str:
                            % (per, n_apps, "" if n_apps == 1 else "s"))
 
 
+# Card colours (the Verizon board's boxes, Carlos 2026-11-15 pm: "make those
+# changes with our version equivalent").
+_BOX = {"Green": ("#dff3e2", "#1e7d32"), "Yellow": ("#fff3b0", "#8a6d00"),
+        "Red": ("#ffd9dc", "#b3261e"), "Grey": ("#eef0f2", "#5b6770")}
+
+
+def _box(label: str, value: str, color: str = "Grey", min_w: int = 64) -> str:
+    bg, fg = _BOX.get(color, _BOX["Grey"])
+    return ('<div style="background:%s;color:%s;border-radius:6px;padding:4px 10px;text-align:center;'
+            'min-width:%dpx"><div style="font-size:11px;font-weight:600;opacity:.8">%s</div>'
+            '<div style="font-size:19px;font-weight:800">%s</div></div>' % (bg, fg, min_w, label, value))
+
+
+def _boxes(items) -> str:
+    return '<div style="display:flex;gap:8px;margin-top:4px">' + "".join(items) + "</div>"
+
+
 def weeks_card(rows: Optional[Sequence[dict]]) -> str:
-    """'WE 10/25 77% · WE 11/1 71% · ...' oldest first off
-    activation_by_week.rows_from; '—' when the source is missing."""
+    """One coloured box per week ending, oldest first, off
+    activation_by_week.rows_from -- the Activation Rate by Rep's 0-30 day
+    bands (green 75%+, yellow 65%+, red under); '—' when the source is missing."""
     if not rows:
-        return "—"
-    parts = []
+        return "\u2014"
+    from automations.office_metrics.nds_orderlog import _ACT_BANDS
+    boxes = []
     for r in rows[-WEEKS:]:
-        pct = ("%.0f%%" % (100 * r["rate"])) if r.get("lines") else "—"
-        parts.append('<span style="white-space:nowrap">WE %d/%d <b>%s</b></span>'
-                     % (r["we"].month, r["we"].day, pct))
-    return ('<span style="font-size:17px;font-weight:600">'
-            + " &nbsp;·&nbsp; ".join(parts) + "</span>")
+        if r.get("lines"):
+            rate = float(r["rate"])
+            color = next(c for floor, c in _ACT_BANDS["0-30 Day"] if rate >= floor)
+            pct = "%.0f%%" % (100 * rate)
+        else:
+            color, pct = "Grey", "\u2014"
+        boxes.append(_box("WE %d/%d" % (r["we"].month, r["we"].day), pct, color))
+    return _boxes(boxes)
+
+
+def churn_color(pct: float) -> str:
+    """The NDS SOW's 0-30 day non-BYOD churn chart (nds_churn.comp
+    NONBYOD_0_30): T4 / T3 green, T2 yellow, T1 red."""
+    from automations.nds_churn import comp as NCOMP
+    tier = NCOMP.tier_for(pct, NCOMP.NONBYOD_0_30)
+    return "Green" if tier in (4, 3) else "Yellow" if tier == 2 else "Red"
 
 
 def churn_card(box: Optional[dict]) -> str:
     """'4.2% 3 of 71 ...' off the NDS CHURN tab's All Wireless box row
-    (compute.product_box()['wireless']); '—' with no activations / no source."""
+    (compute.product_box()['wireless']), the % coloured by the SOW churn
+    chart; '—' with no activations / no source."""
     if not box or not box.get("act"):
-        return "—"
+        return "\u2014"
     act, disc = int(box["act"]), int(box.get("disc") or 0)
-    return "%.1f%% %s" % (100.0 * disc / act,
-                          _SMALL % ("%d of %d activated in the last 30 days" % (disc, act)))
+    pct = 100.0 * disc / act
+    return '<span style="color:%s">%.1f%%</span> %s' % (
+        _BOX[churn_color(pct)][1], pct,
+        _SMALL % ("%d of %d activated in the last 30 days" % (disc, act)))
 
 
-def cards(weeks_rows, churn_box) -> List[Tuple[str, str]]:
+def mix_card(off) -> str:
+    """The share of this week's apps that are BYOD / Air / Premium / Extra /
+    Next Up -- the payout variables (Next Up fills in as lines activate)."""
+    off = off or {}
+    apps = int(off.get("apps", 0))
+    if not apps:
+        return "\u2014"
+    return _boxes([_box(lab, "%.0f%%" % (100.0 * int(off.get(k, 0)) / apps), "Grey", 72)
+                   for lab, k in (("BYOD", "byod"), ("Air", "air"), ("Premium", "premium"),
+                                  ("Extra", "extra"), ("Next Up", "nextup"))])
+
+
+def cards(weeks_rows, churn_box, off=None) -> List[Tuple[str, str]]:
     return [("ACTIVATION RATE BY WEEK-ENDING", weeks_card(weeks_rows)),
-            ("0–30 DAY CHURN · WIRELESS NON-BYOD", churn_card(churn_box))]
+            ("0\u201330 DAY CHURN \u00b7 WIRELESS NON-BYOD", churn_card(churn_box)),
+            ("APP MIX THIS WEEK", mix_card(off))]
+
+
+def week_extra(n_reps: int, n_apps: int) -> str:
+    """Inside the OFFICE WEEK TOTAL card (the reps card is hidden):
+    '· 19 reps · 7.1 sales / rep (134 apps)'."""
+    per = ("%.1f" % (n_apps / n_reps)) if n_reps else "\u2014"
+    return (' <span style="font-size:15px;color:#5b6770;font-weight:600">\u00b7 %d rep%s \u00b7 %s sales / rep '
+            '(%d app%s)</span>' % (n_reps, "" if n_reps == 1 else "s", per, n_apps, "" if n_apps == 1 else "s"))
+
+
+BREAKDOWN_HEADER = 'WHAT SOLD<br><span class="dd">this week</span>'
 
 
 # --------------------------------------------------------------- IO ----

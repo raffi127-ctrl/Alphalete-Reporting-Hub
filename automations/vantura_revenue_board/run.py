@@ -525,16 +525,17 @@ def _render_html(rows, office, monday: dt.date, upto: dt.date, dest: Path,
                  if office.get("rep_badge") else "")
     off_tags = (f'<div class="rtag">{office["rep_tags"]}</div>'
                 if office.get("rep_tags") else "")
+    off_bd = f'<td class="bd">{office.get("breakdown", "")}</td>'     # NDS: the office's what-sold lines
     trs.append(
         '<tr class="totrow"><td class="rk"></td>'
         f'<td class="rep">OFFICE TOTAL{off_badge}{off_tags}</td>'
-        + ('<td class="bd"></td>' if bd and bd.get("pos") == "before_total" else '')
+        + (off_bd if bd and bd.get("pos") == "before_total" else '')
         + f'<td class="tot">{money(week_total)}</td>'
-        + ('<td class="bd"></td>' if bd and bd.get("pos") == "after_total" else '')
+        + (off_bd if bd and bd.get("pos") == "after_total" else '')
         + ('<td></td>' if show_chip else '')
         + tot_days + ('<td class="nxt"></td>' if show_next else '')
         + ('<td class="xt"></td>' * n_extra)
-        + ('<td class="bd"></td>' if bd and bd.get("pos") not in ("after_total", "before_total") else '') + '</tr>')
+        + (off_bd if bd and bd.get("pos") not in ("after_total", "before_total") else '') + '</tr>')
 
     day_ths = "".join(
         f'<th class="dh{" cur" if d == upto else ""}">{c}<br>'
@@ -617,7 +618,7 @@ def _render_html(rows, office, monday: dt.date, upto: dt.date, dest: Path,
  .xt .far{{color:#5b6770}}
  .xt .ct{{color:#12181d;font-weight:700}}
  .totrow .xt{{border-left:none}}
- .totrow .rb{{background:#2a333b;color:#fff}} .totrow .rtag{{color:#cfd6dc}}
+ .totrow .rb{{background:#2a333b;color:#fff}} .totrow .rtag{{color:#cfd6dc}} .totrow .bd{{color:#cfd6dc}}
  .rb{{margin-left:8px;padding:2px 8px;border-radius:6px;background:#eef1f4;color:#3c4650;
       font-size:12px;font-weight:700;vertical-align:middle}}
  .foot .lab{{color:#f0b429;font-weight:700;margin-right:8px}}

@@ -1707,16 +1707,22 @@ def build_revenue_board(cols, crew, today, log=print) -> Path:
             row["extra"], _badge, row["tier"] = RX.row_extras(
                 n, plines, RX.activated_for(row["rep"], ex["activated"]))
             c = bd.get(row["rep"]) or _coll.Counter()
-            row["rep_lines"] = RX.name_lines(row["rep"])
             row["rep_badge"] = RX.badge(n, c)
-            row["rep_tags"] = RX.tags_html(c)
+            row["breakdown"] = RX.tags_html(c)       # the WHAT SOLD column, far right
         off = bd.get(RX.OFFICE) or _coll.Counter()
         office["rep_badge"] = RX.badge(n_orders, off)
-        office["rep_tags"] = RX.tags_html(off)
+        office["breakdown"] = RX.tags_html(off)
+        # Carlos 2026-11-15 night, the Verizon board's look ("make those
+        # changes with our version equivalent"): one-line names + the
+        # breakdown as its own far-right column, reps + sales/rep inside the
+        # week-total card (reps card hidden), coloured week-ending boxes,
+        # the churn % coloured by the SOW chart, an APP MIX card.
         extra = {"headers": [RX.ACTIVATED_HEADER] + headers[1:],
-                 "cards": RX.cards(ex["weeks"], ex["churn"]),
+                 "cards": RX.cards(ex["weeks"], ex["churn"], off),
                  "tier_chip": True,
-                 "reps_extra": RX.reps_extra(len(rows), off["apps"])}
+                 "week_extra": RX.week_extra(len(rows), off["apps"]),
+                 "hide_reps": True,
+                 "breakdown": {"header": RX.BREAKDOWN_HEADER, "pos": "right"}}
         note = RX.NOTE
         log("[nds] revenue board: %d app(s) sold this week on his owner -- %d new phone, %d BYOD, "
             "%d Air (+%d tablet/wearable, %d new-number, %d upgrade); %d Next Up; plans %d Premium / "

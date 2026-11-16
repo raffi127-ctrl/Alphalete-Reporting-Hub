@@ -63,6 +63,30 @@ class TierChip(unittest.TestCase):
         html = captured.get("html", "")
         self.assertIn('OFFICE TOTAL <span class="rb">43 orders \u00b7 134 apps</span><div class="rtag">92 new phones', html)
 
+    def test_office_breakdown_in_the_far_right_column(self):
+        captured = {}
+
+        def fake_write(self_path, text, encoding="utf-8"):
+            captured["html"] = text
+        rows = [dict(ROWS[0], breakdown="19 new phones<br>0 Next Up")]
+        with mock.patch("pathlib.Path.write_text", fake_write), \
+             mock.patch("pathlib.Path.mkdir", lambda *a, **k: None), \
+             mock.patch.dict("sys.modules", {"patchright": None, "patchright.sync_api": None}):
+            try:
+                V._render_html(rows, {"days": {"Mon": 1000.0}, "rep_badge": "43 orders \u00b7 134 apps",
+                                      "breakdown": "92 new phones<br>1 Next Up"},
+                               dt.date(2026, 11, 9), dt.date(2026, 11, 15), V.Path("/tmp/x.png"),
+                               "NDS Revenue Board", tiered=False,
+                               extra={"tier_chip": True, "hide_reps": True, "week_extra": " <span>x</span>",
+                                      "breakdown": {"header": "WHAT SOLD", "pos": "right"}})
+            except Exception:  # noqa: BLE001
+                pass
+        html = captured.get("html", "")
+        self.assertIn('<td class="bd">19 new phones<br>0 Next Up</td></tr>', html)          # rep row, far right
+        self.assertIn('<td class="bd">92 new phones<br>1 Next Up</td></tr>', html)          # totals row, same column
+        self.assertNotIn("REPS ON THE BOARD", html)
+        self.assertIn("$1,000 <span>x</span>", html)
+
     def test_plain_base_comp_board_unchanged(self):
         html = _html(None)
         self.assertNotIn(">TIER</th>", html)

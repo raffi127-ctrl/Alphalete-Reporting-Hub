@@ -63,25 +63,44 @@ class Activated(unittest.TestCase):
 
 
 class Cards(unittest.TestCase):
-    def test_weeks_oldest_first(self):
+    def test_weeks_boxes_oldest_first_with_bands(self):
         rows = [{"we": dt.date(2026, 10, 25), "rate": 0.772, "lines": 92},
-                {"we": dt.date(2026, 11, 1), "rate": 0.71, "lines": 103},
+                {"we": dt.date(2026, 11, 1), "rate": 0.69, "lines": 103},
                 {"we": dt.date(2026, 11, 8), "rate": 0.55, "lines": 126},
                 {"we": dt.date(2026, 11, 15), "rate": 0.0, "lines": 0}]
         html = RX.weeks_card(rows)
-        self.assertIn("WE 10/25 <b>77%</b>", html)
-        self.assertIn("WE 11/8 <b>55%</b>", html)
-        self.assertIn("WE 11/15 <b>—</b>", html)
+        green, yellow, red, grey = (RX._BOX[k][0] for k in ("Green", "Yellow", "Red", "Grey"))
+        self.assertIn('>WE 10/25</div><div style="font-size:19px;font-weight:800">77%</div>', html)
         self.assertLess(html.index("10/25"), html.index("11/8"))
-        self.assertEqual(RX.weeks_card(None), "—")
+        boxes = html.split('<div style="background:')[1:]
+        self.assertEqual([b.split(";")[0] for b in boxes], [green, yellow, red, grey])   # 77 / 69 / 55 / no sales
+        self.assertIn(">\u2014</div>", boxes[3])
+        self.assertEqual(RX.weeks_card(None), "\u2014")
 
-    def test_churn(self):
-        self.assertTrue(RX.churn_card({"act": 71, "disc": 3, "pend": 9}).startswith("4.2% "))
-        self.assertIn("3 of 71 activated in the last 30 days", RX.churn_card({"act": 71, "disc": 3}))
-        self.assertEqual(RX.churn_card({"act": 0, "disc": 0}), "—")
-        self.assertEqual(RX.churn_card(None), "—")
-        self.assertEqual([lab for lab, _v in RX.cards(None, None)],
-                         ["ACTIVATION RATE BY WEEK-ENDING", "0–30 DAY CHURN · WIRELESS NON-BYOD"])
+    def test_churn_coloured_by_the_sow_chart(self):
+        self.assertEqual([RX.churn_color(p) for p in (0.0, 2.2, 2.21, 4.85, 4.86, 7.5, 7.51, 12.2)],
+                         ["Green", "Green", "Green", "Green", "Yellow", "Yellow", "Red", "Red"])
+        html = RX.churn_card({"act": 115, "disc": 14, "pend": 9})
+        self.assertTrue(html.startswith('<span style="color:#b3261e">12.2%</span> '))
+        self.assertIn("14 of 115 activated in the last 30 days", html)
+        self.assertIn('color:#1e7d32">4.2%', RX.churn_card({"act": 71, "disc": 3}))
+        self.assertEqual(RX.churn_card({"act": 0, "disc": 0}), "\u2014")
+        self.assertEqual(RX.churn_card(None), "\u2014")
+
+    def test_mix_card_and_the_card_set(self):
+        off = {"apps": 134, "byod": 39, "air": 3, "premium": 43, "extra": 71, "nextup": 1}
+        html = RX.mix_card(off)
+        for lab, pct in (("BYOD", "29%"), ("Air", "2%"), ("Premium", "32%"), ("Extra", "53%"), ("Next Up", "1%")):
+            self.assertIn('>%s</div><div style="font-size:19px;font-weight:800">%s</div>' % (lab, pct), html)
+        self.assertEqual(RX.mix_card({"apps": 0}), "\u2014")
+        self.assertEqual([lab for lab, _v in RX.cards(None, None, off)],
+                         ["ACTIVATION RATE BY WEEK-ENDING", "0\u201330 DAY CHURN \u00b7 WIRELESS NON-BYOD",
+                          "APP MIX THIS WEEK"])
+
+    def test_week_total_card_suffix(self):
+        self.assertIn("\u00b7 19 reps \u00b7 7.1 sales / rep (134 apps)", RX.week_extra(19, 134))
+        self.assertIn("\u00b7 1 rep \u00b7 0.0 sales / rep (0 apps)", RX.week_extra(1, 0))
+        self.assertIn("\u00b7 0 reps \u00b7 \u2014 sales / rep (0 apps)", RX.week_extra(0, 0))
 
     def test_sales_per_rep_is_apps_per_rep(self):
         self.assertTrue(RX.reps_extra(19, 134).startswith(" <span"))    # rides after the count

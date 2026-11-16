@@ -48,6 +48,11 @@ def revenue_board(owner: str, sv_path: Path, target: dt.date, out_dir: Path, lay
             rec["orders"].add(l["order"])
         if l["activated"] and l["status"] not in ("Canceled", "Disconnected"):
             rec["payable"] += 1
+            # Carlos 2026-11-15 (via the NDS chat): "Tell Verizon that they
+            # need to add the parentheses with the revenue activated this
+            # week onto theirs" -- what those activated lines pay, before the
+            # weekly bonus, shown as "11 ($2,090)" in LINES ACTIVATED.
+            rec["payable_$"] = rec.get("payable_$", 0.0) + C.line_pay(l, tier)
     counts: Dict[str, tuple] = {}
     sold_lines: Dict[str, int] = defaultdict(int)          # lines sold this week, cancelled out
     addons: Dict[str, Dict[str, int]] = defaultdict(lambda: {"autopay": 0, "premium": 0, "protect": 0, "byod": 0})
@@ -61,7 +66,7 @@ def revenue_board(owner: str, sv_path: Path, target: dt.date, out_dir: Path, lay
         bad = (C.cancel_rate_90(L, rep, target) or 0) >= C.DISQUALIFY_CANCEL_90
         n_orders = len(rec.pop("orders"))
         rec["elig"] = 0 if bad else n_orders
-        counts[rep] = (n_orders, rec["payable"], bad, sold_lines.get(rep, 0))
+        counts[rep] = (n_orders, rec["payable"], bad, sold_lines.get(rep, 0), rec.pop("payable_$", 0.0))
     saved = RB.DAYS
     RB.DAYS = _SUN_SAT                         # Credico weeks run Sun-Sat
     try:
@@ -77,12 +82,14 @@ def revenue_board(owner: str, sv_path: Path, target: dt.date, out_dir: Path, lay
         # rep's lines activated this week (+1 a line per order still needed).
         from automations.nds_metrics.run import tier_band_labels, tier_cells
         bands = sorted((thr, float(rate)) for thr, _name, rate in C.WEEKLY_TIERS if thr > 0)
-        headers = ['LINES ACTIVATED<br><span class="dd">this week</span>'] + [
+        headers = ['LINES ACTIVATED<br><span class="dd">this week ($)</span>'] + [
             f'{lab}<br><span class="dd">${int(rate)}/line</span>'
             for lab, (_thr, rate) in zip(tier_band_labels(bands), bands)]
+        from automations.nds_metrics.revenue_extras import activated_cell
         for row in rows:
-            n, lines_act, bad, sold = counts.get(row["rep"], (0, 0, False, 0))
+            n, lines_act, bad, sold, act_dollars = counts.get(row["rep"], (0, 0, False, 0, 0.0))
             row["extra"] = tier_cells(n, lines_act, bands)
+            row["extra"][0] = activated_cell((lines_act, act_dollars))     # "11 ($2,090)", the NDS board's cell
             # orders AND lines beside the name (Carlos 2026-11-15: "also add in
             # the amount of apps that they're at (so lines that they're at for
             # the week)")
