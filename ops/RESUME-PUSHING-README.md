@@ -75,9 +75,21 @@ will not click it — ever.** When a machine is walled:
 
 - **Push report** in the Carlos/Megan/Eve/Lucy Slack chat at **1pm and 8pm**:
   per office, "N pushed · M left," with a red ❌ on any office with 10+ waiting.
+- **Noon and 4pm to-do list** in each office's own recruiting channel: the
+  applicants the walk found no phone number for, grouped by the Indeed account
+  they came through — open that account in Octo Browser and look the number up.
+  Back since 11/15 for Carlos, Atef and Khalil: it had quietly stopped the day
+  each office moved to its own computer (the office computer has no Slack; it
+  now sends the list through the relay and Lucy 1 posts it). Raf's grouped
+  thread is still off since his move (11/3).
 - First dead-end of the day per office auto-sends the screenshot pair.
 - Applicants flagged "no number" get re-checked automatically (misses are often
   just a half-loaded page; a second read usually finds the number).
+- A resume that was opened and truly has no number is left alone for 7 days.
+  To make ONE office re-read everyone it wrote off: add/bump its stamp in
+  `RECHECK_BY_OFFICE` (`automations/icd_alerts/resume_push.py`) and ship a
+  release (bump `agent_release.txt` AND the `# release:` line in
+  `agent_files.txt`). Its next walk re-reads once. First used 11/15 for 11580.
 
 ## Common sights, decoded
 

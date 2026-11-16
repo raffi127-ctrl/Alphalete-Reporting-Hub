@@ -98,6 +98,24 @@ Never "fix" this by merging the offices into one tick.
 
 ## 6. THE CHANGE→BREAKAGE LEDGER (look here before changing anything)
 
+**Changed: 11580 moved from Lucy 2 to Carlos's office computer (10/20, release
+2026.10.20.3); Atef (23467) and Khalil (11901) followed on 10/29.**
+Broke: the noon/4pm "recruiting to-do" post — who the walk found no phone
+number for, grouped by the Indeed account they applied through — vanished
+from all three channels. In Carlos's it was gone 26 days before anyone noticed
+(11/15).
+Why: the post was a step of Lucy 2's WRAPPER (`deploy/applicant_push.sh`),
+not of the walk. The office machine runs the same walk and writes the same
+`output/oat-flagged-<date>-<office>.json`, but holds no Slack token by design,
+and nothing carried the file back. The 10/20 changelog entry below even listed
+the loss ("no noon/4pm to-do post in his channel") and nobody read it as a bug.
+Fix (11/15): the office machine files the snapshot as a quiet relay row after
+every LIVE walk (`resume_push._file_todo`, stage `probe-push-todo`), and Lucy
+1's poster renders it with the same `summary.post_nophone_report` at noon and
+4pm (`icd_alerts/push_todo.py`). LESSON: when an automation changes machines,
+list every SIDE post the old wrapper made and re-home each one before the
+move — a "lost vs" line in a changelog is a to-do, not a note.
+
 **Changed: login accounts split (9/2, commit 5c3177b3).**
 Broke: both push queues silently backed up for ~4 days (Carlos 47+, Atef 100+).
 Why: the new `lucyresume` credential never validly signed in — and wrong
@@ -196,6 +214,12 @@ against the log file, or a tab dump; `rerun` args are shlex-split — a literal
 - Local outputs (each machine): `output/oat-activity-<date>[-<office>].csv`,
   `oat-no-phone-queue.csv`, `oat-retext-queue.csv`,
   `oat-nophone-blocked-<date>-<office>.json` (blocked-read retry cache).
+- **ICD Faults** tab of the relay workbook
+  (`1_5YGHhZ0gCYVZzHl7TPnP-6_75xaI0kcjPinQdVTlKg`): the office computers'
+  quiet `probe-` rows, one per office per day, Detail = the newest JSON —
+  `probe-push-health` (every 15 min), `probe-push-stats` (every walk; feeds
+  the hourly push report), `probe-push-todo` (every LIVE walk; the to-do
+  list Lucy 1 posts at noon/4pm, since 11/15).
 
 ## 8. Verification protocol after ANY change
 
@@ -210,6 +234,50 @@ against the log file, or a tab dump; `rerun` args are shlex-split — a literal
 ---
 
 ## Changelog (auto-appended daily at 7 PM; newest first)
+
+### 2026-11-15 (manual)
+- **The noon/4pm "recruiting to-do" post is back for the relay offices** —
+  Carlos 11580, Atef 23467, Khalil 11901: every office on a relay machine in
+  `ROTATION_BY_MACHINE` whose `offices.py` row says `post_todo` True. It had
+  been gone since each office moved to its own computer (10/20, 10/29) — see
+  the new ledger entry in §6. How it works now:
+  - **Office computer** (`icd_alerts/resume_push.py`, release 2026.11.15.9,
+    `resume_push.py` only, no new shipped files): after every LIVE walk that
+    finished, `_file_todo` reads the walk's flagged snapshot and files it as a
+    quiet relay row — stage `probe-push-todo`, summary `push todo` (`push todo
+    <office>` on a many-office machine), one row per office per day, Detail =
+    the list as compact JSON (`pack_todo`: names grouped under their account's
+    DOMAIN, each `[name, days]`). Domains, not emails, because `relay._scrub`
+    blanks every email address — the scrub is untouched; `summary._account_name`
+    now takes either spelling. Detail stays ≤ 5500 chars; a longer list is cut
+    from the END with a `cut` count. Dry-run offices file nothing.
+  - **Lucy 1** (`icd_alerts/post.py --watch`, every minute → new
+    `icd_alerts/push_todo.py`): in the noon hour and the 4pm hour, each
+    office's newest row is posted with `summary.post_nophone_report` (new
+    `channel` / `office_short` kwargs) into its `post_channel` — same thread
+    rules as before: one parent per day, counts refreshed in place, a
+    "12 PM" / "4 PM" reply with the names. Once per slot per office; the 4pm
+    post needs a walk NEWER than the one noon posted (a machine that died at
+    10am gets no 4pm repeat); a list over an hour old says "as of H:MM AM";
+    a row the relay cut says "N more not shown"; no row today → no post (the
+    2026-09-04 rule). Nothing is read outside those two hours. State:
+    `~/.config/recruiting-report/push_todo_posted.json` on Lucy 1.
+  - **Not covered:** Raf's three (`post_group` "raf", `post_todo` False) — the
+    grouped thread (`oat_processing/rollup.py`) still reads local snapshots
+    only, so it has been silent since 11/3 too. Colten (14733) has no channel.
+  - **Deploy / verify:** push to main → relays self-update on their next tick
+    (push machines take releases during push hours, never mid-walk); Lucy 1
+    pulls at its first tick after 8am (or `lucy update --machine "Lucy 1"`).
+    Then: an `ICD Faults` row `carlos / probe-push-todo` after the next live
+    walk; `[report] posted 12 PM` in Lucy 1's
+    `output/logs/icd-alerts-poster-<date>.log`; the thread in
+    #carlos-hidalgo-office-recruiting-11580. Preview from any box with the
+    repo: `python -m automations.icd_alerts.push_todo --at 12:05`.
+  - Tests: `automations/icd_alerts/test_push_todo.py` (new),
+    `test_post.PushTodoRidesTheWatchLeg`,
+    `oat_processing/test_partial_todo_post.py` (extended). Known stale and left
+    alone: `test_relay_fault.test_detail_is_trimmed` still expects the
+    pre-10/28 1500-char cut (it is 6000 now).
 
 ### 2026-10-20 (manual)
 - **11580 (Carlos) now pushes LIVE from Carlos's own computer**, not Lucy 2
