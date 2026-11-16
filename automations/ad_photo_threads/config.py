@@ -514,6 +514,14 @@ _MORE = [
     # #indeed-photos-tre-mitchells-office (created 11/13, both Lucys in).
     ("tre", "Tre Mitchell", ARS_R_TO_Z, "Tre Mitchell", "21182", "Mission III Management",
      "C0AUG0B5SKC", "C0CHK69GCSE", r"mission\s*iii\s*management.*1st\s*round"),
+    # Algemar Kennel (Se7en Summit Acquisitions, El Paso TX): Maddie asked
+    # 11/16. Daily thread "*SE7EN SUMMIT ACQUISITIONS - November 12th - 1st
+    # Rounds*" in #aglemar-kennel-recruiting from 11/11 (the "EOD - 11/13 -
+    # SE7EN SUMMIT ACQUISITIONS" recap doesn't match). AppStream 23965 (Raf's
+    # old funnel, renamed "Algemar Kennel El Paso"). Photos channel
+    # #indeed-photos-algemar-kennels-office created by Eve 11/6.
+    ("algemar", "Algemar Kennel", ARS_A_TO_C, "Algemar Kennel", "23965", "Se7en Summit Acquisitions",
+     "C0CFLK9MK4H", "C0CGFV9U6DN", r"se7en\s*summit.*1st\s*round"),
 ]
 
 # Zones the office_tz table (knocks, by owner name) can't place, cross-checked
@@ -534,6 +542,7 @@ _TZ = {
     "frank": "America/New_York",       # ads: Boca Raton / Tamarac / Coral Springs, FL
     "hasan": "America/Chicago",        # Waco, TX (OFFICES INFO GENERAL: CST)
     "tre": "America/Chicago",          # Houston, TX (Mission III)
+    "algemar": "America/Denver",       # El Paso, TX (Mountain; slots in MST)
 }
 
 # Offices whose channel is loaded 9/14 onward, checked and pinned; the rest
