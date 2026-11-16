@@ -48,6 +48,13 @@ Google page; Lucy creates the filter through Gmail's API, reads Gmail's filters
 back to check it is there, and throws the permission away (gmail_filters). That
 read-back IS the proof the filter was saved, so it writes the mark. No Allow, or
 Google says no: the hand-built filter box opens, exactly as before.
+
+OFF SINCE 2026-11-16 (Eve: Megan's way, tried live with Milly on 11/12). The
+Google page reads as an error ("hasn't verified this app", then a small
+"unsafe" link), and owners stop there. Gmail now opens on the filter box from
+the start: its own "Add forwarding address" link adds ours, and once Gmail
+confirms, Lucy reopens the same box to save it. LUCY_MAKES_FILTER brings the
+Allow back.
 """
 from __future__ import annotations
 
@@ -62,12 +69,14 @@ MARK_PATH = C.APP_DIR / "sara-code-forward-working.txt"
 
 STEPS = (
     "Almost done! Let's forward SaraPlus's code emails to %s.\n\n"
-    "Gmail just opened. Please make sure you're in the %s account: check the "
-    "picture at the top right, and switch if it's a different one.\n\n"
-    "1. Click Add a forwarding address.\n"
-    "2. PASTE into the box (hold Command and tap V). We already copied our "
-    "address for you.\n"
-    "3. Click Next, Proceed, then OK.\n\n"
+    "Gmail just opened a filter box. Please make sure you're in the %s "
+    "account: check the picture at the top right, and switch if it's a "
+    "different one.\n\n"
+    "1. Click Create filter.\n"
+    "2. Click Add forwarding address (blue, next to Forward it to).\n"
+    "3. Click Add a forwarding address and PASTE into the box (hold Command "
+    "and tap V). We already copied our address for you.\n"
+    "4. Click Next, Proceed, then OK.\n\n"
     "Please leave \"Disable forwarding\" selected. \"Forward a copy of incoming "
     "mail\" would send your whole inbox, and we don't want that.\n\n"
     "Click OK here when you're done. Then give Lucy up to 3 minutes to check. "
@@ -86,8 +95,8 @@ NOT_ARRIVED = (
     "We haven't heard from Gmail yet, so let's try once more.\n\n"
     "Gmail just opened again. Please check:\n"
     "1. The account at the top right is %s\n"
-    "2. Under Forwarding, click Add a forwarding address, paste %s (we copied "
-    "it again for you), then Next, Proceed and OK.\n\n"
+    "2. Click Create filter, then Add forwarding address, and paste %s (we "
+    "copied it again for you). Then Next, Proceed and OK.\n\n"
     "Click OK here when that's done.")
 LEFT_OPEN = ("Your sign-in worked and Lucy is running, so nothing is broken.\n\n"
              "This last step isn't finished yet. No problem: you'll see it "
@@ -189,6 +198,10 @@ def _step(office_key: str, word: str) -> None:
                    office_key=office_key)
 
 
+# Megan's way first (Eve 2026-11-16): no Google Allow page, see the top.
+LUCY_MAKES_FILTER = False
+
+
 def _finish(ask, say=print, address: str = "", office_key: str = "") -> str:
     """The forward is confirmed: the filter is all that is left.
 
@@ -196,14 +209,15 @@ def _finish(ask, say=print, address: str = "", office_key: str = "") -> str:
     Gmail, that is proof, so it marks. Otherwise the hand-built box, with no
     mark: OK on that box does not prove the filter was saved, and
     _already_working marks this computer once a code has really arrived."""
-    from automations.icd_alerts import gmail_filters as G
-    made = G.set_up(ask, address, [FILTER], say)
-    _step(office_key, "lucy's filter: %s" % made)
-    if made == G.MADE:
-        _mark(REPORTING_INBOX)
-        return "done"
-    if made == G.NOT_ACCEPTED:
-        say("      Gmail hasn't accepted our address yet -- showing the filter box.")
+    if LUCY_MAKES_FILTER:
+        from automations.icd_alerts import gmail_filters as G
+        made = G.set_up(ask, address, [FILTER], say)
+        _step(office_key, "lucy's filter: %s" % made)
+        if made == G.MADE:
+            _mark(REPORTING_INBOX)
+            return "done"
+        if made == G.NOT_ACCEPTED:
+            say("      Gmail hasn't accepted our address yet -- showing the filter box.")
     if not open_filter(ask, say, address):
         _step(office_key, "filter not shown")
         return "filter not shown"
@@ -268,7 +282,7 @@ def walk_through(ask, say=print, office_key: str = "", can_skip: bool = True,
         # address, so the steps can name the account to be in: /u/0 is whichever
         # account this browser calls its first, not necessarily that one.
         _copy(REPORTING_INBOX, say)
-        _open(for_account(FORWARDING_URL, address), say)
+        _open(for_account(ADD_URL, address), say)
         ask.message(STEPS % (REPORTING_INBOX, address))
         _step(office_key, "gmail steps closed with OK")
         if not R.report_forward(address, office_key=office_key):
@@ -281,7 +295,7 @@ def walk_through(ask, say=print, office_key: str = "", can_skip: bool = True,
             _step(office_key, "gmail did not confirm in time")
             if attempt + 1 < TRIES:
                 _copy(REPORTING_INBOX, say)
-                _open(for_account(FORWARDING_URL, address), say)
+                _open(for_account(ADD_URL, address), say)
                 ask.message(NOT_ARRIVED % (address, REPORTING_INBOX))
         ask.message(LEFT_OPEN)
         return "not confirmed yet"
@@ -330,6 +344,11 @@ FORWARDING_URL = "https://mail.google.com/mail/u/0/#settings/fwdandpop"
 # (opened by hand on a real inbox, 2026-11-02), so nobody hunts for the icon.
 FILTER_URL = ("https://mail.google.com/mail/u/0/#create-filter/from="
               + SARAPLUS_SENDER.replace("@", "%40"))
+# START ON THE FILTER, NOT ON FORWARDING (Megan's way, Eve 2026-11-12 with
+# Milly): the filter box's own "Add forwarding address" link takes them to add
+# ours, and the box already says SaraPlus, so there is no settings tab to hunt
+# for. Sterling keeps FORWARDING_URL.
+ADD_URL = FILTER_URL
 
 FILTER_STEPS = (
     "Last step! Gmail just opened a box with %s already filled in.\n\n"

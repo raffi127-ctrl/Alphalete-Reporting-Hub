@@ -105,13 +105,14 @@ class OnTheMac(unittest.TestCase):
     def test_gmail_opens_on_forwarding_and_the_filter_follows(self):
         ask = FakeAsk(CF.YES)
         self.assertEqual(self._go(ask), "done")
-        self.assertEqual(self.opened, [CF.for_account(CF.FORWARDING_URL, "owner@gmail.com"), CF.for_account(CF.FILTER_URL, "owner@gmail.com")])
+        self.assertEqual(self.opened, [CF.for_account(CF.ADD_URL, "owner@gmail.com"), CF.for_account(CF.FILTER_URL, "owner@gmail.com")])
 
     def test_gmail_opens_in_the_account_the_owner_named(self):
         # Trang: /u/0 went by with nothing reaching us; authuser worked first try.
         self.assertEqual(self._go(FakeAsk(CF.OTHER, "a+b@office.com")), "done")
         self.assertEqual(self.opened[0],
-                         "https://mail.google.com/mail/?authuser=a%2Bb@office.com#settings/fwdandpop")
+                         "https://mail.google.com/mail/?authuser=a%2Bb@office.com"
+                         "#create-filter/from=security.info%40saraplus.com")
         self.assertIn("/mail/?authuser=a%2Bb@office.com#create-filter/from=", self.opened[1])
 
     def test_no_address_stays_on_the_default_account(self):
@@ -154,7 +155,9 @@ class OnTheMac(unittest.TestCase):
         with self._never_confirmed():
             self.assertEqual(self._go(ask), "not confirmed yet")
         self.assertFalse(CF.already_set_up())
-        self.assertNotIn(CF.for_account(CF.FILTER_URL, "owner@gmail.com"), self.opened)
+        # Gmail opens on the filter box from the start (Megan's way), so what
+        # must never appear is the LAST step's window.
+        self.assertNotIn(CF.FILTER_STEPS, ask.shown)
         self.assertEqual(ask.shown[-1], CF.LEFT_OPEN)
         self.assertTrue(any("owner@gmail.com" in m and "heard from Gmail" in m
                             for m in ask.shown), "says what to check, by account")
@@ -167,7 +170,7 @@ class OnTheMac(unittest.TestCase):
         with mock.patch.multiple(CF, CONFIRM_WAIT_S=0, CONFIRM_POLL_S=0):
             # The check at the top and the first wait say no, the second yes.
             self.assertEqual(self._go(ask), "done")
-        self.assertEqual(self.opened, [CF.for_account(CF.FORWARDING_URL, "owner@gmail.com")] * 2 + [CF.for_account(CF.FILTER_URL, "owner@gmail.com")])
+        self.assertEqual(self.opened, [CF.for_account(CF.ADD_URL, "owner@gmail.com")] * 2 + [CF.for_account(CF.FILTER_URL, "owner@gmail.com")])
         self.assertEqual(self.sent, ["owner@gmail.com"])
 
     def test_already_confirmed_skips_straight_to_the_filter(self):
@@ -215,7 +218,14 @@ class OnTheMac(unittest.TestCase):
 
 
 class LucyMakesTheFilter(OnTheMac):
-    """One Google Allow, Lucy makes + reads back the filter (2026-11-12)."""
+    """One Google Allow, Lucy makes + reads back the filter (2026-11-12).
+    Switched off 2026-11-16 (Megan's way); these keep the switch working."""
+
+    def setUp(self):
+        super().setUp()
+        p = mock.patch.object(CF, "LUCY_MAKES_FILTER", True)
+        p.start()
+        self.addCleanup(p.stop)
 
     def test_a_filter_lucy_made_is_done_with_no_filter_box(self):
         self.confirmed.side_effect = lambda *a, **k: True
@@ -251,6 +261,22 @@ class LucyMakesTheFilter(OnTheMac):
                 mock.patch("builtins.print", side_effect=lambda *a, **k: said.append(a[0] if a else "")):
             self.assertEqual(CF.main(), 0)
         self.assertIn("  ALL SET. From now on, Lucy types SaraPlus's codes for you.", said)
+
+
+class MegansWay(OnTheMac):
+    """Eve 2026-11-16: no Google Allow page; the filter box from the start."""
+
+    def test_no_google_page_only_the_filter_box(self):
+        self.confirmed.side_effect = lambda *a, **k: True
+        ask = FakeAsk(CF.YES)
+        with mock.patch.object(G, "set_up", side_effect=AssertionError("no Allow page")):
+            self.assertEqual(self._go(ask), "done")
+        self.assertEqual(self.opened, [CF.for_account(CF.FILTER_URL, "owner@gmail.com")])
+        self.assertIn(CF.FILTER_STEPS, ask.shown)
+        self.assertFalse(CF.already_set_up(), "a code arriving is the proof")
+
+    def test_gmail_starts_on_the_filter_box(self):
+        self.assertEqual(CF.ADD_URL, CF.FILTER_URL)
 
 
 class TheWaitBeforeTheFilter(OnTheMac):
