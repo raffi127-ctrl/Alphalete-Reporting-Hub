@@ -177,9 +177,14 @@ def pull(today: dt.date, *, want_board: bool, headless: bool = True):
                             heads: document.querySelectorAll('#table-dispositions thead th').length,
                             processing: (document.querySelector('.dataTables_processing') || {}).innerText || '',
                             text: (document.body.innerText || '').replace(/\\s+/g, ' ').slice(0, 400)})""")
-                    _log("GRID FAILED -- page %s | title %r | %s"
-                         % (re.sub(r"rqst=[^&]+", "rqst=…", str(page.url)),
-                            page.title(), seen))
+                    # Short lines: `lucy logtail` cuts a line at 200 chars.
+                    _log("GRID PAGE -- table %s, heads %s, processing %r, p=%s"
+                         % (seen.get("table"), seen.get("heads"),
+                            seen.get("processing"),
+                            "".join(re.findall(r"[?&]p=(\d+)", str(page.url))[:1])))
+                    text = str(seen.get("text") or "")
+                    for i in range(0, len(text), 150):
+                        _log("GRID TEXT %d -- %s" % (i // 150 + 1, text[i:i + 150]))
                 except Exception as e2:  # noqa: BLE001
                     _log("GRID FAILED -- page unreadable (%s)" % type(e2).__name__)
     _log("gaps feed: %d rep(s), %d over %d min%s"
