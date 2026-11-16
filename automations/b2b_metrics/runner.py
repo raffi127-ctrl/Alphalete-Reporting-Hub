@@ -180,7 +180,9 @@ def _consumer_columns(o: B2BOffice, day: dt.date, rows: list, log):
         log("  [knocks] ⚠ consumer tallies FAILED for {} {} — posting the "
             "board without them: {}".format(o.knocks_office, day, str(e)[:160]))
         return None
-    cols = ct.extra_columns(reps)
+    from automations.total_knocks.render import CONSUMER_BOARD_COLUMNS
+    cols = {c: v for c, v in ct.extra_columns(reps).items()
+            if c in CONSUMER_BOARD_COLUMNS}
     names = [r.get("Rep") for r in rows if r.get("Rep")]
     for col in cols.values():
         for n in names:

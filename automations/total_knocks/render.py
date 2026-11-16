@@ -2650,15 +2650,23 @@ def needs_time_gaps(shape: str) -> bool:
     return not (COL_GAPS in cols and COL_TOTAL_GAPS in cols)
 
 
+# Which consumer columns the board SHOWS (the office machines still send all
+# seven). Jamis 2026-11-16 picked his list; Megan: keep every original column,
+# drop only the teal ones not on it -> Qualifying Questions, Close, Client
+# Acq. and Appointments Set are off. Order = left to right on the board.
+CONSUMER_BOARD_COLUMNS = ["Consumer Talk To", "Consumer Presentation",
+                          "Consumer Sara Plus (Credit Check)"]
+
+
 def consumer_end_columns(rows: "list[dict]") -> "dict | None":
     """{consumer column: {rep: n}} when ANY row carries consumer tallies, else
     None. A row without them (a rep the tally did not list) counts 0."""
-    from automations.shared.ownerville_knocks import CONSUMER_COLUMNS
-    if not any(c in (r or {}) for r in rows or [] for c in CONSUMER_COLUMNS):
+    if not any(c in (r or {}) for r in rows or []
+               for c in CONSUMER_BOARD_COLUMNS):
         return None
     return {c: {r.get(COL_REP, ""): int(r.get(c) or 0)
                 for r in rows if r.get(COL_REP)}
-            for c in CONSUMER_COLUMNS}
+            for c in CONSUMER_BOARD_COLUMNS}
 
 
 def render_knocks_boards(target: dt.date, *, rows: "list[dict]",
