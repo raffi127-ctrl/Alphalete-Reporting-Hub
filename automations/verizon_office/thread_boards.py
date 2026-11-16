@@ -92,19 +92,24 @@ def nds_rows(sv_path: Path, date_col: str = "Activation Date") -> Tuple[List[str
     # and the second copy is mostly blank -- lines with a blank id all keyed
     # (order, "") and one approved line approved its whole order
     # (Churn Rates by Rep 30/366 vs the tab's 23/324, 2026-11-15).
+    # ... and by NORMALISED name (case / spaces dropped), exactly order_log_tab
+    # ._find: the populated id column is "Line ID" and an exact "LineID" match
+    # still found the blank copy (churn_diag 20:56, after the first-wins fix).
+    def _norm(h) -> str:
+        return "".join(str(h or "").lower().split())
     ix: Dict[str, int] = {}
     for i, c in enumerate(rows[hi]):
         if c is not None and str(c).strip():
-            ix.setdefault(str(c).strip(), i)
+            ix.setdefault(_norm(c), i)
     for need in ("Sales Agent Name", "Signed Date", "Product Category", "Status Code",
                  "Current Line Status", "Cancel Date", "Activation Date", "Order Number",
                  "LineID", "Product Name"):
-        if need not in ix:
+        if _norm(need) not in ix:
             raise ValueError(f"{Path(sv_path).name}: Order Detail has no '{need}' column")
     body = rows[hi + 1:]
 
     def g(r, col):
-        i = ix.get(col)
+        i = ix.get(_norm(col))
         return r[i] if i is not None and i < len(r) else None
 
     plan_of: Dict[str, str] = {}
