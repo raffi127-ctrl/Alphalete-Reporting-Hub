@@ -446,10 +446,21 @@ BRAND = {"title": "AT&amp;T" + ATT_GLOBE + "NDS Revenue Sales Board", "color": "
 
 # --------------------------------------------------------------- IO ----
 
-def gather(cols, lines, today: dt.date, log=print) -> dict:
+def board_day(today: dt.date) -> dt.date:
+    """The last day the board covers. Monday's board is the week that just
+    closed, Mon-Sun (Carlos 2026-11-16, on that morning's board: "should've
+    been the Monday - Sunday") -- nothing has sold yet on a Monday morning, so
+    a fresh week was a blank board. From Tuesday it is the live week to date."""
+    return today - dt.timedelta(days=1) if today.weekday() == 0 else today
+
+
+def gather(cols, lines, today: dt.date, log=print, asof: Optional[dt.date] = None) -> dict:
     """-> {'activated': {rep: (lines, $)} | None, 'weeks': rows | None,
-    'churn': box | None}; every part on its own, a failure logs a NOTE."""
+    'churn': box | None}; every part on its own, a failure logs a NOTE.
+    `asof` = the board's last day (board_day) for the week-based parts; the
+    churn card always reads today's order-log pull."""
     out = {"activated": None, "weeks": None, "churn": None}
+    asof = asof or today
     soh = None
     try:
         soh = load_soh(log=log)
@@ -458,7 +469,7 @@ def gather(cols, lines, today: dt.date, log=print) -> dict:
     if soh:
         try:
             from automations.nds_metrics import line_revenue as LR
-            res = LR.prepare(soh, today, log=lambda *_a, **_k: None, save=False,
+            res = LR.prepare(soh, asof, log=lambda *_a, **_k: None, save=False,
                              tableau=(cols, lines))
             out["activated"] = activated_this_week(res)
             n = sum(v[0] for v in out["activated"].values())
@@ -475,8 +486,8 @@ def gather(cols, lines, today: dt.date, log=print) -> dict:
             soh_active, _ = LR.soh_dates(ix, orders)
             state, _fd, feed_lines = LR.replay(LR.cached_feeds(), soh_active,
                                                log=lambda *_a, **_k: None, save=False)
-            all_weeks, data = AW.aggregate(soh, feed_lines, state, today, weeks=WEEKS)
-            out["weeks"] = AW.rows_from(all_weeks, data, today)
+            all_weeks, data = AW.aggregate(soh, feed_lines, state, asof, weeks=WEEKS)
+            out["weeks"] = AW.rows_from(all_weeks, data, asof)
             log("[nds] revenue board: activation rate card "
                 + ", ".join("WE %d/%d %.0f%%" % (r["we"].month, r["we"].day, 100 * r["rate"])
                             for r in out["weeks"]))

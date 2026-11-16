@@ -1649,7 +1649,10 @@ def build_revenue_board(cols, crew, today, log=print) -> Path:
     i_port = cols.find("ported from", "port")
     i_tn = cols.find("spe.tn type", "tn type")
     idx = RX.column_index(cols)
-    monday = week_of(today)
+    # Monday's board = the Mon-Sun week that just closed (Carlos 2026-11-16);
+    # every week-based part below runs to `asof`, not to the run day.
+    asof = RX.board_day(today)
+    monday = week_of(asof)
     # Carlos 2026-11-03: "if you ever see a sale from someone not on the
     # list you still want to add it for the revenue board" -- every line on
     # his owner prices here; the crew roster never drops one.
@@ -1663,7 +1666,7 @@ def build_revenue_board(cols, crew, today, log=print) -> Path:
     for r in lines:
         od = _parse_date(_c(cols, r, i_od))
         rep = _c(cols, r, i_rep)
-        if not rep or od is None or not (monday <= od <= today):
+        if not rep or od is None or not (monday <= od <= asof):
             continue
         # Carlos 2026-11-15 pm ("ported new phones, BYODs, and AERS all have
         # a slightly different payout"): each sold line priced like the
@@ -1674,7 +1677,7 @@ def build_revenue_board(cols, crew, today, log=print) -> Path:
         amt = RX.board_line_price(RX.line_rec(cols, r, idx), rates)
         rec = per_rep.setdefault(rep, {"days": {}, "elig": 0, "payable": 0})
         rec["days"][od] = rec["days"].get(od, 0.0) + amt
-    rows, office = build_rows(per_rep, monday, today, tiered=False)
+    rows, office = build_rows(per_rep, monday, asof, tiered=False)
     extra, note = None, ""
     if FLAGS.get("tier_columns"):
         # Carlos 2026-11-14: "to the left of the total revenue [or] all the
@@ -1693,13 +1696,13 @@ def build_revenue_board(cols, crew, today, log=print) -> Path:
         i_spm = cols.find("sp.spm number", "spm number")
         headers, cells, counts = revenue_tier_columns(cols, lines, monday, i_od, i_rep,
                                                       i_port, i_tn, i_spm, log=log)
-        ex = RX.gather(cols, lines, today, log=log)
+        ex = RX.gather(cols, lines, today, log=log, asof=asof)
         # Carlos 2026-11-15 pm: "just call it 23 apps, and then there should
         # be a breakdown of how many were new phones and how many were BYODs
         # ... only if it affects payout" -- the stacked name cell (first
         # name / rest), "N orders · M apps", two lines of what sold; the
         # OFFICE TOTAL row carries the sums (revenue_extras.apps_breakdown).
-        bd = RX.apps_breakdown(cols, lines, idx, i_od, monday, today)
+        bd = RX.apps_breakdown(cols, lines, idx, i_od, monday, asof)
         n_orders = 0
         for row in rows:
             n, plines = counts.get(row["rep"], (0, 0))
@@ -1733,9 +1736,10 @@ def build_revenue_board(cols, crew, today, log=print) -> Path:
             % (off["apps"], off["new phone"], off["byod"], off["air"], off["device"],
                off["new number"], off["upgrade"], off["nextup"], off["premium"], off["extra"],
                off["value"], off["orders"], len(rows)))
-    out = render(rows, office, monday, today,
+    out = render(rows, office, monday, asof,
                  OUT_DIR / "nds_revenue_board.png",
                  board_name="NDS Revenue Board", tiered=False, extra=extra, note=note)
+    log(f"[nds] revenue board: week {monday:%m/%d}-{asof:%m/%d}")
     log(f"[nds] revenue board (styled, ALL lines on his owner): {len(rows)} rep(s), "
         f"crew ${sum(r['total'] for r in rows):,.0f}"
         + (", tier columns on" if extra else ""))
