@@ -176,12 +176,20 @@ def pull(today: dt.date, *, want_board: bool, headless: bool = True):
                             table: !!document.querySelector('#table-dispositions'),
                             heads: document.querySelectorAll('#table-dispositions thead th').length,
                             processing: (document.querySelector('.dataTables_processing') || {}).innerText || '',
-                            text: (document.body.innerText || '').replace(/\\s+/g, ' ').slice(0, 400)})""")
+                            tables: Array.from(document.querySelectorAll('table')).map(t => t.id || t.className || '?').slice(0, 12).join(', '),
+                            html: document.documentElement.outerHTML.length,
+                            tail: document.documentElement.outerHTML.replace(/\\s+/g, ' ').slice(-300),
+                            text: (document.body.innerText || '').replace(/\\s+/g, ' ').slice(380, 1900)})""")
                     # Short lines: `lucy logtail` cuts a line at 200 chars.
                     _log("GRID PAGE -- table %s, heads %s, processing %r, p=%s"
                          % (seen.get("table"), seen.get("heads"),
                             seen.get("processing"),
                             "".join(re.findall(r"[?&]p=(\d+)", str(page.url))[:1])))
+                    _log("GRID PAGE -- tables [%s], html %s chars"
+                         % (seen.get("tables"), seen.get("html")))
+                    tail = str(seen.get("tail") or "")
+                    for i in range(0, len(tail), 150):
+                        _log("GRID TAIL %d -- %s" % (i // 150 + 1, tail[i:i + 150]))
                     text = str(seen.get("text") or "")
                     for i in range(0, len(text), 150):
                         _log("GRID TEXT %d -- %s" % (i // 150 + 1, text[i:i + 150]))
