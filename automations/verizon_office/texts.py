@@ -140,7 +140,13 @@ def _metrics_thread_replies(client, day: dt.date) -> List[dict]:
 OFFICE_NEEDLES = ("murrugarra", "high value acquisitions")
 
 
-def _tracker_png(day: dt.date, log=print) -> Tuple[Optional[Path], str]:
+# Until this hour (CT) the tracker waits for TODAY's edition; after it, the
+# newest edition in the inbox goes (Credico skips / runs late some mornings,
+# and the page Nico is on is the same closed week either way).
+TRACKER_SETTLE_HOUR = 11
+
+
+def _tracker_png(day: dt.date, log=print, any_edition: bool = False) -> Tuple[Optional[Path], str]:
     """(png, why-not) -- TODAY's edition of Credico's Verizon Wireless Daily
     Scorecard, rendered from the PDF in the Hub inbox, the page Nico's office
     is on, his row highlighted. NOT the copy in the Slack tracker thread: that
@@ -156,7 +162,7 @@ def _tracker_png(day: dt.date, log=print) -> Tuple[Optional[Path], str]:
     if not pdf:
         return None, "no scorecard PDF in the inbox"
     rd = vp.report_date(Path(pdf))
-    if rd != day:
+    if rd != day and not any_edition and dt.datetime.now().hour < TRACKER_SETTLE_HOUR:
         return None, "newest scorecard is the %s edition; today's is not in yet" % rd
     import fitz
     doc = fitz.open(str(pdf))
@@ -166,7 +172,8 @@ def _tracker_png(day: dt.date, log=print) -> Tuple[Optional[Path], str]:
         doc.close()
     page_no = hits[0] if hits else 0
     png = et.render_vzw_png(pdf, tmp / "scorecard_p%d.png" % (page_no + 1), verbose=False, page_no=page_no)
-    log("  tracker: %s edition, page %d%s" % (rd, page_no + 1, "" if hits else " (office not found on any page)"))
+    log("  tracker: %s edition%s, page %d%s" % (rd, "" if rd == day else " (today's not in; newest used)", page_no + 1,
+                                              "" if hits else " (office not found on any page)"))
     try:                                             # Nico's row in yellow; any trouble = the plain page
         from automations.tableau_screenshots.highlight import Highlighter
         png = Path(Highlighter().png_for(CHANNEL, png, pages_mod.by_id(TRACKER_ID)))
@@ -175,7 +182,7 @@ def _tracker_png(day: dt.date, log=print) -> Tuple[Optional[Path], str]:
     return png, ""
 
 
-def collect(day: dt.date, log=print) -> List[Tuple[str, str, Path]]:
+def collect(day: dt.date, log=print, any_edition: bool = False) -> List[Tuple[str, str, Path]]:
     """[(key, caption, png)] of everything posted so far today, downloaded."""
     from automations.owner_chat_texts.slack_fetch import _download
     from automations.shared import slack_metrics_post as smp
@@ -183,7 +190,7 @@ def collect(day: dt.date, log=print) -> List[Tuple[str, str, Path]]:
     day_dir = OUT_DIR / day.isoformat()
     found: List[Tuple[str, str, Path]] = []
     try:
-        png, why = _tracker_png(day, log)
+        png, why = _tracker_png(day, log, any_edition=any_edition)
     except Exception as e:  # noqa: BLE001 -- the tracker leg never costs the thread leg
         png, why = None, "%s: %s" % (type(e).__name__, str(e)[:80])
     if png:
@@ -236,9 +243,10 @@ def main(argv=None) -> int:
     ap.add_argument("--send", action="store_true", help="text the chats (default: dry run)")
     ap.add_argument("--date", help="YYYY-MM-DD (default today)")
     ap.add_argument("--resend", default="", help="comma-separated picture keys to text again today, captioned '(corrected)'")
+    ap.add_argument("--any-edition", action="store_true", help="tracker: the newest scorecard edition even if not dated today")
     a = ap.parse_args(argv)
     day = dt.date.fromisoformat(a.date) if a.date else dt.date.today()
-    found = collect(day)
+    found = collect(day, any_edition=a.any_edition)
     if not found:
         print("nothing posted yet — nothing to text")
         return 0
