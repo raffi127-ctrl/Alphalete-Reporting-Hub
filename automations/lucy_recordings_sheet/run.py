@@ -90,20 +90,25 @@ def norm(s: str) -> str:
 
 # ---------- sources ----------
 
-def load_bot_export(from_json: str | None) -> dict:
-    if from_json:
-        return json.loads(Path(from_json).read_text(encoding="utf-8"))
+def run_bot(script: str, args: list | None = None) -> str:
+    """stdout of one of this folder's helpers, run in the audit bot's venv."""
     py = BOT_RUNTIME / "venv" / "bin" / "python"
     if not py.exists():
         py = BOT_RUNTIME / "venv" / "Scripts" / "python.exe"
     if not py.exists():
         raise SystemExit("audit bot venv not found under %s - this runs on Lucy 1" % BOT_RUNTIME)
-    r = subprocess.run([str(py), str(HERE / "bot_export.py")], cwd=str(BOT_RUNTIME),
+    r = subprocess.run([str(py), str(HERE / script)] + list(args or []), cwd=str(BOT_RUNTIME),
                        capture_output=True, text=True, encoding="utf-8", timeout=900)
     if r.returncode != 0:
-        raise SystemExit("bot_export failed:\n" + (r.stderr or r.stdout)[-3000:])
+        raise SystemExit("%s failed:\n%s" % (script, (r.stderr or r.stdout)[-3000:]))
+    return r.stdout
+
+
+def load_bot_export(from_json: str | None) -> dict:
+    if from_json:
+        return json.loads(Path(from_json).read_text(encoding="utf-8"))
     # The bot's modules may print; the JSON is the last line.
-    return json.loads(r.stdout.strip().splitlines()[-1])
+    return json.loads(run_bot("bot_export.py").strip().splitlines()[-1])
 
 
 def _session():
@@ -1129,12 +1134,12 @@ def short_name(name: str) -> str:
     return first if len(words) == 1 else "%s %s." % (first, words[-1][:1].upper())
 
 
-def yesterday_text(day: str, rows: list) -> str:
+def yesterday_text(day: str, rows: list, office: str = "Raf's Office") -> str:
     """Slack message: one block per owner, one line per recording."""
     d = dt.date.fromisoformat(day)
     label = "%s, %s %d" % (d.strftime("%A"), d.strftime("%b"), d.day)
     counted = [r for r in rows if r[5] == COUNTED]
-    head = ["*LUCY · Recordings Sent Yesterday · Raf's Office — %s*" % label]
+    head = ["*LUCY · Recordings Sent Yesterday · %s — %s*" % (office, label)]
     if not rows:
         return head[0] + "\nNo recordings were sent to LUCY this day."
     head.append("*%d counted* · %d rep(s) · %d not counted" % (
@@ -1275,6 +1280,12 @@ def main(argv=None) -> int:
     ap.add_argument("--ask-owners-only", action="store_true",
                     help="only send the 'who's your owner?' DMs for --day (no list, no sheet)")
     ap.add_argument("--day", help="with --yesterday-slack / --dry-run: list this day (YYYY-MM-DD) instead of yesterday")
+    ap.add_argument("--owner-threads", nargs="?", const="live", metavar="TEST_USER",
+                    help="Raf 11/16: 'Lucy Second Round Scorecards' thread per owner in their "
+                         "recruiting channel (list + one PDF per day + month picture). Pass a "
+                         "user id U... to send every thread to Lucy's DM with them instead (test)")
+    ap.add_argument("--owner-threads-only", metavar="OWNER",
+                    help="with --owner-threads: only this owner (e.g. 'Rafael Hidalgo')")
     a = ap.parse_args(argv)
 
     export = load_bot_export(a.from_json)
@@ -1358,6 +1369,8 @@ def main(argv=None) -> int:
         log("--- new starts, last %d weeks ---" % len(ns_seen))
         for r in ns_table:
             print("  %-32s sched=%-4s started=%-4s pct=%-7s avg=%s" % tuple(r))
+        if a.owner_threads:
+            _owner_threads(a, kept_all, export, guesses, day, y_all, "", dry_run=True)
         return 0
 
     ssid = a.sheet
@@ -1368,17 +1381,64 @@ def main(argv=None) -> int:
     if a.restyle and not a.create:
         restyle(S, ssid)
     write(S, ssid, owner_rows, rep_rows, totals, month_list)
+    rc = 0
+    # The report covers through yesterday: on the 1st, that's last month.
+    month = month_label((dt.datetime.now(CT).date() - dt.timedelta(days=1)).strftime("%Y-%m"))
     if a.email or a.email_to or a.email_org:
-        # The report covers through yesterday: on the 1st, that's last month.
-        month = month_label((dt.datetime.now(CT).date() - dt.timedelta(days=1)).strftime("%Y-%m"))
         if a.email_to:
             send_email([x.strip() for x in a.email_to.split(",") if x.strip()], month, totals,
                        owner_rows, ssid, show_link=False, extra_html=extra_html)
         elif a.email_org:
-            return _send_org(month, totals, owner_rows, ssid, extra_html)
+            rc = _send_org(month, totals, owner_rows, ssid, extra_html)
         else:
             send_email(TRIAL_TO, month, totals, owner_rows, ssid, extra_html=extra_html)
-    return 0
+    if a.owner_threads:
+        # After the mail: a Slack hiccup must never cost the org its email.
+        try:
+            _owner_threads(a, kept_all, export, guesses, day, y_all,
+                           build_email_html(month, totals, owner_rows, ssid, False) + extra_html)
+        except Exception as e:  # noqa: BLE001
+            log("owner threads NOT posted: %s" % e)
+            rc = rc or 1
+    return rc
+
+
+def _owner_threads(a, kept_all, export, guesses, day, y_all, month_html, dry_run=False):
+    """Raf 2026-11-16 - see owner_threads.py."""
+    from automations.lucy_recordings_sheet import owner_threads as ot
+    yday = dt.date.fromisoformat(day)
+    today = yday + dt.timedelta(days=1)
+    owner_plan = ot.plan(kept_all, export, guesses, yday)
+    if a.owner_threads_only:
+        want = set(norm(a.owner_threads_only).split())
+        owner_plan = {o: v for o, v in owner_plan.items() if want <= set(norm(o).split())}
+    log("owner threads: week %s..%s, %d owner(s) with counted recordings" % (
+        ot.week_days(yday)[0], yday, len(owner_plan)))
+    for owner in sorted(owner_plan):
+        name, ch = ot.channel_for(owner)
+        log("  %-32s -> %-22s %s" % (owner, name or "NO CHANNEL", ", ".join(
+            "%s:%d" % (d[5:], len(rs)) for d, rs in sorted(owner_plan[owner].items()))))
+    pdfs = ot.build_pdfs(owner_plan, export.get("names") or {}, today, run_bot)
+    log("owner threads: %d day PDF(s) built under %s" % (len(pdfs), ot.PDF_DIR / today.isoformat()))
+    if dry_run:
+        return
+    png = None
+    if month_html:
+        try:
+            png = ot.render_png(month_html, ot.PDF_DIR / today.isoformat() / "month_to_date.png")
+        except Exception as e:  # noqa: BLE001 - the threads still go without the picture
+            log("month picture NOT rendered: %s" % e)
+
+    def list_text(owner):
+        first = (ot.channel_for(owner)[0] or owner).split()[0]
+        return yesterday_text(day, [r for r in y_all if r[2] == owner],
+                              office="%s's Office" % first)
+
+    from automations.shared.slack_metrics_post import _client
+    test_to = "" if a.owner_threads == "live" else a.owner_threads
+    n = ot.post(_client(), owner_plan, pdfs, list_text, png, yday, export, today,
+                test_to=test_to, only=a.owner_threads_only or "", log=log)
+    log("owner threads: %d posted%s" % (n, " (TEST to %s)" % test_to if test_to else ""))
 
 
 def _send_org(month: str, totals: list, owner_rows: list, ssid: str, extra_html: str = "") -> int:

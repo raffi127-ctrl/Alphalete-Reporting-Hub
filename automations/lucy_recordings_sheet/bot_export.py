@@ -112,6 +112,22 @@ def _report_length(rec):
     return None
 
 
+def _pdf(rec):
+    """The audit's own PDF on disk, or "" (paths can be stale after the folder
+    move -> fall back to reports/ by name, like daily_owner_digest)."""
+    for key in ("report_pdf", "report_md"):
+        v = rec.get(key)
+        if not v:
+            continue
+        p = Path(v)
+        if key == "report_pdf" and p.exists():
+            return str(p)
+        alt = scorecards.REPORTS_DIR / (p.stem + ".pdf")
+        if alt.exists():
+            return str(alt)
+    return ""
+
+
 def main():
     recs = scorecards._enrich_with_slack_uploaders(scorecards._load_all_completions())
     reps = load_reps()
@@ -127,7 +143,7 @@ def main():
         if seconds is None:
             seconds = _report_length(r)
         out_recs.append({"ts": r.get("ts", ""), "uid": uid, "score": _score(r),
-                         "file": audio, "fp": fp, "seconds": seconds})
+                         "file": audio, "fp": fp, "seconds": seconds, "pdf": _pdf(r)})
         if uid and uid not in names:
             info = reps.get(uid) or {}
             nm = f"{info.get('first_name', '')} {info.get('last_name', '')}".strip()
