@@ -26,6 +26,9 @@ CONFIRM_TEXT = "I confirm that this statement is accurate and true"
 # What OwnerVille shows TODAY in that section: a checkbox labelled "Submit",
 # with the old sentence gone (2026-11-16). Matched EXACTLY -- see _confirm_box.
 SUBMIT_LABEL = "Submit"
+# The one required section a machine may finish by itself -- see
+# _complete_service. Everything else that is not COMPLETED needs a person.
+SERVICE_SECTION = "SERVICE"
 SUBMITTED_STATES = ("REVIEW IN PROGRESS", "APPROVED", "COMPLETED")
 # The sections that must read COMPLETED before a submit. An EXPLICIT list, not
 # "everything except a few": an unsubmitted person's Owner Submit row carries
@@ -153,6 +156,46 @@ def _confirm_box(modal):
     return lab, (box if (box is not None and box.count()) else None)
 
 
+def _complete_service(page, modal, name: str, *, campaign: str = ""):
+    """Pick the office's service and SAVE, then re-read the modal's states.
+
+    Megan, 2026-11-16: *"res service isn't being checked - we built it where
+    Lucy is supposed to check it and save."* It IS built -- `tick_attestations`
+    does it -- but only on the digi docs SEND path. A rep whose bundle went out
+    before that existed, or whose send died after the bundle was created, keeps
+    SERVICE on REQUIRED ACTION forever, and this sweep could only ever refuse
+    them. Refusing is right when something needs a person; SERVICE needs
+    nobody, so the sweep does it and carries on.
+
+    IT IS NOT AN ATTESTATION. It is which service the rep sells, and the
+    office's answer is the same every time -- unlike the drug-screen boxes,
+    which assert something about a person and stay on the send path where they
+    are logged per rep.
+
+    Returns the states as they read AFTER the save, from a fresh open: the
+    click is not the evidence, the page is. On any failure it returns None and
+    the caller refuses exactly as it did before.
+    """
+    try:
+        ov._expand(modal, SERVICE_SECTION, page, reveals=ov.config.SERVICE_RADIO,
+                   verbose=False)
+        # EXACT: the section offers RES-ATT and RES-ATT-OOF, and a fragment
+        # matches both.
+        if not ov._tick_one(modal, ov.config.SERVICE_RADIO, dry_run=False,
+                            exact=True):
+            return None
+        ov._click_any(modal, "Save Changes", page=page)
+        page.wait_for_timeout(3000)
+    except Exception:                                       # noqa: BLE001
+        return None
+    try:
+        modal2, _ = ov.open_set_status(page, name, verbose=False,
+                                       campaign=campaign)
+    except Exception:                                       # noqa: BLE001
+        return None
+    return section_states(modal2), modal2
+
+
 def submit_one(page, name: str, *, dry_run: bool = True,
                campaign: str = "") -> tuple:
     """(outcome, detail). outcome: 'submitted' | 'would submit' | 'already' |
@@ -174,6 +217,19 @@ def submit_one(page, name: str, *, dry_run: bool = True,
     if os_state in SUBMITTED_STATES:
         return "already", f"{matched}: Owner Submit already {os_state}"
     bad = blockers(st)
+    # SERVICE IS OURS TO FINISH, and only SERVICE. If it is the one thing in
+    # the way, pick it, save, and read the page again -- a sweep that refused
+    # on a radio nobody has to think about is a sweep that leaves people
+    # unsubmitted for days (Megan, 2026-11-16).
+    if bad and all(b.startswith("%s=" % SERVICE_SECTION) for b in bad) \
+            and not dry_run:
+        fixed = _complete_service(page, modal, name, campaign=campaign)
+        if fixed is not None:
+            st, modal = fixed
+            bad = blockers(st)
+            os_state = st.get("OWNER SUBMIT", "")
+            if os_state in SUBMITTED_STATES:
+                return "already", f"{matched}: Owner Submit already {os_state}"
     if bad:
         return "refused", f"{matched}: not every section is done — " \
                           f"{', '.join(bad)}"

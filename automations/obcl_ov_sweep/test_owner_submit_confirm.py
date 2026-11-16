@@ -95,3 +95,72 @@ class TheSearchForTheInputStaysScoped(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ServiceIsTheOneSectionTheSweepFinishes(unittest.TestCase):
+    """Megan, 2026-11-16: "res service isn't being checked - we built it where
+    Lucy is supposed to check it and save." It was built on the digi docs SEND
+    path only, so a rep whose bundle predates it sits on REQUIRED ACTION
+    forever and the sweep could only refuse them."""
+
+    def test_only_service_is_auto_completed(self):
+        """Everything else that is not COMPLETED needs a person. A sweep that
+        could finish any section would be a sweep that attests for people."""
+        src = code()
+        body = src[src.index("def submit_one"):]
+        self.assertIn("_complete_service", body)
+        # Guarded on SERVICE being the ONLY thing outstanding, so a rep with a
+        # real gap elsewhere still refuses untouched.
+        self.assertIn("SERVICE_SECTION", body)
+        self.assertIn("for b in bad", body)
+        self.assertIn("all(", body)
+
+    def test_it_never_runs_on_a_dry_walk(self):
+        """A dry run writes nothing, including this."""
+        src = code()
+        body = src[src.index("def submit_one"):]
+        head = body[:body.index("_complete_service")]
+        self.assertIn("not dry_run", head)
+
+    def test_the_page_is_re_read_after_saving(self):
+        """The click is not the evidence. A save that did not take must not
+        read as a section completed."""
+        src = code()
+        fn = src[src.index("def _complete_service"):src.index("def submit_one")]
+        self.assertIn("open_set_status", fn)
+        self.assertIn("section_states", fn)
+
+    def test_a_failure_falls_back_to_the_old_refusal(self):
+        fn = code()[code().index("def _complete_service"):]
+        fn = fn[:fn.index("def submit_one")]
+        self.assertIn("return None", fn)
+
+    def test_the_radio_is_picked_exactly(self):
+        """SERVICE offers RES-ATT and RES-ATT-OOF; a fragment matches both."""
+        fn = code()[code().index("def _complete_service"):]
+        fn = fn[:fn.index("def submit_one")]
+        self.assertIn("exact=True", fn)
+
+
+class TheServiceRadioCannotBeConfusedWithOutOfFootprint(unittest.TestCase):
+
+    def test_tick_one_can_demand_an_exact_label(self):
+        import inspect
+        from automations.digi_docs import ownerville as OV
+        self.assertIn("exact", inspect.signature(OV._tick_one).parameters)
+
+    def test_the_service_tick_asks_for_exact(self):
+        import ast as _ast
+        import inspect
+        from automations.digi_docs import ownerville as OV
+        src = inspect.getsource(OV.tick_attestations)
+        self.assertRegex(src, r"SERVICE_RADIO[^)]*exact=True")
+
+    def test_the_compliance_boxes_keep_the_fragment_match(self):
+        """Their sentences are long and name the company twice; an exact match
+        there would break the moment a word changed."""
+        import inspect
+        from automations.digi_docs import ownerville as OV
+        src = inspect.getsource(OV.tick_attestations)
+        bg = src[:src.index("SERVICE")]
+        self.assertNotIn("exact=True", bg)

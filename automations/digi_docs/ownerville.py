@@ -1211,7 +1211,8 @@ def tick_attestations(page, modal, *, dry_run: bool = True,
 
     try:
         _expand(modal, "SERVICE", page, reveals=config.SERVICE_RADIO)
-        ok = _tick_one(modal, config.SERVICE_RADIO, dry_run=dry_run)
+        ok = _tick_one(modal, config.SERVICE_RADIO, dry_run=dry_run,
+                       exact=True)
     except Exception as e:                              # noqa: BLE001
         ok = False
         missed.append(f"{config.SERVICE_RADIO} (SERVICE did not open: "
@@ -1247,7 +1248,7 @@ def tick_attestations(page, modal, *, dry_run: bool = True,
     return ticked
 
 
-def _tick_one(modal, frag: str, *, dry_run: bool) -> bool:
+def _tick_one(modal, frag: str, *, dry_run: bool, exact: bool = False) -> bool:
     """Tick ONE box, and do not give up on the first timeout.
 
     A plain click(timeout=10000) is a strict actionability wait — visible,
@@ -1258,7 +1259,15 @@ def _tick_one(modal, frag: str, *, dry_run: bool) -> bool:
     forced click that skips the hit-test. Returns False rather than raising, so
     one stubborn box costs itself and not the other three."""
     try:
-        box = modal.locator("label", has_text=frag).first
+        # EXACT, where a fragment would match more than one control. SERVICE
+        # offers "RES-ATT" and "RES-ATT-OOF", and a contains-match hits BOTH:
+        # `.first` picks the right one only because RES-ATT happens to come
+        # first in the DOM today. The day OwnerVille reorders those two radios,
+        # every new start would quietly be marked out-of-footprint, and nothing
+        # would say so. The compliance boxes keep the fragment match on purpose
+        # -- their sentences are long and name the company twice.
+        box = (modal.get_by_text(frag, exact=True).first if exact
+               else modal.locator("label", has_text=frag).first)
         box.wait_for(state="visible", timeout=15000)
         if dry_run:
             return True
