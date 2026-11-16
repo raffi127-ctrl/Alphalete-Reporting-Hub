@@ -107,6 +107,10 @@ AGENT_FILES = [
     "automations/oat_processing/classify.py",
     "automations/oat_processing/resume_download.py",
     "automations/oat_processing/run.py",
+    # Numbers a person looked up for applicants the resume read came up
+    # empty on, pulled off the relay's 'Phone Lookups' tab by the walk
+    # (2026-11-16). phone_lookups_add.py, which puts them there, is ours.
+    "automations/oat_processing/phone_lookups.py",
     # The Await text's interview times, retuned to the clock before each live
     # push (Carlos/Megan 2026-10-28).
     "automations/oat_processing/await_window.py",

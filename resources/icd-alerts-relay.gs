@@ -22,8 +22,8 @@
  * the failure that follows looks like a bad key rather than a missing
  * spreadsheet.
  *
- * TABS (plus 'Headshot Jobs' and 'Office Jobs', documented with their calls
- * at the bottom):
+ * TABS (plus 'Headshot Jobs', 'Office Jobs' and 'Phone Lookups', documented
+ * with their calls at the bottom):
  *   'Relay Keys'      Office | Key | Active | Note      <- we control this
  *   'ICD Relay'       Office | Day | Records JSON | Received At | Local Time |
  *                     Agent | Last Posted JSON | Posted At |
@@ -128,6 +128,11 @@ function doPost(e) {
     // (icd_alerts.code_answer, 2026-10-29). Keyed like every other call, so
     // an office only ever sees an answer to its own request.
     if (body.code_poll) return _reply(_codePoll(office, String(body.code_poll.since || '')));
+    // NUMBERS A PERSON LOOKED UP for the resume push (2026-11-16): the
+    // office's computer asks for its own rows, marks them sent, or (the
+    // admin's computer, with the office's key) adds rows for its own
+    // office only. See PHONE LOOKUPS at the bottom.
+    if (body.phone_lookups) return _reply(_phoneLookups(office, body.phone_lookups));
 
     // FAULTS ARE HANDLED BEFORE THE DAY CHECK, because they carry their own
     // day and deliberately send no top-level one -- that is what makes a
@@ -766,6 +771,11 @@ function _adminCall(body) {
   if (body.office_job_log) return _officeJobLog(body.office_job_log);
   if (body.office_job_checks) return _officeJobChecks();
   if (body.office_job_checked) return _officeJobChecked(body.office_job_checked);
+  if (body.phone_lookups_add) {   // a looked-up phone list for one office's push
+    var pl = body.phone_lookups_add;
+    return _phoneLookupsAdd(String(pl.office || '').trim().toLowerCase(), pl.rows,
+                            String(pl.by || 'lucy'));
+  }
   if (body.office_settings) {   // Lucy's read of what an admin set (account number, city, state)
     var st = _admSettings(String(body.office_settings.office || '').trim().toLowerCase());
     return {ok: true, appstream: st.appstream, state: st.state, city: st.city};
@@ -1199,6 +1209,173 @@ function _officeJobStatus(office, id) {
             answered: !!r[OJ.RESULT_AT], result: res};
   }
   return {ok: false, error: 'no such job'};
+}
+
+
+// --- PHONE LOOKUPS (numbers a person found for the resume push) ------------
+// The One App at a time walk flags an applicant whose record and resume both
+// carry no number, and a person then finds it (Indeed's Call pop-up). The
+// office's computer, which does the pushing, holds no Google access -- so the
+// number comes back to it through here (Carlos 2026-11-16, thirty of his).
+//
+//   'Phone Lookups'  Office | Office ID | Name | Account | Phone | Added At |
+//                    Added By | Note | Fetched At | Sent At | Status
+//
+// WHO WRITES ROWS: our side (the admin key, or a person typing into the tab),
+// or the office's OWN key for its own office only -- the same rule as
+// office_job_request. An office reads and marks only its own rows; it can
+// never see another office's. Office ID narrows a key that pushes several
+// offices (Raf's three); a blank Office ID is for all of them.
+//
+// A ROW IS DONE when Sent At is set (the office typed the number in and the
+// send landed). Any other status -- a refused send, a number that is not ten
+// digits -- leaves Sent At blank and the status on the row, for a person.
+// NOTHING HERE EVER REMOVES A ROW OR AN APPLICANT.
+var PHONE_LOOKUPS_TAB = 'Phone Lookups';
+var PL = {OFFICE: 0, OFFICE_ID: 1, NAME: 2, ACCOUNT: 3, PHONE: 4, ADDED: 5,
+          BY: 6, NOTE: 7, FETCHED: 8, SENT: 9, STATUS: 10};
+var PL_HEAD = ['Office', 'Office ID', 'Name', 'Account', 'Phone', 'Added At',
+               'Added By', 'Note', 'Fetched At', 'Sent At', 'Status'];
+var PL_MAX_PER_CALL = 200;
+
+function _plSheet() {
+  var sh = _book().getSheetByName(PHONE_LOOKUPS_TAB);
+  if (!sh) {
+    sh = _book().insertSheet(PHONE_LOOKUPS_TAB);
+    sh.appendRow(PL_HEAD);
+  }
+  _ensureCols(sh, PL_HEAD.length);
+  return sh;
+}
+
+function _plKey(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
+
+function _phoneLookups(office, a) {
+  a = a || {};
+  if (a.add) return _phoneLookupsAdd(office, a.add, 'office:' + office);
+  if (a.sent) return _phoneLookupsSent(office, a.sent);
+  return _phoneLookupsFor(office, String(a.office_id || '').trim());
+}
+
+function _phoneLookupsAdd(office, rows, by) {
+  if (!office || Object.prototype.toString.call(rows) !== '[object Array]') {
+    return {ok: false, error: 'missing office or rows'};
+  }
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var sh = _plSheet();
+    var have = sh.getDataRange().getValues();
+    // A NAME ALREADY WAITING (unsent) FOR THIS OFFICE IS NOT ADDED TWICE, so a
+    // list dropped twice doubles nobody. A finished row may repeat: the same
+    // person can apply again next month with the same number.
+    var waiting = {};
+    for (var i = 1; i < have.length; i++) {
+      if (String(have[i][PL.OFFICE]).trim().toLowerCase() !== office) continue;
+      if (String(have[i][PL.SENT] || '').trim()) continue;
+      waiting[_plKey(have[i][PL.OFFICE_ID]) + '|' + _plKey(have[i][PL.NAME])] = true;
+    }
+    var now = new Date();
+    var out = [];
+    var skipped = 0;
+    for (var j = 0; j < rows.length; j++) {
+      var r = rows[j] || {};
+      var name = String(r.name || '').trim();
+      var phone = String(r.phone || '').trim();
+      if (!name || !phone) { skipped++; continue; }
+      var k = _plKey(r.office_id) + '|' + _plKey(name);
+      if (waiting[k]) { skipped++; continue; }
+      waiting[k] = true;
+      out.push([office, String(r.office_id || '').trim(), name,
+                String(r.account || '').trim(), phone, now, String(by || ''),
+                String(r.note || '').slice(0, 200), '', '', '']);
+    }
+    if (out.length) {
+      sh.getRange(sh.getLastRow() + 1, 1, out.length, PL_HEAD.length).setValues(out);
+    }
+    return {ok: true, added: out.length, skipped: skipped};
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function _phoneLookupsFor(office, officeId) {
+  // Nothing waiting = no lock, no write: every pushing office asks on every
+  // walk that meets an applicant with no number.
+  var sh = _book().getSheetByName(PHONE_LOOKUPS_TAB);
+  if (!sh) return {ok: true, lookups: []};
+  var rows = sh.getDataRange().getValues();
+  var out = [];
+  var hit = [];
+  for (var i = 1; i < rows.length && out.length < PL_MAX_PER_CALL; i++) {
+    var r = rows[i];
+    if (String(r[PL.OFFICE]).trim().toLowerCase() !== office) continue;
+    var rid = String(r[PL.OFFICE_ID] || '').trim();
+    if (officeId && rid && rid !== officeId) continue;
+    if (String(r[PL.SENT] || '').trim()) continue;
+    if (!String(r[PL.NAME] || '').trim() || !String(r[PL.PHONE] || '').trim()) continue;
+    out.push({row: i + 1, office_id: rid, name: String(r[PL.NAME]).trim(),
+              account: String(r[PL.ACCOUNT] || '').trim(),
+              phone: String(r[PL.PHONE]).trim()});
+    hit.push(i + 1);
+  }
+  if (hit.length) {
+    // Fetched At, written as one column so a 200-row list is one write.
+    _ensureCols(sh, PL_HEAD.length);
+    var n = rows.length - 1;
+    var col = sh.getRange(2, PL.FETCHED + 1, n, 1).getValues();
+    var now = new Date();
+    for (var h = 0; h < hit.length; h++) col[hit[h] - 2][0] = now;
+    sh.getRange(2, PL.FETCHED + 1, n, 1).setValues(col);
+  }
+  return {ok: true, lookups: out};
+}
+
+function _phoneLookupsSent(office, items) {
+  if (Object.prototype.toString.call(items) !== '[object Array]') {
+    return {ok: false, error: 'missing items'};
+  }
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var sh = _plSheet();
+    var rows = sh.getDataRange().getValues();
+    var now = new Date();
+    var marked = 0;
+    for (var j = 0; j < items.length; j++) {
+      var it = items[j] || {};
+      var st = String(it.status || '').trim().slice(0, 60);
+      if (!st) continue;
+      // The row the office was handed, if it still is that person; else the
+      // office's first unsent row of that name (rows moved under it).
+      var want = _plKey(it.name);
+      var i = parseInt(it.row, 10) - 1;
+      var found = -1;
+      if (i >= 1 && i < rows.length && _plKey(rows[i][PL.NAME]) === want &&
+          String(rows[i][PL.OFFICE]).trim().toLowerCase() === office) {
+        found = i;
+      } else {
+        for (var k = 1; k < rows.length; k++) {
+          if (String(rows[k][PL.OFFICE]).trim().toLowerCase() !== office) continue;
+          if (String(rows[k][PL.SENT] || '').trim()) continue;
+          if (_plKey(rows[k][PL.NAME]) !== want) continue;
+          found = k;
+          break;
+        }
+      }
+      if (found < 0) continue;
+      if (String(rows[found][PL.SENT] || '').trim()) continue;   // already done
+      sh.getRange(found + 1, PL.STATUS + 1).setValue(st);
+      if (st.indexOf('sent') === 0) {
+        sh.getRange(found + 1, PL.SENT + 1).setValue(now);
+        rows[found][PL.SENT] = now;
+      }
+      marked++;
+    }
+    return {ok: true, marked: marked};
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 

@@ -133,3 +133,28 @@ def test_saving_an_office_never_writes_over_the_newer_columns():
     body = body[:body.index("\nfunction ")]
     assert "cur.cols[name]" in body, "it should place each value under its own header"
     assert "1, 1, row.length" not in body, "no fixed column span"
+
+
+def test_the_phone_lookups_road_is_wired_end_to_end():
+    """Numbers a person looked up for the resume push (2026-11-16). Office
+    key: fetch / sent / add for its own office; admin key: add. Each piece
+    named, as for apex_week -- a dispatch line without its function throws
+    for every office's walk."""
+    src = _source()
+    assert ("if (body.phone_lookups) return _reply(_phoneLookups(office, body.phone_lookups));"
+            in src), "the office-key call is not dispatched"
+    assert "if (body.phone_lookups_add)" in src, "the admin road is not dispatched"
+    for fn in ("_phoneLookups", "_phoneLookupsFor", "_phoneLookupsSent",
+               "_phoneLookupsAdd", "_plSheet"):
+        assert "function %s(" % fn in src, "%s is not defined" % fn
+    # An office only ever sees, marks or adds its own rows.
+    fetch = src[src.index("function _phoneLookupsFor("):src.index("function _phoneLookupsSent(")]
+    assert "String(r[PL.OFFICE]).trim().toLowerCase() !== office" in fetch
+    assert "PL.SENT" in fetch, "a sent row must never be handed out again"
+    sent = src[src.index("function _phoneLookupsSent("):src.index("// --- OFFICE ADMINS")]
+    assert "String(rows[i][PL.OFFICE]).trim().toLowerCase() === office" in sent
+    assert "_phoneLookupsAdd(office, a.add, 'office:' + office)" in src, \
+        "the office road must file rows under the caller's own office"
+    # Nothing on this road removes a row or an applicant.
+    section = src[src.index("// --- PHONE LOOKUPS"):src.index("// --- OFFICE ADMINS")]
+    assert "deleteRow" not in section and ".clear(" not in section

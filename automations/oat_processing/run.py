@@ -3009,6 +3009,77 @@ def _why_left(cat: str) -> None:
     LEFT_WHY[cat] = LEFT_WHY.get(cat, 0) + 1
 
 
+def _looked_up_number(a: Applicant):
+    """The row on the hand-lookup list for this applicant, or None.
+    phone_lookups.py says where the list comes from. Never raises: a list
+    that cannot be read is no list, and the walk goes on as before."""
+    try:
+        from . import phone_lookups as PL
+        PL.set_logger(_log)
+        return PL.find(f"{a.first_name} {a.last_name}", a.account,
+                       getattr(config, "OFFICE_ID", ""))
+    except Exception as e:  # noqa: BLE001
+        _log(f"    [lookup] list unavailable ({type(e).__name__}) -- "
+             f"carrying on without it")
+        return None
+
+
+def _pl_mark(hit, status: str) -> None:
+    """How the looked-up row went, back to the list. Best effort."""
+    try:
+        from . import phone_lookups as PL
+        PL.mark(hit, status)
+    except Exception as e:  # noqa: BLE001
+        _log(f"    [lookup] could not record {status!r}: {type(e).__name__}")
+
+
+def _send_with_number(page, a: Applicant, phone: str, live: bool, how: str) -> str:
+    """The number is on the form (read off the resume or the attachment, or
+    looked up by a person): bring the page up, close a leftover SMS widget,
+    Send to AI, and when the ATS refuses keep the number on the record so
+    nobody re-reads the resume. `how` only names the source in the log."""
+    _log(f"    \U0001f4de {how} phone {phone} → filled + sending: "
+         f"{a.first_name} {a.last_name} "
+         f"[panel email: {a.email or '(blank)'}]")
+    try:
+        _bring_front(page)
+    except Exception:  # noqa: BLE001
+        pass
+    page.wait_for_timeout(1500)   # let AS settle after the phone change
+    # The holder-warmed session can leave the SMS widget open from a prior
+    # re-text run, overlaying the panel so 'Send to AI' can't be clicked.
+    # Close it before sending.
+    _close_sms_panel(page)
+    page.wait_for_timeout(600)
+    try:
+        diag = page.evaluate(
+            "() => ({ url: location.href.slice(-42),"
+            " smsOpen: !!document.querySelector('#sms_name_filter'),"
+            " hasSendToAI: /send to ai/i.test(document.body.innerText||''),"
+            " btns: [...document.querySelectorAll("
+            "'button,input[type=submit],input[type=button]')]"
+            ".map(e=>(e.innerText||e.value||'').trim()).filter(Boolean).slice(0,22) })")
+        _log(f"    [phones] after-fill url=…{diag.get('url')} "
+             f"smsOpen={diag.get('smsOpen')} hasSendToAI={diag.get('hasSendToAI')} "
+             f"btns={diag.get('btns')}")
+    except Exception as e:  # noqa: BLE001
+        _log(f"    [phones] diag err: {type(e).__name__}")
+    _outcome = do_send_ai(page, a, live)
+    # A send that landed needs nothing more; a REMOVED record must not be
+    # re-saved. Everything else leaves the applicant sitting in the queue
+    # with a number we know and the record still showing blank — so put it
+    # on the record, for the next walk and for the human who has to text
+    # them. A navigating click here is nothing new: sends, removes and
+    # re-texts all navigate, and the walk already carries on after them.
+    if _outcome not in ("sent", "sent_override", "removed", "retext_removed"):
+        if _persist_phone(page, phone):
+            _log(f"    \U0001f4be saved {phone} to the record "
+                 f"(send was refused: {_outcome}) — no re-read next walk, "
+                 f"and the number is there for the manual text: "
+                 f"{a.first_name} {a.last_name}")
+    return _outcome
+
+
 def flag_no_phone(page, a: Applicant, live: bool) -> str:
     """No phone on file → first try to pull the real number off the applicant's
     Indeed resume (Megan's 'View resume' method, 2026-07-28). If found, fill it in
@@ -3028,6 +3099,31 @@ def flag_no_phone(page, a: Applicant, live: bool) -> str:
     if getattr(config, "ATTACHMENT_PROBE", False):
         _probe_attachment(page, a)
     key = _nophone_key(a)
+    # A NUMBER A PERSON ALREADY FOUND comes before everything else here. The
+    # settled cache below says "we read the resume, it has no number" -- which
+    # is exactly why somebody went and looked the number up (Carlos 2026-11-16,
+    # thirty of his own off Indeed's Call pop-up). The list reaches an office
+    # computer through the relay (phone_lookups.py, the 'Phone Lookups' tab)
+    # and a hand-run through output/phone-lookups.csv; no list, nothing changes.
+    # A number that is not ten digits is never typed in: the applicant stays on
+    # the to-do list and the row says why. Nobody is removed on this path.
+    _hit = _looked_up_number(a)
+    if _hit and not _hit.get("phone"):
+        _log(f"    [lookup] {_hit.get('raw_phone')!r} for {a.first_name} "
+             f"{a.last_name} is not a ten-digit US number -- left on the "
+             f"to-do list for a person")
+        _pl_mark(_hit, "bad_number")
+    elif _hit and not live:
+        _would(live, f"type the looked-up number {_hit['phone']} in and Send "
+                     f"to AI: {a.first_name} {a.last_name}")
+    elif _hit:
+        if _fill_phone_field(page, _hit["phone"]):
+            _outcome = _send_with_number(page, a, _hit["phone"], live, "looked-up")
+            _pl_mark(_hit, _outcome)
+            return _outcome
+        _log(f"    [lookup] could not type {_hit['phone']} into the record -- "
+             f"flagging as before: {a.first_name} {a.last_name}")
+        _pl_mark(_hit, "fill_failed")
     already_checked = key in _load_nophone_checked()
     cooling_off = (not already_checked) and (not _blocked_due(key))
     if already_checked or cooling_off:
@@ -3086,46 +3182,7 @@ def flag_no_phone(page, a: Applicant, live: bool) -> str:
                 # Never saw the resume -> blocked (retryable), not a confirmed empty one.
                 phone, detail = None, f"{_BLOCKED_PREFIX}read error: {type(e).__name__}"
         if phone and _fill_contact(page, phone):
-            _log(f"    \U0001f4de resume phone {phone} → filled + sending: "
-                 f"{a.first_name} {a.last_name} "
-                 f"[panel email: {a.email or '(blank)'}]")
-            try:
-                _bring_front(page)
-            except Exception:  # noqa: BLE001
-                pass
-            page.wait_for_timeout(1500)   # let AS settle after the phone change
-            # The holder-warmed session can leave the SMS widget open from a prior
-            # re-text run, overlaying the panel so 'Send to AI' can't be clicked.
-            # Close it before sending.
-            _close_sms_panel(page)
-            page.wait_for_timeout(600)
-            try:
-                diag = page.evaluate(
-                    "() => ({ url: location.href.slice(-42),"
-                    " smsOpen: !!document.querySelector('#sms_name_filter'),"
-                    " hasSendToAI: /send to ai/i.test(document.body.innerText||''),"
-                    " btns: [...document.querySelectorAll("
-                    "'button,input[type=submit],input[type=button]')]"
-                    ".map(e=>(e.innerText||e.value||'').trim()).filter(Boolean).slice(0,22) })")
-                _log(f"    [phones] after-fill url=…{diag.get('url')} "
-                     f"smsOpen={diag.get('smsOpen')} hasSendToAI={diag.get('hasSendToAI')} "
-                     f"btns={diag.get('btns')}")
-            except Exception as e:  # noqa: BLE001
-                _log(f"    [phones] diag err: {type(e).__name__}")
-            _outcome = do_send_ai(page, a, live)
-            # A send that landed needs nothing more; a REMOVED record must not be
-            # re-saved. Everything else leaves the applicant sitting in the queue
-            # with a number we know and the record still showing blank — so put it
-            # on the record, for the next walk and for the human who has to text
-            # them. A navigating click here is nothing new: sends, removes and
-            # re-texts all navigate, and the walk already carries on after them.
-            if _outcome not in ("sent", "sent_override", "removed", "retext_removed"):
-                if _persist_phone(page, phone):
-                    _log(f"    \U0001f4be saved {phone} to the record "
-                         f"(send was refused: {_outcome}) — no re-read next walk, "
-                         f"and the number is there for the manual text: "
-                         f"{a.first_name} {a.last_name}")
-            return _outcome
+            return _send_with_number(page, a, phone, live, "resume")
         _cat = "no_number"
         if _is_blocked_detail(detail):
             _cat = "indeed"
