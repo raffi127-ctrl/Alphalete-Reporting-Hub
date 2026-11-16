@@ -129,7 +129,16 @@ def nds_rows(sv_path: Path, date_col: str = "Activation Date") -> Tuple[List[str
             str(g(r, "Port Carrier") or "") if port else "",
             "Unit Count",
         ])
-    return list(HEADER), out
+    # ONE ROW PER LINE. Credico's Order Detail can list the same line more
+    # than once (2026-11-15: Churn Rates by Rep counted 30/366 where the
+    # order log's merged lines gave 23/324). Last occurrence wins, the way
+    # order_log_tab.merge keeps the newest state for a (order, line) key.
+    uniq: Dict[Tuple[str, str], List[str]] = {}
+    for r in out:
+        uniq[(r[6], r[7])] = r                      # sp.SPM Number, spe.TN
+    if len(uniq) != len(out):
+        print("  nds_rows: %d row(s) -> %d unique line(s)" % (len(out), len(uniq)), flush=True)
+    return list(HEADER), list(uniq.values())
 
 
 def activation_rate(owner: str, header, rows, target: dt.date, out_dir: Path) -> Tuple[Path, int]:
