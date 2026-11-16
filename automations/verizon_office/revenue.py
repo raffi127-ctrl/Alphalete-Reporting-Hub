@@ -163,7 +163,7 @@ def revenue_board(owner: str, sv_path: Path, target: dt.date, out_dir: Path, lay
         # four sales weeks (lines sold that week that have activated since,
         # the thread's rule) and the office's 0-30 day churn (the churn tab's
         # box: lines activated in the last 30 days that have disconnected).
-        cards = [("ACTIVATION RATE BY WEEK-ENDING", _weeks_card(L, upto)),
+        cards = [("APPROVAL RATE BY WEEK-ENDING", _weeks_card(L, upto)),
                  ("0–30 DAY CHURN", _churn_card(sv_path, target)),
                  ("ADD-ON MIX THIS WEEK", mix_card)]
         # Verizon red header, centred title, the wordmark + check top-left,
@@ -185,8 +185,10 @@ _BOX = {"Green": ("#dff3e2", "#1e7d32"), "Yellow": ("#fff3b0", "#8a6d00"), "Red"
 
 def _weeks_card(L, upto: dt.date, weeks: int = 4) -> str:
     """Each week-ending in its own little coloured box (Carlos 2026-11-15),
-    oldest first: activated-ever over sold, the thread board's 0-30 day
-    colour bands (green 75%+, yellow 65%+, red under)."""
+    oldest first: APPROVED over sold (Carlos, later that day: "We shouldn't
+    even be looking at activation rate. We should be looking at approval
+    rate."), the thread board's 0-30 day colour bands (green 75%+, yellow
+    65%+, red under)."""
     from automations.office_metrics.nds_orderlog import _ACT_BANDS
     this_start, _ = C.sales_week(upto)
     boxes = []
@@ -194,7 +196,7 @@ def _weeks_card(L, upto: dt.date, weeks: int = 4) -> str:
         ws = this_start - dt.timedelta(weeks=k)
         we = ws + dt.timedelta(days=6)
         sold = [l for l in L if l["sold"] and ws <= l["sold"] <= we]
-        act = sum(1 for l in sold if l["activated"])
+        act = sum(1 for l in sold if l["approved"])
         if sold:
             rate = act / len(sold)
             bg, fg = _BOX[next(c for floor, c in _ACT_BANDS["0-30 Day"] if rate >= floor)]
@@ -381,7 +383,8 @@ def main(argv=None) -> int:
     ap.add_argument("--office", default="nicolas")
     ap.add_argument("--sv", type=Path, help="local Sales Verification xlsx instead of the inbox")
     ap.add_argument("--date", help="YYYY-MM-DD (default today)")
-    ap.add_argument("--board", choices=["activation_one", "activation", "revenue_board", "rep_tiers", "churn_tab", "payout"],
+    ap.add_argument("--board", choices=["activation_one", "activation", "revenue_board", "rep_tiers", "churn_tab", "payout",
+                                        "approval_rate", "approval_by_week"],
                     default="activation_one",
                     help="churn_tab = a screenshot of the VERIZON CHURN tab (sandbox; --prod-tab for the master)")
     ap.add_argument("--prod-tab", action="store_true", help="with --board churn_tab: the Vantura Master's tab")
@@ -404,6 +407,11 @@ def main(argv=None) -> int:
     elif a.board == "payout":
         from automations.verizon_office import payout as PO
         got = PO.render_png(out_dir / f"verizon_payout_{target.isoformat()}.png", today=target)
+    elif a.board in ("approval_rate", "approval_by_week"):
+        from automations.verizon_office import thread_boards as TB
+        h, rows = TB.nds_rows(Path(sv), date_col="Approval Date")
+        fn = TB.activation_rate if a.board == "approval_rate" else TB.activation_by_week
+        got = fn(office.owner, h, rows, target, out_dir)[0]
     else:
         fn = {"activation_one": activation_revenue_one, "activation": activation_revenue,
               "revenue_board": revenue_board, "rep_tiers": rep_tiers}[a.board]
@@ -420,6 +428,8 @@ def main(argv=None) -> int:
                 comment = {"activation_one": ":dollar: *Activation Revenue Overview* — %s, four weeks on one picture (preview)" % day,
                            "churn_tab": ":wolf: *VERIZON CHURN tab* — %s (sandbox sheet, preview)" % day,
                            "revenue_board": ":moneybag: *Verizon Revenue Board* — %s (preview)" % day,
+                           "approval_rate": ":chart_with_upwards_trend: *Approval Rate by Rep* — %s (preview)" % day,
+                           "approval_by_week": ":calendar: *Approval Rate by Week-Ending* — %s (preview)" % day,
                            }.get(a.board, ":moneybag: *%s* — %s (preview)" % (a.board, day))
                 try:
                     r = S.dm_user_with_file(p, user=user, comment=comment)

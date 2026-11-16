@@ -82,7 +82,7 @@ def dtr_status(code: str, line_status: str, activated: Optional[dt.date]) -> str
     return line_status or "Pending"
 
 
-def nds_rows(sv_path: Path) -> Tuple[List[str], List[List[str]]]:
+def nds_rows(sv_path: Path, date_col: str = "Activation Date") -> Tuple[List[str], List[List[str]]]:
     """(HEADER, rows) — Order Detail's wireless lines in NDS ORDER LOG shape."""
     ws = openpyxl.load_workbook(sv_path, data_only=True, read_only=True)["Order Detail"]
     rows = [r for r in ws.iter_rows(values_only=True) if any(c is not None for c in r)]
@@ -115,7 +115,12 @@ def nds_rows(sv_path: Path) -> Tuple[List[str], List[List[str]]]:
         out.append([
             _rep(g(r, "Sales Agent Name")), st,
             st if st not in ("Posted",) else "Activated",
-            _us(_d(g(r, "Signed Date"))), _us(can or act), _us(act),
+            _us(_d(g(r, "Signed Date"))), _us(can or act),
+            # DTR Active Date: the activation date, or -- for the rate boards --
+            # the APPROVAL date (Carlos 2026-11-15: "We shouldn't even be
+            # looking at activation rate. We should be looking at approval
+            # rate."), so the same NDS rate helpers count approved/sold.
+            _us(_d(g(r, "Approval Date")) if date_col == "Approval Date" else act),
             order.split("_")[-1], str(g(r, "LineID") or ""), "",
             "",                                   # Customer Name — never posted
             plan_of.get(order, ""), "Wireless",
@@ -128,8 +133,10 @@ def nds_rows(sv_path: Path) -> Tuple[List[str], List[List[str]]]:
 
 
 def activation_rate(owner: str, header, rows, target: dt.date, out_dir: Path) -> Tuple[Path, int]:
-    """nds_orderlog's Activation Rate by Rep board, totals from the same file
-    (there is no Tableau activation view for Verizon)."""
+    """APPROVAL Rate by Rep (nds_orderlog's Activation Rate by Rep board over
+    rows whose DTR Active Date is Credico's Approval Date -- nds_rows(...,
+    date_col="Approval Date")). Carlos 2026-11-15: approval, not activation,
+    is what pays."""
     from automations.b2b_metrics.rep_boards import render_table_png
     from automations.office_metrics import nds_orderlog as N
     data = N.activation_by_rep(header, rows, target)
@@ -147,10 +154,10 @@ def activation_rate(owner: str, header, rows, target: dt.date, out_dir: Path) ->
     table = [("Office Total (all reps)", "", True, {c: cell(c, office.get(c)) for c in cols})]
     for rep in sorted(data, key=str.lower):
         table.append((rep, "", False, {c: cell(c, data[rep].get(c)) for c in cols}))
-    out = out_dir / f"verizon_activation_rate_{target.isoformat()}.png"
-    render_table_png("ACTIVATION RATES BY REP",
+    out = out_dir / f"verizon_approval_rate_{target.isoformat()}.png"
+    render_table_png("APPROVAL RATES BY REP",
                      f"{owner} — {target:%B} {target.day}, {target.year} "
-                     "(Verizon lines activated/sold, from Credico Sales Verification)",
+                     "(Verizon lines approved/sold, from Credico Sales Verification)",
                      cols, table, out)
     return out, len(table) - 1
 
@@ -298,7 +305,10 @@ def status_orders(owner, header, rows, target, out_dir, slug: str) -> Tuple[Path
 
 
 def activation_by_week(owner, header, rows, target, out_dir, weeks: int = 6) -> Tuple[Path, int]:
-    """Activation Rate by Week-Ending (Carlos 2026-11-07): the lines SOLD in
+    """APPROVAL Rate by Week-Ending since 2026-11-15 (Carlos: "We should be
+    looking at approval rate"): build() hands this rows whose DTR Active Date
+    is the Approval Date. The shape is the 11/07 Activation Rate by Week-Ending:
+    the lines SOLD in
     each of the last `weeks` Sun-Sat weeks, and how many of those have
     activated since -- "all the sales from X week that have activated, not
     which sales activated on X week". Office total + one row per rep, same
@@ -339,10 +349,10 @@ def activation_by_week(owner, header, rows, target, out_dir, weeks: int = 6) -> 
     table = [("Office Total (all reps)", "", True, {c: cell(office[c]) for c in cols})]
     for rep in sorted(data, key=str.lower):
         table.append((rep, "", False, {c: cell(data[rep][c]) for c in cols}))
-    out = out_dir / f"verizon_activation_by_week_{target.isoformat()}.png"
-    render_table_png("ACTIVATION RATE BY WEEK-ENDING",
-                     f"{owner} — lines sold each week that have activated since "
-                     f"(activated/sold), as of {target:%B} {target.day}",
+    out = out_dir / f"verizon_approval_by_week_{target.isoformat()}.png"
+    render_table_png("APPROVAL RATE BY WEEK-ENDING",
+                     f"{owner} — lines sold each week that Credico has approved since "
+                     f"(approved/sold), as of {target:%B} {target.day}",
                      cols, table, out)
     return out, len(table) - 1
 
@@ -447,8 +457,8 @@ def order_log(owner, header, rows, target, out_dir) -> Tuple[Path, int]:
 BOARDS = [
     ("rep_activations", "🆕 Rep Activations"),
     ("pending_orders", "⏳ Pending Orders"),
-    ("activation_rate", "📈 Activation Rate by Rep"),
-    ("activation_by_week", "📆 Activation Rate by Week-Ending"),
+    ("activation_rate", "📈 Approval Rate by Rep"),
+    ("activation_by_week", "📆 Approval Rate by Week-Ending"),
     ("churn", "📉 Churn Rates by Rep"),
     ("revenue_board", "💰 Revenue Board"),
     ("activation_revenue", "💵 Activation Revenue Overview"),
@@ -463,6 +473,8 @@ def build(owner: str, sv_path: Path, target: dt.date, out_dir: Path) -> List[Dic
     """[{slug, label, kind: image|file|text, paths, comment}] in thread order."""
     out_dir.mkdir(parents=True, exist_ok=True)
     header, rows = nds_rows(sv_path)
+    # the two RATE boards count approved/sold (Carlos 2026-11-15)
+    aheader, arows = nds_rows(sv_path, date_col="Approval Date")
     if not rows:
         raise RuntimeError("Order Detail has no wireless lines — not posting blank boards")
     day = f"{target:%b} {target.day}"
@@ -475,9 +487,9 @@ def build(owner: str, sv_path: Path, target: dt.date, out_dir: Path) -> List[Dic
         elif slug == "pending_orders":
             paths, _n = pending_orders(owner, header, rows, target, out_dir)
         elif slug == "activation_rate":
-            paths = [activation_rate(owner, header, rows, target, out_dir)[0]]
+            paths = [activation_rate(owner, aheader, arows, target, out_dir)[0]]
         elif slug == "activation_by_week":
-            paths = [activation_by_week(owner, header, rows, target, out_dir)[0]]
+            paths = [activation_by_week(owner, aheader, arows, target, out_dir)[0]]
         elif slug == "churn":
             paths = [churn(owner, header, rows, target, out_dir)[0]]
         elif slug in ("revenue_board", "activation_revenue", "rep_tiers"):

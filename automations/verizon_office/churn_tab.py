@@ -22,8 +22,8 @@ WHAT THE TAB SHOWS (one Credico Order Detail pull, same as the Order Log):
   * the top-left box: lines ACTIVATED in the last 30 days (rolling, by
     activation date) and how many of those have DISCONNECTED = churn %, for
     All Lines / Port (non-BYOD) / BYOD / New (non-BYOD), with pending counts
-    and the 0-30 / 31-60 day activation rates (sold by order-date age,
-    activated = active now or disconnected after activating -- the NDS rule);
+    and the 0-30 / 31-60 day APPROVAL rates (sold by order-date age,
+    approved = carries Credico's Approval Date; Carlos 2026-11-15);
   * the Credico tier chart, the live band marked "◀ now" off the calendar
     window Credico actually scores (comp.office_tier), and a status line
     with the window, its rate and the rules;
@@ -32,7 +32,7 @@ WHAT THE TAB SHOWS (one Credico Order Detail pull, same as the Order Log):
     disconnected line, soonest to fall off first: Days Left = (Activation
     Date + 30) - today, and what the churn % becomes once that line has aged
     off; red only when it disconnected within 7 days of activating;
-  * the per-rep 0-30 day activation rate list on the right.
+  * the per-rep 0-30 day APPROVAL rate list on the right (approved/sold).
 
 Customer names are on this tab (the Vantura Master is Carlos's own workbook,
 like the NDS CHURN tab). Nothing here posts to Slack.
@@ -109,6 +109,13 @@ def is_activated(l) -> bool:
     return (l.get("Line Status") or "").lower() in ("active", "disconnected") and bool(_d(l.get("Activation Date")))
 
 
+def is_approved(l) -> bool:
+    """Credico has put an Approval Date on the line -- the compensable sale.
+    Carlos 2026-11-15: "We shouldn't even be looking at activation rate. We
+    should be looking at approval rate." The rate columns count this."""
+    return bool(_d(l.get("Approval Date")))
+
+
 def churn_units(lines, today: dt.date, days: int = WINDOW_DAYS) -> List[Dict[str, str]]:
     """Lines ACTIVATED inside the rolling window (activation date within the
     last `days` days, today included)."""
@@ -140,8 +147,9 @@ def churn_summary(lines, today: dt.date) -> Dict[str, dict]:
 
 
 def activation_rates(lines, today: dt.date) -> Tuple[dict, dict]:
-    """(office, reps): {'0-30': {activated, sold, rate}, '31-60': {...}} by
-    ORDER-date age, activated = is_activated (the NDS Activation Rate rule)."""
+    """APPROVAL rates: (office, reps): {'0-30': {activated, sold, rate},
+    '31-60': {...}} by ORDER-date age, where 'activated' counts lines that are
+    APPROVED (is_approved) -- the key name stays so the formatter's marks do."""
     def _blank():
         return {b: {"activated": 0, "sold": 0, "rate": None} for b in ("0-30", "31-60")}
     office, reps = _blank(), {}
@@ -155,7 +163,7 @@ def activation_rates(lines, today: dt.date) -> Tuple[dict, dict]:
             continue
         for slot in (office[b], reps.setdefault(l.get("Rep") or "(no rep)", _blank())[b]):
             slot["sold"] += 1
-            if is_activated(l):
+            if is_approved(l):
                 slot["activated"] += 1
     for d in [office] + list(reps.values()):
         for b in ("0-30", "31-60"):
@@ -239,10 +247,10 @@ def build_grid(lines, today: dt.date, tier: dict) -> Tuple[List[List[str]], dict
              "tables": [], "box": None, "tiers": None, "rep_list": None, "status_row": None}
     row([TITLE])
     row(["Days left = (Activation Date + 30) − Today. Box = lines activated in the last 30 days and how many "
-         "have disconnected since; activation rates by order-date age (activated = active now, or disconnected after activating). "
+         "have disconnected since; approval rates by order-date age (approved = Credico has put an Approval Date on the line). "
          "Red rows = disconnected within 7 days of activating."])
     row()
-    hdr = row(["Product", "Activations", "Disconnects", "Churn %", "0-30 Day Activation Rate", "31-60 Day Activation Rate"])
+    hdr = row(["Product", "Activations", "Disconnects", "Churn %", "0-30 Day Approval Rate", "31-60 Day Approval Rate"])
     marks["headers"].append(hdr)
     # "Tier", not "Credico Tier" (Carlos 2026-11-15: "just call it tiers")
     g[hdr - 1][7:11] = ["Tier", "0-30 Day Churn", "$ / new port line", ""]
@@ -297,7 +305,7 @@ def build_grid(lines, today: dt.date, tier: dict) -> Tuple[List[List[str]], dict
     need = rep_top + len(rep_rows) + 1
     while len(g) < need:
         row()
-    g[rep_top - 1][15:18] = ["Rep Name", "0-30 Day Activation Rate", "Activated / Sold"]
+    g[rep_top - 1][15:18] = ["Rep Name", "0-30 Day Approval Rate", "Approved / Sold"]
     marks["headers"].append(rep_top)
     for k, (name, rate, a, n) in enumerate(rep_rows, 1):
         g[rep_top - 1 + k][15:18] = [name, _rate(rate), "%d / %d" % (a, n)]

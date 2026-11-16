@@ -67,7 +67,15 @@ class ChurnTabTest(unittest.TestCase):
         self.assertTrue(roll[1]["quick"] and not a["quick"])
 
     def test_activation_rates_by_order_age(self):
-        office, reps = CT.activation_rates(self.lines, TODAY)
+        # APPROVAL rates since 2026-11-15: a line counts once Credico puts an
+        # Approval Date on it. The fixture has none, so stamp the activated
+        # (active / disconnected-after) lines approved and expect the same shape.
+        lines = [dict(l) for l in self.lines]
+        for l in lines:
+            if CT.is_activated(l):
+                l["Approval Date"] = l["Activation Date"]
+        self.assertEqual(CT.activation_rates(self.lines, TODAY)[0]["0-30"]["activated"], 0)   # nothing approved yet
+        office, reps = CT.activation_rates(lines, TODAY)
         # 0-30 by ORDER date: Q_1 (10/18, 28d, disconnected=activated), Q_2, Q_3, Q_4, Q_6 (pending), Q_7 (cancelled)
         self.assertEqual((office["0-30"]["activated"], office["0-30"]["sold"]), (4, 6))
         self.assertEqual((office["31-60"]["activated"], office["31-60"]["sold"]), (1, 1))  # Q_5 9/28 = 48d
