@@ -652,6 +652,32 @@ def _metrics_txt(m: Dict[str, int]) -> str:
     return ", ".join("%d %s" % (q, k) for k, q in m.items())
 
 
+def _central_today() -> dt.date:
+    from zoneinfo import ZoneInfo
+    return dt.datetime.now(ZoneInfo("America/Chicago")).date()
+
+
+def moved_into_closed_week(moved: List[Dict], today: Optional[dt.date] = None) -> bool:
+    """A sale moved on a day before this week's Monday: last week's tab changed
+    after the new tab copied its history."""
+    today = today or _central_today()
+    monday = today - dt.timedelta(days=today.weekday())
+    return any(t.get("date") and t["date"] < monday for t in moved)
+
+
+def sync_new_week() -> None:
+    """EVERY correction to last week reaches the new week's tab too -- its
+    history line, TOTALS and Last Week cells (Eve 2026-11-16). The Monday
+    08:00 run did this already (deploy/sale_transfers.sh); a catch-up or a
+    rerun on any other day did not. Re-reading is idempotent."""
+    print("\nlast week's tab changed -- re-reading it into the new week's tab:")
+    try:
+        from automations.alphalete_sales_board import week_roll
+        week_roll.main(["--sync-closed-week", "--apply"])
+    except Exception as e:  # noqa: BLE001 -- the move itself already happened
+        print("closed-week sync failed: %s: %s" % (type(e).__name__, str(e)[:200]))
+
+
 def _move_day(gc, day: dt.date, todo: List[Dict], alias_map, apply: bool
               ) -> Tuple[List[Dict], List[str]]:
     """Plan (and with apply, write + record) one sale day's transfers."""
@@ -748,6 +774,8 @@ def main(argv=None) -> int:
               % (t["row"], t["to"], t["from"], t["product"], t["date_raw"], why))
     if problems:
         alert(problems, dry_run=not a.apply)
+    if a.apply and moved_into_closed_week(moved):
+        sync_new_week()
     if not a.apply:
         print("\npreview only -- re-run with --apply to write.")
     return 0

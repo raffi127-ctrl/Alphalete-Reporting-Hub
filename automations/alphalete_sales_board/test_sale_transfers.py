@@ -118,6 +118,15 @@ def test_watches_and_tablets_move_nothing():
     assert T.quantities("Int - 1, tablet 1", {"Int": 1, "NL": 1}) == ({"Int": 1}, "")
 
 
+def test_a_move_into_last_week_syncs_the_new_tab():
+    import datetime as dt
+    mon = dt.date(2026, 11, 16)
+    assert T.moved_into_closed_week([{"date": dt.date(2026, 11, 12)}], today=mon)
+    assert T.moved_into_closed_week([{"date": dt.date(2026, 11, 15)}], today=dt.date(2026, 11, 18))
+    assert not T.moved_into_closed_week([{"date": dt.date(2026, 11, 16)}], today=mon)
+    assert not T.moved_into_closed_week([], today=mon)
+
+
 def test_quantity_answer_unreadable_or_off_moves_nothing():
     assert T.quantities("3", {"Int": 1, "DTV": 1})[1]          # which one?
     assert T.quantities("New Int - 2", {"Int": 1, "DTV": 1})[1]  # DTV missing
