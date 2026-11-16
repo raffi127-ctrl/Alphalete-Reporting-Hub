@@ -270,44 +270,69 @@ def unapproved_disconnects(lines) -> List[dict]:
 
 
 def unapproved_png(lines, today: dt.date, out_path: Path, owner: str = "", tier_pay: Optional[int] = None) -> Path:
-    """The list as its own picture in the tab's look (navy header, boxed),
-    with the per-rep unpaid table beside it, for the thread and the chats."""
+    """Its own picture (Carlos 2026-11-15): a stat strip (lines, missed-out
+    revenue), the list of lines that activated then disconnected before
+    Credico put an approval date on them, and the per-rep missed-out revenue
+    table beside it. Days-active cells are banded (red = gone inside 7 days,
+    amber = inside 14), rows zebra'd, revenue in Verizon red."""
     import html as H
     from automations.b2b_metrics.rep_boards import _capture_board
     rows = unapproved_disconnects(lines)
     tier_pay = tier_pay if tier_pay is not None else C.PORT_TIER_PAY[C.NEUTRAL_TIER]
     rep_rows = unpaid_by_rep(lines, tier_pay)
-    rep_trs = "".join(
-        f'<tr{" class=tot" if k == 0 else ""}><td>{H.escape(r)}</td><td>{n}</td><td>${usd:,}</td></tr>'
-        for k, (r, n, usd) in enumerate(rep_rows))
-    rep_tbl = (f'<table><tr>{"".join(f"<th>{h}</th>" for h in UNPAID_HEADERS)}</tr>{rep_trs}</table>'
-               f'<div class="note">$ = what each line would have paid at the office\'s current tier (${tier_pay} a port smartphone, '
-               f'$25 BYOD / no-port, + AutoPay / Unlimited Plus / Protect)</div>')
-    ths = "".join(f"<th>{h}</th>" for h in UNAPPROVED_HEADERS)
+    total_n, total_usd = rep_rows[0][1], rep_rows[0][2]
+
+    def days_td(d):
+        if d is None:
+            return "<td></td>"
+        cls = "d7" if d <= QUICK_DAYS else "d14" if d <= 14 else "d30"
+        return f'<td class="{cls}">{d}d</td>'
     trs = []
     for x in rows:
-        cells = [x["customer"], x["rep"], _fmt(x["order_date"]), _fmt(x["posted"]), _fmt(x["disc_date"]),
-                 "" if x["days_active"] is None else "%dd" % x["days_active"], x["kind"], x["device"]]
-        trs.append("<tr>" + "".join(f"<td>{H.escape(str(c))}</td>" for c in cells) + "</tr>")
+        cells = [x["customer"], x["rep"], _fmt(x["order_date"]), _fmt(x["posted"]), _fmt(x["disc_date"])]
+        trs.append("<tr>" + "".join(f"<td>{H.escape(str(c))}</td>" for c in cells) + days_td(x["days_active"])
+                   + f'<td>{H.escape(x["kind"])}</td><td>{H.escape(x["device"])}</td></tr>')
     if not rows:
         trs.append(f'<tr><td colspan="{len(UNAPPROVED_HEADERS)}" style="color:#666">(no line has disconnected before approval)</td></tr>')
-    sub = ("%s%d line%s activated, then disconnected before Credico put an approval date on them — "
-           "outside the churn math and not paid, as of %s %d"
-           % ((owner + " — ") if owner else "", len(rows), "" if len(rows) == 1 else "s", today.strftime("%B"), today.day))
+    ths = "".join(f"<th>{h}</th>" for h in UNAPPROVED_HEADERS)
+    rep_trs = "".join(
+        f'<tr{" class=tot" if k == 0 else ""}><td>{H.escape(r)}</td><td>{n}</td><td class="usd">${usd:,}</td></tr>'
+        for k, (r, n, usd) in enumerate(rep_rows))
+    rep_tbl = (f'<table class="reps"><tr>{"".join(f"<th>{h}</th>" for h in UNPAID_HEADERS)}</tr>{rep_trs}</table>'
+               f'<div class="note">Missed-out revenue = what each line would have paid at the office\'s current tier '
+               f'(${tier_pay} a port smartphone, $25 BYOD / no-port, + AutoPay / Unlimited Plus / Protect).</div>')
+    sub = "%sas of %s %d, %d" % ((owner + " — ") if owner else "", today.strftime("%B"), today.day, today.year)
     htm = f"""<html><head><meta charset='utf-8'><style>
  body{{margin:0;font-family:'Helvetica Neue',Arial,sans-serif}}
- .board{{display:inline-block;padding:14px;background:#fff}}
- .title{{background:#1f3b64;color:#fff;text-align:center;font-weight:700;font-size:22px;padding:10px 18px}}
- .sub{{color:#555;text-align:center;font-weight:700;font-size:15px;padding:8px 0}}
- table{{border-collapse:collapse;margin:0 auto;border:2px solid #000}}
- th{{background:#1f3b64;color:#fff;font-size:13px;padding:7px 12px;border:1px solid #999}}
- td{{font-size:13px;padding:6px 12px;border:1px solid #999;text-align:center;white-space:nowrap}}
- td:first-child{{text-align:left;font-weight:700}}
+ .board{{display:inline-block;padding:16px;background:#f4f6f8}}
+ .title{{background:#12181d;color:#fff;text-align:center;font-weight:800;font-size:24px;padding:12px 18px;letter-spacing:.02em}}
+ .title span{{color:#cd040b}}
+ .sub{{color:#555;text-align:center;font-weight:600;font-size:14px;padding:8px 0 10px}}
+ .stats{{display:flex;gap:14px;justify-content:center;margin-bottom:14px}}
+ .stat{{background:#fff;border-radius:8px;padding:10px 22px;min-width:220px;text-align:center;
+        box-shadow:0 1px 3px rgba(0,0,0,.08);border-left:5px solid #cd040b}}
+ .stat .lab{{color:#5b6770;font-size:12px;letter-spacing:.06em;font-weight:600}}
+ .stat .val{{font-size:30px;font-weight:800;color:#12181d}} .stat .val.red{{color:#cd040b}}
  .row{{display:flex;gap:22px;align-items:flex-start;justify-content:center}}
- tr.tot td{{background:#eee;font-weight:700}}
- .note{{color:#666;font-size:11px;max-width:420px;padding-top:6px}}
-</style></head><body><div class="board"><div class="title">VERIZON — DISCONNECTED BEFORE APPROVAL</div>
-<div class="sub">{H.escape(sub)}</div><div class="row"><table><tr>{ths}</tr>{"".join(trs)}</table><div>{rep_tbl}</div></div></div></body></html>"""
+ table{{border-collapse:collapse;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.08)}}
+ th{{background:#12181d;color:#fff;font-size:12px;letter-spacing:.04em;padding:8px 12px;border:1px solid #2a333b}}
+ td{{font-size:13px;padding:7px 12px;border:1px solid #e3e7eb;text-align:center;white-space:nowrap}}
+ tr:nth-child(even) td{{background:#f7f9fb}}
+ td:first-child{{text-align:left;font-weight:700}}
+ td.d7{{background:#f8d7da;color:#842029;font-weight:700}} td.d14{{background:#fff3cd;color:#664d03;font-weight:700}} td.d30{{color:#3c4650}}
+ tr.tot td{{background:#e9ecef;font-weight:800}}
+ .reps td.usd{{color:#cd040b;font-weight:800}}
+ .note{{color:#666;font-size:11px;max-width:420px;padding-top:8px}}
+ .legend{{color:#5b6770;font-size:11px;text-align:center;padding-top:10px}}
+ .sw{{display:inline-block;width:11px;height:11px;border-radius:2px;vertical-align:-1px;margin:0 3px 0 10px}}
+</style></head><body><div class="board"><div class="title">VERIZON <span>✓</span> DISCONNECTED BEFORE APPROVAL</div>
+<div class="sub">{H.escape(sub)} — lines that activated, then dropped before Credico put an approval date on them. Outside the churn math, and never paid.</div>
+<div class="stats"><div class="stat"><div class="lab">LINES</div><div class="val">{total_n}</div></div>
+<div class="stat"><div class="lab">MISSED-OUT REVENUE</div><div class="val red">${total_usd:,}</div></div></div>
+<div class="row"><table><tr>{ths}</tr>{"".join(trs)}</table><div>{rep_tbl}</div></div>
+<div class="legend">Days active:<span class="sw" style="background:#f8d7da"></span>gone within {QUICK_DAYS} days
+<span class="sw" style="background:#fff3cd"></span>within 14 days<span class="sw" style="background:#fff;border:1px solid #ccc"></span>longer</div>
+</div></body></html>"""
     return _capture_board(htm, Path(out_path), width=1700)
 
 
@@ -409,32 +434,10 @@ def build_grid(lines, today: dt.date, tier: dict) -> Tuple[List[List[str]], dict
         row(["(no disconnects in the 0-30 window)"])
     marks["tables"].append((h, len(g)))
     row()
-    # DISCONNECTED BEFORE APPROVAL (Carlos 2026-11-15): activated, dropped
-    # before any approval date -- not in the churn above, never paid, listed
-    # so nobody loses sight of them.
-    una = unapproved_disconnects(lines)
-    b2 = row(["DISCONNECTED BEFORE APPROVAL — %d line%s (activated, then dropped before Credico put an approval date on them; "
-              "outside the churn math, not paid)" % (len(una), "" if len(una) == 1 else "s")])
-    marks["bands"].append(b2)
-    h2 = row(list(UNAPPROVED_HEADERS))
-    marks["headers"].append(h2)
-    for x in una:
-        row([x["customer"], x["rep"], _fmt(x["order_date"]), _fmt(x["posted"]), _fmt(x["disc_date"]),
-             "" if x["days_active"] is None else "%dd" % x["days_active"], x["kind"], x["device"]])
-    if not una:
-        row(["(no line has disconnected before approval)"])
-    marks["tables"].append((h2, len(g), len(UNAPPROVED_HEADERS)))
-    # beside it (J:L), per rep: lines disconnected before approval + the $
-    # they are not getting paid (Carlos 2026-11-15)
-    unpaid = unpaid_by_rep(lines, tier["pay"])
-    while len(g) < h2 + len(unpaid):
-        row()
-    g[h2 - 1][UNPAID_COL:UNPAID_COL + 3] = list(UNPAID_HEADERS)
-    for k, (rep_name, n, usd) in enumerate(unpaid, 1):
-        g[h2 - 1 + k][UNPAID_COL:UNPAID_COL + 3] = [rep_name, str(n), "$%s" % format(usd, ",")]
-    marks["unpaid_list"] = (h2, h2 + len(unpaid))
-    marks["unapproved_list"] = (h2, max(len(g), h2 + len(una)))
-    row()
+    # (the DISCONNECTED BEFORE APPROVAL list + the per-rep missed-out revenue
+    # table are their OWN picture now -- unapproved_png -- not on this tab:
+    # Carlos 2026-11-15, "that list is too long, so let's just remove it")
+
     rep_rows = [("OFFICE TOTAL (all reps)", office["0-30"]["rate"], office["0-30"]["activated"], office["0-30"]["sold"])]
     rep_rows += sorted(((r, v["0-30"]["rate"], v["0-30"]["activated"], v["0-30"]["sold"]) for r, v in reps.items()
                         if v["0-30"]["sold"]), key=lambda t: (-(t[1] or 0), t[0].lower()))
@@ -532,20 +535,7 @@ def _format_requests(sheet_id: int, marks: dict) -> List[dict]:
     r0, r1 = marks["rep_list"]
     reqs.append(box(r0 - 1, r1, 15, 18))
     reqs.append(fill(r0, r0 + 1, 15, 18, (0.93, 0.93, 0.93), True))      # office total row
-    if marks.get("unpaid_list"):
-        # the missed-out revenue table: boxed, beside the list, BIGGER type on
-        # taller rows (Carlos 2026-11-15: "make it all bigger and put it more
-        # to the left")
-        u0, u1 = marks["unpaid_list"]
-        c0, c1 = UNPAID_COL, UNPAID_COL + 3
-        reqs.append(box(u0 - 1, u1, c0, c1))
-        reqs.append(fill(u0, u0 + 1, c0, c1, (0.93, 0.93, 0.93), True))   # office total row
-        a0, a1 = marks["unapproved_list"]
-        lo, hi = u0 - 1, max(u1, a1)
-        reqs.append({"repeatCell": {"range": rng(lo, hi, 0, c1), "cell": {"userEnteredFormat": {"textFormat": {"fontSize": 13}}},
-                                    "fields": "userEnteredFormat.textFormat.fontSize"}})
-        reqs.append({"updateDimensionProperties": {"range": {"sheetId": sheet_id, "dimension": "ROWS", "startIndex": lo, "endIndex": hi},
-                                                   "properties": {"pixelSize": 34}, "fields": "pixelSize"}})
+
     # THE TWO TOP TABLES BIGGER (Carlos 2026-11-15: "the tiers table ... make
     # that all bigger ... the product / activations / disconnects / churn
     # table: make that one bigger as well"): larger type in the box (A:G) and

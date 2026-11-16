@@ -91,13 +91,12 @@ class ChurnTabTest(unittest.TestCase):
     def test_disconnected_before_approval_list(self):
         una = CT.unapproved_disconnects(self.lines)
         self.assertEqual([(x["customer"], x["rep"], x["days_active"]) for x in una], [("Hal Y", "Will Bautista", 3)])
+        # its own picture, NOT on the tab (Carlos 2026-11-15)
         grid, marks = CT.build_grid(self.lines, TODAY, CT.credico_tier(self.sv, TODAY))
-        self.assertTrue(any(r[0].startswith("DISCONNECTED BEFORE APPROVAL — 1 line") for r in grid))
-        # the per-rep unpaid table beside it: Will's port IP17 at Tier 4 = $190
+        self.assertFalse(any("DISCONNECTED BEFORE APPROVAL" in r[0] for r in grid))
+        self.assertNotIn("unpaid_list", marks)
+        # the per-rep missed-out revenue: Will's port IP17 at Tier 4 = $190
         self.assertEqual(CT.unpaid_by_rep(self.lines, 190), [("OFFICE TOTAL", 1, 190), ("Will Bautista", 1, 190)])
-        u0, u1 = marks["unpaid_list"]
-        self.assertEqual(grid[u0 - 1][CT.UNPAID_COL:CT.UNPAID_COL + 3], list(CT.UNPAID_HEADERS))
-        self.assertEqual(grid[u0][CT.UNPAID_COL:CT.UNPAID_COL + 3], ["OFFICE TOTAL", "1", "$190"])
 
     def test_credico_tier_neutral_under_15(self):
         t = CT.credico_tier(self.sv, TODAY)
