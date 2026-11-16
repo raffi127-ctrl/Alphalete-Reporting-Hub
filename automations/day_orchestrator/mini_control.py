@@ -782,7 +782,25 @@ def _run_cmd(cmd: list[str], timeout_s: int = DEFAULT_TIMEOUT_S,
             log_path = log_dir / log_name
         except Exception:  # noqa: BLE001 — logging must never fail the run
             log_path = None
-    child_env = dict(os.environ, **env) if env else None
+    # EVERY timed verb tells the child its deadline, not just `rerun`.
+    #
+    # tableau_patchright._profile_wait_budget() caps how long a run may sit
+    # waiting for a busy browser profile at a share of HUB_REPORT_TIMEOUT_S,
+    # and falls back to the flat 30-MINUTE ceiling when that variable is unset.
+    # `_action_rerun` exported it; nothing else did. So a `probe_knocks` with a
+    # 15-minute timeout would happily queue behind the profile lock for 30,
+    # get killed at 15 while still waiting, and leave the exact silent death
+    # that cap was written to end (see that docstring: mobrium_list,
+    # 2026-08-28). Observed again 2026-11-16: five probe_knocks runs queued
+    # back to back, one lost the race for the profile, logged "waiting up to
+    # 30m", and died at 900s having read nothing -- which read as "that day's
+    # grid is broken" and cost six more ownerville runs to disprove.
+    #
+    # Setting it HERE covers every action that goes through _run_cmd. A caller
+    # that already passed its own value keeps it.
+    env = dict(env or {})
+    env.setdefault("HUB_REPORT_TIMEOUT_S", str(timeout_s))
+    child_env = dict(os.environ, **env)
     try:
         proc = subprocess.Popen(cmd, cwd=str(REPO_ROOT),
                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
