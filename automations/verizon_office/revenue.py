@@ -32,6 +32,25 @@ def _week_lines(all_lines, start, end):
     return [l for l in all_lines if l["sold"] and start <= l["sold"] <= end]
 
 
+# "black" = dark band, red words (Carlos 2026-11-15: "Black, red words ...
+# put the Verizon and the check mark next to Verizon in the middle ... call
+# it Verizon [check] Revenue Sales Board"); "red" = Verizon-red band, white words
+BRAND_STYLE = "black"
+
+
+def _brand(style: str = "black") -> dict:
+    """The revenue board's header: the title is 'Verizon <check> Revenue Sales
+    Board' centred, the check drawn inline (no image file to ship to the
+    Lucys), no separate logo on the left."""
+    fg = "#fff" if style == "red" else "#cd040b"
+    check = ('<svg width="54" height="50" viewBox="0 0 54 50" xmlns="http://www.w3.org/2000/svg" '
+             'style="vertical-align:-4px;margin:0 2px 0 6px">'
+             f'<polyline points="4,16 20,46 50,4" fill="none" stroke="{fg}" stroke-width="8" '
+             'stroke-linecap="round" stroke-linejoin="round"/></svg>')
+    return {"title": f"Verizon{check} Revenue Sales Board",
+            "color": "#cd040b" if style == "red" else "#12181d", "fg": fg, "logo": ""}
+
+
 def revenue_board(owner: str, sv_path: Path, target: dt.date, out_dir: Path, layout: str = "right") -> Path:
     """Carlos's Vantura Revenue Board, Verizon's week: Sun-Sat columns by SALE
     date, the weekly activation-bonus tier, and the week total."""
@@ -139,12 +158,7 @@ def revenue_board(owner: str, sv_path: Path, target: dt.date, out_dir: Path, lay
                  ("ADD-ON MIX THIS WEEK", mix_card)]
         # Verizon red header, centred title, the wordmark + check top-left,
         # the note under the title, no footer (Carlos 2026-11-15)
-        logo = ('<svg width="190" height="46" viewBox="0 -12 190 58" xmlns="http://www.w3.org/2000/svg">'
-                '<text x="0" y="32" font-family="Helvetica Neue,Arial,sans-serif" font-weight="700" '
-                'font-size="38" fill="#fff" letter-spacing="-1.5">verizon</text>'
-                '<polyline points="140,0 152,34 188,-10" fill="none" stroke="#fff" stroke-width="7" '
-                'stroke-linecap="round" stroke-linejoin="round"/></svg>')
-        brand = {"title": "Verizon Revenue Board", "color": "#cd040b", "logo": logo}
+        brand = _brand(BRAND_STYLE)
         return RB.render(rows, office, start, upto,
                          out_dir / f"verizon_revenue_board_{target.isoformat()}.png",
                          board_name="Verizon Revenue Board", tiered=True,

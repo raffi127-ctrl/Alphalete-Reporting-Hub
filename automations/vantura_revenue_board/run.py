@@ -582,7 +582,7 @@ def _render_html(rows, office, monday: dt.date, upto: dt.date, dest: Path,
         # the note in a thin strip under it.
         hdr_html = (f'<div class="hdr brand" style="padding:16px 40px"><div class="hrow" style="align-items:center">'
                     f'<div style="flex:1">{brand.get("logo") or ""}</div>'
-                    f'<h1 style="flex:2;text-align:center;margin:0;font-size:56px">{brand.get("title") or board_name}</h1>'
+                    f'<h1 style="flex:2;text-align:center;margin:0;font-size:56px;color:{brand.get("fg") or "#fff"}">{brand.get("title") or board_name}</h1>'
                     f'<div class="date" style="flex:1;text-align:right">Week of {monday.strftime("%b")} {monday.day} — through '
                     f'{upto.strftime("%A, %b")} {upto.day}, {upto.year}</div></div></div>'
                     + (f'<div style="background:#12181d;color:#cfd6dc;font-size:12px;padding:7px 40px">{note}</div>' if note else ""))
