@@ -382,7 +382,7 @@ def activation_by_week(owner, header, rows, target, out_dir, weeks: int = 6,
                 if approved is None:
                     act = 1 if r[i["DTR Active Date"]] else 0
                 else:
-                    act = 1 if (r[i["sp.SPM Number"]], r[i["spe.TN"]]) in approved else 0
+                    act = 1 if (r[i["sp.SPM Number"]], r[i["spe.Name"]]) in approved else 0
                 for who in (r[i["Rep"]] or "(no rep)", "__office__"):
                     data[who][c][0] += act
                     data[who][c][1] += 1
@@ -434,9 +434,13 @@ CHURN_WINDOWS = (("0-30 Day", 0, 30), ("31-60 Day", 31, 60))
 
 def approved_keys(header, arows) -> set:
     """{(order, line)} of every line carrying Credico's Approval Date, off
-    rows built with nds_rows(..., date_col="Approval Date")."""
+    rows built with nds_rows(..., date_col="Approval Date"). The line id sits
+    under "spe.Name" in these rows (nds_rows); "spe.TN" is always blank --
+    keying on it made every line of an order share one key, so one approved
+    line approved the whole order (Churn Rates by Rep 30/366 vs 23/324,
+    2026-11-15)."""
     i = {c: header.index(c) for c in header}
-    return {(r[i["sp.SPM Number"]], r[i["spe.TN"]]) for r in arows if r[i["DTR Active Date"]]}
+    return {(r[i["sp.SPM Number"]], r[i["spe.Name"]]) for r in arows if r[i["DTR Active Date"]]}
 
 
 def churn(owner, header, rows, target, out_dir, approved: Optional[set] = None,
@@ -486,7 +490,7 @@ def churn(owner, header, rows, target, out_dir, approved: Optional[set] = None,
         act = N._parse_date(r[i["DTR Active Date"]])
         if not act:
             continue
-        if approved is not None and (r[i["sp.SPM Number"]], r[i["spe.TN"]]) not in approved:
+        if approved is not None and (r[i["sp.SPM Number"]], r[i["spe.Name"]]) not in approved:
             continue
         age = (target - act).days
         oldest = max(oldest, age)
@@ -502,7 +506,7 @@ def churn(owner, header, rows, target, out_dir, approved: Optional[set] = None,
         st_mix: Dict[str, int] = defaultdict(int)
         for r in rows:
             act = N._parse_date(r[i["DTR Active Date"]])
-            if act and (r[i["sp.SPM Number"]], r[i["spe.TN"]]) in approved and 0 <= (target - act).days <= 30:
+            if act and (r[i["sp.SPM Number"]], r[i["spe.Name"]]) in approved and 0 <= (target - act).days <= 30:
                 rb[cols[0]][1] += 1
                 rb[cols[0]][0] += 1 if r[i["DTR Status"]] == "Disconnected" else 0
                 st_mix[r[i["DTR Status"]] + "/" + r[i["spe.Status"]]] += 1

@@ -416,8 +416,8 @@ def main(argv=None) -> int:
         A = {}
         for r in rows:
             act = CT._d(r[i["DTR Active Date"]])
-            if act and 0 <= (target - act).days <= 30 and (r[i["sp.SPM Number"]], r[i["spe.TN"]]) in appr:
-                A[(r[i["sp.SPM Number"]], r[i["spe.TN"]])] = r
+            if act and 0 <= (target - act).days <= 30 and (r[i["sp.SPM Number"]], r[i["spe.Name"]]) in appr:
+                A[(r[i["sp.SPM Number"]], r[i["spe.Name"]])] = r
         L = OL.lines(Path(sv)); B = {}
         for l in L:
             act = CT._d(l.get("Activation Date"))
