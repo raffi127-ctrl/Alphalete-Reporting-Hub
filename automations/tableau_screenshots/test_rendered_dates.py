@@ -151,6 +151,22 @@ class ReportRenderedDatesTest(unittest.TestCase):
             self.TODAY, self._caps(), dry_run=False))
         self.assertFalse(self.posted)
 
+    def test_a_months_old_label_is_not_a_date(self):
+        """2026-11-16: CRU + D2D Consolidated show no day labels; a bare
+        '5/3'-shaped value read as May 3rd and both got flagged six months
+        behind. A pager stuck on last week is days behind, never months."""
+        cap.RENDERED_DATES["nds"] = [dt.date(2026, 5, 3)]
+        self.assertEqual([], run_mod._report_rendered_dates(
+            self.TODAY, self._caps(), dry_run=False))
+        self.assertFalse(self.posted)
+
+    def test_a_months_old_label_beside_a_stale_week_still_flags(self):
+        """The phantom is dropped, the real stale label still judges."""
+        cap.RENDERED_DATES["nds"] = [dt.date(2026, 5, 3), dt.date(2026, 8, 18)]
+        out = run_mod._report_rendered_dates(self.TODAY, self._caps(),
+                                             dry_run=False)
+        self.assertEqual(dt.date(2026, 8, 18), out[0][1])
+
     def test_it_reports_and_never_withholds(self):
         """The whole point of the current stage: flagged boards still POST."""
         cap.RENDERED_DATES["nds"] = [dt.date(2026, 8, 1)]

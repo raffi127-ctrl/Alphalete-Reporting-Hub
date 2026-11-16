@@ -697,6 +697,10 @@ def withhold_still_behind(selected: list, still_behind: dict) -> list:
     return [p for p in selected if p["id"] not in behind]
 
 
+# Past this, a "date" read off a board is a ratio/value, not a stale day label.
+_RENDERED_MAX_BEHIND_DAYS = 31
+
+
 def _report_rendered_dates(today: dt.date, captures: list, *,
                            dry_run: bool) -> list:
     """Compare what each board VISIBLY shows against the day it should cover.
@@ -734,7 +738,20 @@ def _report_rendered_dates(today: dt.date, captures: list, *,
             print(f"  · {spec['title']}: date labels cut off — not judged",
                   flush=True)
             continue
-        newest = max(shown)
+        # A "date" more than a month behind is not a pager stuck on last week —
+        # it is text that only LOOKS like a date. 2026-11-16: B2B AT&T (CRU) and
+        # B2B D2D Consolidated, which render no day labels, read as "newest date
+        # 2026-05-03" off a bare "5/3"-shaped value, while their sibling
+        # b2b_att_country (same extract, gate passed) showed the current week.
+        # Same rule as everywhere here: read nothing, say nothing.
+        recent = [d for d in shown
+                  if (target - d).days <= _RENDERED_MAX_BEHIND_DAYS]
+        if not recent:
+            print(f"  · {spec['title']}: only labels a month+ old "
+                  f"({max(shown).isoformat()}) — not dates, not judged",
+                  flush=True)
+            continue
+        newest = max(recent)
         if newest < target:
             suspect.append((spec, newest))
     if not suspect:
