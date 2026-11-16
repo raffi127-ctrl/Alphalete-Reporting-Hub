@@ -62,6 +62,11 @@ Answers land as PENDING on the **LucyECO Social Signups** tab of the relay workb
    thank-yous on their own, negatives drafted for ✅, already-answered ones skipped. Their
    computer reads + posts (every 30 min) with a key for just their page, sent to it sealed
    (`eco_fb --connect`, run from Megan's Mac where Alphalete's Meta key lives).
+5b. **Sign Lucy's window into Facebook.** We send `eco_fb --signin <key>`, Facebook opens on their
+   screen, they sign in with the account that manages their Page, and it closes itself. Facebook's
+   API won't let a Page answer a review written by a PERSON (most reviews), so those replies are
+   typed on facebook.com as the Page by their office computer, hidden, one every 20 min at most.
+   A Facebook security check stops everything and DMs the owner -- Lucy never gets past one.
 
 ## What we do
 
@@ -81,6 +86,7 @@ python -m automations.online_presence.setup invites --accept         # after ste
 python -m automations.online_presence.setup link-google <key>
 python -m automations.brand_audit.fb_reviews --connect <key>         # after step 5: finds + connects their page
 python -m automations.online_presence.eco_fb --connect <key>         # then: their computer gets a key for THEIR page only (Megan's Mac)
+python -m automations.online_presence.eco_fb --signin <key>          # step 5b: Facebook opens on their screen
 python -m automations.online_presence.setup audit <key>              # every site vs their sign-up answers
 python -m automations.online_presence.setup check <key>              # everything ✅ but Mode = ready
 python -m automations.online_presence.run --office <key>             # dry run: prints what it WOULD do

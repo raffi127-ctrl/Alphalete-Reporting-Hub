@@ -84,19 +84,28 @@ def run_office(p: offices.Presence, *, live: bool,
             from automations.online_presence import review_alerts
             out["bad reviews"] = review_alerts.check(p, _cl(), live=not dry)
         out["reviews"] = review_replies.process_reviews(dry_run=dry, profile=p)
-    if p.reviews and getattr(p, "facebook_page_id", "") and getattr(p, "reviews_via", "lucy") == "eco":
+    from automations.online_presence import eco_fb
+    if eco_fb.is_eco(p) and "facebook (office computer)" not in out:
+        # Facebook on the office computer without its Google/Zoho there too:
+        # its answers weren't read above.
+        from automations.brand_audit.social_inbox import _client as _fcl
+        from automations.online_presence import eco_reviews as _er
+        fb_rows, _rest = _er.split(answers or [])
+        if fb_rows:
+            out["facebook (office computer)"] = eco_fb.collect(p, fb_rows, _fcl(), dry=dry)
+    if p.reviews and eco_fb.is_eco(p):
         # the office's own computer reads + posts with a key for just its page
         try:
             from automations.brand_audit import fb_reviews
-            from automations.online_presence import eco_fb
             rd = eco_fb.ensure_read(p, live=not dry)
             if not eco_fb.connected(p):
                 out["facebook reviews"] = [{"action": "waiting_on_facebook_connect",
                                             "note": f"run `eco_fb --connect {p.key}` from Megan's Mac"}]
             else:
-                out["facebook reviews"] = fb_reviews.process(
-                    live=not dry, profile=p, reviews=eco_fb.reviews(p),
-                    post=eco_fb.poster(p)) + ([rd] if rd else [])
+                acts = fb_reviews.process(live=not dry, profile=p, reviews=eco_fb.reviews(p),
+                                          post=eco_fb.poster(p))
+                sent = eco_fb.send_next(p, live=not dry)       # one reply at a time, spaced out
+                out["facebook reviews"] = acts + [a for a in (rd, sent) if a]
         except Exception as e:                  # never let Facebook stop the pass
             out["facebook reviews"] = [{"action": "error", "note": str(e)[:200]}]
     elif p.reviews and getattr(p, "facebook_page_id", ""):
@@ -208,7 +217,9 @@ def main(argv=None) -> int:
 
     # ONE read of the relay for every office (not one per office).
     answers: Dict[str, List[dict]] = {}
-    if any((p.social and p.post_via == "eco") or getattr(p, "reviews_via", "") == "eco" for p in todo):
+    from automations.online_presence import eco_fb as _eco_fb
+    if any((p.social and p.post_via == "eco") or getattr(p, "reviews_via", "") == "eco"
+           or _eco_fb.is_eco(p) for p in todo):
         try:
             from automations.online_presence import relay
             for r in relay.answered():

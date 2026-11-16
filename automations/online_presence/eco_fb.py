@@ -26,9 +26,16 @@ import time
 from pathlib import Path
 from typing import Dict, List
 
-DOS = ("fb_hello", "fb_key", "fb_reviews", "fb_reply")
+DOS = ("fb_hello", "fb_key", "fb_reviews", "fb_reply", "fb_signin")
 READ_EVERY_MIN = 30
 READ_GIVE_UP_HOURS = 3
+# ONE REPLY AT A TIME, SPACED OUT (Megan 2026-11-16). A review by a person is
+# answered by the office computer typing it on facebook.com; a burst of those
+# is what gets an account a security check. So replies wait in an outbox here
+# and go out one per OUTBOX_GAP_MIN, never two in flight.
+OUTBOX_GAP_MIN = 20
+INFLIGHT_GIVE_UP_HOURS = 3
+CHECKPOINT_RETRY_HOURS = 24
 
 
 def _file(P) -> Path:
@@ -49,7 +56,8 @@ def _save(P, s: Dict) -> None:
 
 
 def is_eco(P) -> bool:
-    return getattr(P, "reviews_via", "lucy") == "eco" and bool(getattr(P, "facebook_page_id", ""))
+    return bool(getattr(P, "facebook_page_id", "")) and (
+        getattr(P, "reviews_via", "lucy") == "eco" or getattr(P, "facebook_via", "lucy") == "eco")
 
 
 def connected(P) -> bool:
@@ -95,6 +103,39 @@ def _refused(err: str) -> bool:
     """Facebook's 'you may not comment here' answers -- no retry fixes them."""
     e = (err or "").lower()
     return "permission" in e or "(#10)" in e or "(#200)" in e
+_DM = {
+    "needs_signin": "Facebook needs you to sign in again on your office computer",
+    "checkpoint": "Facebook is asking for a security check on your account",
+    "not_page": "the Facebook account signed in on your office computer can't comment as your page",
+}
+
+
+def _owner_dm(P, cl, s: Dict, why: str, dry: bool) -> Dict:
+    import datetime as dt
+    today = dt.date.today().isoformat()
+    text = (":warning: Lucy can't answer your Facebook reviews right now (%s). Message Megan or Eve "
+            "and we'll sort it out -- it takes a minute." % _DM.get(why, why))
+    if s.get("dm_day") == today or not getattr(P, "owner_slack_id", ""):
+        return {"action": "dm_already_sent_today" if s.get("dm_day") == today else "no_owner_to_dm",
+                "note": text}
+    if not dry:
+        cl.chat_postMessage(channel=P.owner_slack_id, text=text)
+        s["dm_day"] = today
+    return {"action": "dm_owner", "note": text}
+
+
+def _unpark_refused(fb_state: Dict) -> int:
+    """Reviews parked because Facebook's API refused them (written by a
+    person) can be answered now the office computer is signed in to
+    facebook.com: drop them so the next read brings them back to be drafted."""
+    revs = fb_state.get("reviews") or {}
+    gone = [k for k, v in revs.items() if v.get("blocked") and _refused(v["blocked"])]
+    for k in gone:
+        revs.pop(k, None)
+        (fb_state.get("fails") or {}).pop(k, None)
+    return len(gone)
+
+
 def collect(P, rows: List[Dict], cl, *, dry: bool) -> List[Dict]:
     s = _load(P)
     fb_file = P.path("fb_review_replies.json")
@@ -108,6 +149,16 @@ def collect(P, rows: List[Dict], cl, *, dry: bool) -> List[Dict]:
         do, status = res.get("do"), res.get("status")
         if do == "fb_hello":
             continue                                   # connect() reads that one itself
+        if do == "fb_signin":
+            if status == "signed_in":
+                s["fb_signed_in"] = True
+                s.pop("paused", None)
+                n = _unpark_refused(fb_state)
+                acts.append({"action": "facebook_signed_in",
+                             "note": "%d earlier refused review(s) will be answered" % n})
+            else:
+                acts.append({"action": "facebook_signin_" + str(status), "note": res.get("error", "")})
+            continue
         if do == "fb_key":
             s["connected"] = status == "connected"
             acts.append({"action": "facebook_connected" if s["connected"] else "facebook_key_" + str(status),
@@ -124,12 +175,31 @@ def collect(P, rows: List[Dict], cl, *, dry: bool) -> List[Dict]:
         elif do == "fb_reply":
             story = res.get("story")
             st = (fb_state.get("reviews") or {}).get(story)
+            fly = s.get("inflight") or {}
+            if fly.get("story") == story:
+                s.pop("inflight", None)
+            if status in ("needs_signin", "checkpoint", "busy"):
+                # Not this review's fault: it goes back to the front, untouched.
+                if fly.get("story") == story:
+                    s.setdefault("outbox", []).insert(0, {"story": story, "comment": fly.get("comment", "")})
+                if status != "busy":
+                    s["paused"] = {"why": status, "at": time.time()}
+                    acts.append(_owner_dm(P, cl, s, status, dry))
+                acts.append({"action": "fb_reply_" + status, "note": res.get("error", "")})
+                continue
+            if status == "not_page":
+                fb_state.setdefault("reviews", {})[story] = dict(st or {}, posted=True,
+                                                                 blocked=res.get("error", "not_page"))
+                acts.append({"action": "fb_reply_not_page", "note": res.get("error", "")})
+                acts.append(_owner_dm(P, cl, s, status, dry))
+                continue
             if status == "replied":
                 # Remember that this page CAN post. The refusal branch below
                 # reads it to tell a per-review dead end from a page that has
                 # never managed a single reply.
                 fb_state["ever_posted"] = int(fb_state.get("ever_posted") or 0) + 1
-                acts.append({"action": "fb_reply_posted", "note": story})
+                acts.append({"action": "fb_reply_posted",
+                             "note": "%s (%s)" % (story, res.get("via") or "api")})
                 continue
             err = res.get("error") or str(status)
             # FACEBOOK SAYS NO FOR GOOD on some reviews ("Permissions error": the
@@ -189,10 +259,51 @@ def reviews(P) -> List[Dict]:
 
 
 def poster(P):
+    """Replies go in the outbox; send_next() hands them over one at a time."""
     def _post(story: str, text: str) -> None:
-        from automations.online_presence import relay
-        relay.enqueue(P.key, "social_post", {"do": "fb_reply", "story": story, "comment": text}, live=True)
+        s = _load(P)
+        box = s.setdefault("outbox", [])
+        if story != (s.get("inflight") or {}).get("story") and all(x["story"] != story for x in box):
+            box.append({"story": story, "comment": text})
+        _save(P, s)
     return _post
+
+
+def send_next(P, *, live: bool, now: float | None = None) -> Dict | None:
+    s = _load(P)
+    now = now or time.time()
+    box = s.get("outbox") or []
+    if not box:
+        return None
+    pause = s.get("paused") or {}
+    if pause:
+        if pause.get("why") == "checkpoint" and now - pause.get("at", 0) >= CHECKPOINT_RETRY_HOURS * 3600:
+            s.pop("paused", None)                       # one careful try a day after a check
+        else:
+            return {"action": "fb_replies_on_hold", "note": "%s, %d waiting" % (pause.get("why"), len(box))}
+    fly = s.get("inflight") or {}
+    if fly and now - fly.get("at", 0) < INFLIGHT_GIVE_UP_HOURS * 3600:
+        return None
+    if fly:                                             # never answered: try it again later
+        box.append({"story": fly["story"], "comment": fly.get("comment", "")})
+        s.pop("inflight", None)
+    if now - float(s.get("last_sent") or 0) < OUTBOX_GAP_MIN * 60:
+        _save(P, s)
+        return None
+    item = box.pop(0)
+    if not live:
+        return {"action": "would_send_fb_reply", "note": item["story"]}
+    from automations.online_presence import relay
+    job = relay.enqueue(P.key, "social_post", {"do": "fb_reply", "story": item["story"],
+                                               "comment": item["comment"]}, live=True)
+    s.update(inflight=dict(item, job=job, at=now), last_sent=now, outbox=box)
+    _save(P, s)
+    return {"action": "fb_reply_sent_to_office", "note": "%s (%d more waiting)" % (item["story"], len(box))}
+
+
+def queue_signin(P) -> str:
+    from automations.online_presence import relay
+    return relay.enqueue(P.key, "social_check", {"do": "fb_signin"}, live=True)
 
 
 def ensure_read(P, *, live: bool) -> Dict | None:
@@ -226,14 +337,25 @@ def main(argv=None) -> int:
         except (AttributeError, ValueError):
             pass
     ap = argparse.ArgumentParser(prog="online_presence.eco_fb")
-    ap.add_argument("--connect", required=True, metavar="OFFICE")
+    g = ap.add_mutually_exclusive_group(required=True)
+    g.add_argument("--connect", metavar="OFFICE")
+    g.add_argument("--signin", metavar="OFFICE",
+                   help="Facebook opens on the office computer; the owner signs in once")
     a = ap.parse_args(argv)
+    from dataclasses import replace
     from automations.online_presence import offices
-    p = offices.get(a.connect)
+    p = offices.get(a.connect or a.signin)
     if not p:
-        print("✗ no office %r" % a.connect)
+        print("✗ no office %r" % (a.connect or a.signin))
         return 1
+    if a.signin:
+        job = queue_signin(p)
+        print("✓ Facebook will open on %s's computer within a few minutes (job %s) -- "
+              "they sign in with the account that manages the page, then it closes itself." % (p.key, job[:8]))
+        return 0
     res = connect(p)
+    if res["ok"] and p.facebook_via != "eco":
+        offices.save(replace(p, facebook_via="eco"))
     print(("✓ %s's computer can answer Facebook reviews for %s" % (p.key, res["page"])) if res["ok"]
           else "✗ not connected: %s" % res["why"])
     return 0 if res["ok"] else 1

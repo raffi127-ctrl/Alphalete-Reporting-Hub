@@ -66,6 +66,8 @@ class Flow(Base):
             {"story": "s1", "recommendation_type": "positive", "review_text": "great"}])], self.cl, dry=False)
         acts = self._pass(E.reviews(self.P))
         self.assertEqual([a["action"] for a in acts], ["auto_post"])
+        self.assertEqual(self.queued, [], "replies wait in the outbox")
+        E.send_next(self.P, live=True)
         self.assertEqual(self.queued[-1], ("social_post", {"do": "fb_reply", "story": "s1", "comment": "Thank you!"}))
 
     def test_doesnt_recommend_waits_for_check_mark(self):
@@ -139,6 +141,55 @@ class Flow(Base):
         E.collect(self.P, [_ans("fb_reply", status="error", error="(#200) Permissions error", story="s2")],
                   self.cl, dry=False)
         self.assertTrue(self._st()["reviews"]["s2"]["posted"])
+
+    # ---- 11/16: a review by a person is typed on facebook.com, one at a time ----
+    def _two_thank_yous(self):
+        self._pass([{"open_graph_story": {"id": "a"}, "recommendation_type": "positive"},
+                    {"open_graph_story": {"id": "b"}, "recommendation_type": "positive"}])
+
+    def test_one_reply_in_flight_and_spaced_out(self):
+        self._two_thank_yous()
+        E.send_next(self.P, live=True, now=1e9)
+        self.assertIsNone(E.send_next(self.P, live=True, now=1e9 + 60), "two in flight")
+        E.collect(self.P, [_ans("fb_reply", status="replied", via="browser", story="a")], self.cl, dry=False)
+        self.assertIsNone(E.send_next(self.P, live=True, now=1e9 + 100), "sent before the gap")
+        E.send_next(self.P, live=True, now=1e9 + E.OUTBOX_GAP_MIN * 60 + 1)
+        self.assertEqual([q[1]["story"] for q in self.queued], ["a", "b"])
+
+    def test_security_check_holds_everything_and_dms_the_owner_once(self):
+        self.P = __import__("dataclasses").replace(self.P, owner_slack_id="UOWN")
+        self._two_thank_yous()
+        E.send_next(self.P, live=True, now=1e9)
+        acts = E.collect(self.P, [_ans("fb_reply", status="checkpoint", story="a")], self.cl, dry=False)
+        self.assertIn("dm_owner", [x["action"] for x in acts])
+        self.assertEqual(self.cl.posts[-1]["channel"], "UOWN")
+        later = 1e9 + E.OUTBOX_GAP_MIN * 60 + 1
+        self.assertEqual(E.send_next(self.P, live=True, now=later)["action"], "fb_replies_on_hold")
+        self.assertEqual(len(self.queued), 1, "nothing sent while Facebook wants a check")
+        self.assertEqual(E._load(self.P)["outbox"][0]["story"], "a", "the held reply kept its place")
+        E.collect(self.P, [_ans("fb_reply", status="checkpoint", story="a")], self.cl, dry=False)
+        self.assertEqual(len(self.cl.posts), 1, "one DM a day")
+
+    def test_signing_in_releases_the_hold_and_unparks_refused_reviews(self):
+        self._pass([{"open_graph_story": {"id": "s1"}, "recommendation_type": "positive"}])
+        E.collect(self.P, [_ans("fb_reply", status="error", error="(#200) Permissions error", story="s1")],
+                  self.cl, dry=False)
+        st = E._load(self.P); st["paused"] = {"why": "needs_signin", "at": 1}; E._save(self.P, st)
+        acts = E.collect(self.P, [_ans("fb_signin", status="signed_in")], self.cl, dry=False)
+        self.assertEqual(acts[0]["action"], "facebook_signed_in")
+        self.assertNotIn("paused", E._load(self.P))
+        self.assertNotIn("s1", self._st()["reviews"], "a refused review comes back to be answered")
+
+    def test_cant_comment_as_page_parks_it(self):
+        self._two_thank_yous()
+        E.send_next(self.P, live=True, now=1e9)
+        E.collect(self.P, [_ans("fb_reply", status="not_page", error="x", story="a")], self.cl, dry=False)
+        self.assertTrue(self._st()["reviews"]["a"]["blocked"])
+
+    def test_facebook_alone_can_be_on_the_office_computer(self):
+        from dataclasses import replace
+        self.assertTrue(E.is_eco(replace(self.P, reviews_via="lucy", facebook_via="eco")))
+        self.assertFalse(E.is_eco(replace(self.P, reviews_via="lucy", facebook_via="lucy")))
 
     def test_answers_split_away_from_zoho(self):
         from automations.online_presence import eco_reviews

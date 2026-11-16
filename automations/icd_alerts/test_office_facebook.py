@@ -97,6 +97,40 @@ class ReadReply(Base):
             self.assertEqual(SP.post({"do": "fb_reply", "story": "a", "comment": "Thanks!"}, True)["status"], "replied")
         self.assertIn(("POST", "a/comments"), calls)
 
+    # ---- 11/16: a review by a person -> typed on facebook.com as the page ----
+    def _graph_refusing(self, m, path, q):
+        if m == "POST":
+            raise RuntimeError("(#200) Permissions error [code 200, OAuthException]")
+        if path.endswith("/comments"):
+            return {"data": []}
+        return {"name": "Alphalete Marketing"}
+
+    def test_a_refused_reply_is_typed_on_facebook_as_the_page(self):
+        from automations.icd_alerts import office_fb_browser as FBB
+        with mock.patch.object(FB, "_graph", side_effect=self._graph_refusing), \
+             mock.patch.object(FBB, "browser_reply",
+                               return_value={"status": "replied", "story": "s1", "via": "browser"}) as br:
+            res = FB.reply_job({"story": "s1", "comment": "Thanks!"}, live=True)
+        self.assertEqual(res["status"], "replied")
+        br.assert_called_once()
+        self.assertEqual(br.call_args[0][:3], ("s1", "Thanks!", "Alphalete Marketing"))
+
+    def test_other_errors_do_not_open_a_browser(self):
+        from automations.icd_alerts import office_fb_browser as FBB
+        def g(m, path, q):
+            if m == "POST":
+                raise RuntimeError("(#1) An unknown error occurred")
+            return {"data": []}
+        with mock.patch.object(FB, "_graph", side_effect=g), \
+             mock.patch.object(FBB, "browser_reply", side_effect=AssertionError("browser")):
+            self.assertEqual(FB.reply_job({"story": "s1", "comment": "x"}, live=True)["status"], "error")
+
+    def test_browser_without_a_facebook_signin_says_so(self):
+        from automations.icd_alerts import office_fb_browser as FBB
+        import tempfile
+        with mock.patch.object(FBB, "PROFILE", Path(tempfile.mkdtemp()) / "none"):
+            self.assertEqual(FBB.browser_reply("s1", "x", "Page")["status"], "needs_signin")
+
     def test_no_key_says_signed_out(self):
         FB.KEY_PATH.unlink()
         self.assertEqual(FB.read_job({})["status"], "signed_out")

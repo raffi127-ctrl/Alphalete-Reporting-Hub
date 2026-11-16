@@ -10,7 +10,9 @@ Jobs (ride social_check / social_post with payload["do"], like Google's):
   fb_hello    -- make a one-time lock; answer with its public half
   fb_key      -- open the sealed page key, prove it reads the page, keep it
   fb_reviews  -- the page's reviews nobody has answered yet
-  fb_reply    -- post one approved reply under a review
+  fb_reply    -- post one approved reply under a review (the API first; a review
+                 by a person goes through office_fb_browser instead)
+  fb_signin   -- the owner signs in to Facebook once (office_fb_browser)
 
 Standard library only.
 """
@@ -132,7 +134,7 @@ def install_key(payload: Dict, log=print) -> Dict:
         page = _graph("GET", page_id, {"access_token": token, "fields": "id,name"})
     except (ValueError, RuntimeError) as e:
         return {"status": "error", "error": str(e)[:200]}
-    _secure_write(KEY_PATH, {"page_id": page_id, "token": token})
+    _secure_write(KEY_PATH, {"page_id": page_id, "token": token, "name": page.get("name", "")})
     try:
         LOCK_PATH.unlink()                       # one use only
     except OSError:
@@ -195,6 +197,33 @@ def reply_job(payload: Dict, live: bool, log=print) -> Dict:
         # 400, not 200: _err_text now carries code/subcode/user message, and a
         # 200-char cut would land in the middle of exactly those -- the whole
         # point of keeping them (2026-11-16).
-        return {"status": "signed_out" if str(e) == "signed_out" else "error", "error": str(e)[:400],
-                "story": story}
-    return {"status": "replied", "story": story}
+        if str(e) == "signed_out":
+            return {"status": "signed_out", "error": "signed_out", "story": story}
+        if not _refused(str(e)):
+            return {"status": "error", "error": str(e)[:400], "story": story}
+        # A review written by a PERSON: Facebook's API never lets a Page comment
+        # on it (the two that went through on 11/15 were written by Pages);
+        # a person on facebook.com can (Megan checked by hand 11/16). Do it
+        # that way -- office_fb_browser, hidden, as the Page.
+        from automations.icd_alerts import office_fb_browser as FBB
+        res = FBB.browser_reply(story, text, _page_name(k), log=log)
+        res.setdefault("api_error", str(e)[:300])
+        return res
+    return {"status": "replied", "story": story, "via": "api"}
+
+
+def _refused(err: str) -> bool:
+    e = (err or "").lower()
+    return "permission" in e or "(#10)" in e or "(#200)" in e
+
+
+def _page_name(k: Dict) -> str:
+    if k.get("name"):
+        return k["name"]
+    try:
+        name = _graph("GET", k["page_id"], {"access_token": k["token"], "fields": "name"}).get("name", "")
+    except RuntimeError:
+        return ""
+    if name:
+        _secure_write(KEY_PATH, dict(k, name=name))
+    return name

@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alphalete.blueink-docs-daily</string>
+
+    <!-- ARM IT only after a one person send has been log verified on Lucy 2:
+             lucy rerun install_blueink_docs_agent (machine "Lucy 2")
+         The wrapper passes the live send flag, so the moment this is loaded it
+         mails real people and a Blue Ink bundle cannot be recalled.
+         NOTE ON COMMENTS IN THIS FILE: never write two hyphens together inside
+         an XML comment. It ends the comment early and makes the plist
+         unparseable to plistlib even though plutil still accepts it, which
+         shows up as a Hub card that cries wolf forever. This file had exactly
+         that defect from the day it was written until 2026-11-16, so no
+         command line flags are spelled out in these comments any more. -->
+
+    <!-- Path is the laptop placeholder; on Lucy 2, install_agent.py rewrites it
+         to that machine's repo path. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/megan/1st Claude Folder/deploy/blueink_docs_daily.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/megan/1st Claude Folder</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/megan/1st Claude Folder</string>
+    </dict>
+
+    <!-- 7:30am EVERY DAY, machine LOCAL time (Lucy 2 is Central). No Weekday
+         key on purpose (Megan, 2026-11-16: "blue ink needs to run daily
+         because new starts don't just happen on mondays"). A person brought on
+         board on a Wednesday for a Thursday start used to wait until the
+         following Monday for their documents, which is after they had already
+         started. Same reasoning, and the same shape, as the digi docs add pass
+         next door on Lucy 3: the dates above a chart being Mondays is a
+         coincidence of how the sheet gets filled in, not the rule.
+
+         Running every morning is safe because of the ledger, not because of
+         the clock: the "Blue Ink Log" tab is keyed on BOTH normalised name and
+         email and is written per person as each bundle launches, so a second
+         morning finds everyone already sent and mails nobody twice. The
+         wrapper also refuses to start while another copy is still running.
+
+         TIME KNOB: edit StartCalendarInterval here, not the wrapper. -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>7</integer>
+        <key>Minute</key>
+        <integer>30</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/blueink-docs.launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/blueink-docs.launchd.err.log</string>
+</dict>
+</plist>

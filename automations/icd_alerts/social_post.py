@@ -60,7 +60,7 @@ def _reviews_job(payload: Dict):
     Zoho window, so they never wait on _busy()."""
     return str((payload or {}).get("do") or "") in (
         "google_signin", "google_reviews", "google_reply",
-        "fb_hello", "fb_key", "fb_reviews", "fb_reply")
+        "fb_hello", "fb_key", "fb_reviews", "fb_reply", "fb_signin")
 
 
 def signin(payload: Dict, log=print) -> Dict:
@@ -84,6 +84,9 @@ def check(payload: Dict, log=print) -> Dict:
         from automations.icd_alerts import office_reviews
         from automations.icd_alerts import office_facebook as FB
         do = payload.get("do")
+        if do == "fb_signin":
+            from automations.icd_alerts import office_fb_browser as FBB
+            return dict(FBB.signin_job(payload, log=log), do=do)
         res = (office_reviews.signin(payload, log=log) if do == "google_signin"
                else FB.hello(payload, log=log) if do == "fb_hello"
                else FB.install_key(payload, log=log) if do == "fb_key"

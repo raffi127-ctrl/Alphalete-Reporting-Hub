@@ -97,6 +97,12 @@ class Presence:
     # access from Lucy 3; "eco" = the owner's OWN Google sign-in on their
     # office computer (eco_reviews.py). Drafts + ✅ stay on Lucy 3 either way.
     reviews_via: str = "lucy"
+    # Who answers their FACEBOOK reviews (Megan 2026-11-16). Separate from
+    # Google's: Google goes through the Manager invite (Lucy 3), but Facebook's
+    # API never lets a Page answer a review written by a person, so those are
+    # typed on facebook.com by the office's own computer (eco_fb.py,
+    # office_fb_browser.py). "eco" is set by `eco_fb --connect` succeeding.
+    facebook_via: str = "lucy"
 
     @property
     def social_links(self) -> Dict[str, str]:
@@ -185,6 +191,8 @@ class Presence:
             out.append("post hours must be between 8am and 6pm")
         if self.reviews_via not in ("eco", "lucy"):
             out.append(f"reviews_via must be 'eco' or 'lucy', not {self.reviews_via!r}")
+        if self.facebook_via not in ("eco", "lucy"):
+            out.append(f"facebook_via must be 'eco' or 'lucy', not {self.facebook_via!r}")
         if self.post_via not in ("eco", "lucy"):
             out.append(f"post_via must be 'eco' or 'lucy', not {self.post_via!r}")
         if self.social:

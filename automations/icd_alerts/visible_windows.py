@@ -83,6 +83,10 @@ ALLOWED: Dict[str, Tuple[str, str]] = {
         (HIDDEN, "osascript reads a FILE (no window, nothing on screen)"),
     "automations/oat_processing/run.py":
         (HIDDEN, "osascript reads a screenshot FILE (no window, nothing on screen)"),
+    "automations/icd_alerts/office_fb_browser.py":
+        (PERSON, "the owner signs in to Facebook once (set-up call). Each reply "
+                 "after that runs in a real window kept hidden by "
+                 "quiet_window.Guard on a Mac, headless elsewhere"),
     "automations/icd_alerts/office_reviews.py":
         (PERSON, "the owner signs Lucy into their own Google once, to answer "
                  "their reviews (sent only on the set-up call)"),
