@@ -14,9 +14,8 @@
     # 3. the owner signs into THEIR Zoho on THEIR office computer
     python -m automations.online_presence.setup zoho-signin kash
 
-    # 3b. the owner signs into THEIR Google there too: their computer then
-    #     reads + answers their reviews (Lucy 3 drafts, Slack ✅ approves)
-    python -m automations.online_presence.setup google-signin kash
+    # (google-signin is NOT standard -- Google reviews go through the Manager
+    #  invite above. Only for an owner who can't add a Manager; Megan 11/15.)
 
     # 4. the checklist: everything green = ready for a dry run
     python -m automations.online_presence.setup check kash
@@ -532,7 +531,7 @@ def main(argv=None) -> int:
     s.add_argument("office")
     s.add_argument("--minutes", type=int, default=15)
     s.set_defaults(fn=cmd_zoho_signin)
-    s = sub.add_parser("google-signin", help="owner signs in to Google on their office computer")
+    s = sub.add_parser("google-signin", help="NOT standard (use the Manager invite): owner signs Lucy into their Google")
     s.add_argument("office")
     s.set_defaults(fn=cmd_google_signin)
     s = sub.add_parser("invites", help="Google manager invites waiting for us")

@@ -43,18 +43,17 @@ Answers land as PENDING on the **LucyECO Social Signups** tab of the relay workb
    $10/mo billed yearly, $15 month-to-month, and there's no free plan after the 15-day trial.
 2. **Connect their pages in Zoho:** Settings → Channels → connect each page from their answers
    (Instagram, Facebook Page, Google Business Profile, LinkedIn **company** page, X).
-3. **Google listing → Manager.** Google Business Profile → ⋮ → Business Profile settings →
-   People and access → Add → `alphaletemarketing@gmail.com` → **Manager**, not "Site manager".
-   The listing must be verified.
+3. **Google listing → Manager (THE standard way Lucy answers their Google reviews).** Google
+   Business Profile → ⋮ → Business Profile settings → People and access → Add →
+   `alphaletemarketing@gmail.com` → **Manager**, not "Site manager". The listing must be verified.
+   Then `setup invites --accept` + `setup link-google <key>`. The owner never signs Lucy into their
+   Google and never sees a warning (Megan 2026-11-15: "make the manager invite the standard way").
 4. **Sign Lucy's window into Zoho.** We send `zoho-signin`, a Zoho window opens on their
    screen, they sign in with the account from step 1, and it closes itself. Lucy never sees the
    password. Zoho's sign-in codes go to THEIR email; if Zoho ever signs them out, Lucy DMs them.
-4b. **Sign Lucy into their Google (so their computer answers their Google reviews).** We send
-   `google-signin`, Google opens on their screen, they sign in with the Google account that
-   **manages their listing** and press **Allow**. Their sign-in stays on their computer; from then
-   on their computer reads their reviews every 30 min and posts the replies. Lucy 3 still writes
-   the replies and puts the bad ones in Slack for ✅. (Step 3's Manager invite is still worth
-   doing as a backup, but nothing needs it once this is green.)
+4b. *(Not standard -- skip.)* `google-signin` makes the owner sign Lucy into their own Google
+   on their computer instead of the Manager invite. It shows an "unverified app" warning and is
+   only for an owner who truly can't add a Manager. Raf's office (Alphalete) runs on it as the 11/15 pilot.
 5. **Facebook page → Alphalete (so Lucy answers their Facebook reviews).** On their phone:
    **business.facebook.com** (Meta Business Suite) → Settings → Business assets → their **Page** →
    **Partners** → **Assign partner** → **Business ID** `1600512619997772` (Alphalete Marketing) →
@@ -78,7 +77,6 @@ Before the call:
 On the call:
 ```
 python -m automations.online_presence.setup zoho-signin <key>        # step 4: Zoho opens on their screen
-python -m automations.online_presence.setup google-signin <key>      # step 4b: Google opens on their screen
 python -m automations.online_presence.setup invites --accept         # after step 3
 python -m automations.online_presence.setup link-google <key>
 python -m automations.brand_audit.fb_reviews --connect <key>         # after step 5: finds + connects their page
@@ -105,8 +103,8 @@ python -m automations.online_presence.run --office <key>             # dry run: 
 - A post that couldn't go out says so in its thread and goes out once it's fixed.
 
 **Reviews**
-- Their office computer reads their Google reviews every 30 min with THEIR sign-in (step 4b),
-  and posts each reply Lucy 3 hands it. If that sign-in runs out, Lucy DMs the owner once a day.
+- Lucy reads their Google reviews and posts the replies as the listing's Manager (step 3) --
+  nothing on their computer. (The Raf pilot instead does it from his Mac with his sign-in, step 4b.)
 - 4–5★ get an automatic reply, capped at 10 a day.
 - Under 4★ wait in the room for ✅ / ❌.
 - Replies sign off with the office's name, and complaints go to the office's own email.
