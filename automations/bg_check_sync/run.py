@@ -31,6 +31,11 @@ from automations.shared.workbooks import ALL_IN_ONE_RAF
 
 SPREADSHEET_ID = ALL_IN_ONE_RAF
 ROLLING_TAB = "D2D OBCL"
+# The Hub card id, which is ALSO the id the incident is keyed on
+# (`failure-bg_check_sync`). Deliberately not the schedule_config key
+# (`bg_check_sync_post`): the Hub row and the manifest have to agree, or
+# delivery_check looks for the proof under a name nothing wrote.
+REPORT_ID = "bg_check_sync"
 _DATE_RE = re.compile(r"^\s*\d{1,2}/\d{1,2}/\d{2,4}\s*$")
 
 
@@ -540,10 +545,38 @@ def _publish(hub_run_id, status: str) -> None:
         return
     try:
         from automations.day_orchestrator import hub_publish
-        hub_publish.publish_done("bg_check_sync", "BG Check Sync",
+        hub_publish.publish_done(REPORT_ID, "BG Check Sync",
                                  status=status, run_id=hub_run_id)
     except Exception as e:  # noqa: BLE001
         print(f"[hub] publish_done skipped: {e}")
+
+
+def _record_delivery(*, run_ts=None) -> None:
+    """Write this run's manifest — the proof shared/delivery_check looks for.
+
+    2026-11-15: the 18:11 run failed, a later pass went clean, and the ticket
+    stayed open on "ran clean, but nothing can confirm it DELIVERED" because
+    this report had no verify and wrote no manifest. publish_done paints the
+    Hub tile but leaves no artifact the closer can read.
+
+    Filed under REPORT_ID — the same id the Hub row carries and the one the
+    incident is keyed on (`failure-bg_check_sync`), which is NOT the
+    schedule_config key (`bg_check_sync_post`). delivery_check.manifest_ids
+    only tries the id it is asked about plus its dashed spelling, so filing
+    this under the config key would leave nothing for it to find.
+
+    Real runs only: --dry-run makes no sheet writes, so it is not evidence
+    anything landed. Note that run_manifest's own `dry_run=` flag would NOT
+    have covered this — it only silences the Slack side — so the guard is the
+    caller's. Never raises: the sync is done by the time this runs."""
+    try:
+        from automations.shared import run_manifest
+        run_manifest.write_manifest(
+            REPORT_ID, succeeded=["BG Check Sync"],
+            note="sync completed; OBCL tabs current", run_ts=run_ts)
+    except Exception as e:  # noqa: BLE001 — proof must never fail the sync
+        print(f"[manifest] skipped: {type(e).__name__}: {str(e)[:120]} — the "
+              f"sync ran, but a failure ticket won't close itself")
 
 
 def _run(args) -> None:
@@ -788,7 +821,7 @@ def main(argv=None) -> int:
     if not args.dry_run:
         try:
             from automations.day_orchestrator import hub_publish
-            hub_run_id = hub_publish.publish_running("bg_check_sync", "BG Check Sync")
+            hub_run_id = hub_publish.publish_running(REPORT_ID, "BG Check Sync")
         except Exception as e:  # noqa: BLE001
             print(f"[hub] publish_running skipped: {e}")
 
@@ -808,6 +841,8 @@ def main(argv=None) -> int:
         raise
 
     _publish(hub_run_id, "success")
+    if not args.dry_run:
+        _record_delivery()
 
     # Heartbeat for the watchdog — a real run only (not --dry-run). If this
     # stops updating, watchdog.py DMs Raf that the scheduler stalled.

@@ -47,6 +47,13 @@ from automations.rc_contact_sync import config as C
 from automations.rc_contact_sync import ringcentral as RC
 
 CONTROL_SHEET = "1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw"
+# The schedule_config key, so shared/delivery_check finds the proof under the
+# id it asks about (it also tries the dashed spelling). Its NDS siblings
+# rc_contact_sync and rc_contact_sync_raf have written a manifest all along;
+# this entry point was the one that didn't, which is why a clean re-run on
+# 11-15 still left failure-rc_contact_sync_verizon open all day on "ran clean,
+# but nothing can confirm it DELIVERED".
+REPORT_ID = "rc_contact_sync_verizon"
 TAB = "VZ Credico Lines"
 STATE_PATH = C.CONFIG_DIR / "rc_contact_sync_verizon_state.json"
 TAG = "(VZ)"
@@ -111,11 +118,43 @@ def contacts_for(lines: List[dict]) -> List[dict]:
     return out
 
 
+def _manifest(failed: List[str], *, dry_run: bool, note: str = "") -> None:
+    """Publish the run so a clean one can close its own ticket.
+
+    Same helper as the NDS sibling (run.py::_manifest), for the same reason:
+    a LaunchAgent report that doesn't publish is a report nobody can see fail
+    [[feedback_launchd_reports_must_publish]].
+
+    A DRY RUN WRITES NOTHING AT ALL, and the guard is this `return`, not the
+    `dry_run=` flag. That flag only silences the Slack side — run_manifest's
+    own comment is explicit: "A dry run may write its manifest; it may not
+    speak in the channel." So passing it through still drops a file that
+    delivery_check reads as DELIVERED. This module is DRY RUN BY DEFAULT
+    (`--live` is opt-in), so relying on the flag would have marked every
+    preview delivered while creating zero contacts — the false green this
+    whole mechanism is under orders not to build.
+
+    Never raises: the contacts are in the address book either way."""
+    if dry_run:
+        return
+    try:
+        from automations.shared import run_manifest as _rm
+        _rm.write_manifest(REPORT_ID, failed=failed, kind="part", note=note,
+                           dry_run=dry_run)
+    except Exception as e:                                 # noqa: BLE001
+        print("  (manifest not written: %s: %s)" % (type(e).__name__, str(e)[:120]))
+
+
 def run(*, live: bool, limit: Optional[int] = None, log=print) -> int:
     lines = read_tab()
     specs = contacts_for(lines)
     log("[vz-rc] %d line(s) on '%s', %d live line(s) -> contact(s)" % (len(lines), TAB, len(specs)))
     if not specs:
+        # A day with no live line is a real zero, not a miss — Credico pays two
+        # weeks behind, so quiet days are normal and the tab being empty IS the
+        # answer. Still publish, or every such day holds the ticket open.
+        _manifest([], dry_run=not live,
+                  note="no live Verizon line on %r — nothing to sync" % TAB)
         return 0
     creds = C.rc_creds()
     info = RC.token_info(creds)
@@ -128,6 +167,10 @@ def run(*, live: bool, limit: Optional[int] = None, log=print) -> int:
     log("[vz-rc] address book: %d existing contact(s)" % len(book))
     state = load_state()
     added = skipped = failed = 0
+    # NAMES, not just a count: the manifest (and the alert built from it) says
+    # which customers did not make it, so a re-run is targeted instead of a
+    # guess at which of N lines broke.
+    failed_labels: List[str] = []
     for s in specs:
         if limit is not None and added >= limit:
             break
@@ -152,6 +195,7 @@ def run(*, live: bool, limit: Optional[int] = None, log=print) -> int:
                               company=s["company"], phone=s["phone"], notes=s["notes"])
         except RC.RCError as e:
             failed += 1
+            failed_labels.append(s["label"])
             log("  ✗ %s: %s" % (s["label"], str(e)[:200]))
             continue
         state[s["key"]] = {"phone": phone, "existing": False, "when": dt.date.today().isoformat()}
@@ -160,6 +204,10 @@ def run(*, live: bool, limit: Optional[int] = None, log=print) -> int:
         added += 1
         log("  + %s %s — %s" % (s["first"], s["last"], RC.e164(s["phone"])))
     log("[vz-rc] %s: %d added, %d already there, %d failed" % ("LIVE" if live else "DRY RUN", added, skipped, failed))
+    _manifest(failed_labels, dry_run=not live,
+              note="%d added, %d already in the address book%s"
+                   % (added, skipped,
+                      (", %d failed" % failed) if failed else ""))
     return 1 if failed else 0
 
 

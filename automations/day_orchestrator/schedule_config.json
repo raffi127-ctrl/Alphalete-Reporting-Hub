@@ -18101,6 +18101,8 @@
    "command": [
     "automations.verizon_office.revenue"
    ],
+   "hand_run_only": true,
+   "_hand_run_only_note": "Megan 2026-11-16, declared. Its _off_scheduler_note has said HAND-RUN ONLY in prose since Carlos asked for it on 11-15, but the flag the code reads was never set, so the missed-run watcher could derive a schedule for it off hand reruns -- the alphalete_org_b2b failure mode (two Monday hand-reruns taught _historical_expected a 16:00 slot that never existed). Preconditions checked before adding it, per machine_digest._handrun_only_ids: cadence.weekdays is [] (the flag is ignored otherwise), and NOTHING in deploy/ runs automations.verizon_office.revenue -- no plist, no wrapper, no timer; schedule_config is the only place that knows this handle. Remove the flag the day it gets a timer. A hand run that FAILS or hangs still alerts: un-scheduled is not un-watched.",
    "base_args": [
     "--office",
     "nicolas"
@@ -18114,6 +18116,8 @@
    "verify": {
     "type": "not_configured"
    },
+   "close_on": "exit_zero",
+   "_close_on_note": "Megan 2026-11-16, declared. A hand-run PREVIEW: it renders one of Nico's Verizon money boards and DMs it to whoever the person running it names (`-- --dm U046G04P5LG`). base_args carries no --dm, so the bare handle renders and DMs nobody -- there is no delivery to observe and nothing for a manifest to prove, which is why this is a declaration and not the manifest its siblings got. Exit 0 IS its delivery: a render failure raises, and when --dm IS passed the DM goes through S.dm_user_with_file, which raises on a failed post (it falls back to the Lucy Reporting token on Lucy 4, then raises) -- so a silent non-delivery is not a case this can hide. Until this, every clean run sat on 'ran clean, but nothing can confirm it DELIVERED' (11-15). `verify` stays not_configured on purpose: a picture in somebody's DMs cannot be checked from the outside.",
    "timeout_minutes": 10
   },
   "verizon_churn_tab": {
@@ -18169,7 +18173,8 @@
   },
   "rc_contact_sync_verizon": {
    "on_scheduler": false,
-   "_off_scheduler_note": "Verizon customers -> Taylor's RingCentral address book with '(VZ)' on the last name, one contact per live line, off the 'VZ Credico Lines' tab (verizon_credico_lines on Lucy 1). DRY RUN unless `-- --live`; dedup by phone + state file; cancelled lines skipped. Carlos 2026-11-15. Lucy 2: the RingCentral creds live there (rc_contact_sync).",
+   "_off_scheduler_note": "Verizon customers -> Taylor's RingCentral address book with '(VZ)' on the last name, one contact per live line, off the 'VZ Credico Lines' tab (verizon_credico_lines on Lucy 1). dedup by phone + state file; cancelled lines skipped. Carlos 2026-11-15. Lucy 2: the RingCentral creds live there (rc_contact_sync).",
+   "_base_args_note": "LIVE since 2026-11-16 (Megan, declared). `base_args` carries --live, so this HANDLE creates contacts for real -- `lucy rerun rc_contact_sync_verizon` is no longer a preview. Before this it was [], and the module is dry-run unless --live, so the handle previewed and created nothing: Carlos asked for the sync on 11-15 ('Go ahead and add in the customers you see on there') and it had never actually added anybody. It also meant the report could not close its own ticket -- a dry run creates no contacts, so it writes no manifest, so delivery_check correctly answered 'nothing can confirm it DELIVERED' every single run. What makes live-by-default safe here is the dedup: the address book is indexed by phone AND a state file records every line done, so a re-run adds nothing twice. For a preview now, run the module directly WITHOUT --live (python -m automations.rc_contact_sync.verizon).",
    "machine": "Lucy 2",
    "display_name": "RingCentral contacts - Verizon customers (VZ)",
    "source_type": "api",
@@ -18179,7 +18184,9 @@
    "command": [
     "automations.rc_contact_sync.verizon"
    ],
-   "base_args": [],
+   "base_args": [
+    "--live"
+   ],
    "cadence": {
     "weekdays": []
    },
@@ -18216,6 +18223,8 @@
    "verify": {
     "type": "not_configured"
    },
+   "close_on": "exit_zero",
+   "_close_on_note": "Megan 2026-11-16, declared: this is a READ-ONLY probe and it delivers nothing to anybody, so there is no artifact for delivery_check to confirm and its ticket sat open on 'ran clean, but nothing can confirm it DELIVERED' (11-15, with the two other Verizon handles). Exit 0 IS its delivery. That is honest here: main() returns 0 only after run() and push() both complete, and neither swallows — a missing Hub-inbox login, unreadable Credico mail or an unwritable control tab raises through _retry and the process exits non-zero, so a silent non-delivery is not a case this can hide. `verify` stays not_configured on purpose: what it produces is a names-and-counts listing on the 'VZ Inbox Probe' tab for a person to read, not a fill any verifier can check.",
    "timeout_minutes": 40
   },
   "verizon_texts": {
