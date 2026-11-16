@@ -782,8 +782,37 @@ def tableau_session(headless: bool = False, verbose: bool = True,
                     allow_form_login: bool = True,
                     window_size: tuple = (1680, 1280),
                     device_scale: float | None = None,
-                    profile_dir=None) -> Iterator[Page]:
+                    profile_dir=None,
+                    session_lock: bool = True,
+                    session_wait_s: "float | None" = None,
+                    priority: str = "normal") -> Iterator[Page]:
     """Yield a Page logged into Tableau via ownerville SSO.
+
+    THE SSO HOP IS AN OWNERVILLE SESSION USE, AND IT DID NOT TAKE THE LOCK
+    (fixed 2026-11-16). OWNERVILLE_SESSION_LOCK says it "lives in
+    ownerville_session() so no caller can be forgotten" — this caller was.
+    Getting into Tableau means visiting v2.ownerville.com and spending its
+    rqst token (_sso_to_tableau), so every Tableau report on a box was
+    reaching through whatever run held the session.
+
+    What that cost: Lucy 3, 2026-11-16. captainship_drafts ran 10:18:39 to
+    13:04 doing SSO hops; digi_docs' 10:30 add pass and icd_onboarding both
+    started at 10:30 holding/queueing for the same session. icd_onboarding
+    waited its full 30 minutes and gave up with OwnervilleBusy — it took the
+    lock, so it found out. digi_docs took the lock too and simply had the
+    session used underneath it: 26 of 52 people failed, interleaved with
+    successes, and the Slack post read as 26 new starts with no documents.
+
+    HELD FOR THE HOP, NOT FOR THE SESSION, and that distinction is the whole
+    design. ownerville_session() holds the lock for its entire context because
+    impersonation lives that long. Here, once Tableau has issued its own
+    cookie nothing touches ownerville again — and a Tableau context can live
+    for HOURS (captainship_drafts: 2h46m). Holding it throughout would starve
+    every ownerville report on the machine, which is a worse failure than the
+    one being fixed.
+
+    session_lock=False is for a caller that genuinely must not queue; it
+    restores the old, racy behaviour and should be rare.
 
     Uses Order Log's persistent profile + the exported ownerville
     storage_state so the login survives across runs without driving the
@@ -830,8 +859,14 @@ def tableau_session(headless: bool = False, verbose: bool = True,
                                  window_size=window_size, device_scale=device_scale)
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         try:
+            # The lock is taken inside _ensure_tableau_authenticated, which is
+            # the choke point every caller goes through — a dozen modules call
+            # it directly rather than through this context manager.
             _ensure_tableau_authenticated(page, verbose=verbose,
-                                          allow_form_login=allow_form_login)
+                                          allow_form_login=allow_form_login,
+                                          session_lock=session_lock,
+                                          session_wait_s=session_wait_s,
+                                          priority=priority)
             # Every entry into this context manager runs _sso_to_tableau, i.e. it
             # is ONE Tableau login. That is the number eStream is counting, so
             # the ledger records it separately from data pulls (Megan 2026-08-17).
@@ -842,7 +877,10 @@ def tableau_session(headless: bool = False, verbose: bool = True,
 
 
 def _ensure_tableau_authenticated(page: Page, verbose: bool = True,
-                                  allow_form_login: bool = False) -> None:
+                                  allow_form_login: bool = False,
+                                  session_lock: bool = True,
+                                  session_wait_s: "float | None" = None,
+                                  priority: str = "normal") -> None:
     """Make sure `page` has a Tableau session cookie. Two steps:
       1. Ensure ownerville is logged in (storage_state reuse; form only if
          allow_form_login=True).
@@ -850,13 +888,41 @@ def _ensure_tableau_authenticated(page: Page, verbose: bool = True,
          redirect via the Tableau SSO URL. After this returns, any
          subsequent goto() to a Tableau view URL will load the viz
          instead of bouncing to login.
+
+    BOTH STEPS ARE OWNERVILLE SESSION USES, so this holds
+    OWNERVILLE_SESSION_LOCK while they run (2026-11-16). THE LOCK LIVES HERE,
+    not in tableau_session(), because this is the choke point: a dozen modules
+    call `tp._ensure_tableau_authenticated(page, …)` straight, on their own
+    context — b2b_metrics.capture (four call sites), captainship_boards,
+    rep_sales_fill, and others. Putting it one level up in tableau_session()
+    would have left every one of them racing exactly as before, which is the
+    same way this caller got forgotten in the first place.
+
+    It is released the moment the hop finishes, NOT held for the Tableau work
+    that follows. Once Tableau has issued its own cookie nothing here touches
+    ownerville again, and a Tableau context can live for hours — on 2026-11-16
+    captainship_drafts ran 2h46m. Holding the machine's ownerville session
+    across that would starve every ownerville report on the box, which is a
+    worse failure than the race being fixed.
+
+    Re-entrant: _acquire_session_lock is depth-counted, so a caller already
+    inside ownerville_session() nests safely rather than deadlocking.
     """
-    # No profile_dir here: this helper does not take one, and passing an
-    # undefined name would NameError. The default in the message is right for
-    # this path, which runs on the shared profile.
-    _ensure_ownerville_logged_in(page, verbose=verbose,
-                                 allow_form_login=allow_form_login)
-    _sso_to_tableau(page, verbose=verbose)
+    wait_s = (_profile_wait_budget() if session_wait_s is None
+              else float(session_wait_s))
+    sess_fd = (_acquire_session_lock(wait_s=wait_s, verbose=verbose,
+                                     label="tableau sso hop",
+                                     priority=priority)
+               if session_lock else None)
+    try:
+        # No profile_dir here: this helper does not take one, and passing an
+        # undefined name would NameError. The default in the message is right
+        # for this path, which runs on the shared profile.
+        _ensure_ownerville_logged_in(page, verbose=verbose,
+                                     allow_form_login=allow_form_login)
+        _sso_to_tableau(page, verbose=verbose)
+    finally:
+        _release_session_lock(sess_fd)
 
 
 def _fetch_ownerville_sso_token(page: Page) -> Optional[str]:

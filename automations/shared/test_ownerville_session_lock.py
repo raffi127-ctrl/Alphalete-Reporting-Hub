@@ -27,6 +27,7 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from automations.shared import tableau_patchright as tp
 
@@ -122,6 +123,73 @@ class EveryCallerIsCovered(unittest.TestCase):
         self.assertIn("profile_dir", sig.parameters)
         self.assertIn("session_lock", sig.parameters)
         self.assertIsNone(sig.parameters["profile_dir"].default)
+
+
+class TheTableauSsoHopIsAnOwnervilleUse(_TempLock):
+    """2026-11-16. Getting into Tableau means visiting v2.ownerville.com and
+    spending its rqst token, and that hop took no lock — so every Tableau
+    report on a box reached through whatever run held the session.
+
+    Lucy 3 that morning: captainship_drafts ran 10:18:39 to 13:04 doing SSO
+    hops while digi_docs' add pass and icd_onboarding both started at 10:30 on
+    the same session. icd_onboarding took the lock and so at least found out
+    (`OwnervilleBusy` after waiting its full 30 minutes). digi_docs had the
+    session used underneath it: 26 of 52 failed, interleaved with successes,
+    and the Slack post read as 26 new starts with no documents.
+    """
+
+    def test_the_hop_holds_the_lock_while_it_runs(self):
+        held = {}
+
+        def _spy_ov(page, **kw):
+            held["ov"] = tp._OV_LOCK_DEPTH
+
+        def _spy_sso(page, **kw):
+            held["sso"] = tp._OV_LOCK_DEPTH
+
+        with mock.patch.object(tp, "_ensure_ownerville_logged_in", _spy_ov), \
+             mock.patch.object(tp, "_sso_to_tableau", _spy_sso):
+            tp._ensure_tableau_authenticated(object(), verbose=False)
+
+        self.assertGreater(held.get("ov", 0), 0,
+                           "the ownerville login must be inside the lock")
+        self.assertGreater(held.get("sso", 0), 0,
+                           "the SSO hop spends the rqst token — it is an "
+                           "ownerville session use")
+
+    def test_the_lock_is_released_before_the_tableau_work(self):
+        """Held for the hop, never for the session. A Tableau context can run
+        for hours (captainship_drafts: 2h46m); holding the machine's ownerville
+        session across that starves every ownerville report on the box, which
+        is worse than the race being fixed."""
+        with mock.patch.object(tp, "_ensure_ownerville_logged_in",
+                               lambda page, **kw: None), \
+             mock.patch.object(tp, "_sso_to_tableau", lambda page, **kw: None):
+            tp._ensure_tableau_authenticated(object(), verbose=False)
+        self.assertEqual(0, tp._OV_LOCK_DEPTH,
+                         "the hop must not leave the lock held")
+
+    def test_it_locks_by_default(self):
+        """Opt-OUT, never opt-in — the same rule ownerville_session follows,
+        and for the same reason: this caller is the one nobody remembered."""
+        sig = inspect.signature(tp._ensure_tableau_authenticated)
+        self.assertIs(sig.parameters["session_lock"].default, True)
+
+    def test_a_caller_already_holding_it_does_not_deadlock(self):
+        """b2b_metrics and friends call this straight from inside their own
+        session. flock is keyed to the open file description, so a second
+        os.open in one process would block on the first — forever."""
+        fd = tp._acquire_session_lock(wait_s=1, verbose=False, label="outer")
+        try:
+            with mock.patch.object(tp, "_ensure_ownerville_logged_in",
+                                   lambda page, **kw: None), \
+                 mock.patch.object(tp, "_sso_to_tableau",
+                                   lambda page, **kw: None):
+                tp._ensure_tableau_authenticated(object(), verbose=False)
+            self.assertGreater(tp._OV_LOCK_DEPTH, 0,
+                               "the outer holder still owns the lock")
+        finally:
+            tp._release_session_lock(fd)
 
 
 class ShortCadenceJobsSkipRatherThanQueue(unittest.TestCase):
