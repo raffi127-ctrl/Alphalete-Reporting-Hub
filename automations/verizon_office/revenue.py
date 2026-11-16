@@ -58,6 +58,16 @@ def revenue_board(owner: str, sv_path: Path, target: dt.date, out_dir: Path, lay
     L = C.lines(sv_path)
     upto = target - dt.timedelta(days=1)                  # Credico = through yesterday
     start, end = C.sales_week(upto)
+    # A WEEK NOBODY HAS SOLD IN YET SHOWS LAST WEEK (Carlos 2026-11-15:
+    # "Verizon starts on Sunday, so you'll post a sales board with nothing on
+    # it since they didn't work today"): Monday's file carries only Sunday,
+    # and a Sunday with no sales would make a blank one-day board. Fall back
+    # to the previous Sun-Sat week until the new one has a line sold.
+    if not _week_lines(L, start, end):
+        prev_upto = start - dt.timedelta(days=1)
+        if _week_lines(L, *C.sales_week(prev_upto)):
+            upto = prev_upto
+            start, end = C.sales_week(upto)
     tier, _why = C.office_tier(L, upto)
     per_rep: Dict[str, dict] = {}
     for l in _week_lines(L, start, end):
