@@ -415,7 +415,8 @@ def approved_keys(header, arows) -> set:
     return {(r[i["sp.SPM Number"]], r[i["spe.TN"]]) for r in arows if r[i["DTR Active Date"]]}
 
 
-def churn(owner, header, rows, target, out_dir, approved: Optional[set] = None) -> Tuple[Path, int]:
+def churn(owner, header, rows, target, out_dir, approved: Optional[set] = None,
+          lines: Optional[list] = None) -> Tuple[Path, int]:
     """Churn Rates by Rep (Carlos's "What's missing", 2026-11-07): of the
     APPROVED lines activated 0-30 / 31-60 days ago, how many have since
     disconnected (Credico: Status Code CAN with a Disc. line status). Office
@@ -427,6 +428,12 @@ def churn(owner, header, rows, target, out_dir, approved: Optional[set] = None) 
     approved activations"; Credico's SOW scores churn on lines that show an
     approval date). None = every activated line (the pre-11/15 board).
 
+    `lines` = order_log_tab.lines(sv): when given, the counts come off THOSE
+    merged lines with the churn tab's own rules (churn_tab.churn_units:
+    approved, active-or-disconnected, activation inside the window), so the
+    office row IS the tab's box (2026-11-15: the row-based count read 30/366
+    against the tab's 23/324).
+
     From the daily Sales Verification, not the weekly Compliance Flags,
     whose churn columns Credico has been leaving blank. That file carries
     about six weeks of sales, so 31-60 only ever holds the lines activated
@@ -437,7 +444,21 @@ def churn(owner, header, rows, target, out_dir, approved: Optional[set] = None) 
     cols = [w[0] for w in CHURN_WINDOWS]
     data: Dict[str, Dict[str, List[int]]] = defaultdict(lambda: {c: [0, 0] for c in cols})
     oldest = 0
-    for r in rows:
+    if lines is not None:
+        from automations.verizon_office import churn_tab as CT
+        for l in lines:
+            act = CT._d(l.get("Activation Date"))
+            if not act or not (CT.is_activated(l) and CT.is_approved(l)):
+                continue
+            age = (target - act).days
+            oldest = max(oldest, age)
+            gone = 1 if CT.is_dead(l) else 0
+            for name, lo, hi in CHURN_WINDOWS:
+                if lo <= age <= hi:
+                    for who in (l.get("Rep") or "(no rep)", "__office__"):
+                        data[who][name][0] += gone
+                        data[who][name][1] += 1
+    for r in ([] if lines is not None else rows):
         act = N._parse_date(r[i["DTR Active Date"]])
         if not act:
             continue
@@ -451,6 +472,17 @@ def churn(owner, header, rows, target, out_dir, approved: Optional[set] = None) 
                 for who in (r[i["Rep"]] or "(no rep)", "__office__"):
                     data[who][name][0] += gone
                     data[who][name][1] += 1
+    if lines is not None and approved is not None:
+        # the ROW-based count beside it, until the gap is explained
+        rb = {c: [0, 0] for c in cols}
+        st_mix: Dict[str, int] = defaultdict(int)
+        for r in rows:
+            act = N._parse_date(r[i["DTR Active Date"]])
+            if act and (r[i["sp.SPM Number"]], r[i["spe.TN"]]) in approved and 0 <= (target - act).days <= 30:
+                rb[cols[0]][1] += 1
+                rb[cols[0]][0] += 1 if r[i["DTR Status"]] == "Disconnected" else 0
+                st_mix[r[i["DTR Status"]] + "/" + r[i["spe.Status"]]] += 1
+        print("  churn by rep, row-based 0-30: %d/%d; statuses %s" % (rb[cols[0]][0], rb[cols[0]][1], dict(st_mix)), flush=True)
 
     def cell(dn):
         d, n = dn
@@ -552,7 +584,9 @@ def build(owner: str, sv_path: Path, target: dt.date, out_dir: Path) -> List[Dic
             paths = [activation_by_week(owner, header, rows, target, out_dir,
                                         approved=approved_keys(aheader, arows))[0]]
         elif slug == "churn":
-            paths = [churn(owner, header, rows, target, out_dir, approved=approved_keys(aheader, arows))[0]]
+            from automations.verizon_office import order_log_tab as OL
+            paths = [churn(owner, header, rows, target, out_dir, approved=approved_keys(aheader, arows),
+                           lines=OL.lines(sv_path))[0]]
         elif slug in ("revenue_board", "activation_revenue", "rep_tiers"):
             # Priced on Credico's comp grid (verizon_office.comp); these read
             # the file themselves -- they need fields the NDS rows don't carry.

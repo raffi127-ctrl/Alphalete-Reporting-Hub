@@ -211,7 +211,8 @@ def rolloff_rows(lines, today: dt.date) -> List[dict]:
 
 UNAPPROVED_HEADERS = ("Customer", "Sales Rep", "Order Date", "Activation Date", "Disconnect Date",
                       "Days Active", "Port / New", "Device")
-UNPAID_HEADERS = ("Rep Name", "Lines", "Unpaid $")
+UNPAID_HEADERS = ("Rep Name", "Lines", "Missed-Out Revenue")
+UNPAID_COL = 9                       # J:L, right beside the list (Carlos 2026-11-15: "more to the left")
 
 
 def line_would_pay(l, tier_pay: int) -> int:
@@ -419,16 +420,17 @@ def build_grid(lines, today: dt.date, tier: dict) -> Tuple[List[List[str]], dict
              "" if x["days_active"] is None else "%dd" % x["days_active"], x["kind"], x["device"]])
     if not una:
         row(["(no line has disconnected before approval)"])
-    marks["tables"].append((h2, len(g)))
-    # beside it (P:R), per rep: lines disconnected before approval + the $
+    marks["tables"].append((h2, len(g), len(UNAPPROVED_HEADERS)))
+    # beside it (J:L), per rep: lines disconnected before approval + the $
     # they are not getting paid (Carlos 2026-11-15)
     unpaid = unpaid_by_rep(lines, tier["pay"])
     while len(g) < h2 + len(unpaid):
         row()
-    g[h2 - 1][15:18] = list(UNPAID_HEADERS)
+    g[h2 - 1][UNPAID_COL:UNPAID_COL + 3] = list(UNPAID_HEADERS)
     for k, (rep_name, n, usd) in enumerate(unpaid, 1):
-        g[h2 - 1 + k][15:18] = [rep_name, str(n), "$%s" % format(usd, ",")]
+        g[h2 - 1 + k][UNPAID_COL:UNPAID_COL + 3] = [rep_name, str(n), "$%s" % format(usd, ",")]
     marks["unpaid_list"] = (h2, h2 + len(unpaid))
+    marks["unapproved_list"] = (h2, max(len(g), h2 + len(una)))
     row()
     rep_rows = [("OFFICE TOTAL (all reps)", office["0-30"]["rate"], office["0-30"]["activated"], office["0-30"]["sold"])]
     rep_rows += sorted(((r, v["0-30"]["rate"], v["0-30"]["activated"], v["0-30"]["sold"]) for r, v in reps.items()
@@ -519,17 +521,28 @@ def _format_requests(sheet_id: int, marks: dict) -> List[dict]:
         if v is not None:
             color = next(col for floor, col in _ACT_BANDS["0-30 Day"] if v >= floor)
             reqs.append(fill(r - 1, r, c, c + 1, {"Green": GREEN, "Yellow": YELLOW, "Red": RED}[color], c == 16))
-    for h, last in marks["tables"]:
-        reqs.append(box(h - 1, last, 0, 13))
+    for t in marks["tables"]:
+        h, last = t[0], t[1]
+        reqs.append(box(h - 1, last, 0, t[2] if len(t) > 2 else 13))
     for r in marks["quick_rows"]:
         reqs.append(fill(r - 1, r, 0, 13, RED))
     r0, r1 = marks["rep_list"]
     reqs.append(box(r0 - 1, r1, 15, 18))
     reqs.append(fill(r0, r0 + 1, 15, 18, (0.93, 0.93, 0.93), True))      # office total row
     if marks.get("unpaid_list"):
+        # the missed-out revenue table: boxed, beside the list, BIGGER type on
+        # taller rows (Carlos 2026-11-15: "make it all bigger and put it more
+        # to the left")
         u0, u1 = marks["unpaid_list"]
-        reqs.append(box(u0 - 1, u1, 15, 18))
-        reqs.append(fill(u0, u0 + 1, 15, 18, (0.93, 0.93, 0.93), True))  # office total row
+        c0, c1 = UNPAID_COL, UNPAID_COL + 3
+        reqs.append(box(u0 - 1, u1, c0, c1))
+        reqs.append(fill(u0, u0 + 1, c0, c1, (0.93, 0.93, 0.93), True))   # office total row
+        a0, a1 = marks["unapproved_list"]
+        lo, hi = u0 - 1, max(u1, a1)
+        reqs.append({"repeatCell": {"range": rng(lo, hi, 0, c1), "cell": {"userEnteredFormat": {"textFormat": {"fontSize": 13}}},
+                                    "fields": "userEnteredFormat.textFormat.fontSize"}})
+        reqs.append({"updateDimensionProperties": {"range": {"sheetId": sheet_id, "dimension": "ROWS", "startIndex": lo, "endIndex": hi},
+                                                   "properties": {"pixelSize": 34}, "fields": "pixelSize"}})
     # THE TWO TOP TABLES BIGGER (Carlos 2026-11-15: "the tiers table ... make
     # that all bigger ... the product / activations / disconnects / churn
     # table: make that one bigger as well"): larger type in the box (A:G) and
@@ -543,8 +556,8 @@ def _format_requests(sheet_id: int, marks: dict) -> List[dict]:
     reqs.append({"autoResizeDimensions": {"dimensions": {"sheetId": sheet_id, "dimension": "COLUMNS", "startIndex": 0, "endIndex": 18}}})
     # A:N serve BOTH the box (Product .. 31-60 Day rate) and the rolloff tables
     # (Days Left .. Status Reason); O is the gap; P:R the rep list.
-    for c, px in ((0, 215), (1, 150), (2, 140), (3, 230), (4, 280), (5, 240), (6, 210), (7, 150), (8, 165), (9, 175),
-                  (10, 165), (11, 160), (12, 280), (13, 30), (14, 30), (15, 230), (16, 190), (17, 125)):
+    for c, px in ((0, 215), (1, 150), (2, 140), (3, 230), (4, 280), (5, 240), (6, 210), (7, 150), (8, 165), (9, 240),
+                  (10, 165), (11, 230), (12, 280), (13, 30), (14, 30), (15, 230), (16, 190), (17, 125)):
         reqs.append({"updateDimensionProperties": {"range": {"sheetId": sheet_id, "dimension": "COLUMNS", "startIndex": c, "endIndex": c + 1},
                                                    "properties": {"pixelSize": px}, "fields": "pixelSize"}})
     return reqs

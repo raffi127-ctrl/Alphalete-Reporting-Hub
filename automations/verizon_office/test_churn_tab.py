@@ -96,8 +96,8 @@ class ChurnTabTest(unittest.TestCase):
         # the per-rep unpaid table beside it: Will's port IP17 at Tier 4 = $190
         self.assertEqual(CT.unpaid_by_rep(self.lines, 190), [("OFFICE TOTAL", 1, 190), ("Will Bautista", 1, 190)])
         u0, u1 = marks["unpaid_list"]
-        self.assertEqual(grid[u0 - 1][15:18], list(CT.UNPAID_HEADERS))
-        self.assertEqual(grid[u0][15:18], ["OFFICE TOTAL", "1", "$190"])
+        self.assertEqual(grid[u0 - 1][CT.UNPAID_COL:CT.UNPAID_COL + 3], list(CT.UNPAID_HEADERS))
+        self.assertEqual(grid[u0][CT.UNPAID_COL:CT.UNPAID_COL + 3], ["OFFICE TOTAL", "1", "$190"])
 
     def test_credico_tier_neutral_under_15(self):
         t = CT.credico_tier(self.sv, TODAY)

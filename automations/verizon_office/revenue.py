@@ -415,7 +415,9 @@ def main(argv=None) -> int:
         from automations.verizon_office import thread_boards as TB
         h, rows = TB.nds_rows(Path(sv), date_col="Approval Date")
         if a.board == "churn_by_rep":
-            got = TB.churn(office.owner, *TB.nds_rows(Path(sv)), target, out_dir, approved=TB.approved_keys(h, rows))[0]
+            from automations.verizon_office import order_log_tab as OL
+            got = TB.churn(office.owner, *TB.nds_rows(Path(sv)), target, out_dir, approved=TB.approved_keys(h, rows),
+                           lines=OL.lines(Path(sv)))[0]
         elif a.board == "approval_by_week":
             got = TB.activation_by_week(office.owner, *TB.nds_rows(Path(sv)), target, out_dir,
                                         approved=TB.approved_keys(h, rows))[0]
