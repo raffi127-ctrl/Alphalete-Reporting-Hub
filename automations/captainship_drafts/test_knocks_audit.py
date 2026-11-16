@@ -178,6 +178,36 @@ class AFailedOwnerIsNotAnAccountedOwner(unittest.TestCase):
         self.assertNotIn("tolerated band", body)
 
 
+class AFailureNoteKeepsItsEvidence(unittest.TestCase):
+    """A mis-pinned campaign is the one failure you cannot diagnose without
+    the headers, and the old 160-char cut removed exactly those."""
+
+    # The real note, as assert_campaign_grid raises it.
+    _PIN = ("KnocksPullFailed: campaign 2 (B2B AT&T SBS) was pinned, but the "
+            "Disposition grid on screen is not a B2B grid at all — the pin did "
+            "not take and every number from it belongs to another campaign. "
+            "Refusing to publish them. Headers seen: Close, Come Back, "
+            "First Knock, ID, Knocks, Last Knock, No Contact, None, "
+            "Presentation, Rep, Sale, Talk To")
+
+    def test_the_headers_survive_into_the_finding(self):
+        f = A.failure_findings({"knock_dispo:Carlos Hidalgo": self._PIN},
+                               captain="carlos")
+        self.assertIn("Headers seen:", f[0]["detail"])
+        self.assertIn("Presentation", f[0]["detail"])
+
+    def test_the_boilerplate_alone_would_have_eaten_the_old_budget(self):
+        # Guards the reason NOTE_MAX exists: if someone trims it back toward
+        # 160, this says why that breaks the only note that matters.
+        head = self._PIN.split("Headers seen:")[0]
+        self.assertGreater(len(head), 160)
+        self.assertGreater(A.NOTE_MAX, len(head))
+
+    def test_a_runaway_note_is_still_bounded(self):
+        f = A.failure_findings({"knock_dispo:X": "z" * 5000}, captain="c")
+        self.assertLess(len(f[0]["detail"]), A.NOTE_MAX + 100)
+
+
 class TheTablePrintsEveryMorning(unittest.TestCase):
     """A check whose output only exists on bad days cannot be trusted on good
     ones — the ICD-by-ICD table is the artefact, not the alert."""

@@ -54,6 +54,18 @@ except Exception:  # noqa: BLE001 — the audit must survive an import hiccup
 # does not need to hear about it every morning.
 REPORT_MIN_GAP = 2
 
+# How much of an error note survives into the finding. It was 160, which is
+# shorter than the one note that most needs reading: assert_campaign_grid's
+# "campaign N (name) was pinned, but the Disposition grid on screen is ... —
+# the pin did not take ... Headers seen: <24 headers>". Its boilerplate alone
+# runs past 180 characters, so the HEADERS — the only part that says which grid
+# actually rendered, and therefore the only part anyone can act on — were cut
+# off every single time that guard fired (Carlos Hidalgo, 11-12/11-15/11-16).
+# The alert named a failure and then withheld its evidence, which meant an SSH
+# into Lucy 3 to learn anything at all. This lands in the THREAD, not the
+# channel line, so the standing one-line-channel-post rule is unaffected.
+NOTE_MAX = 700
+
 INCIDENT_KEY = "knocks-short-read"
 TITLE = "Captainship knocks — a board came back short or failed"
 
@@ -157,7 +169,7 @@ def failure_findings(errors: dict, *, captain: str = "") -> list[dict]:
         out.append({
             "office": who or f"{captain} (whole {section} section)",
             "date": "", "kind": "failed",
-            "detail": f"{section} pull FAILED — {note[:160]}",
+            "detail": f"{section} pull FAILED — {note[:NOTE_MAX]}",
         })
     return out
 
