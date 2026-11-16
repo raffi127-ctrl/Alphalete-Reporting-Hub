@@ -168,7 +168,7 @@ def apply(workbook, week_start, source: str,
     # instead, which is the useful half anyway.
     if dry_run:
         head = [str(h).strip() for h in (S._values(ws)[S.HEADER_ROW - 1] or [])]
-        would = [c for c in list(B.COLUMNS) + [B.TERMINATED_AT]
+        would = [c for c in list(B.COLUMNS) + list(S.PAST_THE_CHART)
                  if c not in head]
         if would:
             log("  (dry run — would add the %s column(s))" % ", ".join(would))

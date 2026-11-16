@@ -104,12 +104,97 @@ SIGNER_KEY = "employee-1"
 # blueink-creds.json (that id is only used by the now-capped API path).
 TEMPLATE_NAME = "UNIVERSAL I9 MASTER FORM"
 
-BUNDLE_LABEL = "Alphalete New Start Docs"
-EMAIL_SUBJECT = "Your Alphalete onboarding documents"
-EMAIL_MESSAGE = (
-    "Welcome aboard! Please sign these before your first day. "
-    "Reach out to your trainer if anything looks wrong."
-)
+# --- WHAT THE NEW START ACTUALLY RECEIVES ----------------------------------
+# PER OFFICE SINCE 2026-11-15 (Megan: "we need to make sure that it's set up
+# correctly for that ICD when we launch"). An ICD's new start opening an email
+# that says Alphalete has been sent somebody else's paperwork as far as they
+# can tell, on the first thing our company ever sends them.
+#
+# READ THIS BEFORE CHANGING ANY OF IT. These three strings are used by the API
+# path only, and the API path is capped -- the live sends go through
+# `ui_send.py` (`--via ui`, the default), which sets the envelope LABEL and
+# nothing else. Checked against the account on 2026-11-15: every bundle sent on
+# 11/14 carries `email_subject: ''` and `email_message: ''`, so what new starts
+# actually get today is Blue Ink's own stock wording, and these words have
+# never reached anybody. The envelope template holds no subject or message
+# either (its only fields are name, documents and signers), so there is no
+# third place this could be coming from.
+#
+# They are defined per office anyway, because the moment the wizard's message
+# step is wired up this is what it will say, and because `preflight.py` reads
+# them to tell an office what its new starts WILL get before it launches.
+DEFAULT_OFFICE_NAME = "Alphalete"
+
+
+def office_name(office_key: str = "") -> str:
+    """The office's own name for itself, as THEY typed it.
+
+    From the ECO sign-up's `office_label`, which the roster deliberately leaves
+    exactly as typed -- it is their wording, and title-casing it mangles things
+    like AT&T. Falls back to Alphalete, so Alphalete's own machines and
+    anything that does not name an office read exactly as they did before.
+    """
+    key = str(office_key or "").strip().lower()
+    if not key or key in ("raf", "alphalete"):
+        return DEFAULT_OFFICE_NAME
+    try:
+        from automations.icd_alerts import offices as O
+        o = O.get(key)
+    except Exception:                                       # noqa: BLE001
+        o = None
+    return (getattr(o, "label", "") or "").strip() or DEFAULT_OFFICE_NAME
+
+
+def bundle_label(office_key: str = "") -> str:
+    return "%s New Start Docs" % office_name(office_key)
+
+
+def email_subject(office_key: str = "") -> str:
+    return "Your %s onboarding documents" % office_name(office_key)
+
+
+def email_subject_v2(office_key: str = "") -> str:
+    """DRAFT, awaiting Megan's sign-off (Raf: "Lets get in agreement with
+    email title and body"). Named apart from `email_subject` so approving it
+    is one edit here and nothing goes out on a half-made decision."""
+    return "Your I-9 and W-4 from %s — please sign before your first day" % \
+        office_name(office_key)
+
+
+def email_message(office_key: str = "") -> str:
+    """What the new start reads in the Blue Ink email.
+
+    WRITTEN TO SIT BESIDE THE SKOOL EMAIL, not to stand alone. That one goes
+    out Monday 8am from the office's reception Gmail and already promises this
+    one in its own words -- "You'll also get a separate email from Blueink with
+    your I-9 and W-4. Please fill those out before you come in. It speeds
+    everything up on your first day." So this says the same thing in the same
+    voice, and does not re-explain orientation or the three apps: a new start
+    who gets two emails that each try to be the whole welcome reads neither.
+
+    WHAT IS DELIBERATELY NOT IN IT:
+      * no start date, time or address. Those differ per office and per person,
+        they are what the recruiter said on the phone, and an email that
+        contradicts that call is worse than an email that stays quiet
+        ([[feedback_house_rules_per_office]]).
+      * no pay, and nothing about who we hire or who the job suits
+        ([[feedback_recruiting_copy_compliance]]).
+      * no deadline we cannot enforce. "Before your first day" is the real
+        requirement; a made-up "within 24 hours" is a threat we never act on.
+      * no office name in the BODY. The subject and the sender already carry
+        it, and the body is the one part that would be WRONG rather than
+        merely generic if an office resolved badly.
+    """
+    return ("Welcome aboard! These are your I-9 and W-4. Please sign them "
+            "before your first day — it saves you doing paperwork when you "
+            "could be training. If anything on them looks wrong, tell your "
+            "trainer before you sign.")
+
+
+# The originals, unchanged, for anything still reading them by name.
+BUNDLE_LABEL = bundle_label()
+EMAIL_SUBJECT = email_subject()
+EMAIL_MESSAGE = email_message()
 
 
 def _creds() -> dict:

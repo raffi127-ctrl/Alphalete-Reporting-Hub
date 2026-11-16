@@ -15,7 +15,7 @@ from automations.icd_onboarding import sheet as S
 
 SUNDAY = dt.date(2026, 11, 8)   # the board's week starts on a Sunday
 MONDAY = SUNDAY                # older name, same week
-HEAD = list(B.COLUMNS) + [B.TERMINATED_AT]
+HEAD = list(B.COLUMNS) + list(S.PAST_THE_CHART)
 
 
 class FakeWS:
@@ -265,7 +265,8 @@ class _FakeWS:
 def test_a_missing_column_is_appended(monkeypatch):
     """open_board never re-lays an existing tab, so a column added to
     B.COLUMNS would only ever reach boards made afterwards."""
-    head = [c for c in B.COLUMNS if c != B.GENDER] + [B.TERMINATED_AT]
+    head = ([c for c in B.COLUMNS if c != B.GENDER]
+            + list(S.PAST_THE_CHART))
     ws = _FakeWS(head)
     got = S.ensure_columns(ws, log=lambda *a: None)
     assert got == [B.GENDER]
@@ -277,7 +278,7 @@ def test_a_missing_column_is_appended(monkeypatch):
 
 def test_nothing_is_moved_or_removed(monkeypatch):
     """Somebody may have added a column of their own."""
-    head = list(B.COLUMNS) + [B.TERMINATED_AT, "Megan's note"]
+    head = list(B.COLUMNS) + list(S.PAST_THE_CHART) + ["Megan's note"]
     ws = _FakeWS(head)
     assert S.ensure_columns(ws, log=lambda *a: None) == []
     assert ws.updates == []
@@ -288,3 +289,33 @@ def test_an_empty_tab_is_left_alone():
     ws = _FakeWS([])
     assert S.ensure_columns(ws, log=lambda *a: None) == []
     assert ws.updates == []
+
+
+def test_ensure_columns_adds_every_column_past_the_chart():
+    """`Removed Because` was laid out on NEW boards and missing from
+    ensure_columns, so every board that already existed silently lacked it and
+    every removal logged "reason not written". The 15 removals on the week of
+    11/08 have no reason recorded because of it (2026-11-15).
+
+    One list now, so a column cannot be in the layout and not in the repair.
+    """
+    import inspect
+    head = inspect.getsource(S._header_block)
+    fix = inspect.getsource(S.ensure_columns)
+    assert "PAST_THE_CHART" in head
+    assert "PAST_THE_CHART" in fix
+    # and the thing that actually matters: the repair covers the layout
+    laid_out = S._header_block()[0]
+    for col in list(B.COLUMNS) + list(S.PAST_THE_CHART):
+        assert col in laid_out, col
+
+
+def test_the_removal_reason_column_is_not_a_step():
+    """It is row state kept past the chart, like the Terminated date -- not a
+    column anybody works through, and no source may tick it."""
+    from automations.icd_onboarding import fillers as F
+    assert B.REMOVED_WHY in S.PAST_THE_CHART
+    assert B.REMOVED_WHY not in B.COLUMNS
+    assert B.REMOVED_WHY not in B.TICKS
+    for source, cols in F.SOURCES.items():
+        assert B.REMOVED_WHY not in cols, source

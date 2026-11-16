@@ -87,8 +87,17 @@ def rows_of(grid: List[List[str]]) -> List[Dict]:
     return out
 
 
+# The columns past the chart: row state, not steps. ONE list, because having
+# two is what broke `Removed Because` -- a new board was laid out with it and
+# `ensure_columns` was not told about it, so every board that already existed
+# silently lacked the column and every removal logged "reason not written"
+# instead. The 15 removals on the week of 11/08 have no reason recorded for
+# exactly that reason (2026-11-15).
+PAST_THE_CHART = (B.TERMINATED_AT, B.REMOVED_WHY)
+
+
 def _header_block() -> List[List[str]]:
-    return [list(B.COLUMNS) + [B.TERMINATED_AT, B.REMOVED_WHY]]
+    return [list(B.COLUMNS) + list(PAST_THE_CHART)]
 
 
 def ensure_columns(ws, log=print) -> List[str]:
@@ -108,7 +117,8 @@ def ensure_columns(ws, log=print) -> List[str]:
     head = [str(h).strip() for h in (grid[HEADER_ROW - 1] if grid else [])]
     if not head:
         return []
-    missing = [c for c in list(B.COLUMNS) + [B.TERMINATED_AT] if c not in head]
+    missing = [c for c in list(B.COLUMNS) + list(PAST_THE_CHART)
+               if c not in head]
     if not missing:
         return []
     at = len(head) + 1
