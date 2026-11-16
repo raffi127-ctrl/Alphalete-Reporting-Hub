@@ -77,6 +77,37 @@ class ActivationsTodayTest(unittest.TestCase):
         outs = run.render(work, self.tmp / "a.png")
         self.assertTrue(outs[0].exists())
 
+    def test_wireless_one_row_per_line(self):
+        """Raf 11/16: every line itemized with its own status; activated
+        lines of a still-open order show greyed; all-active orders drop."""
+        def line(cust, spm, status, act=""):
+            return {"Owner Name": "Rafael Hidalgo", "Rep": "Zed Rep",
+                    "Customer Name": cust, "sp.SPM Number": spm,
+                    "sp.Order Date (copy)": "11/02/2026",
+                    "Product Type (Broken Out)": "WIRELESS",
+                    "Package": "AT&T Value 2.0", "spe.Status": status,
+                    "Status Date": "11/14/2026",
+                    "Activatoin Date (order log)": act}
+        rows = [line("MIX M", "SPM9", "Shipped"),
+                line("MIX M", "SPM9", "Active", "11/12/2026"),
+                line("MIX M", "SPM9", "Delivered"),
+                line("MIX M", "SPM9", "Cancelled"),
+                line("DONE D", "SPM8", "Active", "11/10/2026")]
+        wl = pull.wireless_pending(rows)
+        self.assertEqual([r["spe.Status"] for r in wl],
+                         ["Shipped", "Delivered", "Active"])
+        self.assertEqual(pull.wireless_orders(wl), 1)
+        work = run.build(wl, "Rafael Hidalgo", self.day)
+        cells = [r.cells for r in work["sections"][0]["rows"]]
+        self.assertEqual(cells[0][0], "MIX M")
+        self.assertEqual(cells[1][0], "")
+        self.assertEqual(cells[0][3], "Shipped 11/14")
+        self.assertEqual(cells[2][3], "Activated 11/12")
+        self.assertEqual(cells[1][5], "Line 2 of 3 · AT&T Value 2.0")
+        self.assertEqual(work["sections"][0]["rows"][2].status, "Activated")
+        self.assertEqual(run.count_text(wl), "0 installs + 1 wireless pending")
+        self.assertTrue(run.render(work, self.tmp / "w.png")[0].exists())
+
 
 if __name__ == "__main__":
     unittest.main()

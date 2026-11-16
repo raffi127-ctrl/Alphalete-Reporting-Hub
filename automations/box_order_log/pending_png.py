@@ -167,9 +167,11 @@ def _draw_section(draw, x, y, section, widths, work, fonts) -> int:
         return y + SECTION_GAP
 
     for rep, rep_rows in section["reps"]:
+        # activations_today (Raf 11/16) draws one row per wireless LINE; rows
+        # of the same order share .order, so the band still counts orders.
+        n_ord = len({getattr(s, "order", "") or id(s) for s in rep_rows})
         y = _full_row(draw, x, y, total_w, BAND_H, BAND_BG,
-                      "{}  •  {} order{}".format(rep, len(rep_rows),
-                                                 pending.plural(len(rep_rows))),
+                      "{}  •  {} order{}".format(rep, n_ord, pending.plural(n_ord)),
                       f_band)
         for s in rep_rows:
             # sp_order_log's AT&T worklist rides this renderer with its own

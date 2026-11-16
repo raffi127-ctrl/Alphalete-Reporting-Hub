@@ -62,6 +62,10 @@ COLUMNS = ("Customer", "Phone", "Sale Date", "Status", "Install", "Package")
 # Wireless (Raf 11/12, pending lines under the same rep) green.
 _YELLOW, _BLUE, _GREEN = "FFF2CC", "DDEBF7", "E2EFDA"
 WIRELESS_TAG = "Wireless"
+# Raf 11/16: a line of a pending wireless order that is already activated
+# shows (so the rep sees the whole order) but greyed out.
+_GREY = "EDEDED"
+ACTIVATED_TAG = "Activated"
 
 
 def status_color(install_type: str, _history=()) -> str:
@@ -72,13 +76,16 @@ def status_color(install_type: str, _history=()) -> str:
         return _BLUE
     if t == WIRELESS_TAG.lower():
         return _GREEN
+    if t == ACTIVATED_TAG.lower():
+        return _GREY
     return ""
 
 
 class _Row:
     """One install dressed for box_order_log.pending_png (pre-baked cells)."""
-    def __init__(self, cells, status, rep, sale_date, customer):
+    def __init__(self, cells, status, rep, sale_date, customer, order=""):
         self.cells = cells
+        self.order = order   # same for every line of one wireless order
         self.status = status
         self.history: tuple = ()
         self.rep = rep
@@ -101,10 +108,38 @@ def _short_product(v: str) -> str:
 def count_text(rows) -> str:
     """'18 installs' or '18 installs + 40 wireless pending' (Eve 11/12: the
     first sample said '391 installs' when most were wireless orders)."""
-    wl = sum(1 for r in rows if pull.is_wireless(r))
-    n = len(rows) - wl
+    wl = pull.wireless_orders(rows)
+    n = sum(1 for r in rows if not pull.is_wireless(r))
     txt = "{} install{}".format(n, "" if n == 1 else "s")
     return txt + (" + {} wireless pending".format(wl) if wl else "")
+
+
+def _md(d) -> str:
+    return "{}/{}".format(d.month, d.day) if d else ""
+
+
+def _wireless_cells(r, sale):
+    """Raf 11/16: one row per LINE with its own status. Customer / phone /
+    sale date only on line 1 so the order reads as one block."""
+    i, k = int(r.get(pull.LINE_NO) or 1), int(r.get(pull.LINES) or 1)
+    act = pull.is_activated(r)
+    if act:
+        when = pull.parse_date(r.get(pull.ACTIVATION))
+        status = ACTIVATED_TAG + (" " + _md(when) if when else "")
+    else:
+        st = r.get(pull.STATUS, "").strip() or "—"
+        when = pull.parse_date(r.get(pull.STATUS_DATE))
+        status = st + (" " + _md(when) if when else "")
+    first = i == 1
+    line = "Line {} of {}".format(i, k) if k > 1 else "1 line"
+    pkg = (r.get(pull.PACKAGE, "") or "").strip()
+    return ((r.get(pull.CUSTOMER, "") if first else "",
+             r.get(pull.PHONE, "") if first else "",
+             sale.strftime("%m/%d/%Y") if (sale and first) else "",
+             status,
+             ACTIVATED_TAG if act else WIRELESS_TAG,
+             "{} · {}".format(line, pkg) if pkg else line),
+            ACTIVATED_TAG if act else WIRELESS_TAG)
 
 
 def build(rows: List[Dict[str, str]], owner: str, day: dt.date) -> Dict:
@@ -115,22 +150,23 @@ def build(rows: List[Dict[str, str]], owner: str, day: dt.date) -> Dict:
         cust = r.get(pull.CUSTOMER, "")
         status = r.get(pull.STATUS, "")
         wl = pull.is_wireless(r)
-        install = WIRELESS_TAG if wl else r.get(pull.TECH, "")
-        package = r.get(pull.PACKAGE, "") or _short_product(r.get(pull.PRODUCT, ""))
-        if wl and r.get(pull.LINES):
-            k = int(r[pull.LINES])
-            package = "{} line{}".format(k, "" if k == 1 else "s")
-        cells = (cust,
-                 r.get(pull.PHONE, ""),
-                 sale.strftime("%m/%d/%Y") if sale else "",
-                 status or "—",
-                 install,
-                 package)
-        items.append(_Row(cells, install, r.get(pull.REP, "") or "(no rep)",
-                          sale, cust))
+        if wl:
+            cells, color = _wireless_cells(r, sale)
+        else:
+            color = r.get(pull.TECH, "")
+            package = r.get(pull.PACKAGE, "") or _short_product(r.get(pull.PRODUCT, ""))
+            cells = (cust,
+                     r.get(pull.PHONE, ""),
+                     sale.strftime("%m/%d/%Y") if sale else "",
+                     status or "—",
+                     color,
+                     package)
+        items.append(_Row(cells, color, r.get(pull.REP, "") or "(no rep)",
+                          sale, cust,
+                          order=r.get(pull.ORDER_KEY, "") or str(id(r))))
     n = len(items)
-    n_wl = sum(1 for r in rows if pull.is_wireless(r))
-    n_in = n - n_wl
+    n_wl = pull.wireless_orders(rows)
+    n_in = sum(1 for r in rows if not pull.is_wireless(r))
     reps = bp.by_rep(items)
     day_txt = day.strftime("%A, %B %d, %Y").replace(" 0", " ")
     if not n:
@@ -388,8 +424,10 @@ def post_pending_thread(mine, owner: str, day: dt.date, *, dry_run: bool,
         index_ts = _text(ts, "👉 *Tap your name:* (names loading...)")
         links = []
         for rep, rr in part:
-            k_wl = sum(1 for x in rr if x.cells[4] == WIRELESS_TAG)
-            k_in = len(rr) - k_wl
+            wl_rows = [x for x in rr if x.status in (WIRELESS_TAG, ACTIVATED_TAG)]
+            k_wl = len({x.order for x in wl_rows})
+            k_in = len(rr) - len(wl_rows)
+            k_orders = k_in + k_wl
             w = dict(work, count=len(rr),
                      title="Pending Orders — {} — {}".format(rep, day_txt),
                      subtitle="{} — {} install{} today + {} wireless order{} "
@@ -400,7 +438,7 @@ def post_pending_thread(mine, owner: str, day: dt.date, *, dry_run: bool,
             png = tmp / "{}.png".format("".join(c for c in rep if c.isalnum()) or "rep")
             pending_png.render(w, png)
             r_ts = _image_reply(ts, "*{}* — {} order{}".format(
-                rep, len(rr), bp.plural(len(rr))), png,
+                rep, k_orders, bp.plural(k_orders)), png,
                 "{} - Pending Orders {}.png".format(rep, md))
             links.append((rep, _link(r_ts) if r_ts else ""))
         index = "\n".join("• <{}|{}>".format(u, rep) if u else "• {}".format(rep)
