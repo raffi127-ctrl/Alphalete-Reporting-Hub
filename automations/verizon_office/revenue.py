@@ -412,9 +412,11 @@ def main(argv=None) -> int:
         h, rows = TB.nds_rows(Path(sv), date_col="Approval Date")
         if a.board == "churn_by_rep":
             got = TB.churn(office.owner, *TB.nds_rows(Path(sv)), target, out_dir, approved=TB.approved_keys(h, rows))[0]
+        elif a.board == "approval_by_week":
+            got = TB.activation_by_week(office.owner, *TB.nds_rows(Path(sv)), target, out_dir,
+                                        approved=TB.approved_keys(h, rows))[0]
         else:
-            fn = TB.activation_rate if a.board == "approval_rate" else TB.activation_by_week
-            got = fn(office.owner, h, rows, target, out_dir)[0]
+            got = TB.activation_rate(office.owner, h, rows, target, out_dir)[0]
     else:
         fn = {"activation_one": activation_revenue_one, "activation": activation_revenue,
               "revenue_board": revenue_board, "rep_tiers": rep_tiers}[a.board]

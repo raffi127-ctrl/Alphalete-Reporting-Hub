@@ -304,7 +304,8 @@ def status_orders(owner, header, rows, target, out_dir, slug: str) -> Tuple[Path
                   empty_note=f"No new Local Office {noun} orders."), len(hits)
 
 
-def activation_by_week(owner, header, rows, target, out_dir, weeks: int = 6) -> Tuple[Path, int]:
+def activation_by_week(owner, header, rows, target, out_dir, weeks: int = 6,
+                       approved: Optional[set] = None) -> Tuple[Path, int]:
     """APPROVAL Rate by Week-Ending since 2026-11-15 (Carlos: "We should be
     looking at approval rate"): build() hands this rows whose DTR Active Date
     is the Approval Date. The shape is the 11/07 Activation Rate by Week-Ending:
@@ -317,8 +318,16 @@ def activation_by_week(owner, header, rows, target, out_dir, weeks: int = 6) -> 
     Activation Rate by Week Ending (Carlos 2026-11-15: "let's make sure that
     for that one, we do 6 weeks ... the most recent week is on the far
     right"). Counted "ever activated": a line that activated and later
-    disconnected still counts (the Churn board carries the disconnects)."""
-    from automations.b2b_metrics.rep_boards import render_table_png
+    disconnected still counts (the Churn board carries the disconnects).
+
+    `approved` = approved_keys(...) over the ACTIVATION rows: approved/sold
+    per rep, and under the rep table an office block per week-ending with
+    where every line sold that week stands -- approved, pending activation,
+    pending approval, canceled, disconnected (Carlos 2026-11-15: "we need
+    something that shows how many sales are pending activation, how many
+    are pending approval, how many have canceled, how many have
+    disconnected"). None = the old board off DTR Active Date, no block."""
+    from automations.b2b_metrics.rep_boards import render_sections_png, render_table_png
     from automations.office_metrics import nds_orderlog as N
     from automations.rep_activations.aggregate import week_bounds
     i = {c: header.index(c) for c in header}
@@ -326,16 +335,33 @@ def activation_by_week(owner, header, rows, target, out_dir, weeks: int = 6) -> 
     ends = [this_sun - dt.timedelta(days=1 + 7 * k) for k in reversed(range(weeks))]   # oldest first
     cols = [f"WE {e.month}/{e.day}" for e in ends]
     data: Dict[str, Dict[str, List[int]]] = defaultdict(lambda: {c: [0, 0] for c in cols})
+    STANDS = ("Approved", "Pending activation", "Pending approval", "Canceled", "Disconnected")
+    stands: Dict[str, Dict[str, int]] = {k: {c: 0 for c in cols} for k in ("Sold",) + STANDS}
     for r in rows:
         sold = N._parse_date(r[i["sp.Order Date"]])
         if not sold:
             continue
         for c, e in zip(cols, ends):
             if e - dt.timedelta(days=6) <= sold <= e:
-                act = 1 if r[i["DTR Active Date"]] else 0
+                if approved is None:
+                    act = 1 if r[i["DTR Active Date"]] else 0
+                else:
+                    act = 1 if (r[i["sp.SPM Number"]], r[i["spe.TN"]]) in approved else 0
                 for who in (r[i["Rep"]] or "(no rep)", "__office__"):
                     data[who][c][0] += act
                     data[who][c][1] += 1
+                st = r[i["DTR Status"]]
+                stands["Sold"][c] += 1
+                if st == "Disconnected":
+                    stands["Disconnected"][c] += 1
+                elif st == "Canceled":
+                    stands["Canceled"][c] += 1
+                elif act:
+                    stands["Approved"][c] += 1
+                elif r[i["DTR Active Date"]]:
+                    stands["Pending approval"][c] += 1
+                else:
+                    stands["Pending activation"][c] += 1
 
     def cell(an):
         a, n = an
@@ -350,10 +376,16 @@ def activation_by_week(owner, header, rows, target, out_dir, weeks: int = 6) -> 
     for rep in sorted(data, key=str.lower):
         table.append((rep, "", False, {c: cell(data[rep][c]) for c in cols}))
     out = out_dir / f"verizon_approval_by_week_{target.isoformat()}.png"
-    render_table_png("APPROVAL RATE BY WEEK-ENDING",
-                     f"{owner} — lines sold each week that Credico has approved since "
-                     f"(approved/sold), as of {target:%B} {target.day}",
-                     cols, table, out)
+    sub = (f"{owner} — lines sold each week that Credico has approved since "
+           f"(approved/sold), as of {target:%B} {target.day}")
+    if approved is None:
+        render_table_png("APPROVAL RATE BY WEEK-ENDING", sub, cols, table, out)
+        return out, len(table) - 1
+    # the office block: a plain count per cell (no band colour)
+    block = [(k, "", k == "Sold", {c: {"rate": str(stands[k][c]), "color": ""} for c in cols})
+             for k in ("Sold",) + STANDS]
+    render_sections_png("APPROVAL RATE BY WEEK-ENDING", sub, cols, table,
+                        [("OFFICE — where every line sold that week stands today", block)], out)
     return out, len(table) - 1
 
 
@@ -503,7 +535,8 @@ def build(owner: str, sv_path: Path, target: dt.date, out_dir: Path) -> List[Dic
         elif slug == "activation_rate":
             paths = [activation_rate(owner, aheader, arows, target, out_dir)[0]]
         elif slug == "activation_by_week":
-            paths = [activation_by_week(owner, aheader, arows, target, out_dir)[0]]
+            paths = [activation_by_week(owner, header, rows, target, out_dir,
+                                        approved=approved_keys(aheader, arows))[0]]
         elif slug == "churn":
             paths = [churn(owner, header, rows, target, out_dir, approved=approved_keys(aheader, arows))[0]]
         elif slug in ("revenue_board", "activation_revenue", "rep_tiers"):
