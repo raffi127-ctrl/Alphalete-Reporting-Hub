@@ -3780,10 +3780,10 @@
    "verify": null
   },
   "probe_uid_control": {
-   "_note": "READ-ONLY probe (2026-11-15): what OwnerVille's AT&T UID REQUEST section actually says and what it offers to click, for everyone on an office's board whose UID Request is still open. Runs icd_onboarding.run --only uid_look with NO --write; that step presses nothing and writes nothing WHATEVER --write says -- it calls uid_request.describe_one and prints the section's state plus every clickable label in it. THE QUESTION IT ANSWERS, and the reason uid_request.py ships gated: nobody has seen that section expanded, so the request control is searched for rather than hardcoded, and a run that cannot find exactly one candidate refuses. This says what it is called. Read the result with `lucy logtail rerun probe_uid_control 200`, then set config.UID_REQUEST_LIVE = True. source_type ownerville: it needs the office's own OwnerVille session, and the campaign comes from its ov_program -- never Alphalete's. weekdays [] = manual only.",
+   "_note": "READ-ONLY (2026-11-15): why each outstanding AT&T UID on an office's board is outstanding, and WHOSE MOVE it is. Runs icd_onboarding.run --only uid_reasons with NO --write; it presses nothing and writes nothing whatever --write says. THERE IS NO UID PRESS: OwnerVille's AT&T UID REQUEST section has no button in it -- 'Sales Rep has not submitted ATTUID information. Form is available by logging into Candidate Roadmap Portal', and once submitted, 'the request for the ATTUID will be sent to AT&T once the rep has been activated for SaraPlus'. The rep does it; the send fires off SaraPlus activation. WHAT THIS ANSWERS: a blank UID cell means one of three different things -- waiting on the rep, waiting on SaraPlus activation, or waiting on AT&T (up to 30 days) -- and only the first is anybody's to chase. That split is the input a UID nudge needs. Read with `lucy logtail rerun probe_uid_control 200`. source_type ownerville: the office's own session, campaign from its ov_program, never Alphalete's. weekdays [] = manual only.",
    "on_scheduler": true,
    "hand_run_only": true,
-   "display_name": "Probe the UID request control (read-only)",
+   "display_name": "Why each AT&T UID is outstanding (read-only)",
    "source_type": "ownerville",
    "data_sources": [],
    "command": [
@@ -3793,7 +3793,7 @@
     "--office",
     "raf",
     "--only",
-    "uid_look"
+    "uid_reasons"
    ],
    "cadence": {
     "weekdays": []

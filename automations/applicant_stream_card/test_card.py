@@ -614,18 +614,33 @@ class SetupPageTest(unittest.TestCase):
         st = {"drivers": [
             {"key": "processed", "best": ("same day", 64, 900),
              "worst": ("2+ days", 42, 900), "real": True,
-             "won": 5, "weeks": 6},
+             "won": 5, "weeks": 6,
+             "vs_later": {"same": (64, 900), "later": (47, 1800),
+                          "p": 0.001, "won": 5, "weeks": 6}},
+            {"key": "part", "best": ("morning", 55, 900),
+             "worst": ("evening", 49, 900), "real": True,
+             "won": 6, "weeks": 6},
             {"key": "weekday", "best": ("Mon", 55, 900),
              "worst": ("Tue", 48, 900), "real": True,
              "won": 3, "weeks": 6},        # one or two big weeks: left out
             {"key": "board", "best": ("Indeed", 52, 3881),
              "worst": ("LinkedIn", 41, 34), "real": False}],
-            "times": {"best_slot": ("9am", 55.0, 400)}}
+            "times": {"best_slot": ("9am", 55.0, 400)},
+            "days": {"interview_gap": {0: {"share": 22.0}}}}
         head, pts = C.advice(st, 6)
+        # Megan 2026-11-15: "22% is a low number" - say it
+        self.assertIn("Only 22% of your 1st rounds are booked for that same "
+                      "day now", " ".join(pts))
         got = " ".join(pts)
         self.assertIn("last 6 weeks", head)
-        self.assertIn("vs 42% when it's 2+ days later", got)
+        # same day vs EVERYTHING after it, not vs only the worst bucket
+        self.assertIn("vs 47% when it's the next day or later", got)
+        self.assertNotIn("2+ days", got)
         self.assertIn("Held in 5 of 6 weeks", got)
+        # a 6-point gap is "a bit better", not "best ... the worst"
+        self.assertIn("morning slots show up a bit better (55%) than "
+                      "evening (49%)", got)
+        self.assertNotIn("the worst", got)
         self.assertNotIn("Monday", got)
         self.assertNotIn("Indeed", got)            # too few to be sure
 

@@ -35,32 +35,41 @@ def _calls(fn):
 
 
 class Wiring(unittest.TestCase):
-    def test_both_presses_are_steps_and_run_last(self):
+    def test_the_press_is_a_step_and_runs_after_the_read(self):
         names = [n for n, _ in R.STEPS]
-        self.assertIn("uid", names)
         self.assertIn("owner_submit", names)
-        # ownerville reads first so the presses act on what is true now.
-        self.assertLess(names.index("ownerville"), names.index("uid"))
-        # A requested UID is one of Owner Submit's own prerequisites.
-        self.assertLess(names.index("uid"), names.index("owner_submit"))
+        # ownerville reads first so the press acts on what is true now.
+        self.assertLess(names.index("ownerville"), names.index("owner_submit"))
 
-    def test_the_presses_go_where_the_ownerville_session_is(self):
+    def test_there_is_no_uid_press(self):
+        """OwnerVille's AT&T UID REQUEST section has no button in it: the rep
+        submits the ATTUID form in the Candidate Roadmap Portal and the send
+        fires off SaraPlus activation. A press was written on 2026-11-15 and
+        thrown away the same day -- this is what stops it coming back."""
+        self.assertNotIn("uid", [n for n, _ in R.STEPS])
+        self.assertFalse(hasattr(P, "press_uid"))
+        self.assertFalse(hasattr(UID, "request_one"))
+        self.assertFalse(hasattr(OVC, "UID_REQUEST_LIVE"))
+        for steps in R.STEPS_BY_MACHINE.values():
+            self.assertNotIn("uid", steps)
+
+    def test_the_press_goes_where_the_ownerville_session_is(self):
         """One box drives OwnerVille. Two would collide on the browser profile,
-        and these are the steps where "who pressed this" must be answerable."""
+        and this is the step where "who pressed this" must be answerable."""
         holders = [m for m, steps in R.STEPS_BY_MACHINE.items()
                    if "ownerville" in steps]
         self.assertEqual(len(holders), 1)
-        for step in ("uid", "owner_submit"):
+        for step in ("owner_submit",):
             self.assertIn(step, R.STEPS_BY_MACHINE[holders[0]])
             others = [m for m, s in R.STEPS_BY_MACHINE.items()
                       if step in s and m != holders[0]]
             self.assertEqual(others, [])
 
-    def test_the_read_only_look_is_on_no_schedule(self):
-        """uid_look opens OwnerVille to answer a question. Hand-run only."""
-        self.assertIn("uid_look", [n for n, _ in R.STEPS])
+    def test_the_read_only_step_is_on_no_schedule(self):
+        """uid_reasons opens OwnerVille to answer a question. Hand-run only."""
+        self.assertIn("uid_reasons", [n for n, _ in R.STEPS])
         for machine, steps in R.STEPS_BY_MACHINE.items():
-            self.assertNotIn("uid_look", steps, machine)
+            self.assertNotIn("uid_reasons", steps, machine)
 
     def test_each_press_writes_only_its_own_column(self):
         for col in ("UID Request", "Owner Submit"):
@@ -77,11 +86,6 @@ class Gates(unittest.TestCase):
         src = inspect.getsource(P._press)
         self.assertIn("real = bool(not dry_run and live_gate)", src)
 
-    def test_the_uid_press_ships_gated(self):
-        """The control has never been seen. It comes off the gate when
-        uid_look has said what it is called, not before."""
-        self.assertFalse(OVC.UID_REQUEST_LIVE)
-
     def test_owner_submit_inherits_megans_september_switch(self):
         """Same attestation, same form, same alert -- a second gate would be a
         second approval for a decision already made on 2026-09-22."""
@@ -89,11 +93,11 @@ class Gates(unittest.TestCase):
         self.assertIn("OWNER_SUBMIT_LIVE", src)
         self.assertNotIn("ICD_OWNER_SUBMIT", src)
 
-    def test_look_uid_presses_nothing_whatever_write_says(self):
+    def test_uid_reasons_presses_nothing_whatever_write_says(self):
         """It takes dry_run like every other step and ignores it, because
         there is no writing version of a question."""
-        calls = _calls(P.look_uid)
-        self.assertIn("describe_one", calls)
+        calls = _calls(P.uid_reasons)
+        self.assertIn("reason_one", calls)
         for forbidden in ("request_one", "submit_one", "apply", "click"):
             self.assertNotIn(forbidden, calls)
 
@@ -121,85 +125,56 @@ class Campaign(unittest.TestCase):
 
     def test_the_confirming_reopen_uses_the_same_campaign(self):
         """Confirming on another campaign is reading another roster."""
-        for fn in (OS.submit_one, UID.request_one):
+        for fn in (OS.submit_one,):
             src = inspect.getsource(fn)
             opens = src.count("open_set_status(")
             self.assertEqual(opens, 2, fn.__name__)
             self.assertEqual(src.count("campaign=campaign"), 2, fn.__name__)
 
 
-class UidPress(unittest.TestCase):
-    def test_only_required_action_is_pressed(self):
-        """A second request is a second request to AT&T. Every other word --
-        known or unknown -- leaves the section alone."""
-        self.assertEqual(UID.TODO_STATE, "REQUIRED ACTION")
-        src = inspect.getsource(UID.request_one)
-        self.assertIn('if state != TODO_STATE:', src)
-        self.assertIn('return "already"', src)
+class UidReader(unittest.TestCase):
+    """What is LEFT of the UID work: a read of whose move it is."""
 
-    def test_an_unreadable_section_is_never_pressed(self):
-        """Unread is not undone -- the rule the whole board is built on."""
-        src = inspect.getsource(UID.request_one)
-        self.assertIn("if not state:", src)
-        self.assertLess(src.index("if not state:"),
-                        src.index("if state != TODO_STATE:"))
+    def test_it_reads_and_never_saves(self):
+        calls = _calls(UID.reason_one)
+        for forbidden in ("click", "fill", "select_option", "press"):
+            self.assertNotIn(forbidden, calls)
+        src = inspect.getsource(UID)
+        code = [l for l in src.splitlines()
+                if not l.strip().startswith("#")]
+        self.assertNotIn("Save Changes", "\n".join(code))
 
-    def test_two_candidate_controls_is_a_refusal(self):
-        class Node:
-            pass
-        UID.controls = lambda node: ["Request UID", "Request Now"]
-        try:
-            label, seen = UID._request_control(Node())
-        finally:
-            del UID.controls
-        self.assertIsNone(label)
-        self.assertEqual(len(seen), 2)
+    def test_the_three_blanks_are_told_apart(self):
+        """A blank UID cell means one of three different things and only the
+        first is anybody's to chase."""
+        rep = UID.whose_move("Sales Rep has not submitted ATTUID information. "
+                             "Form is available by logging into Candidate "
+                             "Roadmap Portal")
+        sara = UID.whose_move(
+            "Candidate has submitted their information for an ATTUID. The "
+            "request for the ATTUID will be sent to AT&T once the rep has "
+            "been activated for SaraPlus. ATTUID may take up to 30 days to "
+            "return from AT&T.")
+        self.assertIn("the rep", rep)
+        self.assertIn("SaraPlus", sara)
+        self.assertNotEqual(rep, sara)
 
-    def test_one_candidate_control_is_taken(self):
-        UID.controls = lambda node: ["Cancel", "Request UID", "Close"]
-        try:
-            label, _ = UID._request_control(object())
-        finally:
-            del UID.controls
-        self.assertEqual(label, "Request UID")
-
-    def test_no_control_at_all_is_a_refusal_not_a_blind_save(self):
-        UID.controls = lambda node: []
-        try:
-            label, seen = UID._request_control(object())
-        finally:
-            del UID.controls
-        self.assertIsNone(label)
-        self.assertEqual(seen, [])
-
-    def test_its_prerequisites_are_short_on_purpose(self):
-        """A UID is requested EARLY -- it is one of Owner Submit's own
-        prerequisites. Demanding the quizzes would mean no UID was ever
-        requested until after it was needed."""
-        self.assertEqual(tuple(UID.REQUIRED),
-                         ("LOGIN CREATED", "ONBOARDING DOCUMENTS"))
-        for sec in UID.REQUIRED:
-            self.assertIn(sec, OS.REQUIRED)
-        self.assertLess(len(UID.REQUIRED), len(OS.REQUIRED))
+    def test_a_sentence_it_does_not_know_is_never_guessed(self):
+        """Inventing an owner for a step is how somebody gets chased for a
+        thing that was never theirs."""
+        self.assertEqual(UID.whose_move("something OwnerVille changed"),
+                         UID.NOBODY_SAID)
+        self.assertEqual(UID.whose_move(""), UID.NOBODY_SAID)
 
     def test_the_section_is_opened_once_and_never_chased(self):
         """ov._expand chases a marker it cannot find through the chevron and
-        then every plausible toggle -- and a second toggle on an OPEN section
-        closes it. Nobody has seen this section, so the marker is its own
-        label: one click, no chase."""
-        src = inspect.getsource(UID._open_section)
-        code = [l for l in src.splitlines() if not l.strip().startswith("#")]
-        body = "\n".join(code)
+        then every toggle on the row -- and a second toggle on an OPEN section
+        closes it."""
+        body = "\n".join(l for l in
+                         inspect.getsource(UID._open_section).splitlines()
+                         if not l.strip().startswith("#"))
         self.assertIn("reveals=SECTION", body)
         self.assertNotIn('reveals=""', body)
-
-    def test_success_is_the_page_on_a_fresh_reopen(self):
-        src = inspect.getsource(UID.request_one)
-        self.assertIn("CHECK BY HAND", src)
-        self.assertGreater(src.index("Save Changes"),
-                           src.index("_click_any(node, label"))
-        self.assertGreater(src.rindex("open_set_status("),
-                           src.index("Save Changes"))
 
 
 class SharedVocabulary(unittest.TestCase):

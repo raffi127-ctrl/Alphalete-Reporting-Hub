@@ -52,6 +52,9 @@ WORDING = {"SHOUTING", "BASE PAY", "NOT PLAIN TEXT", "TOO LONG", "GRAMMAR",
 STALE_DAYS = 7
 # Share booked a day or more after being processed.
 LATE_OK, LATE_BAD = 15.0, 25.0
+# Megan 2026-11-15: the goal is 1st rounds the SAME day as STCL - "22% is a
+# low number". Green at 60%+, yellow 40-60, red under 40.
+SAME_OK, SAME_BAD = 60.0, 40.0
 FOLD_AT = 3
 TOP_N = 3
 
@@ -234,42 +237,58 @@ def speed(st, ttb=None):
     iv = d.get("interview_gap") or {k: {"share": None, "show": None}
                                      for k in (0, 1, 2)}
     show = lambda v: (_pct(v), _tone(v, 50, 35))
+    # Megan 2026-11-15: "resume processed -> booked is a little confusing"
+    # - say STCL (sent to call list); "I don't know what typical median
+    # is" - say what it means; show-up rows read "1st round retention".
     facts = [
-        ("Resume processed → booked, average",
+        ("Time from resume sent to call list (STCL) to 1st round booked, "
+         "average",
          [("{:.1f} days".format(p["avg_days"]),
            _tone(p["avg_days"], 0.5, 1, False))]),
-        ("Typical (median)", [(_hrs(p["median_h"]),
-                               _tone(p["median_h"], 4, 12, False))]),
-        # Megan 2026-11-15: counted by the day the 1st round is ON, from
-        # the day the resume was processed.
-        ("1st round the same day as processed",
+        # Megan 2026-11-15: "what does half mean?" - a plain share instead
+        # Megan 2026-11-15: "84% booked, or 84% showed?" - booked.
+        ("Of those booked, % booked within 24 hours of STCL",
+         [(_pct(p.get("within_24")), _tone(p.get("within_24"), 70, 50))]),
+        None,
+        # counted by the day the 1st round is ON, from the STCL day
+        ("1st rounds booked for the same day as STCL",
          [(_pct(iv[0]["share"]), _tone(iv[0]["share"], 60, 40))]),
-        ("1st round the next day", [(_pct(iv[1]["share"]), None)]),
-        ("1st round 2+ days later",
+        ("1st rounds booked for the next day", [(_pct(iv[1]["share"]), None)]),
+        ("1st rounds booked for 2+ days later",
          [(_pct(iv[2]["share"]), _tone(iv[2]["share"], 10, 20, False))]),
-        ("Show-up rate \u2014 same day / next day / 2+ days",
-         [show(iv[0]["show"]), (" / ", None), show(iv[1]["show"]),
-          (" / ", None), show(iv[2]["show"])]),
-        ("Number of texts sent before the 1st round was set",
-         [("{:.1f} average".format(ttb["average"]),
+        None,
+        ("1st round retention — same day as STCL", [show(iv[0]["show"])]),
+        ("1st round retention — next day", [show(iv[1]["show"])]),
+        ("1st round retention — 2+ days later", [show(iv[2]["show"])]),
+        None,
+        ("Average number of texts sent before the 1st round was set",
+         [("{:.1f}".format(ttb["average"]),
            _tone(ttb["average"], 3, 6, False))] if ttb
          else "not checked"),
     ]
-    late = iv[2]["share"] if iv[2]["share"] is not None else d["late_share"]
-    dot = GREEN if late <= LATE_OK else YELLOW if late <= LATE_BAD else RED
+    same = iv[0]["share"]
+    if same is None:
+        late = d["late_share"]
+        dot = GREEN if late <= LATE_OK else YELLOW if late <= LATE_BAD \
+            else RED
+    else:
+        dot = GREEN if same >= SAME_OK else YELLOW if same >= SAME_BAD \
+            else RED
     short = "{} same day · {} 2+ days out".format(
         _pct(iv[0]["share"]), _pct(iv[2]["share"]))
     if ttb:
         short += " · {:.1f} texts".format(ttb["average"])
-    text = ("1st rounds held the same day the resume was processed show "
-            "up {}; the next day {}; 2+ days later {}.".format(
-                _pct(iv[0]["show"]), _pct(iv[1]["show"]),
-                _pct(iv[2]["show"])))
-    action = None if dot == GREEN else (
-        "{:.0f}% of 1st rounds are 2+ days after the resume was processed, "
-        "and they show up {}".format(late, _pct(iv[2]["show"])))
-    return _line("speed", "⏱️", t, dot, short, text, facts,
-                 action=action)
+    action = None if dot == GREEN or same is None else (
+        "\u27e6Only {} of your 1st rounds are booked for the same day the "
+        "resume is sent to the call list.\u27e7 Work on booking more of them for that "
+        "same day: they show up {}, vs {} the next day and {} 2+ days "
+        "later.".format(_pct(same), _pct(iv[0]["show"]), _pct(iv[1]["show"]),
+                        _pct(iv[2]["show"])))
+    # Megan 2026-11-15: the summary line and the retention sentence repeat
+    # the rows below - cut both from the card (short stays for the log).
+    ln = _line("speed", "⏱️", t, dot, short, "", facts, action=action)
+    ln["quiet"] = True
+    return ln
 
 
 # Carrier blocks on the office's own number, as a share of texts sent.
@@ -430,22 +449,47 @@ def best_times(st):
 
 
 CHANCE = "too few people to be sure"
+SAME = "about the same \u2014 no real difference"
+
+
+FEW_N = 100     # a gap that isn't real, with a group under this: too few
+
+
+def _verdict(d):
+    """'' when the gap is real; otherwise say WHY it isn't (Megan
+    2026-11-15: 54% vs 51% on 1,500+ people "doesn't seem like too few
+    people - it just doesn't make a big difference")."""
+    if d["real"]:
+        return ""
+    if min(d["best"][2], d["worst"][2]) < FEW_N:
+        return " ({})".format(CHANCE)
+    return " ({})".format(SAME)
 
 
 def _driver_html(d):
-    """One factor: best vs worst on the row; tap for every group."""
-    # Megan 2026-11-15: "what's the % of?" - say it: showed up, out of
-    # 1st rounds booked (not applications).
-    rows = ("<tr><th></th><th>Showed up</th><th>1st rounds booked</th></tr>"
+    """One factor: top vs bottom on the row; tap for every group."""
+    # Megan 2026-11-15: "Indeed's retention is 52%" - the % is 1st round
+    # retention, out of the 1st rounds booked.
+    rows = ("<tr><th></th><th>1st round retention</th>"
+            "<th>1st rounds booked</th></tr>"
             + "".join("<tr><td>{}</td><td>{:.0f}%</td><td>{:,}</td></tr>"
                       .format(_e(v), r, n) for v, r, n in d["groups"]))
     return ("<details class='drv'><summary><span class='t'>{}</span>"
-            "<span class='s'>best {} {:.0f}% vs worst {} {:.0f}%{}</span>"
-            "</summary><div class='body'><table class='list'>{}</table>"
-            "</div></details>".format(
+            "<span class='s'>{} {:.0f}% vs {} {:.0f}% 1st round retention{}"
+            "</span></summary><div class='body'>{}<table class='list'>{}"
+            "</table></div></details>".format(
                 _e(d["label"]), _e(d["best"][0]), d["best"][1],
-                _e(d["worst"][0]), d["worst"][1],
-                "" if d["real"] else " ({})".format(CHANCE), rows))
+                _e(d["worst"][0]), d["worst"][1], _e(_verdict(d)),
+                "<p class='note'>{}</p>".format(_e(DRIVER_NOTE[d["key"]]))
+                if d["key"] in DRIVER_NOTE else "", rows))
+
+
+# Megan 2026-11-15: "idk what this means" (Days from booking to the 1st
+# round) - one plain line under each factor that needs it.
+DRIVER_NOTE = {
+    "processed": "Counted from the day the resume was sent to the call "
+                 "list (STCL) to the day of the 1st round.",
+}
 
 
 # Megan 2026-11-15: open Bookings and show-ups with a plain summary - "based
@@ -464,26 +508,51 @@ def _day(v):
 # Megan 2026-11-15: say what was compared - "this makes it seem like we only
 # looked at Monday and Tuesday" - so each point names the whole set, the
 # best AND the worst.
+# Megan 2026-11-15: "55 and 46% aren't that far off ... I don't know that we
+# should use such drastic verbiage" - under BIG_GAP points the line says
+# "a bit better than", not "best ... the worst".
+BIG_GAP = 10
+
+
+def _compare(what, b, w):
+    """'X shows up best (55%) and Y the worst (40%)' for a big gap,
+    'X shows up a bit better (55%) than Y (48%)' for a small one."""
+    if b[1] - w[1] >= BIG_GAP:
+        return "{} best ({:.0f}%) and {} the worst ({:.0f}%)".format(
+            what.format(b[0]), b[1], w[0], w[1])
+    return "{} a bit better ({:.0f}%) than {} ({:.0f}%)".format(
+        what.format(b[0]), b[1], w[0], w[1])
+
+
 ADVICE = {
-    "processed": lambda b, w: (
-        "Book the 1st round for the {} the resume is processed: {:.0f}% "
-        "show up, vs {:.0f}% when it's {}.".format(
-            "same day" if b[0] == "same day" else "day after", b[1], w[1],
-            "2+ days later" if w[0] == "2+ days" else w[0])
-        if b[0] in ("same day", "next day") else None),
-    "weekday": lambda b, w: (
-        "Of all days of the week, {} interviews show up best ({:.0f}%) and "
-        "{} the worst ({:.0f}%).".format(_day(b[0]), b[1], _day(w[0]), w[1])),
-    "part": lambda b, w: (
-        "Of all interview times, {} slots show up best ({:.0f}%) and {} the "
-        "worst ({:.0f}%).".format(b[0], b[1], w[0], w[1])),
-    "board": lambda b, w: (
-        "Of all job boards, candidates from {} show up best ({:.0f}%) and "
-        "{} the worst ({:.0f}%).".format(b[0], b[1], w[0], w[1])),
+    "weekday": lambda b, w: "Of all days of the week, " + _compare(
+        "{} interviews show up", (_day(b[0]),) + tuple(b[1:]),
+        (_day(w[0]),) + tuple(w[1:])) + ".",
+    "part": lambda b, w: "Of all interview times, " + _compare(
+        "{} slots show up", b, w) + ".",
+    "board": lambda b, w: "Of all job boards, " + _compare(
+        "candidates from {} show up", b, w) + ".",
     "booker": lambda b, w: (
         "People booked by {} show up {:.0f}%, vs {:.0f}% for {}.".format(
             b[0], b[1], w[1], w[0])),
 }
+
+
+def _processed_point(d, share=None):
+    """Same day vs the next day or later, or None."""
+    v = d.get("vs_later")
+    if not v or v["p"] is None or v["p"] >= 0.05 \
+            or v["same"][0] <= v["later"][0] \
+            or not _holds(v["won"], v["weeks"]):
+        return None
+    now = ("\u27e6Only {:.0f}% of your 1st rounds are booked for that same "
+           "day now.\u27e7 ".format(share) if share is not None and share < SAME_OK
+           else "")
+    return ("Book more 1st rounds for the same day the resume is sent to "
+            "the call list: {:.0f}% show up, vs {:.0f}% when it's the next "
+            "day or later. {}{}".format(v["same"][0], v["later"][0],
+                                        _held(v["won"], v["weeks"]),
+                                        (" " + now.strip()) if now else ""))
 
 
 def _weeks_in(st):
@@ -509,6 +578,13 @@ def advice(st, weeks=None):
     from automations.applicant_stream_card import stream_stats as S
     pts = []
     for d in (st or {}).get("drivers") or []:
+        if d["key"] == "processed":
+            share = (((st.get("days") or {}).get("interview_gap") or {})
+                     .get(0) or {}).get("share")
+            say = _processed_point(d, share)
+            if say:
+                pts.append(say)
+            continue
         fn = ADVICE.get(d["key"])
         if d["real"] and fn and _holds(d.get("won"), d.get("weeks")):
             say = fn(d["best"], d["worst"])
@@ -521,9 +597,8 @@ def advice(st, weeks=None):
         p = S._p_two(b[1], b[2], w[1], w[2])
         if p is not None and p < 0.05:
             pts.append("Of all interview times, across every day of the "
-                       "week, {} shows up best ({:.0f}%) and {} the worst "
-                       "({:.0f}%). {}".format(b[0], b[1], w[0], w[1],
-                                              _held(won, wk)))
+                       "week, {}. {}".format(_compare("{} shows up", b, w),
+                                             _held(won, wk)))
     if not pts:
         return None
     head = ("Based on every 1st round booked in the last {} weeks:".format(
@@ -539,10 +614,11 @@ def drivers(st):
         return _line("drivers", "\U0001F4C8", title, GREY, "Not enough data")
     # Megan 2026-11-15: each row is best vs worst; a tap shows every group.
     # "Could be chance" read as jargon: say what it means.
-    text = ("Of the 1st rounds booked in these weeks, the share that showed "
-            "up, for the best and worst group of each. Tap one to see every "
-            "group. \u201c{}\u201d means the gap is small for how "
-            "few people are in it, so it may just be luck.".format(CHANCE))
+    text = ("1st round retention (the share of booked 1st rounds that "
+            "showed up) over the last 6 weeks, highest group vs lowest. Tap "
+            "one to see every group. \u201c{}\u201d means one group is too "
+            "small to trust; \u201c{}\u201d means plenty of people, but the "
+            "groups show up at almost the same rate.".format(CHANCE, SAME))
     top = [d for d in dr if d["real"]][:1]
     if not top:
         ln = _line("drivers", "\U0001F4C8", title, GREEN,
@@ -763,7 +839,12 @@ ol.replies li{margin:.45em 0}
      align-items:center}
 .vitals details.vital>summary:after{display:none}
 details.drv{margin:.3em 0}
+table.grouped tr.g0 td{background:rgba(120,150,120,.10)}
+table.grouped tr.g1 td{background:rgba(170,140,70,.12)}
+table.grouped tr.g2 td{background:rgba(90,130,180,.10)}
+table.grouped tr.g3 td{background:rgba(150,110,160,.10)}
 details.drv>summary{flex-wrap:wrap;gap:.2em .6em}
+details.drv .note{margin:.2em 0 .5em;color:#666;font-size:.92em}
 .advice ul{margin:.3em 0 0;padding-left:1.2em}
 .advice li{margin:.2em 0}
 .advice{background:#f1faf4;border:1px solid #9fd3b5;border-radius:10px;padding:.7em .9em;margin:.4em 0 .6em}
@@ -785,6 +866,7 @@ label.go{color:#1a56c4;font-weight:bold;cursor:pointer;text-decoration:underline
      grid-row:2;width:100%}}
 .up{color:#156E46;font-weight:bold}.down{color:#A8322A;font-weight:bold}
 .steady{color:#b06d00;font-weight:bold}
+.redx{color:#A8322A}
 ul.dfix{padding-left:1.1em;margin:.2em 0}
 ul.dfix li{margin:.5em 0}
 .who{color:#1a56c4}
@@ -1004,7 +1086,7 @@ def _line_html(ln):
            "</span><span class='row'><span class='t'>{} {}</span>"
            "<span class='s'>{}</span></span></summary><div class='body'>"
            .format(DOT[ln["dot"]], ln["icon"], _e(ln["title"]),
-                   _e(ln["short"]))]
+                   "" if ln.get("quiet") else _e(ln["short"]))]
     if ln["text"]:
         out.append("<p class='why'>{}</p>".format(_e(ln["text"])))
     out.append(_facts(ln["facts"]))
@@ -1021,6 +1103,13 @@ def _line_html(ln):
     return "".join(out)
 
 
+# ⟦…⟧ in a summary or to-do line is drawn red (Megan 2026-11-15: "Only 22%
+# ... same day now - put this in red").
+def _red(x):
+    return _e(x).replace("\u27e6", "<b class='redx'>").replace(
+        "\u27e7", "</b>")
+
+
 def _lines_html(card, keys, title, lead=None):
     lines = {ln["key"]: ln for ln in card["lines"]}
     got = [lines[k] for k in keys if k in lines]
@@ -1030,7 +1119,7 @@ def _lines_html(card, keys, title, lead=None):
     if lead:
         head, pts = lead
         box = "<div class='advice'><b>{}</b><ul>{}</ul></div>".format(
-            _e(head), "".join("<li>{}</li>".format(_e(x)) for x in pts))
+            _e(head), "".join("<li>{}</li>".format(_red(x)) for x in pts))
     return "<h2 class='k'>{}</h2>{}{}".format(
         _e(title), box, "".join(_line_html(ln) for ln in got))
 
@@ -1048,7 +1137,7 @@ def _todo_html(card):
     for n, t in enumerate(card["todo"], start=1):
         out.append("<details><summary><span class='num'>{}</span>"
                    "<span class='t'>{}</span></summary><div class='body'>"
-                   .format(n, _e(t["text"])))
+                   .format(n, _red(t["text"])))
         if t["item"]:
             out.append(_fix_body(t["item"]) + _tab_link(t["item"]))
         else:
@@ -1120,9 +1209,18 @@ def _facts(facts):
                 "<b style='color:{}'>{}</b>".format(TONE[t], _e(x)) if t
                 else _e(x) for x, t in v)
         return _e(v)
-    return "<table>{}</table>".format("".join(
-        "<tr><td>{}</td><td>{}</td></tr>".format(_e(k), cell(v))
-        for k, v in facts))
+    # A None between rows starts a new group; groups alternate shading
+    # (Megan 2026-11-15: "color code these sections ... different shading").
+    rows, g, grouped = [], 0, None in facts
+    for f in facts:
+        if f is None:
+            g += 1
+            continue
+        k, v = f
+        rows.append("<tr{}><td>{}</td><td>{}</td></tr>".format(
+            " class='g{}'".format(g % 4) if grouped else "", _e(k), cell(v)))
+    return "<table{}>{}</table>".format(
+        " class='grouped'" if grouped else "", "".join(rows))
 
 
 def _scope_css(css, scope):

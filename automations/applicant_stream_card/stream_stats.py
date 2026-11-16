@@ -227,7 +227,8 @@ def days_to_book(tl):
             return None
         return {"n": len(xs), "avg_h": sum(xs) / len(xs),
                 "median_h": statistics.median(xs),
-                "avg_days": sum(xs) / len(xs) / 24.0}
+                "avg_days": sum(xs) / len(xs) / 24.0,
+                "within_24": 100.0 * sum(x < 24 for x in xs) / len(xs)}
     late = [t for t in tl
             if (_hours(t["pushed"], t["booked"]) or 0) >= CLIFF_HOURS]
     same_day = sum(1 for t in tl if t["pushed"] and t["booked"]
@@ -337,9 +338,10 @@ def _part_of_day(t):
 
 # (what it is, plain question on the card, how to read one level)
 FACTORS = (
-    ("processed", "Days from processing to the 1st round",
+    ("processed", "Days from STCL to the 1st round",
      _processed_bucket),
-    ("lead", "Days from booking to the 1st round", _lead_bucket),
+    # "lead" (booking day -> interview day) is left off: next to "Days from
+    # STCL" it read as the same data twice (Megan 2026-11-15).
     ("booker", "Who booked them",
      lambda t: "the AI" if t["ai"] else "a recruiter"),
     ("resched", "Whether the interview was moved",
@@ -382,6 +384,21 @@ def weeks_won(best, worst, min_n=WEEK_MIN):
     return won, n
 
 
+def _same_vs_later(groups, min_n=MIN_N):
+    """Same day vs everything after it (next day + 2+ days), for the
+    summary line. Megan 2026-11-15: "shouldn't this say vs when it's next
+    day or after?" - same day against only the worst bucket oversold it."""
+    same = groups.get("same day") or []
+    later = (groups.get("next day") or []) + (groups.get("2+ days") or [])
+    rs, ns = _rate(same)
+    rl, nl = _rate(later)
+    if rs is None or rl is None or ns < min_n or nl < min_n:
+        return None
+    won, weeks = weeks_won(same, later)
+    return {"same": (rs, ns), "later": (rl, nl),
+            "p": _p_two(rs, ns, rl, nl), "won": won, "weeks": weeks}
+
+
 def retention_drivers(tl, min_n=MIN_N):
     """Each factor's best and worst group, biggest gap first.
 
@@ -406,11 +423,14 @@ def retention_drivers(tl, min_n=MIN_N):
         hi, lo = rated[0], rated[-1]
         p = _p_two(hi[1], hi[2], lo[1], lo[2])
         won, weeks = weeks_won(groups[hi[0]], groups[lo[0]])
-        out.append({"key": key, "label": label,
-                    "best": hi, "worst": lo, "gap": hi[1] - lo[1],
-                    "p": p, "real": p is not None and p < 0.05,
-                    "won": won, "weeks": weeks,
-                    "groups": rated})
+        d = {"key": key, "label": label,
+             "best": hi, "worst": lo, "gap": hi[1] - lo[1],
+             "p": p, "real": p is not None and p < 0.05,
+             "won": won, "weeks": weeks,
+             "groups": rated}
+        if key == "processed":
+            d["vs_later"] = _same_vs_later(groups)
+        out.append(d)
     out.sort(key=lambda d: (not d["real"], -d["gap"]))
     return out
 

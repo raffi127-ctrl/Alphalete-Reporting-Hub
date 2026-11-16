@@ -17,17 +17,23 @@ afterwards. This runs the three that have to be gone and LOOKED for:
     blueink     Blue Ink                (the office's API key)
     sterling    BG Status               (the ICDs' forwarded results inbox)
 
-AND TWO THAT ACT rather than look (2026-11-15) -- the only steps here that
-press a button on somebody's behalf, which is why they live apart in
-presses.py and run last, after `ownerville` has said what is true right now:
+AND ONE THAT ACTS rather than looks (2026-11-15) -- the only step here that
+presses a button on somebody's behalf, which is why it lives apart in
+presses.py and runs last, after `ownerville` has said what is true right now:
 
-    uid           request the AT&T UID    -> UID Request
     owner_submit  attest and submit       -> Owner Submit
 
-Both are GATED, both are refused by OwnerVille's own section states rather
-than by anything the board says, and both believe only what the page reads on
-a fresh re-open. A board cell can never cause a press: people type in that
-sheet, and a typed cell must not be able to attest for a rep.
+It is GATED, it is refused by OwnerVille's own section states rather than by
+anything the board says, and it believes only what the page reads on a fresh
+re-open. A board cell can never cause a press: people type in that sheet, and
+a typed cell must not be able to attest for a rep.
+
+THERE IS NO UID PRESS, though one was written and thrown away the same day.
+OwnerVille's AT&T UID REQUEST section has no button in it: the rep submits the
+ATTUID form themselves in the Candidate Roadmap Portal, and the request goes
+to AT&T once they are activated for SaraPlus. It is the new start's own step,
+like the quizzes and the headshot, so it belongs to the nudge. `uid_reasons`
+is what is left of it -- a read of whose move each outstanding one is.
 
 EVERY STEP IS INDEPENDENT. One source being down is not a reason to skip the
 others: OwnerVille having a bad morning should not stop Blue Ink ticking, and
@@ -494,26 +500,28 @@ def from_contacts(office_key: str, week_start: dt.date, *,
 # because a requested UID is one of Owner Submit's own prerequisites: pressed
 # the other way round, every person whose only gap was the UID would be
 # refused, and then requested, and would wait a whole pass to be submitted.
-from automations.icd_onboarding.presses import (look_uid, press_owner_submit,
-                                                press_uid)
+from automations.icd_onboarding.presses import (press_owner_submit,
+                                                uid_reasons)
 
 STEPS = (("seed", seed), ("ownerville", from_ownerville),
          ("blueink", from_blueink), ("sterling", from_sterling),
          ("contacts", from_contacts),
-         ("uid", press_uid), ("owner_submit", press_owner_submit),
-         # Read-only, hand-run, and in no machine's list: it answers what the
-         # UID control is called so `uid` can come off its gate.
-         ("uid_look", look_uid))
+         ("owner_submit", press_owner_submit),
+         # Read-only, hand-run, and in no machine's list. There is no UID
+         # press: OwnerVille's own section says the rep submits the ATTUID
+         # form in the Candidate Roadmap Portal and the send to AT&T fires off
+         # SaraPlus activation. This reads WHOSE MOVE each outstanding one is.
+         ("uid_reasons", uid_reasons))
 
 # STEPS THAT NO MACHINE RUNS ON A SCHEDULE, each one listed with its reason.
 # Every other step must be routed to exactly one box, and the test that pins
 # that reads this list -- so a new hand-run step fails until it is named here
 # rather than quietly joining the ones nobody runs.
 #
-#   uid_look  read-only. It opens OwnerVille to answer ONE question (what the
-#             UID control is called) and presses nothing. Scheduling it would
-#             spend the session every hour to re-read a constant.
-HAND_RUN_ONLY = ("uid_look",)
+#   uid_reasons  read-only. It opens OwnerVille to say whose move each
+#                outstanding AT&T UID is. Useful before a nudge, not hourly --
+#                and it holds the one OwnerVille session while it runs.
+HAND_RUN_ONLY = ("uid_reasons",)
 
 
 def for_office(office_key: str, week_start: dt.date, *, dry_run: bool = True,
@@ -596,7 +604,7 @@ OFFICES_BY_MACHINE = {
 STEPS_BY_MACHINE = {
     "Lucy 1": ("contacts", "sterling"),
     "Lucy 2": ("blueink",),
-    "Lucy 3": ("seed", "ownerville", "uid", "owner_submit"),
+    "Lucy 3": ("seed", "ownerville", "owner_submit"),
 }
 
 # A machine that is neither a Lucy nor an ECO box can still name its offices,

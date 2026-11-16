@@ -180,23 +180,6 @@ def _press(office_key: str, week_start: dt.date, *, column: str, what: str,
                    verdicts, dry_run=dry_run, log=log)
 
 
-def press_uid(office_key: str, week_start: dt.date, *, dry_run: bool = True,
-              log=print, budget_s: Optional[float] = None) -> int:
-    """Request the AT&T UID for anyone on this week's board who still needs one.
-
-    Gated by `config.UID_REQUEST_LIVE` until one supervised run has said what
-    the control in that section is called — see uid_request's docstring for why
-    this one was not built from a screenshot like Owner Submit was.
-    """
-    from automations.obcl_ov_sweep import config as OVC
-    from automations.obcl_ov_sweep import uid_request
-
-    return _press(office_key, week_start, column="UID Request",
-                  what="uid request", press=uid_request.request_one,
-                  live_gate=OVC.UID_REQUEST_LIVE, dry_run=dry_run, log=log,
-                  budget_s=budget_s)
-
-
 def press_owner_submit(office_key: str, week_start: dt.date, *,
                        dry_run: bool = True, log=print,
                        budget_s: Optional[float] = None) -> int:
@@ -217,17 +200,22 @@ def press_owner_submit(office_key: str, week_start: dt.date, *,
                   budget_s=budget_s)
 
 
-def look_uid(office_key: str, week_start: dt.date, *, dry_run: bool = True,
-             log=print, budget_s: Optional[float] = None) -> int:
-    """READ ONLY: what each candidate's AT&T UID REQUEST section says, and what
-    it offers to click. Presses nothing and writes nothing, whatever --write
-    says — this is the one step here that ignores it.
+def uid_reasons(office_key: str, week_start: dt.date, *, dry_run: bool = True,
+                log=print, budget_s: Optional[float] = None) -> int:
+    """READ ONLY: why each outstanding AT&T UID is outstanding, and whose move.
 
-    It exists because `press_uid` ships gated on a fact nobody has yet: what
-    that section's control is called. This answers it in one run, which is
-    cheaper and safer than another round of guessing at the markup.
-    Hand-run only — deliberately not in STEPS_BY_MACHINE, so no schedule picks
-    it up.
+    THERE IS NO UID PRESS, and this is what replaced the one that was written
+    on 2026-11-15 before Megan's screenshots showed the section has no button
+    in it -- see uid_request's docstring. The rep submits the ATTUID form
+    themselves in the Candidate Roadmap Portal, and the send to AT&T fires off
+    SaraPlus activation.
+
+    So the useful thing is not a click, it is the DIFFERENCE between three
+    blanks that look identical on the board: waiting on the rep, waiting on
+    SaraPlus activation, waiting on AT&T. Only the first is anybody's to chase,
+    and it is the input a UID nudge needs.
+
+    Presses nothing and writes nothing, whatever --write says. Hand-run only.
     """
     from automations.obcl_ov_sweep import config as OVC
     from automations.obcl_ov_sweep import uid_request
@@ -236,28 +224,30 @@ def look_uid(office_key: str, week_start: dt.date, *, dry_run: bool = True,
 
     programme = _ov_program(office_key)
     if not programme:
-        log("  uid look: %s has no ov_program set" % office_key)
+        log("  uid reasons: %s has no ov_program set" % office_key)
         return 0
     wanted = candidates(office_key, week_start, "UID Request")
     if not wanted:
-        log("  uid look: nobody on this week's board with UID Request open")
+        log("  uid reasons: nobody on this week's board with UID Request open")
         return 0
     budget = OVC.SEARCH_BUDGET_S if budget_s is None else budget_s
-    t0, seen = time.monotonic(), 0
+    t0, seen, tally = time.monotonic(), 0, {}
     with ownerville_session(headless=True, verbose=False,
                             profile_dir=PROFILE_DIR) as page:
         for name in wanted:
             if time.monotonic() - t0 >= budget:
-                log("    time budget reached; %d not looked at"
+                log("    time budget reached; %d not read this run"
                     % (len(wanted) - seen))
                 break
             seen += 1
             try:
-                detail, controls = uid_request.describe_one(
+                state, said, whose = uid_request.reason_one(
                     page, name, campaign=programme)
             except Exception as e:      # noqa: BLE001 — one name, not the run
-                detail, controls = "%s: %s" % (type(e).__name__, e), []
-            log("  UID LOOK %s" % detail)
-            log("    offers: %s" % (", ".join(repr(c) for c in controls)
-                                    or "nothing clickable"))
+                state, said, whose = "", "%s: %s" % (type(e).__name__, e), ""
+            log("  UID [%s] %s" % (state or "?", said))
+            log("    whose move: %s" % (whose or "could not tell"))
+            tally[whose or "could not tell"] = tally.get(whose or "could not tell", 0) + 1
+    for whose, n in sorted(tally.items(), key=lambda kv: -kv[1]):
+        log("  %d waiting on %s" % (n, whose))
     return 0

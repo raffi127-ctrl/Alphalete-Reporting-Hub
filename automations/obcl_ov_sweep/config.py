@@ -106,16 +106,12 @@ CAMPAIGN = "RES-AT&T"
 # Megan reviews that first dry run; only on her OK does this flip to True.
 OWNER_SUBMIT_LIVE = True
 
-# REQUESTING THE AT&T UID (Megan, 2026-11-15) — uid_request.py. The last step
-# before Owner Submit that nothing presses, so a forgotten one holds a
-# finished new start out of Owner Submit.
-#
-# GATED, and for a different reason than Owner Submit was. That one was gated
-# because the ACTION is irreversible and Megan wanted to see a dry walk first.
-# This is gated because the CONTROL HAS NEVER BEEN SEEN: Owner Submit was built
-# off Megan's click path and a screenshot of the modal, and nobody has shown me
-# this section expanded. While False, a ready person is walked up to the
-# control and the log says "WOULD REQUEST: ... offers 'Request UID'" — which is
-# the one fact needed to flip it. `uid_request.describe_one` is the read-only
-# probe that answers it without pressing anything.
-UID_REQUEST_LIVE = False
+# THERE IS NO UID REQUEST GATE, and this note is here so nobody adds one back.
+# A press was written on 2026-11-15 and thrown away the same day: OwnerVille's
+# AT&T UID REQUEST section has NO BUTTON in it. Its own words --
+#   REQUIRED ACTION: "Sales Rep has not submitted ATTUID information. Form is
+#                     available by logging into Candidate Roadmap Portal"
+#   COMPLETED:       "...will be sent to AT&T once the rep has been activated
+#                     for SaraPlus. ATTUID may take up to 30 days to return"
+# The rep submits the form themselves and the send fires off SaraPlus
+# activation. uid_request.py is a READER of whose move it is, nothing more.
