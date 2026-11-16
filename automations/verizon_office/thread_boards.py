@@ -335,7 +335,10 @@ def activation_by_week(owner, header, rows, target, out_dir, weeks: int = 6,
     ends = [this_sun - dt.timedelta(days=1 + 7 * k) for k in reversed(range(weeks))]   # oldest first
     cols = [f"WE {e.month}/{e.day}" for e in ends]
     data: Dict[str, Dict[str, List[int]]] = defaultdict(lambda: {c: [0, 0] for c in cols})
-    STANDS = ("Approved", "Pending activation", "Pending approval", "Canceled", "Disconnected")
+    # two kinds of disconnect, looked at separately (Carlos 2026-11-15): after
+    # approval (in the churn math) and BEFORE approval (outside it, never paid)
+    STANDS = ("Approved", "Pending activation", "Pending approval", "Canceled", "Disconnected",
+              "Disconnected before approval")
     stands: Dict[str, Dict[str, int]] = {k: {c: 0 for c in cols} for k in ("Sold",) + STANDS}
     for r in rows:
         sold = N._parse_date(r[i["sp.Order Date"]])
@@ -353,7 +356,7 @@ def activation_by_week(owner, header, rows, target, out_dir, weeks: int = 6,
                 st = r[i["DTR Status"]]
                 stands["Sold"][c] += 1
                 if st == "Disconnected":
-                    stands["Disconnected"][c] += 1
+                    stands["Disconnected" if act else "Disconnected before approval"][c] += 1
                 elif st == "Canceled":
                     stands["Canceled"][c] += 1
                 elif act:
@@ -449,6 +452,8 @@ def churn(owner, header, rows, target, out_dir, approved: Optional[set] = None) 
         return {"disc": str(d), "act": str(n), "rate": f"{round(rate * 100, 1)}%", "color": color}
 
     office = data.pop("__office__", {c: [0, 0] for c in cols})
+    print("  churn by rep, office: " + ", ".join("%s %d/%d" % (c, office[c][0], office[c][1]) for c in cols)
+          + (" (approved lines only)" if approved is not None else ""), flush=True)
     table = [("Office Total (all reps)", "", True, {c: cell(office[c]) for c in cols})]
     for rep in sorted(data, key=str.lower):
         table.append((rep, "", False, {c: cell(data[rep][c]) for c in cols}))
