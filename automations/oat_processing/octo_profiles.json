@@ -1,0 +1,25 @@
+{
+  "_about": "Which Octo Browser profile holds each Indeed employer account an office's applicants come in under. Keyed by AppStream office ID. `domains` are the account's email domains as the walk reads them off the applicant record; a domain not listed here is matched to a profile by its title (octo_lookup.profile_for). A machine can add or override entries in ~/.config/lucy-reports/octo-profiles.json, same shape.",
+  "11580": {
+    "tag": "carlos",
+    "profiles": [
+      {"title": "Peak Sales Strategies", "uuid": "96bbad3c4ed84deabe9a9b504964f070", "domains": ["peaksalesstrategiestx.com"]},
+      {"title": "Hawk Specialized Marketing", "uuid": "0db924147176448dae46f432b30f88b1", "domains": ["hawkspecializedmarketing.com"]},
+      {"title": "Titanium TX", "uuid": "ab337ac01a384c1b9d4a76661776aa6c", "domains": ["titanium-tx.com"]},
+      {"title": "Iron Sales Group", "uuid": "29ddb3e542c24c688ad3abbd57295af7", "domains": ["ironsalesteam.com"]},
+      {"title": "Fast Track Strategies", "uuid": "4651546f2b7b4524bec539afcbd69794", "domains": ["fasttrack-strategies.com"]},
+      {"title": "W Edge", "uuid": "12bdcba654084762b199a33e2d2b57a1", "domains": ["wedgestrategies.com"]},
+      {"title": "Haus Specialized Marketing", "uuid": "adbdbab55df3468ebf2c51d7041cdabf", "domains": ["hausspecializedmarketing.com"]},
+      {"title": "Revolt Consulting Marketing", "uuid": "7bb565192244441aa40ba836e9d471ef", "domains": ["revoltconsultingmarketing.com"]},
+      {"title": "Raw Sales Group Marketing", "uuid": "32a60fadbe8f43229395743503922c43", "domains": ["rawsalesgroupmarketing.com"]},
+      {"title": "Magma Inc Marketing", "uuid": "534688e98af34634963c1f185e44d79e", "domains": ["magmaincmarketing.com"]},
+      {"title": "Kinetic Marketing Partners", "uuid": "ca4257cbeb5441fd828500a4ef6e4bc5", "domains": ["kineticmarketingpartners.com"]},
+      {"title": "New Ascendra", "uuid": "f2fb087e6f134d81878f149fd62328f8", "domains": []},
+      {"title": "Pinnacle Growth Acquisitions", "uuid": "037cc67dc4f54252b99b15e807aaba6d", "domains": []},
+      {"title": "Market Minds", "uuid": "b7b07f31bf064366a3f01066bd0b9f7a", "domains": []},
+      {"title": "Riot Specialized Marketing", "uuid": "f9253bba6de5450381f0a39dc79473ae", "domains": []},
+      {"title": "Maverick Strategies", "uuid": "6b367665f3f74318a4972f5b6ea5bb4c", "domains": []},
+      {"title": "VividReach - Active", "uuid": "29413c319f5142d18ee03e11e6f3c751", "domains": []}
+    ]
+  }
+}

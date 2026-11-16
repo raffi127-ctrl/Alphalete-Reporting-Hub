@@ -123,6 +123,27 @@ types the ten digits in and does the same Send to AI as a resume number
 redeployed by hand. LESSON: every Sheet a walk READS is a road that breaks
 when the walk moves to a machine without Google — list them with the side
 posts (previous entry) and give each a relay twin before the move.
+Fix 2 (11/16 evening, Carlos: "automate this through the relay machine ...
+Octo Browser gets opened up and it looks for applicants' phone numbers for
+the ones that we don't have ... let's just do it at 5 in the morning"): the
+LOOKUP ITSELF now runs on the office computer — `oat_processing/octo_lookup.py`
+(ships, release 2026.11.16.3) — so the number never has to travel. In the 5am
+hour, once a day, the agent's tick kicks it (`octo_lookup.maybe_kick`, own
+process, `~/.config/lucy-reports/octo-lookup.log`): it reads the newest
+flagged snapshot (`output/oat-flagged-*.json`, ≤3 days, `nophone` bucket),
+opens each applicant's Indeed account in Octo Browser (profile map
+`oat_processing/octo_profiles.json`, by the account's domain; local override
+`~/.config/lucy-reports/octo-profiles.json`), reads the number off the Call
+pop-up, and writes `output/phone-lookups.csv` — the file the walk already
+reads (`phone_lookups.load`, the hand-run road). The 5:30 walk types it in.
+Nothing is redeployed and nothing crosses the relay but a names-only tally
+(`probe-octo-lookup`). Needs Octo Browser installed AND signed in on the
+office computer (its profiles are cloud-synced, same uuids everywhere); if it
+is not, the job files a loud `octo-lookup` fault routed to the office ("send
+this to …"). A verify wall is waited out (≤4 min, one reload), never clicked;
+an account still walled is skipped until tomorrow. Off switch: env
+`OAT_OCTO_LOOKUP=0`. The relay 'Phone Lookups' road above stays for numbers
+found anywhere else, still gated on its redeploy.
 
 **Changed: 11580 moved from Lucy 2 to Carlos's office computer (10/20, release
 2026.10.20.3); Atef (23467) and Khalil (11901) followed on 10/29.**
@@ -252,7 +273,14 @@ against the log file, or a tab dump; `rerun` args are shlex-split — a literal
   quiet `probe-` rows, one per office per day, Detail = the newest JSON —
   `probe-push-health` (every 15 min), `probe-push-stats` (every walk; feeds
   the hourly push report), `probe-push-todo` (every LIVE walk; the to-do
-  list Lucy 1 posts at noon/4pm, since 11/15).
+  list Lucy 1 posts at noon/4pm, since 11/15), `probe-octo-lookup` (the 5am
+  Octo lookups' tally: found / missing names and per-account status, no
+  numbers; since 11/16).
+- Local, office computer: `output/phone-lookups.csv` (the numbers the 5am
+  Octo lookups found, name | phone | account_email | indeed_name | office_id |
+  found_at | source; rows drop off after 7 days; the walk reads it every
+  walk), `output/octo-lookup-<date>.json` (that run's full results),
+  `~/.config/lucy-reports/octo-lookup.{json,log,lock}` (state, log, lock).
 
 ## 8. Verification protocol after ANY change
 
@@ -269,6 +297,24 @@ against the log file, or a tab dump; `rerun` args are shlex-split — a literal
 ## Changelog (auto-appended daily at 7 PM; newest first)
 
 ### 2026-11-16 (manual)
+- **The no-number lookups run themselves, 5am, on the office computer**
+  (Carlos: "automate this through the relay machine so that ... Octo Browser
+  gets opened up and it looks for applicants' phone numbers for the ones that
+  we don't have ... let's just do it at 5 in the morning"). New
+  `oat_processing/octo_lookup.py` + `octo_profiles.json` (ship, release
+  2026.11.16.3), kicked from the agent tick next to the push
+  (`icd_alerts/run.py`). Snapshot → Octo profile per account → Candidates
+  list → search box → Call pop-up → `output/phone-lookups.csv` → the 5:30
+  walk sends. Ledger entry in §6 ("Fix 2"), files in §7. Lucy 1 side:
+  `post.what_to_do` routes an "Octo Browser …" fault to the office. Tested
+  on the laptop against the live accounts (Titanium, Kinetic, Haus; Revolt
+  skipped as "in use" because Carlos's own window was open). Tests:
+  `oat_processing/test_octo_lookup.py` (24). NOT yet seen on the office
+  computer: its first 5am run is 11/17 — verify by the `probe-octo-lookup`
+  row and `📞 looked-up phone` lines in its walk log. Open: six accounts have
+  no domain on file yet (New Ascendra, Pinnacle, Market Minds, Riot,
+  Maverick, VividReach) — matched by title until an applicant shows which
+  domain they use.
 - **Numbers a person looked up now reach the office push** (Carlos: "make sure
   the Lucy that gets the relay machine to push all the resumes for me gets all
   the phone numbers so that they can get sent to the call list"). Standing

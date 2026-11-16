@@ -111,6 +111,10 @@ AGENT_FILES = [
     # empty on, pulled off the relay's 'Phone Lookups' tab by the walk
     # (2026-11-16). phone_lookups_add.py, which puts them there, is ours.
     "automations/oat_processing/phone_lookups.py",
+    # Indeed's own number, looked up through Octo Browser on the office
+    # computer at 5am for the walk's no-number list (Carlos 2026-11-16).
+    "automations/oat_processing/octo_lookup.py",
+    "automations/oat_processing/octo_profiles.json",
     # The Await text's interview times, retuned to the clock before each live
     # push (Carlos/Megan 2026-10-28).
     "automations/oat_processing/await_window.py",

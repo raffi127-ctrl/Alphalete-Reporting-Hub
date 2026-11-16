@@ -1065,6 +1065,17 @@ def _main(argv=None) -> int:
         except Exception as e:  # noqa: BLE001 — never lose a sweep to this
             _log("resume push skipped: %s" % type(e).__name__)
 
+        # INDEED'S OWN NUMBER for the applicants the walk could not read one
+        # for: once a day in the 5am hour, through Octo Browser on this
+        # computer, into output/phone-lookups.csv for the 5:30 walk (Carlos
+        # 2026-11-16). Own process; nothing on a machine without Octo
+        # profiles on file.
+        try:
+            from automations.oat_processing import octo_lookup
+            octo_lookup.maybe_kick(log=_log)
+        except Exception as e:  # noqa: BLE001 — never lose a sweep to this
+            _log("octo lookup skipped: %s" % type(e).__name__)
+
         # HEADSHOTS, for an office Lucy 3 has queued any for. Ahead of the
         # gate for the same reason as the push: they keep office hours, not
         # selling hours. Asks the relay at most every 10 minutes.

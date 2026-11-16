@@ -2837,7 +2837,7 @@ def fault_headline(label: str, stage: str) -> str:
 # debo hacer algo"). Matched on the summary, which is the office-facing text
 # from sara_read/box_read/ov_read -- those phrases are the contract.
 _OWNER_MUST_ACT = ("code it emails", "emailed code", "new password",
-                   "did not accept")
+                   "did not accept", "octo browser")
 _CLAUDE_MUST_ACT = ("this one is ours", "ours to fix", "ours to look at",
                     "without saying why")
 
