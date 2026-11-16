@@ -384,7 +384,7 @@ def main(argv=None) -> int:
     ap.add_argument("--sv", type=Path, help="local Sales Verification xlsx instead of the inbox")
     ap.add_argument("--date", help="YYYY-MM-DD (default today)")
     ap.add_argument("--board", choices=["activation_one", "activation", "revenue_board", "rep_tiers", "churn_tab", "payout",
-                                        "approval_rate", "approval_by_week", "churn_by_rep", "disc_before_approval"],
+                                        "approval_rate", "approval_by_week", "churn_by_rep", "disc_before_approval", "churn_diag"],
                     default="activation_one",
                     help="churn_tab = a screenshot of the VERIZON CHURN tab (sandbox; --prod-tab for the master)")
     ap.add_argument("--prod-tab", action="store_true", help="with --board churn_tab: the Vantura Master's tab")
@@ -407,6 +407,31 @@ def main(argv=None) -> int:
     elif a.board == "payout":
         from automations.verizon_office import payout as PO
         got = PO.render_png(out_dir / f"verizon_payout_{target.isoformat()}.png", today=target)
+    elif a.board == "churn_diag":
+        # READ-ONLY: why the row-based churn base differs from the order-log one (2026-11-15: 366 vs 324)
+        from automations.verizon_office import churn_tab as CT, order_log_tab as OL, thread_boards as TB
+        h, rows = TB.nds_rows(Path(sv)); ah, arows = TB.nds_rows(Path(sv), date_col="Approval Date")
+        i = {c: h.index(c) for c in h}
+        appr = TB.approved_keys(ah, arows)
+        A = {}
+        for r in rows:
+            act = CT._d(r[i["DTR Active Date"]])
+            if act and 0 <= (target - act).days <= 30 and (r[i["sp.SPM Number"]], r[i["spe.TN"]]) in appr:
+                A[(r[i["sp.SPM Number"]], r[i["spe.TN"]])] = r
+        L = OL.lines(Path(sv)); B = {}
+        for l in L:
+            act = CT._d(l.get("Activation Date"))
+            if act and 0 <= (target - act).days <= 30 and CT.is_activated(l) and CT.is_approved(l):
+                B[(l["Order #"], l["Line"])] = l
+        byk = {(l["Order #"], l["Line"]): l for l in L}
+        print("rows=%d lines=%d | A(row rule)=%d B(tab rule)=%d | A-B=%d B-A=%d | dup keys in lines=%d"
+              % (len(rows), len(L), len(A), len(B), len(set(A) - set(B)), len(set(B) - set(A)), len(L) - len(byk)))
+        for k in list(set(A) - set(B))[:8]:
+            r = A[k]; l = byk.get(k)
+            print("  A-B %s | row: st=%s/%s act=%s | line: %s" % (
+                k, r[i["DTR Status"]], r[i["spe.Status"]], r[i["DTR Active Date"]],
+                {x: l.get(x) for x in ("Line Status", "Approval Date", "Activation Date", "Cancel Date")} if l else "NOT IN LINES"))
+        return 0
     elif a.board == "disc_before_approval":
         from automations.verizon_office import churn_tab as CH, order_log_tab as OL
         got = CH.unapproved_png(OL.lines(Path(sv)), target, out_dir / f"verizon_disc_before_approval_{target.isoformat()}.png",
