@@ -1819,10 +1819,16 @@ class ASlowPageGetsOneMoreTry(_NoNetwork):
 
 
 class ADeadSessionStopsTheRunEarly(_NoNetwork):
-    """Lucy 3's 10:30 pass on 2026-11-16 opened with a valid session, lost it
-    around 10:36, and had no way to notice: validity is checked once, when
-    the browser opens. It spent 73 minutes walking 26 people it could not
-    possibly add, 20 seconds each, then posted all 26 as failures."""
+    """A session that dies UNDER a run fails every person from then on, in a
+    row, because no page renders at all. Three of those is the signal.
+
+    Deliberately NOT the 2026-11-16 Lucy 3 shape: that morning's failures
+    interleave with successes (Seneca Meadows fails, Stephanie Perez, Jada
+    Woods and Landen Murphy are added, Ailonnie Moore fails, Jazmyne Suess is
+    added), because the cause was three processes contending for one
+    machine's OwnerVille session, not a dead one. The retry answers that;
+    this does not, and test_ordinary_slowness_does_not_trip_it pins that it
+    stays quiet through it."""
 
     def _add(self, names, behaviour):
         import contextlib
@@ -1898,11 +1904,14 @@ class ADeadSessionStopsTheRunEarly(_NoNetwork):
 
 
 class TheSessionIsCheckedBeforeTheBrowserOpens(_NoNetwork):
-    """2026-11-16: Lucy 3's OwnerVille session died ~10:36, part way through
-    the add pass. Every page after came back logged-out, the Add Sales Rep
-    modal never rendered, and 26 of 52 failed on a 20s wait. Nothing
-    recovered: the re-mint refuses to start inside a report already driving a
-    browser, so the only place it CAN run is before the browser opens."""
+    """2026-11-16: the laptop opened a run against a stored session that was
+    no longer good — `ownerville session dead — minting a new one` — and then
+    could not fix it, because the re-mint refuses to start inside a report
+    already driving a browser. Before the browser opens is the only place it
+    CAN run.
+
+    (Not the Lucy 3 morning — that was contention, see
+    ADeadSessionStopsTheRunEarly.)"""
 
     def test_a_live_session_is_left_alone(self):
         from automations.digi_docs import run as _run

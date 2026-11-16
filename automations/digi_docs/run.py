@@ -477,19 +477,34 @@ class _Streak:
     """Counts transient failures in a row, so a dead session is caught in the
     first minute instead of the fourth hour.
 
-    THE ACTUAL COST ON 2026-11-16. Lucy 3's 10:30 add pass opened with a
-    valid session — its log says `ownerville session valid (rqst in URL)` and
-    `session restored from storage_state (rqst present)` — and the session
-    died somewhere after that. The run had no way to notice: validity is
-    checked once, when the browser opens, and never again. So it spent from
-    ~10:36 to 11:49 walking 26 people it could not possibly add, 20 seconds
-    at a time, and then posted all 26 as failures.
+    THIS IS NOT WHAT HAPPENED ON 2026-11-16, and the first version of this
+    comment said it was. Read that correction before trusting this class to
+    catch the next bad morning, because it will not catch THAT one.
 
-    Three in a row is the signal. One or two are ordinary slowness — that is
-    what _transient and the retry are for, and seven people cleared on a
-    second attempt that morning. But three consecutive people failing the
-    same way is not slowness, it is the session, and every further person
-    costs another 20 seconds to learn the same thing.
+    The 10:30 add pass that failed 26 of 52 did NOT lose its session. Its log
+    interleaves failures with successes the whole way through — Seneca
+    Meadows times out, then Stephanie Perez, Jada Woods and Landen Murphy are
+    all added, then Ailonnie Moore and Mariah Gaines fail, then Jazmyne Suess
+    is added. A dead session cannot add Jazmyne Suess. "26 succeeded, 26
+    failed" invites the story that it died half way; the ORDER is what
+    disproves it, so read the order, not the counts.
+
+    What it really was: three processes on one machine sharing ONE OwnerVille
+    session (`[ownerville_session] another run holds the ownerville session
+    … one session per machine; a separate Chrome profile is not a separate
+    session`). captainship_drafts ran 10:18:39 → 13:04 straight through the
+    add, icd_onboarding started at 10:30, waited its full 30 minutes and gave
+    up with OwnervilleBusy, and this report competed with both. The retry in
+    _park_or_refuse is what answers that, and it is the part that is proven:
+    every person re-run by hand that day came back immediately.
+
+    So what is this class FOR? A genuinely dead session, which does happen —
+    the laptop hit one at 12:17 the same day and said so outright
+    (`ownerville session dead — minting a new one`). That failure looks
+    different: EVERY person fails, in a row, because no page renders at all.
+    Three in a row is that shape and not the contention shape, which is why
+    it is three IN A ROW rather than three in total. Expect it to stay quiet
+    through a contention morning; that is correct, not a miss.
 
     Stopping is the RIGHT answer rather than a sad one, because it is now
     self-healing: the run aborts, and the next five-minute tick pre-flights
@@ -522,14 +537,20 @@ def _ownerville_session_alive() -> bool:
     """Is the SAVED OwnerVille session still live? Asked over plain HTTP,
     before any browser opens.
 
-    Why this exists: on 2026-11-16 Lucy 3's session died around 10:36, part
-    way through the add pass. Every page after that came back logged-out, so
-    the Add Sales Rep modal never rendered and 26 of 52 people failed on a
-    20-second wait for an element that was never going to appear. Nothing
-    recovered, because digi_docs' own re-mint CANNOT run from inside a report
-    that is already driving a browser -- it refuses, correctly, rather than
-    start a nested sync_playwright. So the dead session sat there for three
-    hours while every five-minute tick failed the same way.
+    Why this exists: on 2026-11-16 the LAPTOP opened a run against a stored
+    session that was no longer good and said so -- `ownerville session dead
+    -- minting a new one` -- and then could not do anything about it, because
+    digi_docs' own re-mint CANNOT run from inside a report that is already
+    driving a browser. It refuses, correctly, rather than start a nested
+    sync_playwright, and the run was left holding cookies that no longer
+    worked.
+
+    NOT the Lucy 3 morning. That one failed 26 of 52 for a different reason
+    entirely -- three processes contending for one machine's single
+    OwnerVille session -- and this check would have passed it, rightly. See
+    _Streak for why the counts invite the wrong story and the ORDER settles
+    it. Do not reach for this function to explain a run whose failures are
+    interleaved with successes.
 
     Asking BEFORE the browser opens is what makes the fix possible: at that
     point a mint is just a subprocess, with no playwright loop to nest inside.
