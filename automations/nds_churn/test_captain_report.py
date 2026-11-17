@@ -55,6 +55,10 @@ ROWS = [
          "SPE9", "999", "port", "Galaxy S25 - 128GB - Black"),
     _row("Rep B", "OLD 4", _d(130), "DSI10", "BAN10", "WIRELESS", "Posted", "", _d(120),
          "SPE10", "1010", "port", "Galaxy S25 - 128GB - Black"),
+    # 90 Day bucket, disconnected 95 days AFTER activating: in the base, NOT a
+    # 90 Day disconnect (Smart Circle's within-90-days count)
+    _row("Rep B", "OLD 5", _d(110), "DSI14", "BAN14", "WIRELESS", "Disconnected", _d(5), _d(100),
+         "SPE14", "1414", "port", "Galaxy S25 - 128GB - Black", reason="Non-Pay"),
     # 61-90 (the 60 Day bucket) -- counted there, not in 90
     _row("Rep B", "MID 1", _d(80), "DSI11", "BAN11", "WIRELESS", "Disconnected", _d(10), _d(70),
          "SPE11", "1111", "port", "Galaxy S25 - 128GB - Black"),
@@ -90,7 +94,7 @@ class CaptainReportTest(unittest.TestCase):
     def test_box_non_byod_only(self):
         b = self.rep["box"]
         self.assertEqual((b["0-30"]["act"], b["0-30"]["disc"]), (3, 1))
-        self.assertEqual((b["90"]["act"], b["90"]["disc"]), (4, 1))
+        self.assertEqual((b["90"]["act"], b["90"]["disc"]), (5, 1))
         self.assertEqual((b["60"]["act"], b["60"]["disc"]), (1, 1))
         self.assertAlmostEqual(b["0-30"]["pct"], 100 / 3, places=3)
 
@@ -103,6 +107,7 @@ class CaptainReportTest(unittest.TestCase):
         self.assertEqual(reps["Rep A"]["0-30"]["disc"], 1)
         self.assertEqual(reps["Rep A"]["90"]["disc"], 1)
         self.assertEqual(reps["Rep B"]["0-30"]["disc"], 0)   # the BYOD + tablet stay out
+        self.assertEqual(reps["Rep B"]["90"]["disc"], 0)     # OLD 5 dropped after day 90
         self.assertEqual(CR.rep_order(reps)[0], "Rep A")
 
     def test_rate_and_pending(self):
@@ -116,7 +121,7 @@ class CaptainReportTest(unittest.TestCase):
         self.assertEqual(t30[0]["leaves"], TODAY - dt.timedelta(days=15) + dt.timedelta(days=31))
         self.assertEqual(t30[0]["pct_after"], 0.0)
         t90 = self.rep["tables"]["90"]
-        self.assertEqual([g["customer"] for g in t90], ["OLD 2"])
+        self.assertEqual([g["customer"] for g in t90], ["OLD 2"])   # not OLD 5
         self.assertEqual(t90[0]["days_left"], 121 - 105)
 
     def test_html_renders(self):
@@ -132,7 +137,7 @@ class CaptainReportTest(unittest.TestCase):
         ok, txt = CR.compare(view, self.rep)
         self.assertTrue(ok)
         self.assertIn("view 2/4 vs ours 2/4 ✓", txt)
-        self.assertIn("90 Day view 1/5 vs ours 1/4 ✓", txt)     # within tolerance
+        self.assertIn("90 Day view 1/5 vs ours 1/5 ✓", txt)
         ok2, txt2 = CR.compare({"0-30": {"disc": 3, "base": 4}, "90": None}, self.rep)
         self.assertFalse(ok2)
         self.assertIn("view has no rows", txt2)

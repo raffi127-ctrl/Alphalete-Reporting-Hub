@@ -46,7 +46,8 @@ from automations.nds_churn import compute as C
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 OUT_DIR = REPO_ROOT / "output" / "nds_churn"
-LOOKBACK_DAYS = 140          # Order-Date window: the 90 Day bucket is posted 91-120 days ago
+LOOKBACK_DAYS = 200          # Order-Date window: the 90 Day bucket is posted 91-120 days ago,
+                             # and a port line can activate weeks after its order
 
 # Khalil's captainship (Sean Balderrama, "Captain Report - Khalil",
 # 2026-11-16): key -> display name (the view's spelling), the upper-cased
@@ -69,6 +70,13 @@ BUCKETS = (("0-30", 0, 30), ("30", 31, 60), ("60", 61, 90), ("90", 91, 120))
 BUCKET_LABEL = {"0-30": "0-30 Day", "30": "30 Day", "60": "60 Day", "90": "90 Day"}
 SHOWN = ("0-30", "90")                   # the two the report shows (Carlos 11/17)
 BUCKET_SPAN = {k: (lo, hi) for k, lo, hi in BUCKETS}
+# A bucket's disconnect count is the cohort's N-day churn: a line counts as
+# disconnected only when it dropped within N days of activating (2026-11-17,
+# Zaid on Lucy 1: ours 60/98 vs the view's 42/92 on one rep -- every extra
+# line of ours had disconnected 91+ days after activation; with the rule
+# 41/98 and Jason Mogene 2/20 = the view's 2/22). A line that drops later
+# stays in the base and is not a disconnect of that bucket.
+DISC_WITHIN = {"0-30": 30, "30": 30, "60": 60, "90": 90}
 
 # Captain's Bonus quality lines (Sean Balderrama 2026-11-17, "NDS Captain's
 # Bonus DD WE 11/15"): (bonus at or under, DNQ at or over), in %.
@@ -179,8 +187,17 @@ def bucket_units(lines: List[dict], today: dt.date, keep=is_nonbyod_port
     return out
 
 
-def _is_dead(ln: dict) -> bool:
-    return ln["status"].lower() in C.DISCONNECTED
+def _is_dead(ln: dict, bucket: Optional[str] = None) -> bool:
+    """Disconnected -- and, for a bucket, within its DISC_WITHIN days of the
+    activation (a missing disconnect date counts, to stay conservative)."""
+    if ln["status"].lower() not in C.DISCONNECTED:
+        return False
+    if bucket is None:
+        return True
+    dd, posted = ln.get("status_date_d"), ln.get("posted")
+    if not dd or not posted:
+        return True
+    return (dd - posted).days <= DISC_WITHIN[bucket]
 
 
 def counts(units: Dict[str, List[dict]]) -> Dict[str, dict]:
@@ -188,7 +205,7 @@ def counts(units: Dict[str, List[dict]]) -> Dict[str, dict]:
     out = {}
     for b, us in units.items():
         act = len(us)
-        disc = sum(1 for u in us if _is_dead(u))
+        disc = sum(1 for u in us if _is_dead(u, b))
         out[b] = {"act": act, "disc": disc, "pct": (100.0 * disc / act) if act else None}
     return out
 
@@ -260,14 +277,15 @@ def pending(lines: List[dict], today: dt.date) -> int:
     return n
 
 
-def _groups(units: List[dict], today: dt.date, leave_days: int) -> List[dict]:
+def _groups(units: List[dict], today: dt.date, leave_days: int,
+            bucket: Optional[str] = None) -> List[dict]:
     """Disconnected lines of a bucket grouped per account (BAN, else
     customer), soonest to leave the bucket first. leave_days = the bucket's
     upper bound + 1 (a 0-30 line falls off the report at day 31; a 90 Day
     line leaves that bucket at day 121)."""
     groups: Dict[tuple, List[dict]] = collections.defaultdict(list)
     for u in units:
-        if _is_dead(u):
+        if _is_dead(u, bucket):
             groups[(u["customer"], u["ban"])].append(u)
 
     def _posted(grp):
@@ -286,7 +304,6 @@ def _groups(units: List[dict], today: dt.date, leave_days: int) -> List[dict]:
             "disc_date": min((g["status_date_d"] for g in grp if g["status_date_d"]), default=None),
             "kind": C._join_uniq(f"{C.line_kind(g)} · {g['if_oof']}".strip(" ·") for g in grp),
             "device": C._join_uniq(g["device"] or g["package"] for g in grp),
-            "ported_from": C._join_uniq(g.get("ported_from") or "" for g in grp),
         })
     return out
 
@@ -310,7 +327,7 @@ def build(lines: List[dict], today: dt.date) -> dict:
     tables = {}
     for b in SHOWN:
         lo, hi = BUCKET_SPAN[b]
-        grps = _groups(units[b], today, hi + 1)
+        grps = _groups(units[b], today, hi + 1, b)
         rows = []
         for g in grps:
             rows.append({**g, "pct_after": pct_after(grps, g["leaves"], box[b]["act"])})
@@ -547,7 +564,7 @@ def _table_html(bucket: str, rows: List[dict], box: dict, today: dt.date) -> str
             f'<th class="wh">{BUCKET_LABEL[bucket]} % after rolloff</th><th class="wh">Customer</th>'
             '<th class="wh">Sales Rep</th><th class="wh">Order Date</th><th class="wh">Activation Date</th>'
             '<th class="wh">Disconnect Date</th><th class="wh">Line · IF/OOF</th>'
-            '<th class="wh">Ported From</th><th class="wh">Phone</th></tr>')
+            '<th class="wh">Phone</th></tr>')
     if not rows:
         return f'<div class="band">{_e(band)}</div><div class="empty">no disconnects in this bucket</div>'
     trs = []
@@ -559,7 +576,7 @@ def _table_html(bucket: str, rows: List[dict], box: dict, today: dt.date) -> str
                    f"<td class=\"l\">{_e(g['customer'])}</td><td class=\"l\">{_e(g['rep'])}</td>"
                    f"<td>{C.fmt_date(g['order_date'])}</td><td>{C.fmt_date(g['posted'])}</td>"
                    f"<td>{C.fmt_date(g['disc_date'])}</td><td>{_e(g['kind'])}</td>"
-                   f"<td>{_e(g['ported_from'])}</td><td class=\"l\">{_e(g['device'])}</td></tr>")
+                   f"<td class=\"l\">{_e(g['device'])}</td></tr>")
     return f'<div class="band">{_e(band)}</div><table>{head}{"".join(trs)}</table>'
 
 
@@ -573,7 +590,8 @@ def render_html(owner: dict, rep: dict, today: dt.date, recon_text: str) -> str:
         "What's counted: ported voice lines on a financed or new phone — no BYOD, no Air, no Internet, "
         "no tablets / watches / upgrades / new-number lines. Buckets are Tableau's, by days since the line "
         "activated: 0-30 Day = 0–30, 90 Day = 91–120; a disconnected line stays in the bucket its age puts "
-        "it in. Churn % = disconnected ÷ activated in the bucket. Colours follow the Captain's Bonus quality "
+        "it in. Churn % = disconnected ÷ activated in the bucket, where a 90 Day disconnect is one that dropped "
+        "within 90 days of activating (Smart Circle's count; a later drop stays in the base). Colours follow the Captain's Bonus quality "
         f"lines ({_e(CAPTAIN_SOURCE)}): green = at or under the bonus line (0-30 ≤ 3.00%, 90 Day ≤ 8.00%), "
         "red = at or over the DNQ line (0-30 ≥ 5.00%, 90 Day ≥ 13.00%) — the captain's bonus is judged on the "
         "whole team's port lines, so one office can sit red while the team does not. 'SOW Non-BYOD chart' = "
@@ -633,7 +651,40 @@ def diag_lines(owner: dict, rep: dict, today: dt.date, recon: str, view: Optiona
             out.append(f"  {g['days_left']}d | {C.fmt_date(g['leaves'])} | {g['lines']} | "
                        f"{_fmt_pct(g['pct_after'])} | {g['customer']} | {g['rep']} | "
                        f"{C.fmt_date(g['order_date'])} | {C.fmt_date(g['posted'])} | "
-                       f"{C.fmt_date(g['disc_date'])} | {g['kind']} | {g['ported_from']} | {g['device']}")
+                       f"{C.fmt_date(g['disc_date'])} | {g['kind']} | {g['device']}")
+    return out
+
+
+def missing_reps(path: Path, ix: dict, view: Optional[dict], rep: dict) -> List[str]:
+    """Reps the view credits to this owner that our owner slice never saw:
+    where their rows sit in the whole export (owner cell, rows, order-date
+    and posted-date range), or 'not in the export at all'."""
+    vd = (view or {}).get("detail") or {}
+    ours = {n.strip().lower() for n in rep["all_port_reps"]} | {n.strip().lower() for n in rep["rep_rate"]}
+    want = {n.strip().lower(): n for n in vd if n.strip().lower() not in ours}
+    if not want:
+        return []
+    i_rep, i_owner, i_od, i_po = ix.get("rep"), ix.get("owner"), ix.get("order_date"), ix.get("posted")
+    found: Dict[str, Dict[str, list]] = collections.defaultdict(lambda: collections.defaultdict(list))
+    for r in C.read_rows(path)[1:]:
+        if i_rep is None or len(r) <= max(i for i in (i_rep, i_owner, i_od, i_po) if i is not None):
+            continue
+        n = str(r[i_rep]).strip().lower()
+        if n in want:
+            own = str(r[i_owner]).strip().upper().splitlines()[0] if i_owner is not None else "?"
+            found[n][own].append((C.parse_date(r[i_od]) if i_od is not None else None,
+                                  C.parse_date(r[i_po]) if i_po is not None else None))
+    out = []
+    for n, disp in sorted(want.items()):
+        if n not in found:
+            out.append(f"  {disp}: NOT in the export at all")
+            continue
+        for own, dates in found[n].items():
+            ods = [d for d, _ in dates if d]
+            pos = [p for _, p in dates if p]
+            out.append(f"  {disp}: {len(dates)} row(s) under {own}; ordered "
+                       f"{C.fmt_date(min(ods)) if ods else '?'}..{C.fmt_date(max(ods)) if ods else '?'}, "
+                       f"posted {C.fmt_date(min(pos)) if pos else '?'}..{C.fmt_date(max(pos)) if pos else '?'}")
     return out
 
 
@@ -674,13 +725,17 @@ def run(owner_key: str, today: dt.date, *, dry_run: bool = False,
     log("RECONCILE: " + ("OK" if ok else "UNVERIFIED" if ok is None else "MISMATCH") + " -- " + recon)
     recon_short = ("✓ reconciled to Smart Circle's Churn Rates view (all port lines, 0-30)"
                    if ok else "⚠ not reconciled to Smart Circle's Churn Rates view: " + recon)
-    for ln in diag_lines(owner, rep, today, recon, view, len(lines), owner_cells):
+    extra = missing_reps(path, ix, view, rep)
+    diag = diag_lines(owner, rep, today, recon, view, len(lines), owner_cells)
+    if extra:
+        diag += ["VIEW REPS MISSING FROM OUR OWNER SLICE:"] + extra
+    for ln in diag:
         log("  " + ln)
     png = render_png(owner, rep, today, recon_short,
                      OUT_DIR / f"nds_captain_{key}_{today.isoformat()}.png")
     log(f"[captain] picture {png} ({png.stat().st_size:,} bytes)")
     if dry_run:
-        write_diag(diag_lines(owner, rep, today, recon, view, len(lines), owner_cells), log=log, tab=DIAG_TAB)
+        write_diag(diag, log=log, tab=DIAG_TAB)
         try:
             shot_to_tab(png, log=log)
         except Exception as e:  # noqa: BLE001 -- the picture tab never fails a dry run
@@ -690,7 +745,7 @@ def run(owner_key: str, today: dt.date, *, dry_run: bool = False,
         return 0
     if ok is False:
         log("✗ 0-30 does not match the Churn Rates view -- nothing sent (--skip-reconcile overrides)")
-        write_diag(diag_lines(owner, rep, today, recon, view, len(lines), owner_cells), log=log, tab=DIAG_TAB)
+        write_diag(diag, log=log, tab=DIAG_TAB)
         return 1
     if dm:
         from automations.shared import slack_metrics_post as smp
