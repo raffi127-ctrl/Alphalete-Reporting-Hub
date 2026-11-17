@@ -617,11 +617,18 @@ def main(argv=None) -> int:
     ap.add_argument("--last-week", action="store_true",
                     help="the view's 'Last Week' (Mon-Sun just closed) instead of This Week")
     ap.add_argument("--no-tags", action="store_true", help="skip the Slack member lookup")
-    g = ap.add_mutually_exclusive_group()
-    g.add_argument("--dry-run", action="store_true", help="(default) render + print, post nothing")
-    g.add_argument("--post-to", default="", help="TEST: post top-level here, names without @")
-    g.add_argument("--live", action="store_true", help="post the threads, with tags")
-    return run(ap.parse_args(argv))
+    # Not mutually exclusive on purpose: the schedule's base_args carry --live
+    # and `lucy rerun` APPENDS, so a test has to be able to outrank it.
+    # --dry-run beats everything; --post-to beats --live.
+    ap.add_argument("--dry-run", action="store_true", help="(default) render + print, post nothing")
+    ap.add_argument("--post-to", default="", help="TEST: post top-level here, not the office channel")
+    ap.add_argument("--live", action="store_true", help="post the threads in the office channels")
+    args = ap.parse_args(argv)
+    if args.dry_run:
+        args.live, args.post_to = False, ""
+    elif args.post_to:
+        args.live = False
+    return run(args)
 
 
 if __name__ == "__main__":

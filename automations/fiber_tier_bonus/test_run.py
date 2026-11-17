@@ -130,6 +130,20 @@ class TierBonus(unittest.TestCase):
                          dt.date(2026, 12, 28))
         self.assertIsNone(R.monday_in_headers(["Rep Volume Bonus Tiers"], d))
 
+    def test_test_flags_outrank_scheduled_live(self):
+        seen = {}
+        orig = R.run
+        R.run = lambda a: seen.update(live=a.live, post_to=a.post_to) or 0
+        try:
+            R.main(["--live", "--office", "raf", "--post-to", "U1"])
+            self.assertEqual(seen, {"live": False, "post_to": "U1"})
+            R.main(["--live", "--office", "raf", "--dry-run"])
+            self.assertEqual(seen, {"live": False, "post_to": ""})
+            R.main(["--live"])
+            self.assertEqual(seen, {"live": True, "post_to": ""})
+        finally:
+            R.run = orig
+
     def test_owner_alias(self):
         self.assertTrue(R.same_owner("RAFAEL HIDALGO", "Rafael Hidalgo"))
         self.assertTrue(R.same_owner("Raf H", "Rafael Hidalgo", {"Rafael Hidalgo": ["Raf H"]}))
