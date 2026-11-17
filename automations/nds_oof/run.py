@@ -228,6 +228,64 @@ def open_client_grid(page, rqst: str, mdy: str) -> str:
         return ""
 
 
+# --- what ownerville sent, onto a sheet tab (a failed grid only) ---------------
+DIAG_SHEET = "1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw"     # the control workbook
+DIAG_TAB = "NDS Grid Diag"
+_DIAG_JS = """async (urls) => {
+    const out = {};
+    for (const [k, u] of Object.entries(urls)) {
+        try {
+            const t = await (await fetch(u, {credentials: 'include'})).text();
+            const i = t.indexOf('D2DClientDropdown');
+            out[k] = {len: t.length,
+                      table: t.includes('id="table-dispositions"'),
+                      tr: (t.match(/<tr/g) || []).length,
+                      user: (t.match(/var _telemapper = \\{[\\s\\S]{0,500}/) || [''])[0],
+                      body: k === 'today' && i >= 0 ? t.slice(Math.max(0, i - 4000), i + 120000) : ''};
+        } catch (e) { out[k] = {err: String(e)}; }
+    }
+    return out;
+}"""
+
+
+def grid_diag(page, rqst: str, today: dt.date) -> None:
+    """The raw page ownerville answers with, on a sheet tab the laptop can
+    read (the log shows 200 chars a line, four minutes a line). Session
+    tokens are blanked. Never raises."""
+    try:
+        base = "https://v2.ownerville.com/index.cfm?p=89&rqst=%s" % rqst
+        day = lambda d: "&startDate=%s&endDate=%s" % ((d.strftime("%m/%d/%Y"),) * 2)
+        got = page.evaluate(_DIAG_JS, {
+            "today": base + day(today),
+            "saturday": base + day(today - dt.timedelta(days=(today.weekday() + 2) % 7 or 7)),
+            "no_dates": base,
+            "client_in_url": base + "&invD2DClientId=%s" % C.CAMPAIGN_ID + day(today),
+        })
+        blank = lambda t: re.sub(r"[A-F0-9]{8}_[A-F0-9]{4}_[A-F0-9]{4}_[A-F0-9]{16}", "…", str(t))
+        rows = [["at", dt.datetime.now().isoformat(timespec="seconds"), ""]]
+        for k, v in got.items():
+            rows.append([k, "len %s · table %s · <tr %s%s" % (
+                v.get("len"), v.get("table"), v.get("tr"),
+                (" · " + v["err"]) if v.get("err") else ""),
+                blank(re.sub(r"\s+", " ", v.get("user") or ""))[:600]])
+        body = (got.get("today") or {}).get("body") or ""
+        body = re.sub(r"(?is)<(script|style)\b.*?</\1>", " ", body)
+        body = blank(re.sub(r"\s+", " ", body))
+        for i in range(0, min(len(body), 180000), 45000):
+            rows.append(["body %d" % (i // 45000 + 1), body[i:i + 45000], ""])
+        from automations.recruiting_report import fill as _fill
+        sh = _fill._client().open_by_key(DIAG_SHEET)
+        try:
+            ws = sh.worksheet(DIAG_TAB)
+        except Exception:  # noqa: BLE001
+            ws = sh.add_worksheet(DIAG_TAB, rows=60, cols=3)
+        ws.clear()
+        ws.update(range_name="A1", values=rows, value_input_option="RAW")
+        _log("grid diag: %d row(s) on the %r tab" % (len(rows), DIAG_TAB))
+    except Exception as e:  # noqa: BLE001
+        _log("grid diag failed: %s: %s" % (type(e).__name__, str(e)[:140]))
+
+
 # --- pull --------------------------------------------------------------------
 def pull(today: dt.date, *, want_board: bool, headless: bool = True):
     """ONE session: campaign pinned, gaps feed, and (hourly) the board rows."""
@@ -261,6 +319,7 @@ def pull(today: dt.date, *, want_board: bool, headless: bool = True):
                 # reading an empty grid as "nobody knocked".
                 _log("GRID FAILED -- %s: %s" % (type(e).__name__, str(e)[:200]))
                 rows = None
+                grid_diag(page, rqst, today)
                 try:    # what ownerville is actually showing, for the log
                     seen = page.evaluate(
                         """() => ({
