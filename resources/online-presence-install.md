@@ -54,19 +54,20 @@ Answers land as PENDING on the **LucyECO Social Signups** tab of the relay workb
 4b. *(Not standard -- skip.)* `google-signin` makes the owner sign Lucy into their own Google
    on their computer instead of the Manager invite. It shows an "unverified app" warning and is
    only for an owner who truly can't add a Manager. Raf's office (Alphalete) runs on it as the 11/15 pilot.
-5. **Facebook page → Alphalete (so Lucy answers their Facebook reviews).** On their phone:
-   **business.facebook.com** (Meta Business Suite) → Settings → Business assets → their **Page** →
-   **Partners** → **Assign partner** → **Business ID** `1600512619997772` (Alphalete Marketing) →
-   turn on **Content** + **Community activity** → **Assign**. Then we connect it (below, or
-   Launch Studio step 9). Their Facebook reviews then get the same treatment as Google's:
-   thank-yous on their own, negatives drafted for ✅, already-answered ones skipped. Their
-   computer reads + posts (every 30 min) with a key for just their page, sent to it sealed
-   (`eco_fb --connect`, run from Megan's Mac where Alphalete's Meta key lives).
-5b. **Sign Lucy's window into Facebook.** We send `eco_fb --signin <key>`, Facebook opens on their
-   screen, they sign in with the account that manages their Page, and it closes itself. Facebook's
-   API won't let a Page answer a review written by a PERSON (most reviews), so those replies are
-   typed on facebook.com as the Page by their office computer, hidden, one every 20 min at most.
-   A Facebook security check stops everything and DMs the owner -- Lucy never gets past one.
+5. **Sign Lucy's window into Facebook (THE standard way Lucy answers their Facebook reviews
+   since 2026-11-17).** Before the call: `eco_fb --browser <key>` (uses the Facebook link from
+   their form). On the call we send `eco_fb --signin <key>`: Facebook opens on their screen, they
+   sign in with the account that manages their Page, and it closes itself. From then on their
+   office computer reads the Page's Reviews tab and types the replies on facebook.com **as the
+   Page** (hidden, one every 20 min at most). No Meta key, no Business Suite steps. Thank-yous go
+   out on their own; "doesn't recommend" gets a draft card for ✅; already-answered ones are
+   skipped. A Facebook security check or sign-out stops everything and DMs the owner -- Lucy
+   never gets past one.
+5b. *(Optional, only if they already share their Page with Alphalete's Meta business.)* Business
+   Suite → Settings → Business assets → Page → Partners → Assign partner → Business ID
+   `1600512619997772` → Content + Community activity. Then `fb_reviews --connect <key>` +
+   `eco_fb --connect <key>` (Megan's Mac). It only speeds up the READ; replies to reviews written
+   by a person still go through step 5's sign-in, so step 5 is needed either way.
 
 ## What we do
 
@@ -78,18 +79,26 @@ Before the call:
   python -m automations.online_presence.setup add --office <key> --from-signup "<Business name>"
   ```
   `<key>` = the office's ECO key. Names resolve from `resources/owner-slack-ids.md` first.
+- Make Facebook go through their computer: `eco_fb --browser <key>` (Megan's Mac).
+- **Get the row to Lucy 3 BEFORE the call.** `setup add` and `eco_fb --browser` write
+  `automations/online_presence/offices.json` on the Mac you ran them on. Lucy 3 runs the office
+  only once that file reaches her: commit + push it, then `lucy update` Lucy 3. Skip this and the
+  sign-ins on the call work but nothing reads their answers -- no thank-yous, no posts. (Commit,
+  push and update each need Megan's go.)
 
 On the call:
 ```
 python -m automations.online_presence.setup zoho-signin <key>        # step 4: Zoho opens on their screen
 python -m automations.online_presence.setup invites --accept         # after step 3
 python -m automations.online_presence.setup link-google <key>
-python -m automations.brand_audit.fb_reviews --connect <key>         # after step 5: finds + connects their page
-python -m automations.online_presence.eco_fb --connect <key>         # then: their computer gets a key for THEIR page only (Megan's Mac)
-python -m automations.online_presence.eco_fb --signin <key>          # step 5b: Facebook opens on their screen
+python -m automations.online_presence.eco_fb --browser <key>         # before step 5: Facebook via their computer, no key
+python -m automations.online_presence.eco_fb --signin <key>          # step 5: Facebook opens on their screen
 python -m automations.online_presence.setup audit <key>              # every site vs their sign-up answers
-python -m automations.online_presence.setup check <key>              # everything ✅ but Mode = ready
-python -m automations.online_presence.run --office <key>             # dry run: prints what it WOULD do
+python -m automations.online_presence.setup check <key>              # everything ✅ but Mode = ready (works from any Mac:
+                                                                     # Google, Facebook + Zoho come from the office's job log)
+python -m automations.online_presence.run --office <key>             # dry run: prints what it WOULD do -- ON LUCY 3
+                                                                     # (her memory of the office; on another Mac it
+                                                                     # shows "waiting on sign-in" for things already done)
 ```
 
 ## How it runs, day to day

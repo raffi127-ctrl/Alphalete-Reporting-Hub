@@ -32,6 +32,8 @@ _NAMES = {"instagram": "Instagram", "facebook": "Facebook", "google": "Google",
 # The daily check opens Zoho on the owner's screen for a few seconds, so it
 # asks mid-day, not first thing in the morning or at night.
 CHECK_HOURS = (11, 15)
+# A check that doesn't finish is asked again, this many times a day at most.
+CHECK_TRIES = 3
 
 
 def _load(path: Path) -> Dict:
@@ -109,6 +111,20 @@ def collect(P, rows: List[Dict], cl, *, dry: bool) -> List[Dict]:
                          "note": ", ".join(res.get("channels") or []) or "no pages"})
             continue
         if kind == "social_check":
+            if status not in ("ok", "signed_out"):
+                # The check itself didn't finish (Zoho timed out, the office was
+                # busy): that says nothing about their pages. No DM -- ask again on
+                # a later pass today (Raf 11/17: a timed-out check read as "all 5
+                # pages disconnected").
+                day = _today(P).isoformat()
+                tries = state.setdefault("check_tries", {})
+                tries = {day: tries.get(day, 0) + 1}
+                state["check_tries"] = tries
+                if tries[day] < CHECK_TRIES and state.get("check_queued") == day:
+                    state.pop("check_queued", None)
+                acts.append({"action": "check_unfinished",
+                             "note": str(res.get("error") or status)[:120]})
+                continue
             state["last_check"] = {"day": _today(P).isoformat(), "result": res}
             probs = problems(P, res)
             acts.append({"action": "check_ok" if not probs else "check_problem",

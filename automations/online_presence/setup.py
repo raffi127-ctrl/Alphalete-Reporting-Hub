@@ -30,7 +30,7 @@ import argparse
 import re
 import sys
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from automations.online_presence import offices
 
@@ -320,7 +320,7 @@ def cmd_google_signin(a) -> int:
     return 0
 
 
-def _eco_zoho_rows(p) -> List[Tuple[bool, str]]:
+def _eco_zoho_rows(p, log: List[Dict] = ()) -> List[Tuple[bool, str]]:
     """What the office's computer last told us about its Zoho."""
     from automations.online_presence import relay, watch
     res, when = None, ""
@@ -336,6 +336,13 @@ def _eco_zoho_rows(p) -> List[Tuple[bool, str]]:
     if res is None:
         last = watch._load(p.path("watch.json")).get("last_check") or {}
         res, when = last.get("result"), last.get("day", "")
+    if not res:
+        z = _last(list(log), "")
+        if z:
+            res, when = z, z["_at"]
+    if res and res.get("status") not in ("ok", "signed_in", "signed_out"):
+        return [(False, f"Zoho check on the office computer didn't finish ({when}): "
+                        f"{str(res.get('error') or res.get('status'))[:80]} -- it's asked again")]
     if not res:
         return [(False, "Zoho on the office computer: no report yet "
                         f"(run `zoho-signin {p.key}` on the call)")]
@@ -413,6 +420,59 @@ def _slack_room_check(p) -> List[Tuple[bool, str]]:
     return out
 
 
+def _office_log(key: str) -> List[Dict]:
+    """The office computer's recent jobs, oldest first, from the shared relay log.
+    Works from any machine -- the checklist is usually run from Megan's Mac, while
+    the office's own state files live on Lucy 3."""
+    try:
+        from automations.online_presence import relay
+        jobs = relay._call({"office_job_log": {"office": key}}).get("jobs") or []
+    except Exception:  # noqa: BLE001
+        return []
+    return sorted(jobs, key=lambda j: j.get("queued_at", ""))
+
+
+def _last(log: List[Dict], do: str) -> Dict:
+    """The newest answered job whose result says `do` ('' = a Zoho check)."""
+    for j in reversed(log):
+        r = j.get("result") or {}
+        if j.get("status") in ("queued", "offered") or not r:
+            continue
+        if (r.get("do") or "") == do and (do or "channels" in r or r.get("status") == "signed_out"):
+            return dict(r, _at=str(j.get("queued_at", ""))[:16].replace("T", " ") + " UTC")
+    return {}
+
+
+_FB_WHY = {"needs_signin": "Facebook signed out -- run `eco_fb --signin {k}`",
+           "signed_out": "Facebook signed out -- run `eco_fb --signin {k}`",
+           "checkpoint": "Facebook wants a security check -- the owner clears it on their phone",
+           "not_page": "the Facebook sign-in can't comment as the Page -- sign in with an account that manages it"}
+
+
+def _facebook_rows(p, log: List[Dict]) -> List[Tuple[bool, str]]:
+    """Facebook reviews read + answered from the office computer."""
+    from automations.online_presence import eco_fb
+    if not eco_fb.is_eco(p):
+        how = ("`eco_fb --browser %s` (no Meta key)" % p.key) if p.facebook_url else "add their Facebook link first"
+        return [(False, "Facebook reviews from the office computer: not set up (%s)" % how)]
+    rows: List[Tuple[bool, str]] = []
+    read, reply = _last(log, "fb_reviews"), _last(log, "fb_reply")
+    if not read:
+        rows.append((False, "Facebook reviews: no read from the office computer yet "
+                            "(run `eco_fb --signin %s`)" % p.key))
+    elif read.get("status") == "ok":
+        rows.append((True, "Facebook reviews read on the office computer (%s): %s without a reply"
+                           % (read["_at"], len(read.get("reviews") or []))))
+    else:
+        why = _FB_WHY.get(read.get("status"), str(read.get("error") or read.get("status")))
+        rows.append((False, "Facebook read (%s): %s" % (read["_at"], why.format(k=p.key))))
+    if reply:
+        ok = reply.get("status") == "replied"
+        why = "landed" if ok else _FB_WHY.get(reply.get("status"), str(reply.get("error") or reply.get("status")))
+        rows.append((ok, "Last Facebook reply (%s): %s" % (reply["_at"], why.format(k=p.key))))
+    return rows
+
+
 def checklist(p, *, zoho: bool = False) -> List[Tuple[bool, str]]:
     """[(ok, line)] -- the install-call checklist for one office."""
     rows: List[Tuple[bool, str]] = []
@@ -425,12 +485,16 @@ def checklist(p, *, zoho: bool = False) -> List[Tuple[bool, str]]:
                  + ("" if p.approvers else " (Megan + Eve approve until they name someone)")))
     if p.slack_channel:
         rows.extend(_slack_room_check(p))
+    log = _office_log(p.key)
     if p.reviews and p.reviews_via == "eco":
         from automations.online_presence import eco_reviews
         st = eco_reviews._load(p)
+        g = _last(log, "google_reviews")
         if eco_reviews.signed_in(p):
             rows.append((True, f"Google reviews from the office computer: signed in, "
                                f"{len(st.get('reviews') or [])} without a reply at last read"))
+        elif g.get("status") == "ok":
+            rows.append((True, f"Google reviews read on the office computer ({g['_at']})"))
         elif st.get("listings") is not None and not st.get("location"):
             rows.append((False, "Google sign-in worked but none of their listings matches this office: "
                                 + (", ".join(x.get("title", "") for x in st["listings"]) or "none")))
@@ -448,8 +512,10 @@ def checklist(p, *, zoho: bool = False) -> List[Tuple[bool, str]]:
                                    f"{open_} without a reply"))
             except Exception as e:
                 rows.append((False, f"Google reviews readable ({str(e)[:90]})"))
+    if p.facebook_url or getattr(p, "facebook_page_id", ""):
+        rows.extend(_facebook_rows(p, log))
     if p.social and p.post_via == "eco":
-        rows.extend(_eco_zoho_rows(p))
+        rows.extend(_eco_zoho_rows(p, log))
     elif p.social:
         prof = p.zoho_profile
         if not zoho:

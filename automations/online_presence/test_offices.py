@@ -336,6 +336,29 @@ class ChosenPagesOnly(unittest.TestCase):
         _, dms = self._check([], status="signed_out")
         self.assertIn("signed out", dms[0]["text"])
 
+    def test_a_check_that_timed_out_is_not_a_disconnect(self):
+        from automations.online_presence import watch
+        p = _office()
+        st = {"check_queued": watch._today(p).isoformat()}
+        watch._save(p.path("watch.json"), st)
+        for status in ("error", "deferred"):
+            acts, dms = self._check([], status=status, p=p)
+            self.assertEqual(dms, [])
+            self.assertEqual(acts[0]["action"], "check_unfinished")
+        st = watch._load(p.path("watch.json"))
+        self.assertNotIn("check_queued", st)          # asked again on a later pass
+        self.assertNotIn("last_check", st)            # the last good answer stands
+
+    def test_a_check_that_keeps_failing_stops_for_the_day(self):
+        from automations.online_presence import watch
+        p = _office()
+        day = watch._today(p).isoformat()
+        for _ in range(watch.CHECK_TRIES):
+            st = watch._load(p.path("watch.json")); st["check_queued"] = day
+            watch._save(p.path("watch.json"), st)
+            self._check([], status="error", p=p)
+        self.assertEqual(watch._load(p.path("watch.json")).get("check_queued"), day)
+
     def test_personal_linkedin_is_not_the_company_page(self):
         from automations.online_presence import watch
         self.assertEqual(watch.connected_pages(["linkedinprofile"]), set())
@@ -432,6 +455,42 @@ class SlackNames(unittest.TestCase):
     def test_an_id_passes_straight_through(self):
         from automations.online_presence import setup
         self.assertEqual(setup.resolve_person("U046XBPN0G2", cl=object()), "U046XBPN0G2")
+
+
+class FacebookOnTheChecklist(unittest.TestCase):
+    """The install checklist reads the shared relay log, so it's right from any machine."""
+
+    def _rows(self, log, **kw):
+        from automations.online_presence import setup
+        p = _office(facebook_via="browser", **kw)
+        return setup._facebook_rows(p, log)
+
+    def _job(self, at, **res):
+        return {"queued_at": at, "status": res.get("status", "ok"), "result": res}
+
+    def test_not_set_up_says_how(self):
+        from automations.online_presence import setup
+        rows = setup._facebook_rows(_office(), [])
+        self.assertFalse(rows[0][0])
+        self.assertIn("eco_fb --browser kash", rows[0][1])
+
+    def test_a_good_read_and_a_landed_reply(self):
+        rows = self._rows([self._job("2026-11-17T20:00:00Z", do="fb_reviews", status="ok", reviews=[{}, {}]),
+                           self._job("2026-11-17T20:10:00Z", do="fb_reply", status="replied")])
+        self.assertTrue(all(ok for ok, _ in rows))
+        self.assertIn("2 without a reply", rows[0][1])
+
+    def test_newest_reply_wins_and_signed_out_says_what_to_run(self):
+        rows = self._rows([self._job("2026-11-17T20:00:00Z", do="fb_reviews", status="ok", reviews=[]),
+                           self._job("2026-11-17T20:10:00Z", do="fb_reply", status="replied"),
+                           self._job("2026-11-17T21:59:00Z", do="fb_reply", status="needs_signin")])
+        self.assertFalse(rows[1][0])
+        self.assertIn("eco_fb --signin kash", rows[1][1])
+
+    def test_queued_jobs_are_not_answers(self):
+        rows = self._rows([{"queued_at": "2026-11-17T20:00:00Z", "status": "queued", "result": {}}])
+        self.assertFalse(rows[0][0])
+        self.assertIn("no read", rows[0][1])
 
 
 if __name__ == "__main__":
