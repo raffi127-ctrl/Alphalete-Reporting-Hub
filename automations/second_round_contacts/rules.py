@@ -8,26 +8,85 @@ from automations.second_round_contacts import config as C
 
 KEEP, WAIT, DELETE, HIRED = "keep", "wait", "delete", "hired"
 
+# Stamped on the state entry as `removed_by` when the EVENING rule is what took
+# somebody out. It is the only removal that can be undone, so it has to be
+# tellable apart from the standing ones -- a not-hired or never-badged removal
+# stays removed. Matching on the reason prose would do it today and break the
+# first time somebody rewords a message.
+EVENING = "evening"
+
+
+def in_evening_window(sr: dt.date, today: dt.date) -> bool:
+    """Is this second round today, or recent enough for the 7pm pass to still
+    be looking at it? Never the future: a second round booked for tomorrow has
+    not happened, so there is nothing to judge."""
+    return 0 <= (today - sr).days <= C.EVENING_LOOKBACK_DAYS
+
+
+def evening_removal(entry: dict, facts: dict,
+                    today: dt.date) -> Optional[str]:
+    """Why the 7pm pass takes somebody out, or None. Their second round has
+    been and gone and nobody marked them showed up or offered, so they are not
+    coming. Kept as its own function because `run` needs the same answer to
+    stamp `removed_by`, and two copies of this test would drift."""
+    sr = dt.date.fromisoformat(entry["second_round"])
+    if not in_evening_window(sr, today):
+        return None
+    if facts.get("showed") or facts.get("offered"):
+        return None
+    return ("second round %s: neither showed up nor offered by the end of "
+            "the day" % sr)
+
+
+def restorable(entry: dict, today: dt.date) -> bool:
+    """Could the 7pm pass still put this person back? Only its own removals,
+    and only inside its window -- so it never argues with a standing rule."""
+    if entry.get("status") != "removed" or entry.get("removed_by") != EVENING:
+        return False
+    try:
+        sr = dt.date.fromisoformat(entry["second_round"])
+    except (KeyError, ValueError):
+        return False
+    return in_evening_window(sr, today)
+
+
+def restore(entry: dict, facts: dict, today: dt.date) -> Tuple[bool, str]:
+    """(put them back?, reason). The other half of the look-back: somebody
+    marked after 7pm, or the next morning, was marked into a contact that had
+    already gone. The mark is the evidence; the removal was a guess made when
+    the box was still blank."""
+    if not restorable(entry, today):
+        return False, ""
+    for field, said in (("showed", "showed up"),
+                        ("offered", "offered the position")):
+        if facts.get(field):
+            return True, ("marked %s on %s, after the 7pm pass had taken them "
+                          "out" % (said, facts[field]))
+    return False, ""
+
 
 def decide(entry: dict, facts: dict, today: dt.date,
            evening: bool = False) -> Tuple[str, str]:
     """(verdict, reason) for one tracked contact.
 
-    facts: offered / bob / ns_sched / ns_showed -> the date that list first
-    named the person (or None); progress -> OwnerVille View Progress % (int)
-    or None when it could not be read.
+    facts: showed / offered / bob / ns_sched / ns_showed -> the date that list
+    first named the person (or None); progress -> OwnerVille View Progress %
+    (int) or None when it could not be read. `showed` is the SECOND ROUND
+    showing up, which is what the evening rule reads; `ns_showed` is the new
+    start's first day, weeks later.
     """
     if entry.get("status") == "hired":
         return KEEP, "hired and badged -- kept for good (rehires)"
     sr = dt.date.fromisoformat(entry["second_round"])
-    # THE EVENING PASS, on the day itself. Their second round has been and
-    # gone and nobody marked them showed up or offered, so they are not
-    # coming. Only ever on the evening run -- earlier in the day a blank
-    # means "nobody has said yet" (Raf, 2026-11-17).
-    if evening and sr == today and not facts.get("showed") \
-            and not facts.get("offered"):
-        return DELETE, ("second round %s: neither showed up nor offered by "
-                        "the end of the day" % sr)
+    # THE EVENING PASS. Their second round has been and gone and nobody
+    # marked them showed up or offered, so they are not coming. Only ever on
+    # the evening run -- earlier in the day a blank means "nobody has said
+    # yet" (Raf, 2026-11-17). The window is today AND yesterday, because
+    # recruiters mark late; `restore` is the same window read the other way.
+    if evening:
+        why = evening_removal(entry, facts, today)
+        if why:
+            return DELETE, why
     showed = facts.get("ns_showed")
     if showed:
         prog = facts.get("progress")

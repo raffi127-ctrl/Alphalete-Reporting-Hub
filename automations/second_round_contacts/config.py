@@ -68,8 +68,19 @@ AUDIT_LABELS = (LABEL_SHOWED, LABEL_OFFERED, LABEL_BOB, LABEL_NS_SCHED,
 # people the group is full of names that mean nothing. The earlier passes never
 # do this: at 6am and 11:30 the day is still running and a blank only means
 # nobody has marked it yet, which is the same rule the onboarding board lives
-# by. The contact is moved to FORMER_GROUP, not destroyed.
+# by.
+#
+# AND IT LOOKS AT THE DAY BEFORE TOO (Megan, 2026-11-17: "look again at the day
+# before on the 7pm scan just to make sure no one was marked differently").
+# Recruiters mark late -- after 7pm, or the next morning -- and the first pass
+# to see that mark has to be able to act on it both ways round: somebody still
+# blank from yesterday comes out, and somebody the evening rule took out
+# yesterday who has since been marked showed up or offered goes back in. One
+# day, not the whole week: a mark that lands later than that is a hand re-add,
+# because the further back the window reaches the more it is re-litigating
+# removals the standing rules already made.
 EVENING_HOUR = 19
+EVENING_LOOKBACK_DAYS = 1
 NOT_HIRED_DAYS = 7
 NO_SHOW_DAYS = 21
 BADGE_DAYS = 21

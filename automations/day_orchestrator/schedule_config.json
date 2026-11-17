@@ -15582,6 +15582,31 @@
    "timeout_minutes": 45,
    "verify": null
   },
+  "second_round_contacts_evening_dry": {
+   "on_scheduler": false,
+   "machine": "Lucy 1",
+   "_off_scheduler_note": "DRY RUN. No --write, so it creates and deletes NOTHING -- it prints what the 7pm cleanup would do. Added 2026-11-17 so the first live night is not the first run ever: it removes people from an owner's real Gmail contacts and puts them back, and that is not a thing to try out on the schedule. `lucy rerun second_round_contacts_evening_dry --machine \"Lucy 1\"`. Lucy 1 because that is the box with the reception accounts' contacts tokens and a warm ApplicantStream session; nothing else can read this. on_scheduler:false -- it is a handle, not a clock.",
+   "display_name": "2nd-round evening cleanup -- DRY RUN (prints only)",
+   "source_type": "appstream",
+   "data_sources": [],
+   "command": [
+    "automations.second_round_contacts.run"
+   ],
+   "base_args": [
+    "--audit",
+    "--evening"
+   ],
+   "cadence": {
+    "weekdays": [],
+    "not_before": "19:00"
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 25,
+   "verify": null,
+   "report_id": "linkedin-2nd-round-contacts"
+  },
   "install_second_round_contacts_evening_agent": {
    "on_scheduler": false,
    "machine": "Lucy 1",

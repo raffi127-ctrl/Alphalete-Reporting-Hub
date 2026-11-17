@@ -131,11 +131,23 @@ def run_pass(owners: List[R.Owner], days: List[dt.date], *, write: bool,
                     R.stamp(ws, o, "FAILED: contacts %s" % type(e).__name__)
                 continue
             rows = plan_adds(found, phones, emails)
-            added = exists = skipped = 0
+            added = exists = skipped = removed = 0
             acct = st.setdefault(o.account, {})
             for r in rows:
                 a = r["applicant"]
                 name = " ".join(x for x in (a.get("first_name"), a.get("last_name")) if x)
+                # A REMOVAL STAYS A REMOVAL. plan() only dedupes against the
+                # live contacts, so the moment the audit takes somebody out
+                # they look brand new to this pass and the next run puts them
+                # straight back -- out at 7pm, in at 6am, every day until the
+                # week rolls past. The state is the memory of that decision.
+                # Only the 7pm pass may undo one, and only its own (rules.restore).
+                prior = acct.get(S.key_for(a))
+                if prior and prior.get("status") == S.REMOVED:
+                    removed += 1
+                    _log("    skip %s: taken out %s (%s)" % (
+                        name, prior.get("removed", "?"), prior.get("reason", "")))
+                    continue
                 if r["status"] == "exists":
                     exists += 1
                     continue
@@ -160,8 +172,8 @@ def run_pass(owners: List[R.Owner], days: List[dt.date], *, write: bool,
                 S.save(st)
                 added += 1
                 _log("    + %s" % display)
-            res = "%d added, %d already there, %d skipped (%d second-round rows read)%s%s" % (
-                added, exists, skipped, len(found), "" if write else " [DRY RUN]",
+            res = "%d added, %d already there, %d skipped, %d left out (%d second-round rows read)%s%s" % (
+                added, exists, skipped, removed, len(found), "" if write else " [DRY RUN]",
                 "".join(" -- FAILED: %s" % e for e in errors))
             _log("  %s: %s" % (o.owner, res))
             if ws is not None and write:
@@ -230,6 +242,12 @@ def run_audit(owners: List[R.Owner], *, write: bool, ownerville: bool = True,
             if old and write:
                 S.save(st)
             keys = {k for k, e in entries.items() if e.get("status") == S.TRACKED} - old
+            if evening:
+                # The look-back. Somebody the 7pm rule took out yesterday is no
+                # longer TRACKED, so without this their late mark is never
+                # read and they can never come back (Megan, 2026-11-17).
+                keys |= {k for k, e in entries.items()
+                         if rules.restorable(e, today)} - old
             if not keys:
                 continue
             try:
@@ -256,11 +274,43 @@ def run_audit(owners: List[R.Owner], *, write: bool, ownerville: bool = True,
     for account, facts in facts_all.items():
         o = by_account[account]
         svc = K.service(o.account) if write else None
-        deleted = hired = waiting = 0
+        group = K.ensure_group(svc, C.GROUP) if (write and evening) else None
+        deleted = hired = waiting = restored = 0
         for k, f in facts.items():
             e = st[account][k]
             name = " ".join(x for x in (e.get("first_name"), e.get("last_name")) if x)
             f = dict(f, progress=progress.get(name))
+            # ALREADY OUT. Only the evening rule's own removals are up for
+            # review, and only inside its window -- rules.restore says so, and
+            # a standing removal (not hired, never badged) never gets here.
+            if e.get("status") == S.REMOVED:
+                back, why = rules.restore(e, f, today)
+                if not back:
+                    continue
+                restored += 1
+                _log("    %s %s: %s" % (
+                    "put back" if write else "would put back",
+                    e.get("display", name), why))
+                if write:
+                    try:
+                        rn = K.create(svc, group, e,
+                                      display=e.get("display") or name,
+                                      note=K.note_for(e.get("owner", o.owner),
+                                                      e.get("office", ""),
+                                                      dt.date.fromisoformat(e["second_round"])))
+                        # A new card means a NEW resourceName; keeping the old
+                        # one would point every later rule at a contact that
+                        # no longer exists.
+                        e["resourceName"] = rn
+                        e["status"] = S.TRACKED
+                        e["restored"] = today.isoformat()
+                        e["reason"] = why
+                        e.pop("removed", None)
+                        e.pop("removed_by", None)
+                    except Exception as ex:  # noqa: BLE001
+                        _log("    FAILED putting %s back: %s" % (name, str(ex)[:160]))
+                        failed += 1
+                continue
             verdict, why = rules.decide(e, f, today, evening=evening)
             if verdict == rules.DELETE:
                 deleted += 1
@@ -272,6 +322,12 @@ def run_audit(owners: List[R.Owner], *, write: bool, ownerville: bool = True,
                         e["status"] = S.REMOVED
                         e["removed"] = today.isoformat()
                         e["reason"] = why
+                        # Which rule did it, so the 7pm pass knows what it may
+                        # undo. Only ever the evening one.
+                        if evening and rules.evening_removal(e, f, today):
+                            e["removed_by"] = rules.EVENING
+                        else:
+                            e.pop("removed_by", None)
                     except Exception as ex:  # noqa: BLE001
                         _log("    FAILED removing %s: %s" % (name, str(ex)[:160]))
                         failed += 1
@@ -285,8 +341,8 @@ def run_audit(owners: List[R.Owner], *, write: bool, ownerville: bool = True,
                 waiting += 1
         if write:
             S.save(st)
-        res = "audit: %d removed, %d graduated (hired+badged), %d waiting%s" % (
-            deleted, hired, waiting, "" if write else " [DRY RUN]")
+        res = "audit: %d removed, %d put back, %d graduated (hired+badged), %d waiting%s" % (
+            deleted, restored, hired, waiting, "" if write else " [DRY RUN]")
         _log("  %s: %s" % (o.owner, res))
         if ws is not None and write:
             R.stamp(ws, o, res)

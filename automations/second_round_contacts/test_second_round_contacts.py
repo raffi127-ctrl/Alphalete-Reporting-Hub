@@ -68,10 +68,26 @@ class Rules(unittest.TestCase):
         self.assertEqual(rules.decide(ent("2026-10-31"), f, T, evening=True)[0],
                          rules.WAIT)
 
-    def test_evening_only_judges_todays_second_rounds(self):
-        """Yesterday's blanks keep the normal week-long grace, not a same-day
-        cut: the evening rule is about a day that has just finished."""
-        self.assertEqual(rules.decide(ent("2026-10-30"), {}, T, evening=True)[0],
+    def test_evening_also_looks_at_the_day_before(self):
+        """Recruiters mark late, so the 7pm pass is the FIRST one to see
+        yesterday's answer -- and has to be able to act on a blank
+        (Megan, 2026-11-17)."""
+        v, why = rules.decide(ent("2026-10-30"), {}, T, evening=True)
+        self.assertEqual(v, rules.DELETE)
+        self.assertIn("neither showed up nor offered", why)
+
+    def test_evening_stops_at_one_day_back(self):
+        """Two days back is the standing rules' business, not a same-day cut."""
+        self.assertEqual(rules.decide(ent("2026-10-29"), {}, T, evening=True)[0],
+                         rules.WAIT)
+
+    def test_evening_ignores_a_second_round_still_to_come(self):
+        self.assertEqual(rules.decide(ent("2026-11-03"), {}, T, evening=True)[0],
+                         rules.WAIT)
+
+    def test_evening_keeps_yesterdays_marked_person(self):
+        f = {"showed": dt.date(2026, 10, 30)}
+        self.assertEqual(rules.decide(ent("2026-10-30"), f, T, evening=True)[0],
                          rules.WAIT)
 
     def test_evening_never_touches_a_graduated_contact(self):
@@ -80,6 +96,97 @@ class Rules(unittest.TestCase):
 
     def test_hired_is_kept_forever(self):
         self.assertEqual(rules.decide(ent(status=S.HIRED), {}, dt.date(2027, 6, 1))[0], rules.KEEP)
+
+
+class AddsPassHonoursARemoval(unittest.TestCase):
+    """The ping-pong guard. plan() only dedupes against the LIVE contacts, so
+    the moment the audit takes somebody out they look brand new to the adds
+    pass -- out at 7pm, back in at 6am, every day until the week rolls past."""
+
+    APPLICANT = {"first_name": "Ana", "last_name": "Lopez",
+                 "phone": "5125550147", "email": "ana@example.test"}
+
+    def _run(self, status):
+        o = mock.Mock(owner="Raf", label="Raf", active=True, account="raf",
+                      offices=["19833"], ov_campaign="RES-AT&T")
+        a = dict(self.APPLICANT)
+        st = {"raf": {S.key_for(a): dict(ent(), status=status,
+                                         removed="2026-10-30",
+                                         reason="neither showed up nor offered",
+                                         **{k: a[k] for k in ("phone", "email")})}}
+        row = {"applicant": a, "status": "add", "why": "", "day": dt.date(2026, 10, 31)}
+        sess = mock.MagicMock()
+        sess.__enter__.return_value = mock.Mock()
+        with mock.patch("automations.applicant_tracker.applicantstream.session",
+                        return_value=sess), \
+                mock.patch.object(RUN.S, "load", return_value=st), \
+                mock.patch.object(RUN.S, "save"), \
+                mock.patch.object(RUN, "read_offices", return_value=([("L", dt.date(2026, 10, 31), a)], [])), \
+                mock.patch.object(RUN, "plan_adds", return_value=[row]), \
+                mock.patch.object(RUN.K, "has_token", return_value=True), \
+                mock.patch.object(RUN.K, "service", return_value=mock.Mock()), \
+                mock.patch.object(RUN.K, "existing_index", return_value=({}, {})), \
+                mock.patch.object(RUN.K, "ensure_group", return_value={"resourceName": "g/1"}), \
+                mock.patch.object(RUN.K, "note_for", return_value="note"), \
+                mock.patch.object(RUN.K, "display_name", return_value="Ana Lopez (2R 10/31)"), \
+                mock.patch.object(RUN.K, "create", return_value="people/1") as create:
+            RUN.run_pass([o], [dt.date(2026, 10, 31)], write=True)
+        return create
+
+    def test_a_removed_person_is_not_added_back(self):
+        self.assertEqual(self._run(S.REMOVED).call_count, 0)
+
+    def test_an_ordinary_new_person_is_still_added(self):
+        self.assertEqual(self._run(S.TRACKED).call_count, 1)
+
+
+class EveningLookBack(unittest.TestCase):
+    """The other half of the 7pm look-back: putting somebody back."""
+
+    def gone(self, sr="2026-10-31", by=rules.EVENING):
+        e = ent(sr, status=S.REMOVED)
+        e["removed"] = sr
+        e["display"] = "Ana Lopez (2R 10/31)"
+        if by:
+            e["removed_by"] = by
+        return e
+
+    def test_a_late_showed_up_mark_puts_them_back(self):
+        back, why = rules.restore(self.gone(), {"showed": dt.date(2026, 10, 31)}, T)
+        self.assertTrue(back)
+        self.assertIn("showed up", why)
+
+    def test_a_late_offer_puts_them_back(self):
+        back, _ = rules.restore(self.gone(), {"offered": dt.date(2026, 10, 31)}, T)
+        self.assertTrue(back)
+
+    def test_yesterdays_removal_is_still_in_the_window(self):
+        back, _ = rules.restore(self.gone("2026-10-30"),
+                                {"showed": dt.date(2026, 10, 30)}, T)
+        self.assertTrue(back)
+
+    def test_still_blank_stays_out(self):
+        self.assertFalse(rules.restore(self.gone(), {}, T)[0])
+
+    def test_a_standing_removal_is_never_undone(self):
+        """Not hired, or never badged. Those are weeks-old judgements and the
+        7pm pass has no business reversing them."""
+        e = self.gone("2026-10-31", by=None)
+        self.assertFalse(rules.restorable(e, T))
+        self.assertFalse(rules.restore(e, {"showed": dt.date(2026, 10, 31)}, T)[0])
+
+    def test_outside_the_window_stays_out(self):
+        e = self.gone("2026-10-20")
+        self.assertFalse(rules.restorable(e, T))
+        self.assertFalse(rules.restore(e, {"showed": dt.date(2026, 10, 20)}, T)[0])
+
+    def test_a_tracked_contact_is_not_a_restore_candidate(self):
+        self.assertFalse(rules.restorable(ent(), T))
+
+    def test_a_removal_with_no_second_round_date_is_not_a_candidate(self):
+        e = self.gone()
+        del e["second_round"]
+        self.assertFalse(rules.restorable(e, T))
 
 
 class EveningFlag(unittest.TestCase):
