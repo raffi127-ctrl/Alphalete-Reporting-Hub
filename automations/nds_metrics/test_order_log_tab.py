@@ -26,7 +26,9 @@ class Rows(unittest.TestCase):
         self.assertEqual(r[T._COL["Notes"]], "")
         self.assertEqual(r[T._COL["Being worked on"]], "")
         self.assertEqual(r[T._COL["Delivered Message Sent"]], "")
-        self.assertEqual(T.HEADERS[T._COL["Notes"] + 1], "Taylor's Notes")        # 11/17: beside Notes
+        self.assertEqual(T.HEADERS[T._COL["Notes"] - 1], "Taylor's Notes")        # 11/18: to the LEFT of Notes
+        self.assertEqual(T.HEADERS[T._COL["Customer"] - 1], "Line")              # 11/18: Line before Customer
+        self.assertEqual(T.HEADERS[T._COL["Order Date"] + 1], "Last Updated")    # 11/18: right after Order Date
         self.assertEqual(T.HEADERS[T._COL["Being worked on"] + 1], "Delivered Message Sent")
         self.assertEqual(T.HEADERS[T._COL["Delivered Message Sent"] + 1], "Shipping Status")  # 11/12 pm: carrier word, left of the notes
         self.assertEqual(T.HEADERS[T._COL["Shipping Status"] + 1], "Shipping Notes")
@@ -40,8 +42,9 @@ class Rows(unittest.TestCase):
         self.assertEqual(r[T._COL["Zip"]], "")                        # no index given -> blank
         # 11/17: the customer-detail group sits together right after Customer
         c = T._COL["Customer"]
-        self.assertEqual(T.HEADERS[c + 1:c + 7], ("Email", "Zip", "DSI #", "Wireless Order #", "BAN", "Phone #"))
-        self.assertEqual(T.HEADERS[c + 7], "Order Date")
+        self.assertEqual(T.HEADERS[c + 1:c + 10], ("Email", "Zip", "DSI #", "Wireless Order #", "BAN", "Phone #",
+                                                   "Type", "Device", "Plan"))      # 11/18: + Type, Device, Plan
+        self.assertEqual(T.HEADERS[c + 10], "Order Date")
         self.assertEqual(T.HEADERS[T._COL["Activation Date"] + 1], "Disconnect Date")
         self.assertEqual(r[T._COL["Disconnect Date"]], "")
         self.assertEqual(r[T._COL["Taylor's Notes"]], "")
@@ -563,7 +566,7 @@ class Nov17Columns(unittest.TestCase):
 
     def test_group_is_added_folded_with_its_toggle_above_customer(self):
         start, end = T.group_span()
-        self.assertEqual((start, end), (T._COL["Email"], T._COL["Phone #"] + 1))
+        self.assertEqual((start, end), (T._COL["Email"], T._COL["Plan"] + 1))
         self.assertEqual(start, T._COL["Customer"] + 1)
         reqs = T.group_requests(7, [])
         self.assertFalse(reqs[0]["updateSheetProperties"]["properties"]["gridProperties"]["columnGroupControlAfter"])

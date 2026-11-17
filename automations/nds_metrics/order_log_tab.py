@@ -72,12 +72,18 @@ DAYS_KEPT: Optional[int] = None       # None = keep every line
 # export carries no pay-period field (probed 11/11), so it is computed.
 # Everything after Week Ending moved one column right (Delivered Message Sent
 # is X, was W); every reader resolves by header.
-HEADERS = ("Week Ending", "Pay Period", "Rep", "Customer",
+HEADERS = ("Week Ending", "Pay Period", "Rep", "Line", "Customer",
            "Email", "Zip", "DSI #", "Wireless Order #", "BAN", "Phone #",     # GROUP_COLS, folded under Customer
-           "Order Date", "Line", "Type", "Device", "Plan",
+           "Type", "Device", "Plan",                                          # ... these three too (11/18)
+           "Order Date", "Last Updated",
            "Line Status", "Ship Date", "Delivered", "Activation Date", "Disconnect Date", "Port Status",
-           "Last Updated", "Notes", "Taylor's Notes", "Being worked on", "Delivered Message Sent",
+           "Taylor's Notes", "Notes", "Being worked on", "Delivered Message Sent",
            "Shipping Status", "Shipping Notes", "Churn Bucket")
+# 2026-11-18, Carlos, by the letters of the 11/17 layout: "group column M, N
+# and O into the same grouping" (Type, Device, Plan join the folded group),
+# "column L move to the left of column D" (Line before Customer), "Column V to
+# the right of Column K" (Last Updated right after Order Date), "Column X to
+# the left of column W" (Taylor's Notes before Notes).
 # 2026-11-17, Carlos, three things at once:
 #  * "lets do a grouping in the nds order log. it should be above customer the
 #    plus sign ... what i want to open up is the cx email, zip code, DSI #,
@@ -90,7 +96,7 @@ HEADERS = ("Week Ending", "Pay Period", "Rep", "Customer",
 #    Date, off the Tableau export: Status Date of the line whose DTR Status is
 #    Disconnected, by spe.TN (ZipIndex.disconnect_date); the SaraPlus feed
 #    carries no date for it.
-GROUP_COLS = ("Email", "Zip", "DSI #", "Wireless Order #", "BAN", "Phone #")
+GROUP_COLS = ("Email", "Zip", "DSI #", "Wireless Order #", "BAN", "Phone #", "Type", "Device", "Plan")
 # "Shipping Status" left of Shipping Notes since 2026-11-12 pm, Carlos: "to the
 # left of shipping notes a shipping status and this status is only based off
 # of what we get from the tracking number" -- one short word per LINE off the
@@ -117,7 +123,7 @@ GROUP_COLS = ("Email", "Zip", "DSI #", "Wireless Order #", "BAN", "Phone #")
 # carried by line key through every rewrite. "Delivered Message Sent" was on the live
 # tab by hand before the code knew it (2026-10-29) -- a rewrite without it here would
 # have dropped the column.
-CARRIED = ("Notes", "Taylor's Notes", "Being worked on", "Delivered Message Sent", "Shipping Status",
+CARRIED = ("Taylor's Notes", "Notes", "Being worked on", "Delivered Message Sent", "Shipping Status",
            "Shipping Notes")   # in HEADERS order
 # The typed columns' dropdown choices. "Not saveable" on Being worked on since
 # 2026-11-14, Carlos: "under the being worked on column/drop down lets add a
