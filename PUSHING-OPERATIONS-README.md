@@ -306,6 +306,16 @@ against the log file, or a tab dump; `rerun` args are shlex-split — a literal
 
 ## 8. Verification protocol after ANY change
 
+**Seeing what an office computer did (added 11/17):** its rows on the relay's
+ICD Faults tab are the only record, and the mini cannot open that workbook.
+Queue on Lucy 1: `lucy relay_faults <office_key> [stage-prefix] [YYYY-MM-DD]`
+(e.g. `relay_faults carlos probe-octo-lookup`, `… probe-push-stats`,
+`… probe-push-todo`). The Result cell shows the heads; the full rows with
+their Detail JSON land in the **'Relay Faults' tab of the control workbook**
+(`mini_control.CONTROL_SHEET_ID`), cleared on every call — read it with
+gspread from the mini. A poller-code change still needs `update` +
+`restart_poller` on Lucy 1 before a new verb exists there.
+
 1. Deploy (push → `update` row) and confirm Lucy pulled (logtail the tick log).
 2. `rerun applicant_push --dry-run` — sign-in + identity assert on the real path.
 3. Wait for one live tick per office; confirm a fresh `✅ SENT` line in BOTH
@@ -317,6 +327,19 @@ against the log file, or a tab dump; `rerun` args are shlex-split — a literal
 ---
 
 ## Changelog (auto-appended daily at 7 PM; newest first)
+
+### 2026-11-17 (manual)
+- **First scheduled Octo run on Carlos's office computer, 5:01–5:33am:** 9
+  names on its list, 3 found (Haffid Mendoza Pineda + Karina Escalera on
+  Kinetic, Angel Rodriguez on Haus) → `output/phone-lookups.csv` 3 rows; 5
+  missed on a verify wall that did not pass in 4 min (Titanium ×2, Peak ×2,
+  Raw ×1); Dexiaun Westbrook (Revolt) skipped as "in use on another computer"
+  — that other computer was Carlos's laptop, where his own Revolt window was
+  still open. Billing: 16 accounts clean (Peak and Fast Track clean after he
+  paid them the night before), Revolt not read for the same reason. Read via
+  the new `relay_faults` verb (§8). LESSON: a profile left open in Octo on
+  any computer blocks that account for the office run; walls are the main
+  miss — 5 of 6.
 
 ### 2026-11-16 (manual)
 - **Octo's refusals are logged in words** (release 2026.11.16.6): the 10:20pm
