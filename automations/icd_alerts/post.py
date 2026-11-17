@@ -2809,6 +2809,8 @@ FAULT_STAGE_LABEL = {
     "run": "its regular check",
     # run.main: a crash nothing else caught -- a bug of ours, not the office's.
     "crash": "its regular check (a bug on our side)",
+    # code_forward._not_today: Lucy's Gmail window stopped (Eve 2026-11-17).
+    "codeforward": "setting up the SaraPlus code forward",
 }
 
 

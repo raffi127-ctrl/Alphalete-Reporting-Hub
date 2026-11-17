@@ -47,15 +47,50 @@ class Parse(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             RD.names_of(['', 'email'], [['1', 'x']])
 
-    def test_hired_by_by_header_name(self):
-        h = ['', 'first name', 'last name', 'email', 'hired by']
-        got = RD.hired_by(h, [['1', 'Zandro', 'Diaz', '', 'Nick  Lee'],
-                              ['2', 'Ana', 'Ruiz', '', '']])
-        self.assertEqual(got, {"zandro diaz": "Nick Lee"})   # blank = left out
+    def test_hired_by_is_done_by_2nd(self):
+        h = ['', 'first name', 'last name', 'email', 'phone', 'done by 1st',
+             'done by 2nd', 'job board', 'date and time', 'ad']
+        got = RD.hired_by(h, [['1', 'Zandro', 'Diaz', '', '', 'Ana', 'Nick  Lee'],
+                              ['2', 'Ana', 'Ruiz', '', '', 'Ana', 'None'],
+                              ['3', 'Bo', 'Kim', '', '', 'Ana', '']])
+        self.assertEqual(got, {"zandro diaz": "Nick Lee"})   # None/blank = left out
 
-    def test_hired_by_absent_is_empty_not_an_error(self):
-        self.assertEqual(RD.hired_by(['', 'first name', 'last name'],
-                                     [['1', 'A', 'B']]), {})
+    def test_hired_by_column_gone_raises(self):
+        with self.assertRaises(RuntimeError):
+            RD.hired_by(['', 'first name', 'last name'], [['1', 'A', 'B']])
+
+    def test_days_back_skips_sundays(self):
+        got = RD.days_back(dt.date(2026, 11, 17), 3)      # a Tuesday
+        self.assertEqual(got, [dt.date(2026, 11, 16), dt.date(2026, 11, 14),
+                               dt.date(2026, 11, 13)])
+
+    def test_second_round_by_walks_back_and_stops(self):
+        from unittest import mock
+        H = ['', 'first name', 'last name', 'done by 2nd']
+        pages = {"Nov 13, 2026": [['1', 'Zandro', 'Diaz', 'Nick Lee']],
+                 "Nov 12, 2026": [['1', 'Zandro', 'Diaz', 'Old Try'],
+                                  ['2', 'Ana', 'Ruiz', 'Eveliz Wright']]}
+        seen = []
+
+        class Page:
+            def evaluate(self, _js):
+                return {"header": H, "rows": pages[seen[-1]]}
+
+        class App:
+            page = Page()
+            def detail_href(self, lbl, hdr):
+                assert lbl == C.L_SECOND
+                n = len(pages.get(hdr, []))
+                return "x?count=%d&d=%s" % (n, hdr)
+            def _goto_detail(self, h):
+                seen.append(h.split("&d=")[1])
+
+        with mock.patch("automations.ad_photo_threads.appstream_ads.open_week"):
+            got = RD.second_round_by(App(), ["Zandro Diaz", "Ana Ruiz"],
+                                     dt.date(2026, 11, 17), look_back=10, log=lambda m: None)
+        self.assertEqual(got, {"zandro diaz": "Nick Lee",          # newest wins
+                               "ana ruiz": "Eveliz Wright"})
+        self.assertEqual(seen, ["Nov 13, 2026", "Nov 12, 2026"])   # stopped there
 
     def test_hired_by_survives_the_hand_off(self):
         d = RD.Day(day=DAY, owner="x", ns_scheduled=["Zandro Diaz"],

@@ -202,6 +202,10 @@ L_NS_SCHED = "Total New Starts Scheduled"
 L_NS_SHOWED = "New Starts Showed Up"
 LABELS = (L_FIRST, L_SECOND, L_NS_SCHED, L_NS_SHOWED)
 
+# 4pm "Hired By": how many days (Sundays skipped) before the first day to look
+# for the new start's 2nd round. Stops early once everyone is found.
+HIRED_BY_LOOK_BACK = 14
+
 
 def office(key: str) -> Office:
     k = (key or "").strip().lower()

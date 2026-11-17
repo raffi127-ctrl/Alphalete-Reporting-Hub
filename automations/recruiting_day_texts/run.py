@@ -198,6 +198,12 @@ def one(app, o: C.Office, mode: str, day: dt.date, send: bool) -> None:
             d.ns_times = RD.new_start_times(app, o, day, log=_log)
         except Exception as e:  # noqa: BLE001 -- names without times, never guessed
             _log("  new-start times unreadable (%s) -- names only" % e)
+    people = list(dict.fromkeys(d.ns_scheduled + d.ns_showed))
+    if mode == "showed" and people:
+        try:
+            d.ns_hired_by = RD.second_round_by(app, people, day, log=_log)
+        except Exception as e:  # noqa: BLE001 -- the picture goes out without the column
+            _log("  hired-by unreadable (%s) -- picture without it" % e)
     if mode == "morning" and T.has_anything(d):
         # Preview only: the real alert is decided on Lucy 1 at send time,
         # off its record of this office's earlier mornings (deliver()).

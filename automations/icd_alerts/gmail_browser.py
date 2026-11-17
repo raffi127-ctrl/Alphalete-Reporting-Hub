@@ -67,6 +67,7 @@ NO_SIGNIN = "nobody signed in"
 WRONG_ACCOUNT = "signed in to another account"
 NO_BROWSER = "no browser"
 STUCK = "gmail looked different"
+NO_TAP = "owner did not tap the phone"     # asked, and nothing came of it
 
 SIGN_IN = ("Lucy will set this up for you. You only do 2 things.\n\n"
            "1. A Gmail window opens. Sign in to %s.\n"
@@ -358,14 +359,13 @@ def _add_address(ctx, pg, address: str, ask, say=print) -> str:
         say("      gmail: no add-address box")
         return STUCK
     pg.fill('[data-lucy="box"]', REPORTING_INBOX, timeout=10000)
-    if _through_google(ctx, pg, ask, say,
-                       press=lambda: pg.click('[data-lucy="next"]', timeout=10000),
-                       done=lambda: pg.evaluate(_FORWARD_STATE, REPORTING_INBOX) == "listed"):
-        return ADDED
-    return STUCK
+    went = _through_google(ctx, pg, ask, say,
+                           press=lambda: pg.click('[data-lucy="next"]', timeout=10000),
+                           done=lambda: pg.evaluate(_FORWARD_STATE, REPORTING_INBOX) == "listed")
+    return ADDED if went is True else went
 
 
-def _through_google(ctx, pg, ask, say, press, done) -> bool:
+def _through_google(ctx, pg, ask, say, press, done):
     """press(), then get through whatever Google puts up until done() says so.
 
     Seen 2026-11-17, BOTH after "Next" on our address AND after "Create filter"
@@ -373,7 +373,9 @@ def _through_google(ctx, pg, ask, say, press, done) -> bool:
     (Continuar) -> a Google window with a NUMBER to tap on the owner's phone ->
     after the address, a window "forward to alphaletereporting@...?" with one
     Proceed. Lucy presses every button; the owner only taps the phone (or
-    types a password, if Google asks). True once done()."""
+    types a password, if Google asks). True once done(); else NO_TAP when
+    the owner was shown a number and nothing came of it (theirs, not ours),
+    STUCK otherwise (ours)."""
     popups = []
     ctx.on("page", lambda page: popups.append(page))
     press()
@@ -424,7 +426,7 @@ def _through_google(ctx, pg, ask, say, press, done) -> bool:
         except Exception:  # noqa: BLE001 -- Gmail redrawing
             pass
         time.sleep(2)
-    return False
+    return NO_TAP if told else STUCK
 
 
 def _filter_listed(pg, address: str) -> bool:
@@ -473,11 +475,13 @@ def _make_filter(ctx, pg, address: str, ask, say=print) -> str:
         return NOT_ACCEPTED            # Gmail doesn't offer our address yet
     if pg.evaluate(_PANEL, SARAPLUS_SENDER) == "none":
         return STUCK
-    _through_google(ctx, pg, ask, say,
-                    press=lambda: pg.click('[data-lucy="create"]', timeout=10000),
-                    done=lambda: pg.evaluate(_PANEL, SARAPLUS_SENDER) == "none")
+    went = _through_google(ctx, pg, ask, say,
+                           press=lambda: pg.click('[data-lucy="create"]', timeout=10000),
+                           done=lambda: pg.evaluate(_PANEL, SARAPLUS_SENDER) == "none")
     time.sleep(3)
-    return MADE if _filter_listed(pg, address) else STUCK
+    if _filter_listed(pg, address):
+        return MADE
+    return went if went is not True else STUCK
 
 
 def _session(address: str, ask, say, work, introduce: bool) -> str:
@@ -512,7 +516,7 @@ def _session(address: str, ask, say, work, introduce: bool) -> str:
         return STUCK
 
 
-def add_and_filter(ask, address: str, confirmed, say=print):
+def add_and_filter(ask, address: str, confirmed, say=print, introduce: bool = True):
     """The whole forward in ONE window: add our address, wait while
     confirmed() says Gmail's mail was accepted (Lucy 1), make the filter.
     Answers (what the add said, what the filter said or None if never tried).
@@ -541,7 +545,7 @@ def add_and_filter(ask, address: str, confirmed, say=print):
         return got
 
     _banner_detail["text"] = BANNER_DETAIL
-    added = _session(address, ask, say, work, introduce=True)
+    added = _session(address, ask, say, work, introduce=introduce)
     return added, out["filter"]
 
 
