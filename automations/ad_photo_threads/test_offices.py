@@ -52,7 +52,8 @@ class OfficesTest(unittest.TestCase):
         self.assertEqual(config.SOURCES[0]["tab"], "Carlos Hidalgo")
 
     def test_eastern_offices_are_not_on_central(self):
-        for key, zone in [("salik", "America/Detroit"), ("samuel", "America/New_York"),
+        # Salik moved to Houston in October (Maddie 10/21) -> Central now.
+        for key, zone in [("salik", "America/Chicago"), ("samuel", "America/New_York"),
                           ("aya", "America/Indiana/Indianapolis")]:
             self.assertEqual(config.office_zone(config.office(key)), zone, key)
 

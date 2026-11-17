@@ -355,6 +355,60 @@ def slack_row(text: str, day: dt.date) -> Optional[Dict[str, str]]:
     return None
 
 
+# Salik's interviewers (10/23 on), several candidates per reply, one per line:
+#   "• Carlos Rivas - customer service - can start ASAP - Qualified :white_check_mark: 5:star:|| _Entry Level Sales Representative -AT&T_"
+#   "April Collins//Restaurant Manager//AT&T Sales Agent//:star:3//Start ASAP//Schedule:Yes"
+#   ":white_check_mark:Natacha Nze- Accounting//AT&T Retail Sales Associate//:star::star:"
+# Maddie 11/17: "make this into Salik's own indeed thread".
+_AD_WORD = re.compile(r"at\s*&\s*t|sales|marketing|representative|associate|team member"
+                      r"|assistant|manager|agent|trainee", re.I)
+_NOT_AD = re.compile(r"\bstart\b|schedule|:?star|\basap\b|\bweeks?\b|\bmonth\b", re.I)
+_NAME_CUT = re.compile(r"\s*-\s+|\s+-\s*|\s*\(|(?<=[a-z])-(?=[A-Z])")
+
+
+def _row_stars(ln: str) -> str:
+    m = (re.search(r"\((\d)\s*/\s*5\)", ln) or re.search(r"(\d)\s*:\s*<?star", ln)
+         or re.search(r":star:\s*(\d)\b", ln))
+    return m.group(1) if m else str(ln.count(":star:") or "")
+
+
+def multi_slack_rows(text: str, day: dt.date) -> List[Dict[str, str]]:
+    """One row per "Name//job//Ad//..." or "Name - notes || Ad" line."""
+    out = []
+    for raw in (text or "").replace("&amp;", "&").splitlines():
+        ln = raw.replace("*", "").strip(" •·_\t")
+        if "//" in ln:
+            parts = [p.strip(" _") for p in ln.split("//")]
+            head = re.sub(r":[a-z_]+:", "", parts[0]).strip()
+            name = _NAME_CUT.split(head, 1)[0].strip()
+            # "Name-job//Ad//..." vs "Name//job//Ad//...": the job comes first.
+            pool = parts[1:] if name != head else parts[2:]
+            title = next((p for p in pool if _AD_WORD.search(p) and not _NOT_AD.search(p)), "")
+        elif "||" in ln:
+            left, _, right = ln.partition("||")
+            head = re.sub(r":[a-z_]+:", "", left).strip()
+            name = _NAME_CUT.split(head, 1)[0].strip()
+            title = right.strip(" _")
+        else:
+            continue
+        if not re.match(r"[A-Za-z]", name) or len(name.split()) < 2:
+            continue
+        # "_A_T&T Retail ...", ":_Entry Level ...", "Qualified ... || Ad": Slack italics leftovers.
+        title = title.split("||")[-1].replace("_", "").strip(" :")
+        low = ln.lower()
+        if ":x:" in low or "not a good fit" in low or re.search(r"schedule\W*no\b", low):
+            verdict = "Disqualify"
+        elif (":white_check_mark:" in low or "✅" in ln or "qualified" in low
+              or re.search(r"schedule\W*yes\b", low)):
+            verdict = "Qualify"
+        else:
+            verdict = ""
+        out.append({config.COL_DATE: day.strftime("%m/%d/%Y"), config.COL_NAME: name,
+                    config.COL_TITLE: title, config.COL_INTERVIEWER: "",
+                    config.COL_QUALIFY: verdict, config.COL_STARS: _row_stars(ln)})
+    return out
+
+
 def slack_rows(cl=None) -> List[Dict[str, str]]:
     """Every candidate in the office's daily threads since THREADS_SINCE, as
     sheet rows. Read once per process per office."""
@@ -362,7 +416,8 @@ def slack_rows(cl=None) -> List[Dict[str, str]]:
     if memo in _SLACK_ROWS:
         return _SLACK_ROWS[memo]
     cl = cl or _client()
-    since = dt.datetime.combine(dt.date.fromisoformat(config.THREADS_SINCE), dt.time(0), CENTRAL)
+    first = max(config.THREADS_SINCE, getattr(config, "SLACK_ROWS_SINCE", "") or "")
+    since = dt.datetime.combine(dt.date.fromisoformat(first), dt.time(0), CENTRAL)
     rows: List[Dict[str, str]] = []
     for ch in source_channels():
         cursor = None
@@ -374,12 +429,18 @@ def slack_rows(cl=None) -> List[Dict[str, str]]:
                     continue
                 day = dt.datetime.fromtimestamp(float(m["ts"]), CENTRAL).date()
                 for reply in _replies(cl, m["ts"], ch):
-                    row = slack_row(reply.get("text") or "", day)
-                    if row:
-                        rows.append(row)
+                    many = multi_slack_rows(reply.get("text") or "", day)
+                    row = None if many else slack_row(reply.get("text") or "", day)
+                    rows += many or ([row] if row else [])
             cursor = (resp.get("response_metadata") or {}).get("next_cursor")
             if not cursor:
                 break
+    # Gianni Isom 11/6: "late join" at 10:15, interviewed at 2:45 -- one
+    # person a day; the later line (the real interview) wins.
+    last = {}
+    for r in rows:
+        last[(r[config.COL_DATE], _fold(r[config.COL_NAME]))] = r
+    rows = [r for r in rows if last[(r[config.COL_DATE], _fold(r[config.COL_NAME]))] is r]
     _SLACK_ROWS[memo] = rows
     return rows
 

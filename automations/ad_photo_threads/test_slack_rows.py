@@ -44,5 +44,58 @@ class SlackRowTest(unittest.TestCase):
         self.assertIsNone(collect.slack_row("running 5 min late - sorry", DAY))
 
 
+class MultiSlackRowTest(unittest.TestCase):
+    """Salik's threads (10/23 on): several candidates per reply."""
+
+    def rows(self, text):
+        return [(r[config.COL_NAME], r[config.COL_TITLE], r[config.COL_QUALIFY],
+                 r[config.COL_STARS]) for r in collect.multi_slack_rows(text, DAY)]
+
+    def test_double_slash_job_then_ad(self):
+        self.assertEqual(self.rows(
+            "1:20\nShanell Robinson//Property office//Entry Level AT&amp;T Team Member"
+            "//Start ASAP//2:<star://Schedule:yes>\n\n"
+            "Janay Stanback//Floor Supervisor United Airline//AT&amp;T Retail Sales Associate"
+            "//:star:3//Start ASAP//Schedule:yes\nZekaryah-tech issue reschedule requested"),
+            [("Shanell Robinson", "Entry Level AT&T Team Member", "Qualify", "2"),
+             ("Janay Stanback", "AT&T Retail Sales Associate", "Qualify", "3")])
+
+    def test_double_slash_ad_after_start(self):
+        self.assertEqual(self.rows(
+            "Tanisha Mason//McDonalds//Start ASAP//:star:2//Entry Level Sales Representative AT&amp;T//Schedule:yes"),
+            [("Tanisha Mason", "Entry Level Sales Representative AT&T", "Qualify", "2")])
+
+    def test_double_slash_no_ad_is_blank(self):
+        self.assertEqual(self.rows(
+            "Quante Malone//Package Handler Fed-ex//:star:3//start within a week//Schedule Yes"),
+            [("Quante Malone", "", "Qualify", "3")])
+
+    def test_job_glued_to_name(self):
+        self.assertEqual(self.rows(
+            ":white_check_mark:Natacha Nze- Accounting//AT&T Retail Sales Associate//:star::star:\n"
+            ":white_check_mark:Aamaron Lewis-Esthetician//Entry Level AT&T Team Member//:star::star:"),
+            [("Natacha Nze", "AT&T Retail Sales Associate", "Qualify", "2"),
+             ("Aamaron Lewis", "Entry Level AT&T Team Member", "Qualify", "2")])
+
+    def test_pipes(self):
+        self.assertEqual(self.rows(
+            "*9.45*\n• Alyssa Bartsch - canvassing for the election - can start ASAP- :x: not a good fit"
+            "  ||  Entry Level AT&T Team Member\n"
+            "• Chiyu Keyser (CC)- bilingual - can start two weeks - Qualified :white_check_mark: 4:star:"
+            " || _Event Sales &amp; Marketing Assistant_"),
+            [("Alyssa Bartsch", "Entry Level AT&T Team Member", "Disqualify", ""),
+             ("Chiyu Keyser", "Event Sales & Marketing Assistant", "Qualify", "4")])
+
+    def test_valeria_line_is_not_multi(self):
+        self.assertEqual(self.rows("Devin Hyatt – AT&amp;T Team Member – YES – 1:15 – :star:"), [])
+        self.assertEqual(self.rows("no one showed up"), [])
+
+    def test_salik_thread_names(self):
+        rx = config.office("salik")["sources"][0]["thread_re"]
+        for t in ("*FIRST ROUND INTERVIEW THREAD 11/16*", "*FIRST ROUND THREAD 11.13*",
+                  "*FIRST ROUND THREAD: 10/23*"):
+            self.assertTrue(rx.search(t), t)
+
+
 if __name__ == "__main__":
     unittest.main()
