@@ -416,6 +416,14 @@ churn for the same bucket (0-30, 30, 60, 90): if the REPORT_DAY column of one \
 repeats the other cell for cell (same %, same counts, same reps), that is a \
 blocker — the data source served the wrong view.
 
+CHURN TABLES (New Internet / Wireless 0-30, 30, 60, 90 days, one column per \
+day) are dated by the MORNING they were pulled, so their newest column is \
+normally the day AFTER REPORT_DAY. That column is not a "future" day and is \
+never an issue; the REPORT_DAY rule above is met by it. Its figures repeating \
+the column before it cell for cell is also normal — the 30/60/90 buckets often \
+do not move overnight. Only if EVERY bucket of that section, 0-30 included, \
+repeats the column before it may you mention it, and only as minor.
+
 ACCEPTED, never an issue: grey notes saying "no data available" or "not \
 available yet"; a Captain Team Stats board under a grey note saying it shows \
 an earlier week because there are no activations yet this week (its tables \
