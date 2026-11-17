@@ -42,9 +42,10 @@ class Rows(unittest.TestCase):
         self.assertEqual(r[T._COL["Zip"]], "")                        # no index given -> blank
         # 11/17: the customer-detail group sits together right after Customer
         c = T._COL["Customer"]
-        self.assertEqual(T.HEADERS[c + 1:c + 10], ("Email", "Zip", "DSI #", "Wireless Order #", "BAN", "Phone #",
-                                                   "Type", "Device", "Plan"))      # 11/18: + Type, Device, Plan
-        self.assertEqual(T.HEADERS[c + 10], "Order Date")
+        self.assertEqual(T.HEADERS[c + 1:c + 9], ("Email", "Zip", "DSI #", "Wireless Order #", "BAN", "Phone #",
+                                                  "Type", "Plan"))                # 11/18: + Type and Plan
+        self.assertEqual(T.HEADERS[c + 9:c + 12], ("Order Date", "Last Updated", "Device"))   # Device stays in view
+        self.assertEqual(T.HEADERS[-1], "Port Status")                           # 11/18: moved to the very end
         self.assertEqual(T.HEADERS[T._COL["Activation Date"] + 1], "Disconnect Date")
         self.assertEqual(r[T._COL["Disconnect Date"]], "")
         self.assertEqual(r[T._COL["Taylor's Notes"]], "")
@@ -474,7 +475,7 @@ class ChurnBucketTests(unittest.TestCase):
     Date -- the cancelled workbook's rule, now ageing on the tab."""
 
     def test_last_column_and_fresh_rows(self):
-        self.assertEqual(T.HEADERS[-1], "Churn Bucket")
+        self.assertEqual(T.HEADERS[-2], "Churn Bucket")                 # Port Status sits after it since 11/18
         self.assertEqual(T.HEADERS[_COLX("Delivered Message Sent") + 3], "Churn Bucket")   # Shipping Status + Notes sit between (11/12)
         r = T.line_row(line(line_status="Active"), "11/09/2026", active_of=lambda l: "11/3/2026")
         self.assertEqual(r[T._COL["Churn Bucket"]], "0-30 Day")
@@ -629,6 +630,22 @@ class Nov17Columns(unittest.TestCase):
         third = T.merge(first["rows"], [line()], today=TODAY)              # no export today: kept
         self.assertEqual(third["rows"][0][T._COL["Disconnect Date"]], "11/12/2026")
         self.assertIn("Disconnect Date", T._DATE_COLS)
+
+
+class NobodyUsesLetters(unittest.TestCase):
+    def test_no_reader_addresses_the_tab_by_letter(self):
+        # 11/18: Carlos moved seven columns in two days and asked that "whatever
+        # fills all this out" keep up. It does only because every reader and
+        # writer resolves by header name; this pins that for the modules that
+        # touch the tab.
+        import pathlib, re
+        root = pathlib.Path(__file__).resolve().parents[1]
+        files = ["nds_metrics/att_order_status.py", "nds_metrics/customer_email.py",
+                 "rc_contact_sync/delivered.py", "rc_contact_sync/followup.py"]
+        bad = re.compile(r"""['"]NDS Order Log['"]!\$?[A-Z]{1,2}\$?\d|T\.HEADERS\[\d+\]|order_log_tab\.HEADERS\[\d+\]""")
+        for f in files:
+            src = (root / f).read_text(encoding="utf-8")
+            self.assertIsNone(bad.search(src), f)
 
 
 if __name__ == "__main__":

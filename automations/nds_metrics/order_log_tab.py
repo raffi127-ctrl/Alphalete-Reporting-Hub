@@ -74,16 +74,27 @@ DAYS_KEPT: Optional[int] = None       # None = keep every line
 # is X, was W); every reader resolves by header.
 HEADERS = ("Week Ending", "Pay Period", "Rep", "Line", "Customer",
            "Email", "Zip", "DSI #", "Wireless Order #", "BAN", "Phone #",     # GROUP_COLS, folded under Customer
-           "Type", "Device", "Plan",                                          # ... these three too (11/18)
-           "Order Date", "Last Updated",
-           "Line Status", "Ship Date", "Delivered", "Activation Date", "Disconnect Date", "Port Status",
+           "Type", "Plan",                                                    # ... these two too (11/18)
+           "Order Date", "Last Updated", "Device",
+           "Line Status", "Ship Date", "Delivered", "Activation Date", "Disconnect Date",
            "Taylor's Notes", "Notes", "Being worked on", "Delivered Message Sent",
-           "Shipping Status", "Shipping Notes", "Churn Bucket")
+           "Shipping Status", "Shipping Notes", "Churn Bucket", "Port Status")
 # 2026-11-18, Carlos, by the letters of the 11/17 layout: "group column M, N
-# and O into the same grouping" (Type, Device, Plan join the folded group),
-# "column L move to the left of column D" (Line before Customer), "Column V to
-# the right of Column K" (Last Updated right after Order Date), "Column X to
-# the left of column W" (Taylor's Notes before Notes).
+# and O into the same grouping" then "Actually keep N where its at" (Type and
+# Plan join the folded group, Device stays in view), "column L move to the left
+# of column D" (Line before Customer), "Column V to the right of Column K"
+# (Last Updated right after Order Date), "Column X to the left of column W"
+# (Taylor's Notes before Notes), "Move U to the right right at the end. idk
+# what its for" (Port Status last -- it is the feed's own port-in state for a
+# ported number, kept because a change in it restamps Last Updated).
+#
+# WHOEVER WRITES THIS TAB: the order above is the ONLY place the layout lives.
+# Every reader and writer finds its columns by header name -- this module's
+# rewrite (_COL), rc_contact_sync.delivered (Delivered Message Sent),
+# nds_metrics.att_order_status (Shipping Status / Shipping Notes),
+# customer_email, rc_contact_sync.followup, activation_by_week, rep_order_log,
+# nds_churn -- so a move here needs no change there. Never address this tab by
+# letter or index (test_no_reader_addresses_the_tab_by_letter).
 # 2026-11-17, Carlos, three things at once:
 #  * "lets do a grouping in the nds order log. it should be above customer the
 #    plus sign ... what i want to open up is the cx email, zip code, DSI #,
@@ -96,7 +107,7 @@ HEADERS = ("Week Ending", "Pay Period", "Rep", "Line", "Customer",
 #    Date, off the Tableau export: Status Date of the line whose DTR Status is
 #    Disconnected, by spe.TN (ZipIndex.disconnect_date); the SaraPlus feed
 #    carries no date for it.
-GROUP_COLS = ("Email", "Zip", "DSI #", "Wireless Order #", "BAN", "Phone #", "Type", "Device", "Plan")
+GROUP_COLS = ("Email", "Zip", "DSI #", "Wireless Order #", "BAN", "Phone #", "Type", "Plan")
 # "Shipping Status" left of Shipping Notes since 2026-11-12 pm, Carlos: "to the
 # left of shipping notes a shipping status and this status is only based off
 # of what we get from the tracking number" -- one short word per LINE off the
