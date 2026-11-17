@@ -12510,6 +12510,24 @@
    "close_on": "exit_zero",
    "_note": "ADDED 2026-11-16 (Eve + Megan, owner PNL on Lucy Eco with auth-app login). READ-ONLY: walks the carlos_payroll_pull read path in Carlos's warm Apex window and prints every request METHOD + path (no bodies, no query values), so the Eco guard can block every non-read request except these. The exported CSV is deleted. Pinned to Lucy 2 because Carlos's Apex session only lives there."
   },
+  "owner_pnl_apex_2fa_probe": {
+   "on_scheduler": false,
+   "machine": "Lucy 2",
+   "display_name": "Owner PNL — Apex 2-step options look (read-only)",
+   "source_type": "apex",
+   "data_sources": [],
+   "command": [
+    "automations.owner_pnl.probe_apex_2fa"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": []
+   },
+   "timeout_minutes": 10,
+   "verify": null,
+   "close_on": "exit_zero",
+   "_note": "ADDED 2026-11-17 (Eve). READ-ONLY, under the Apex lock (apex_guard block): opens the account/security pages in Carlos's warm Apex window and prints what they say about 2-step (text message and/or authenticator app), digits and emails masked. Clicks nothing. Answers whether turning on the auth app keeps the owner's text message. Pinned to Lucy 2 because Carlos's Apex session only lives there."
+  },
   "dd_populate_probe": {
    "on_scheduler": false,
    "_off_scheduler_note": "DRY probe of the populate — prints every cell it WOULD change against the tab and writes NOTHING. Exists because dd_populate carries --write in its base_args, so `lucy rerun dd_populate --source X` is still a live write; there was no way to ask for a rehearsal (learned the hard way 2026-08-10, when a source swap overwrote the whole 8.2.26 column with 7.26.26 money). Default source here is PROGRAM SUMMARY / DOWNLINE, the view Eve builds Org. Bulletin.xlsx from: run this and compare the deltas against her file. Delta ~0 across the 37 owners = the week anchor is right, and only then flip the default in dd_search.accumulate/accumulate_all back to 'program-summary'. Pass `--source dd-detail` to rehearse the current live source instead. LUCY 1.",

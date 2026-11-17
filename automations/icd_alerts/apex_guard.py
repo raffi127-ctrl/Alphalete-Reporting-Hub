@@ -16,6 +16,9 @@ a read except three:
     POST o418336.ingest.sentry.io/...        -- Apex's error reports. Blocked.
 The export itself is only reads.
 
+One exception to "reads pass": Apex's account pages (NEVER_OPEN) change the
+account when merely opened, so they are stopped even for a GET.
+
 Two modes:
     "block" -- Lucy's own run (pnl.read_apex). Anything not allowed is
                stopped and written down.
@@ -55,6 +58,17 @@ CLOUDFLARE_CHECK = (
     ("challenges.cloudflare.com", "/"),
 )
 
+# Apex's ACCOUNT pages change the account just by being OPENED (ASP.NET
+# Identity): a plain GET of /Identity/Account/Manage/EnableAuthenticator wrote
+# a new authenticator key onto Carlos's account (probe_apex_2fa, Lucy 2,
+# 2026-11-17 -- not turned on, his sign-in unchanged). So "GET = read" is not
+# true there, and these are stopped even for a GET. The payroll read never
+# goes near them; the sign-in pages (/Identity/Account/Login...) are not here.
+NEVER_OPEN = (
+    ("herbjoyent.com", "/identity/account/manage"),
+    ("herbjoyent.com", "/manage/"),
+)
+
 GUARD_FILE = C.APP_DIR / "apex-guard.json"
 MODES = ("block", "watch")
 
@@ -71,8 +85,16 @@ def key(method: str, url: str) -> Tuple[str, str, str]:
     return method.upper(), (u.hostname or "").lower(), _path(u.path)
 
 
+def _never_open(host: str, path: str) -> bool:
+    p = path.lower() + "/"
+    return any((host == h or host.endswith("." + h)) and p.startswith(pre)
+               for h, pre in NEVER_OPEN)
+
+
 def allowed(method: str, url: str) -> bool:
     m, host, path = key(method, url)
+    if _never_open(host, path):
+        return False
     if m in READ_METHODS:
         return True
     if (host, path) in ALLOWED_WRITES:
