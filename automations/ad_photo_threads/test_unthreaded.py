@@ -62,8 +62,9 @@ class CheckTests(unittest.TestCase):
         self.assertNotIn("Jamar", calls[2].kwargs["text"])
         self.assertTrue(all("<!channel>" not in c.kwargs["text"] for c in calls))
         cl.pins_add.assert_called_once_with(channel="C1", timestamp="100.0")
-        self.assertIn("<@U07FWSYP3NV>", calls[1].kwargs["text"])   # Camila
-        self.assertIn("<@U07R68ZGHT6>", calls[1].kwargs["text"])   # Perla
+        self.assertIn("<@U088E2KJEV8>", calls[1].kwargs["text"])   # Eve
+        self.assertNotIn("<@U07FWSYP3NV>", calls[1].kwargs["text"])   # Camila (Eve 11/17)
+        self.assertNotIn("<@U07R68ZGHT6>", calls[1].kwargs["text"])   # Perla (Eve 11/17)
 
     def test_waits_while_appstream_still_looking(self):
         k = "2026-10-19|jamar gray"
@@ -192,7 +193,9 @@ class OrphanTests(unittest.TestCase):
 
     def test_other_channels_keep_their_tags(self):
         text = unthreaded.reply_text(self.TODAY, ["x"], "C1")
-        self.assertIn("<@U07FWSYP3NV>", text)
+        self.assertIn("<@U088E2KJEV8>", text)                # Eve only (11/17)
+        self.assertNotIn("<@U07FWSYP3NV>", text)
+        self.assertNotIn("<@U07R68ZGHT6>", text)
         self.assertNotIn("<!channel>", text)
 
     def test_an_answered_name_may_open_its_thread(self):

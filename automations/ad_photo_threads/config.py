@@ -142,6 +142,13 @@ NO_AD_ANSWERS = {
     "2026-11-05|heidi gerhardt": "Handshake / Marketing Assistant",
     "2026-11-05|luis almaraz": "Handshake / Marketing Assistant",
     "2026-11-05|alani jacob": "Handshake / Marketing Assistant",
+    # Frank Matos, Eve 11/17: no ad anywhere -- AppStream 23221 (Total First
+    # Interviews) has the Ad column blank (Lalson came from Monster, "Aptel
+    # Flow - Monster"; Tranice from Indeed) and the 1st round thread says
+    # "(Role not listed)". Eve: a catch-all thread, like Jamis' Other(NLR Indeed);
+    # the Monster one joins Kash's Monster thread (Mariam Ade, 11/11).
+    "2026-11-12|lalson latheef": "Aptel Flow - Monster",
+    "2026-11-13|tranice gordon": "Other (no ad)",
     # Jairo, Camila 11/11: the 11/6 1st rounds with a blank Ad Title (tab
     # `Jairo Ruiz` rows 4572/4574).
     "2026-11-06|aiden moore": "Entry Level Manager ? Miami FL",

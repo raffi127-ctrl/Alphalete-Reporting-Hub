@@ -24,10 +24,9 @@ PLACE_DAYS = 45    # how far back place_found picks up an open name
 _blank = collect.blank_title     # a blank title the Call List couldn't fill either
 
 # Eve 10/29: each new reply in the "no ad" thread tags the recruiting team.
-# Eve 10/30: and her.
+# Eve 11/17: only her, in every Indeed channel -- she tries to place the names
+# herself first and only then asks Camila / Perla. Don't add them back.
 TAG_USERS = [
-    "U07FWSYP3NV",   # Camila Hornos Kraschinsky
-    "U07R68ZGHT6",   # Perla Falabella
     "U088E2KJEV8",   # Evelyn (Eve) Sobrino
 ]
 
