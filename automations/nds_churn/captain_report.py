@@ -101,12 +101,17 @@ def _looks_like_csv(b: bytes) -> bool:
             and first.count(",") >= 5)
 
 
-def pull_long(today: dt.date, log=print, days: int = LOOKBACK_DAYS) -> Path:
+def pull_long(today: dt.date, log=print, days: int = LOOKBACK_DAYS,
+              url_extra: str = "") -> Path:
     """The NDS-SN ORDERLOG over `days` of Order Date, cached per day beside
-    the daily 60-day file (its own name, so nds_metrics never reuses it)."""
+    the daily 60-day file (its own name, so nds_metrics never reuses it).
+    `url_extra` = extra query parameters appended as given (a Tableau URL
+    filter such as IF%2FOOF=IF%2COOF), cached under their own name."""
+    import hashlib
     from automations.office_metrics import nds_orderlog as NO
     from automations.shared.tableau_patchright import tableau_session
-    out = OUT_DIR / f"nds_orderlog_{days}d_{today.isoformat()}.csv"
+    tag = f"_{hashlib.md5(url_extra.encode()).hexdigest()[:6]}" if url_extra else ""
+    out = OUT_DIR / f"nds_orderlog_{days}d{tag}_{today.isoformat()}.csv"
     out.parent.mkdir(parents=True, exist_ok=True)
     if out.exists() and out.stat().st_size > 500 and _looks_like_csv(out.read_bytes()):
         log(f"[captain] reusing today's {days}-day pull ({out.stat().st_size:,} bytes)")
@@ -114,6 +119,9 @@ def pull_long(today: dt.date, log=print, days: int = LOOKBACK_DAYS) -> Path:
     if out.exists():
         out.unlink()
     url = NO._orderlog_url(today - dt.timedelta(days=days), today)
+    if url_extra:
+        url += "&" + url_extra.lstrip("&?")
+        log(f"[captain] extra URL params: {url_extra}")
     last = ""
     for attempt in (1, 2, 3):
         with tableau_session(verbose=False) as page:
@@ -127,6 +135,20 @@ def pull_long(today: dt.date, log=print, days: int = LOOKBACK_DAYS) -> Path:
                 return out
             last = f"status={r.status} bytes={len(body)}"
     raise RuntimeError(f"NDS ORDERLOG {days}-day export failed after 3 tries: {last}")
+
+
+def export_field_values(path: Path, ix: dict, field: str, top: int = 12) -> List[Tuple[str, int]]:
+    """Distinct values of one mapped field across the WHOLE export with row
+    counts (e.g. 'if_oof' -- 2026-11-17: is the ORDERLOG view pinned to OOF
+    lines while the Churn Rates view counts IF ones too?)."""
+    i = ix.get(field)
+    if i is None:
+        return []
+    cnt: collections.Counter = collections.Counter()
+    for r in C.read_rows(path)[1:]:
+        if len(r) > i:
+            cnt[str(r[i]).strip().upper() or "(blank)"] += 1
+    return cnt.most_common(top)
 
 
 def export_owners(path: Path, ix: dict, log=print) -> List[Tuple[str, int]]:
@@ -709,7 +731,7 @@ def shot_to_tab(png: Path, log=print, tab: str = SHOT_TAB) -> None:
 
 def run(owner_key: str, today: dt.date, *, dry_run: bool = False,
         from_file: Optional[str] = None, dm: Optional[str] = None,
-        skip_reconcile: bool = False, log=print) -> int:
+        skip_reconcile: bool = False, url_extra: str = "", log=print) -> int:
     from automations.nds_churn.run import write_diag
     key = (owner_key or "").strip().lower()
     if key not in OWNERS:
@@ -717,8 +739,11 @@ def run(owner_key: str, today: dt.date, *, dry_run: bool = False,
         return 2
     owner = OWNERS[key]
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    path = Path(from_file) if from_file else pull_long(today, log)
+    path = Path(from_file) if from_file else pull_long(today, log, url_extra=url_extra)
     header, ix, lines = C.load_owner_lines(path, log=log, owner_tokens=owner["tokens"])
+    field_counts = {f: export_field_values(path, ix, f) for f in ("if_oof", "measure", "product")}
+    log("[captain] export field values: " + "; ".join(
+        f"{f}: " + ", ".join(f"{k} x{v}" for k, v in vals) for f, vals in field_counts.items()))
     log(f"[captain] {owner['name']}: {len(lines)} line(s) on the owner")
     owner_cells = export_owners(path, ix, log)
     if not lines:
@@ -734,6 +759,9 @@ def run(owner_key: str, today: dt.date, *, dry_run: bool = False,
                    if ok else "⚠ not reconciled to Smart Circle's Churn Rates view: " + recon)
     extra = missing_reps(path, ix, view, rep)
     diag = diag_lines(owner, rep, today, recon, view, len(lines), owner_cells)
+    diag.insert(3, "EXPORT FIELD VALUES: " + "; ".join(
+        f"{f}: " + ", ".join(f"{k} x{v}" for k, v in vals) for f, vals in field_counts.items())
+        + (f"; URL EXTRA: {url_extra}" if url_extra else ""))
     if extra:
         diag += ["VIEW REPS MISSING FROM OUR OWNER SLICE:"] + extra
     for ln in diag:
