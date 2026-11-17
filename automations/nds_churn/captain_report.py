@@ -579,7 +579,31 @@ def _box_html(rep: dict) -> str:
               f'{_rate_cell(orate["0-30"])}{_rate_cell(orate["31-60"])}</tr>'
               f'<tr><td class="lbl"><b>Pending orders</b><div class="small">sold last 30 days, not activated, not canceled</div></td>'
               f'<td>{rep["pending"]}</td><td></td></tr></table>')
-    return f'<div class="two">{box_t}{rate_t}</div>'
+    view_t = _view_html(rep.get("view"), rep.get("view_missing") or [])
+    return f'<div class="two">{box_t}{rate_t}{view_t}</div>'
+
+
+def _view_html(view: Optional[dict], missing: List[str]) -> str:
+    """Smart Circle's own Churn Rates view for the owner (ALL port phone
+    lines, BYOD included) beside our numbers -- the figure the Captain's
+    Bonus is read from, and the reps it counts that the Order Log lacks."""
+    if not view:
+        return ""
+    rows = []
+    for b in SHOWN:
+        v = view.get(b)
+        if not v:
+            rows.append(f'<tr><td class="lbl"><b>{BUCKET_LABEL[b]} churn</b></td><td>—</td><td>—</td><td>—</td></tr>')
+            continue
+        pct = (100.0 * v["disc"] / v["base"]) if v["base"] else None
+        rows.append(f'<tr><td class="lbl"><b>{BUCKET_LABEL[b]} churn</b></td><td>{v["base"]}</td>'
+                    f'<td>{v["disc"]}</td>{_pct_cell(b, {"act": v["base"], "disc": v["disc"], "pct": pct})}</tr>')
+    gap = (f'<tr><td class="lbl"><b>Reps on the view, not in the Order Log</b>'
+           f'<div class="small">their lines never reach the export</div></td>'
+           f'<td colspan="3">{len(missing)}</td></tr>')
+    return ('<table><tr><th class="wh">Smart Circle Churn Rates view<div class="small">all port phone lines, BYOD included</div></th>'
+            '<th class="wh">Activated</th><th class="wh">Disconnected</th><th class="wh">Churn %</th></tr>'
+            + "".join(rows) + gap + "</table>")
 
 
 def _reps_html(rep: dict) -> str:
@@ -654,7 +678,10 @@ def render_html(owner: dict, rep: dict, today: dt.date, recon_text: str) -> str:
         "red = at or over the DNQ line (0-30 ≥ 5.00%, 90 Day ≥ 13.00%) — the captain's bonus is judged on the "
         "whole team's port lines, so one office can sit red while the team does not. 'SOW Non-BYOD chart' = "
         "where the rate lands on Schedule A's Non-BYOD churn tiers (4 best … 1 worst). Rose rows = disconnected "
-        "in the last 7 days. '% after rolloff' = that bucket's churn once the row's lines have aged out of it.")
+        "in the last 7 days. '% after rolloff' = that bucket's churn once the row's lines have aged out of it."
+        + (" Smart Circle's Churn Rates view (right-hand box) also counts these reps, whose lines are not in the "
+           "Order Log export under any owner: " + ", ".join(rep.get("view_missing") or []) + "."
+           if rep.get("view_missing") else ""))
     body = (f'<div class="board"><div class="title">{_e(title)}</div><div class="sub">{_e(sub)}</div>'
             f'<div class="src">{src}</div>'
             + _box_html(rep)
@@ -792,14 +819,18 @@ def run(owner_key: str, today: dt.date, *, dry_run: bool = False,
         log("[captain] NO lines on the owner -- the export's Owner & Office cells: "
             + "; ".join(f"{k} x{v}" for k, v in owner_cells))
     rep = build(lines, today)
-    if skip_reconcile:
-        ok, recon, view = None, "not checked (--skip-reconcile)", None
-    else:
-        ok, recon, view = reconcile(owner["name"], rep, today, log)
+    ok, recon, view = reconcile(owner["name"], rep, today, log)
     log("RECONCILE: " + ("OK" if ok else "UNVERIFIED" if ok is None else "MISMATCH") + " -- " + recon)
-    recon_short = ("✓ reconciled to Smart Circle's Churn Rates view (all port lines, 0-30)"
-                   if ok else "⚠ not reconciled to Smart Circle's Churn Rates view: " + recon)
     extra = missing_reps(path, ix, view, rep)
+    rep["view"] = view
+    rep["view_missing"] = [ln.strip().split(":")[0] for ln in extra if "NOT in the export" in ln]
+    if ok:
+        recon_short = "✓ reconciled to Smart Circle's Churn Rates view (all port lines, 0-30)"
+    elif rep["view_missing"]:
+        recon_short = (f"⚠ Smart Circle's Churn Rates view counts {len(rep['view_missing'])} more rep(s) "
+                       "than the Order Log carries -- their lines are not in the export (see the right-hand box)")
+    else:
+        recon_short = "⚠ not reconciled to Smart Circle's Churn Rates view: " + recon
     diag = diag_lines(owner, rep, today, recon, view, len(lines), owner_cells)
     diag.insert(3, "EXPORT DATE SPAN: " + export_date_span(path, ix, lines))
     diag.insert(4, "EXPORT FIELD VALUES: " + "; ".join(
@@ -822,7 +853,7 @@ def run(owner_key: str, today: dt.date, *, dry_run: bool = False,
         log("[dry-run] nothing sent.")
         print("=== done ===", flush=True)
         return 0
-    if ok is False:
+    if ok is False and not skip_reconcile:
         log("✗ 0-30 does not match the Churn Rates view -- nothing sent (--skip-reconcile overrides)")
         write_diag(diag, log=log, tab=DIAG_TAB)
         return 1
