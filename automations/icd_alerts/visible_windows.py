@@ -55,6 +55,10 @@ ALLOWED: Dict[str, Tuple[str, str]] = {
         (PERSON, "set-up: opens the owner's Gmail forwarding page"),
     "automations/icd_alerts/gmail_filters.py":
         (PERSON, "set-up: opens the owner's Gmail filter page"),
+    "automations/icd_alerts/gmail_browser.py":
+        (PERSON, "set-up: Lucy's Gmail window for the SaraPlus code forward -- "
+                 "the owner signs in and taps Google's number on their phone, "
+                 "Lucy clicks the rest (Eve 2026-11-17)"),
     "automations/icd_alerts/boot_schedule.py":
         (PERSON, "install: the Mac's own password box, to start after a restart"),
     "automations/icd_alerts/stay_awake.py":

@@ -451,7 +451,9 @@ def record_forwards(book=None, *, send: bool = False,
 
 
 # --- accepting Gmail's confirmation -----------------------------------------
-CONFIRM_QUERY = "from:forwarding-noreply@google.com subject:forwarding newer_than:2d"
+# BY SENDER ONLY: the subject is in the forwarding account's language ("Gmail
+# Confirmación de reenvío" on a Spanish Gmail, Eve's test box 2026-11-17).
+CONFIRM_QUERY = "from:forwarding-noreply@google.com newer_than:2d"
 NOTE_CONFIRMED = "gmail confirmed"
 NOTE_NO_MAIL = "no gmail mail yet"
 NOTE_FAILED = "gmail confirm failed"
@@ -472,11 +474,17 @@ CONFIRM_FAST_MIN = 60
 CONFIRM_SLOW_EVERY_MIN = 10
 
 # THE FIRST LINK, BY ITS WORDING. The same mail's second link CANCELS.
+# English and Spanish: the mail comes in the FORWARDING account's language, and
+# a Spanish one was never matched, so never confirmed (2026-11-17).
 _CONFIRM_LINK = re.compile(
-    r"confirm the request:\s*(https://mail-settings\.google\.com/mail/\S+)", re.I)
-_REQUESTER = re.compile(r"Receive Mail from\s+([\w.+-]+@[\w.-]+\w)", re.I)
-_ASKS_CONFIRM = "please confirm forwarding"
-_SUCCEEDED = "confirmation success"
+    r"(?:confirm the request|confirmar la solicitud):\s*"
+    r"(https://mail-settings\.google\.com/mail/\S+)", re.I)
+_REQUESTER = re.compile(r"(?:Receive Mail from|Recibir correos de)\s+([\w.+-]+@[\w.-]+\w)", re.I)
+# The page is in the forwarding account's language too (Spanish read off a real
+# page 2026-11-17: "confirma el reenvío ...", button "Confirmar", "¡Confirmación
+# exitosa!"). Its one submit is Confirm in every language.
+_ASKS_CONFIRM = ("please confirm forwarding", "confirma el reenvío")
+_SUCCEEDED = ("confirmation success", "confirmación exitosa")
 
 
 def confirmation_link(body: str) -> str:
@@ -562,12 +570,12 @@ def accept_confirmation(link: str, requester: str, open_page=None) -> None:
     with (open_page or _chrome_page)() as page:
         page.goto(link, timeout=30000)
         before = page.inner_text("body").lower()
-        if _ASKS_CONFIRM not in before or requester.lower() not in before:
+        if not any(w in before for w in _ASKS_CONFIRM) or requester.lower() not in before:
             raise ValueError("unexpected confirmation page: %s" % before[:120])
         with page.expect_navigation(timeout=20000):
-            page.click('input[type="submit"][value="Confirm"]')
+            page.click('input[type="submit"]')
         after = page.inner_text("body").lower()
-    if _SUCCEEDED not in after:
+    if not any(w in after for w in _SUCCEEDED):
         raise ValueError("no success page after Confirm: %s" % after[:120])
 
 
