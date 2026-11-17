@@ -72,14 +72,19 @@ DAYS_KEPT: Optional[int] = None       # None = keep every line
 # export carries no pay-period field (probed 11/11), so it is computed.
 # Everything after Week Ending moved one column right (Delivered Message Sent
 # is X, was W); every reader resolves by header.
-HEADERS = ("Week Ending", "Pay Period", "Rep", "Line", "Customer",
-           "Email", "Zip", "DSI #", "Wireless Order #", "BAN", "Phone #",     # GROUP_COLS, folded under Customer
-           "Type", "Plan",                                                    # ... these two too (11/18)
-           "Order Date", "Last Updated", "Device",
-           "Line Status", "Ship Date", "Delivered", "Activation Date", "Disconnect Date",
+HEADERS = ("Week Ending", "Pay Period", "Rep", "Line", "Line Status", "Customer", "Device",
+           "Email", "Zip", "DSI #", "Wireless Order #", "BAN", "Phone #",     # GROUP_COLS, folded beside Customer
+           "Type", "Plan",                                                    # ... these two too (11/17 pm)
+           "Order Date", "Last Updated",
+           "Ship Date", "Delivered", "Activation Date", "Disconnect Date",
            "Taylor's Notes", "Notes", "Being worked on", "Delivered Message Sent",
            "Shipping Status", "Shipping Notes", "Churn Bucket", "Port Status")
-# 2026-11-18, Carlos, by the letters of the 11/17 layout: "group column M, N
+# 2026-11-17 evening, Carlos, by the letters of the layout then live (M = Device,
+# Q = Line Status, E = Customer): "column M lets move to the right of column E
+# and column Q lets move the left of E" -- Line Status sits just LEFT of
+# Customer and Device just RIGHT of it, both always in view. The folded group
+# therefore starts after Device (GROUP_AFTER), which is where its +/- now sits.
+# 2026-11-17 pm, Carlos, by the letters of that morning's layout: "group column M, N
 # and O into the same grouping" then "Actually keep N where its at" (Type and
 # Plan join the folded group, Device stays in view), "column L move to the left
 # of column D" (Line before Customer), "Column V to the right of Column K"
@@ -108,6 +113,7 @@ HEADERS = ("Week Ending", "Pay Period", "Rep", "Line", "Customer",
 #    Disconnected, by spe.TN (ZipIndex.disconnect_date); the SaraPlus feed
 #    carries no date for it.
 GROUP_COLS = ("Email", "Zip", "DSI #", "Wireless Order #", "BAN", "Phone #", "Type", "Plan")
+GROUP_AFTER = "Device"      # the last always-visible column before the fold; the +/- sits above it
 # "Shipping Status" left of Shipping Notes since 2026-11-12 pm, Carlos: "to the
 # left of shipping notes a shipping status and this status is only based off
 # of what we get from the tracking number" -- one short word per LINE off the
@@ -571,15 +577,15 @@ def status_rules() -> List[tuple]:
 
 def group_span() -> tuple:
     """(start, end) column indexes of the customer-detail group -- GROUP_COLS
-    must sit together, right after Customer."""
+    must sit together, right after GROUP_AFTER (Customer, then Device)."""
     idx = sorted(_COL[c] for c in GROUP_COLS)
-    if idx != list(range(idx[0], idx[0] + len(idx))) or idx[0] != _COL["Customer"] + 1:
-        raise RuntimeError("GROUP_COLS must be contiguous and start right after Customer")
+    if idx != list(range(idx[0], idx[0] + len(idx))) or idx[0] != _COL[GROUP_AFTER] + 1:
+        raise RuntimeError("GROUP_COLS must be contiguous and start right after %s" % GROUP_AFTER)
     return idx[0], idx[-1] + 1
 
 
 def group_requests(sheet_id: int, existing_groups: Sequence[dict]) -> List[dict]:
-    """The one column group, with its +/- above Customer. A group already on
+    """The one column group, with its +/- above GROUP_AFTER. A group already on
     exactly that span is left alone, so whether Carlos had it open or folded
     survives the rewrite; anything else (an older span, a stray group) is
     removed and the group is added folded."""
