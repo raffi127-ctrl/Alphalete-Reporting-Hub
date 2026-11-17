@@ -50,8 +50,17 @@ VITALS = [
     ("pct_apps_booked_first", "RTCL (call list booked for a 1st)", True),
     ("first_showed", "1st rounds showed", False),
     ("pct_first_retention", "1st round retention", True),
+    # Carlos 2026-11-17: "total invited to 2nd interviews" = the three
+    # "Invite to next –" rows; "booked for 2nd interview" = the green
+    # Second Interviews Booked row.
+    ("invited_second", "Invited to 2nd interviews", False),
+    ("booked_second", "Booked for 2nd interview", False),
     ("second_showed", "2nd rounds showed", False),
     ("pct_second_retention", "2nd round retention", True),
+    # Carlos 2026-11-17, on the review card: "i would also add in the job
+    # offered and BOB numbers".
+    ("job_offered", "Job offered", False),
+    ("bob", "BOB (brought on board)", False),
     ("new_starts_showed", "New starts showed", False),
     ("pct_new_start_retention", "New start retention", True),
 ]
@@ -118,6 +127,9 @@ def write(office, weeks, gc=None):
     try:
         ws = sh.worksheet(tab)
         ws.clear()
+        # a tab made when there were fewer vitals has fewer columns
+        if ws.col_count < len(KEYS) + 1:
+            ws.add_cols(len(KEYS) + 1 - ws.col_count)
     except Exception:  # noqa: BLE001 — gspread's missing-tab error varies
         ws = sh.add_worksheet(tab, rows=max(len(body) + 10, 30),
                               cols=len(KEYS) + 1)
@@ -167,6 +179,11 @@ def from_days(days):
         "pull": sent,
         "second_showed": t.get("s2"),
         "new_starts_showed": t.get("nsh"),
+        "invited_second": (t.get("inv_booked", 0) + t.get("inv_sms", 0)
+                           + t.get("inv_na", 0)),
+        "booked_second": t.get("b2_booked"),
+        "job_offered": t.get("off"),
+        "bob": t.get("bob"),
         "pct_apps_booked_first": (round(100.0 * t.get("retb", 0) / sent, 1)
                                   if sent else None),
     }

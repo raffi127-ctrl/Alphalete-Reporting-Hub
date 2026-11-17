@@ -58,6 +58,14 @@ WANT = {
 OPTIONAL = {
     "trb": "Total Training",
     "trs": "Training Showed Up",
+    # Carlos 2026-11-17, for the grade card's Vitals: invited to a 2nd =
+    # the three "Invite to next –" rows (en dash, exactly as AppStream
+    # prints them); booked for a 2nd = the green "Second Interviews
+    # Booked" row, since most offices don't mark the calendar.
+    "b2_booked": "Second Interviews Booked",
+    "inv_booked": "Invite to next \u2013 Booked First Calendar",
+    "inv_sms": "Invite to next \u2013 SMS sent First Calendar",
+    "inv_na": "Invite to next \u2013 NA First Calendar",
 }
 
 _JS_ROWS = """() => {
