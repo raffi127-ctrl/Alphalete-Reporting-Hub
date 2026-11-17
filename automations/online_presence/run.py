@@ -99,8 +99,9 @@ def run_office(p: offices.Presence, *, live: bool,
             from automations.brand_audit import fb_reviews
             rd = eco_fb.ensure_read(p, live=not dry)
             if not eco_fb.connected(p):
-                out["facebook reviews"] = [{"action": "waiting_on_facebook_connect",
-                                            "note": f"run `eco_fb --connect {p.key}` from Megan's Mac"}]
+                how = (f"the owner signs in: `eco_fb --signin {p.key}`" if eco_fb.browser(p)
+                       else f"run `eco_fb --connect {p.key}` from Megan's Mac")
+                out["facebook reviews"] = [{"action": "waiting_on_facebook_connect", "note": how}]
             else:
                 acts = fb_reviews.process(live=not dry, profile=p, reviews=eco_fb.reviews(p),
                                           post=eco_fb.poster(p))

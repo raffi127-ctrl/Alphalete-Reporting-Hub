@@ -136,5 +136,43 @@ class ReadReply(Base):
         self.assertEqual(FB.read_job({})["status"], "signed_out")
 
 
+class NoKeyBrowser(Base):
+    """11/17: an office that never shared its Page with Alphalete's Meta business."""
+    def test_read_goes_to_the_reviews_tab(self):
+        from automations.icd_alerts import office_fb_browser as FBB
+        with mock.patch.object(FBB, "read_reviews", return_value={"status": "ok", "reviews": []}) as rr:
+            res = SP.check({"do": "fb_reviews", "via": "browser", "page_url": "https://www.facebook.com/kash",
+                            "page_name": "Kash", "skip": ["a"]})
+        self.assertEqual(res["status"], "ok")
+        self.assertEqual(rr.call_args[0][:3], ("https://www.facebook.com/kash", "Kash", ["a"]))
+
+    def test_reply_with_no_key_is_typed_as_the_page(self):
+        from automations.icd_alerts import office_fb_browser as FBB
+        with mock.patch.object(FBB, "browser_reply", return_value={"status": "replied", "via": "browser"}) as br, \
+             mock.patch.object(FB, "_graph", side_effect=AssertionError("no key, no API")):
+            res = FB.reply_job({"story": "kash.fan/posts/pfbidX", "comment": "Thanks!", "page_name": "Kash"}, live=True)
+        self.assertEqual(res["status"], "replied")
+        self.assertEqual(br.call_args[0][:3], ("kash.fan/posts/pfbidX", "Thanks!", "Kash"))
+
+    def test_post_link_from_a_comment_link_or_the_date(self):
+        from automations.icd_alerts.office_fb_browser import post_link
+        self.assertEqual(post_link(["https://www.facebook.com/kash?comment_id=1",
+                                    "https://www.facebook.com/erika/posts/pfbid0AB?comment_id=3&__cft__[0]=x"]),
+                         "erika/posts/pfbid0AB")
+        self.assertEqual(post_link(["https://www.facebook.com/permalink.php?story_fbid=pfbid0Z&id=615&__cft__=1"]),
+                         "permalink.php?story_fbid=pfbid0Z&id=615")
+        self.assertEqual(post_link(["?__cft__[0]=x", "https://www.facebook.com/kash"]), "")
+
+    def test_review_body_drops_the_header_and_buttons(self):
+        from automations.icd_alerts.office_fb_browser import _review_body
+        card = "Facebook\nFacebook\nErika  recommends Kash.\n \n·\nLove it here!\nGreat team.\nLike\nComment as Megan"
+        self.assertEqual(_review_body(card), "Love it here!\nGreat team.")
+
+    def test_no_signin_says_signed_out(self):
+        from automations.icd_alerts import office_fb_browser as FBB
+        with mock.patch.object(FBB, "PROFILE", Path(tempfile.mkdtemp()) / "none"):
+            self.assertEqual(FBB.read_reviews("kash", "Kash")["status"], "signed_out")
+
+
 if __name__ == "__main__":
     unittest.main()

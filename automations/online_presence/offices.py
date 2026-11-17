@@ -102,6 +102,9 @@ class Presence:
     # API never lets a Page answer a review written by a person, so those are
     # typed on facebook.com by the office's own computer (eco_fb.py,
     # office_fb_browser.py). "eco" is set by `eco_fb --connect` succeeding.
+    # "browser" (11/17): no key at all -- the office computer, signed in to
+    # facebook.com once by the owner, READS the Page's Reviews tab and types
+    # the replies. Set by `eco_fb --browser <office>`; needs facebook_url.
     facebook_via: str = "lucy"
 
     @property
@@ -191,8 +194,10 @@ class Presence:
             out.append("post hours must be between 8am and 6pm")
         if self.reviews_via not in ("eco", "lucy"):
             out.append(f"reviews_via must be 'eco' or 'lucy', not {self.reviews_via!r}")
-        if self.facebook_via not in ("eco", "lucy"):
-            out.append(f"facebook_via must be 'eco' or 'lucy', not {self.facebook_via!r}")
+        if self.facebook_via not in ("eco", "lucy", "browser"):
+            out.append(f"facebook_via must be 'eco', 'lucy' or 'browser', not {self.facebook_via!r}")
+        if self.facebook_via == "browser" and not self.facebook_url:
+            out.append("facebook_via 'browser' needs the office's facebook_url")
         if self.post_via not in ("eco", "lucy"):
             out.append(f"post_via must be 'eco' or 'lucy', not {self.post_via!r}")
         if self.social:

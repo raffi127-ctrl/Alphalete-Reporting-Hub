@@ -253,5 +253,96 @@ class Flow(Base):
         self.assertEqual((len(ours), len(rest)), (1, 1))
 
 
+class BrowserOffice(unittest.TestCase):
+    """11/17: no Meta key -- the office computer reads + replies on facebook.com."""
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = mock.patch.object(offices, "STATE_ROOT", Path(self.tmp.name)); self.root.start()
+        self.P = offices.Presence(key="kash", business_name="Kash", slack_channel="C1", approvers=("U1",),
+                                  facebook_url="https://www.facebook.com/kash", facebook_via="browser")
+        self.cl, self.queued = FakeSlack(), []
+        self.q = mock.patch.object(relay, "enqueue",
+                                   side_effect=lambda o, k, pl, live: self.queued.append((k, pl)) or "J")
+        self.q.start()
+
+    def tearDown(self):
+        self.q.stop(); self.root.stop(); self.tmp.cleanup()
+
+    def test_is_eco_without_a_page_id(self):
+        self.assertTrue(E.is_eco(self.P))
+        bad = offices.Presence(key="x", business_name="X", slack_channel="C", facebook_via="browser").problems()
+        self.assertTrue(any("facebook_url" in p for p in bad))
+        self.assertFalse(any("facebook" in p for p in self.P.problems()))
+
+    def test_the_sign_in_is_the_connection(self):
+        self.assertFalse(E.connected(self.P))
+        E.collect(self.P, [_ans("fb_signin", status="signed_in")], self.cl, dry=False)
+        self.assertTrue(E.connected(self.P))
+
+    def test_read_and_reply_carry_the_page(self):
+        E.collect(self.P, [_ans("fb_signin", status="signed_in")], self.cl, dry=False)
+        E.ensure_read(self.P, live=True)
+        self.assertEqual({k: self.queued[-1][1][k] for k in ("do", "via", "page_url", "page_name")},
+                         {"do": "fb_reviews", "via": "browser", "page_url": "https://www.facebook.com/kash",
+                          "page_name": "Kash"})
+        E.collect(self.P, [_ans("fb_reviews", status="ok", via="browser", reviews=[
+            {"story": "fan/posts/pfbidA", "recommendation_type": "positive", "review_text": "great"}])],
+            self.cl, dry=False)
+        with mock.patch.object(RR, "_client", return_value=self.cl), \
+             mock.patch.object(RR, "draft_reply", return_value="Thank you!"), \
+             mock.patch.object(fb_reviews, "_keys", side_effect=AssertionError("Meta key used")):
+            acts = fb_reviews.process(live=True, profile=self.P, reviews=E.reviews(self.P), post=E.poster(self.P))
+        self.assertEqual([a["action"] for a in acts], ["auto_post"])
+        E.send_next(self.P, live=True)
+        self.assertEqual(self.queued[-1], ("social_post", {"do": "fb_reply", "story": "fan/posts/pfbidA",
+                                                           "comment": "Thank you!", "page_name": "Kash"}))
+
+
+class NeverLanded(Base):
+    """11/17: nine replies came back "replied" and none was on Facebook."""
+    def _posted_thank_you(self):
+        E.collect(self.P, [_ans("fb_reviews", status="ok", reviews=[
+            {"story": "s1", "recommendation_type": "positive", "review_text": "great"}])], self.cl, dry=False)
+        self._pass(E.reviews(self.P))
+        E.send_next(self.P, live=True)
+        E.collect(self.P, [_ans("fb_reply", status="replied", via="browser", story="s1")], self.cl, dry=False)
+        st = self._st(); st["reviews"]["s1"]["replied_at"] = 1   # long ago
+        self.P.path("fb_review_replies.json").write_text(json.dumps(st))
+
+    def _st(self):
+        return json.loads(self.P.path("fb_review_replies.json").read_text())
+
+    def _read_again(self):
+        return E.collect(self.P, [_ans("fb_reviews", status="ok", reviews=[
+            {"story": "s1", "recommendation_type": "positive", "review_text": "great"}])], self.cl, dry=False)
+
+    def test_posted_reviews_are_not_skipped_so_a_miss_shows(self):
+        self._posted_thank_you()
+        E._save(self.P, dict(E._load(self.P), read_at=0, pending_read={}))
+        E.ensure_read(self.P, live=True)
+        self.assertNotIn("s1", self.queued[-1][1]["skip"])
+
+    def test_still_unanswered_goes_back_with_the_same_words(self):
+        self._posted_thank_you()
+        acts = self._read_again()
+        self.assertIn("fb_reply_not_there_resent", [a["action"] for a in acts])
+        self.assertEqual(E._load(self.P)["outbox"], [{"story": "s1", "comment": "Thank you!"}])
+
+    def test_a_fresh_reply_is_given_time_to_show(self):
+        self._posted_thank_you()
+        st = self._st(); st["reviews"]["s1"]["replied_at"] = __import__("time").time()
+        self.P.path("fb_review_replies.json").write_text(json.dumps(st))
+        self.assertNotIn("fb_reply_not_there_resent", [a["action"] for a in self._read_again()])
+
+    def test_three_misses_park_it_out_loud(self):
+        self._posted_thank_you()
+        for _ in range(E.RELAND_MAX):
+            self._read_again()
+            E._save(self.P, dict(E._load(self.P), outbox=[]))
+        acts = self._read_again()
+        self.assertIn("fb_reply_never_landed", [a["action"] for a in acts])
+        self.assertTrue(self._st()["reviews"]["s1"]["blocked"])
+
+
 if __name__ == "__main__":
     unittest.main()

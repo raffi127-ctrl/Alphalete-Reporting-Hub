@@ -37,6 +37,8 @@ OUTBOX_GAP_MIN = 20
 INFLIGHT_GIVE_UP_HOURS = 3
 CHECKPOINT_RETRY_HOURS = 24
 NOT_PAGE_RETRY_HOURS = 24
+RELAND_WAIT_MIN = 60          # a reply this fresh may not show in a read yet
+RELAND_MAX = 3                # "posted" this many times and still not there: park it
 
 
 def _file(P) -> Path:
@@ -56,9 +58,21 @@ def _save(P, s: Dict) -> None:
     f.write_text(json.dumps(s, indent=1))
 
 
+def browser(P) -> bool:
+    """No key: the office computer reads + replies on facebook.com (11/17)."""
+    return getattr(P, "facebook_via", "lucy") == "browser" and bool(getattr(P, "facebook_url", ""))
+
+
 def is_eco(P) -> bool:
+    if browser(P):
+        return True
     return bool(getattr(P, "facebook_page_id", "")) and (
         getattr(P, "reviews_via", "lucy") == "eco" or getattr(P, "facebook_via", "lucy") == "eco")
+
+
+def _browser_fields(P) -> Dict:
+    return {"page_name": P.business_name} if not browser(P) else {
+        "via": "browser", "page_url": P.facebook_url, "page_name": P.business_name}
 
 
 def connected(P) -> bool:
@@ -189,6 +203,34 @@ def _retry_not_page(fb_state: Dict, now: float) -> int:
     return back
 
 
+def _not_there(s: Dict, fb_state: Dict, unanswered: List[Dict], now: float) -> List[Dict]:
+    """A review marked posted that the office still reads as unanswered: the
+    reply never landed. Same words go back in the outbox (an approval stands);
+    after RELAND_MAX tries it parks, said out loud."""
+    acts: List[Dict] = []
+    revs = fb_state.get("reviews") or {}
+    box = s.setdefault("outbox", [])
+    fly = (s.get("inflight") or {}).get("story")
+    for r in unanswered:
+        sid = r.get("story")
+        st = revs.get(sid)
+        if not isinstance(st, dict) or not st.get("posted") or st.get("blocked") or not st.get("reply"):
+            continue
+        if sid == fly or any(x.get("story") == sid for x in box):
+            continue
+        if now - float(st.get("replied_at") or 0) < RELAND_WAIT_MIN * 60:
+            continue
+        n = int(st.get("relands") or 0) + 1
+        if n > RELAND_MAX:
+            st["blocked"] = "posted %d times but it never showed on Facebook" % RELAND_MAX
+            acts.append({"action": "fb_reply_never_landed", "note": sid})
+            continue
+        st["relands"] = n
+        box.append({"story": sid, "comment": st["reply"]})
+        acts.append({"action": "fb_reply_not_there_resent", "note": "%s (try %d)" % (sid, n)})
+    return acts
+
+
 def collect(P, rows: List[Dict], cl, *, dry: bool) -> List[Dict]:
     s = _load(P)
     fb_file = P.path("fb_review_replies.json")
@@ -208,6 +250,8 @@ def collect(P, rows: List[Dict], cl, *, dry: bool) -> List[Dict]:
         if do == "fb_signin":
             if status == "signed_in":
                 s["fb_signed_in"] = True
+                if browser(P):
+                    s["connected"] = True            # the sign-in IS the connection
                 s.pop("paused", None)
                 n = _unpark_refused(fb_state)
                 acts.append({"action": "facebook_signed_in",
@@ -224,6 +268,7 @@ def collect(P, rows: List[Dict], cl, *, dry: bool) -> List[Dict]:
             if status == "ok":
                 s.update(reviews=res.get("reviews") or [], read_at=time.time(), connected=True)
                 acts.append({"action": "fb_reviews_read", "note": "%d unanswered" % len(s["reviews"])})
+                acts.extend(_not_there(s, fb_state, s["reviews"], time.time()))
             else:
                 if status == "signed_out":
                     s["connected"] = False
@@ -251,6 +296,8 @@ def collect(P, rows: List[Dict], cl, *, dry: bool) -> List[Dict]:
                 acts.append(_owner_dm(P, cl, s, status, dry))
                 continue
             if status == "replied":
+                if st is not None:
+                    st["replied_at"] = time.time()
                 # Remember that this page CAN post. The refusal branch below
                 # reads it to tell a per-review dead end from a page that has
                 # never managed a single reply.
@@ -361,8 +408,10 @@ def send_next(P, *, live: bool, now: float | None = None) -> Dict | None:
     if not live:
         return {"action": "would_send_fb_reply", "note": item["story"]}
     from automations.online_presence import relay
-    job = relay.enqueue(P.key, "social_post", {"do": "fb_reply", "story": item["story"],
-                                               "comment": item["comment"]}, live=True)
+    payload = {"do": "fb_reply", "story": item["story"], "comment": item["comment"]}
+    if browser(P):
+        payload["page_name"] = P.business_name
+    job = relay.enqueue(P.key, "social_post", payload, live=True)
     s.update(inflight=dict(item, job=job, at=now), last_sent=now, outbox=box)
     _save(P, s)
     return {"action": "fb_reply_sent_to_office", "note": "%s (%d more waiting)" % (item["story"], len(box))}
@@ -389,9 +438,17 @@ def ensure_read(P, *, live: bool) -> Dict | None:
         fb_state = json.loads(P.path("fb_review_replies.json").read_text())
     except Exception:  # noqa: BLE001
         fb_state = {}
-    skip = list((fb_state.get("reviews") or {}).keys())      # already in hand or handled
+    # Only what's still in hand: waiting on ✅, in the outbox, or parked. A review
+    # we POSTED to is not skipped -- if the office still reads it as unanswered,
+    # the reply never landed (11/17: nine "replied" that never showed) and
+    # _not_there() puts it back in line. Answered ones the office filters itself.
+    skip = [k for k, v in (fb_state.get("reviews") or {}).items()
+            if not isinstance(v, dict) or v.get("blocked") or not v.get("posted") or v.get("answered_before")]
     from automations.online_presence import relay
-    job = relay.enqueue(P.key, "social_check", {"do": "fb_reviews", "skip": skip[-300:]}, live=True)
+    payload = {"do": "fb_reviews", "skip": skip[-300:]}
+    if browser(P):
+        payload.update(_browser_fields(P))
+    job = relay.enqueue(P.key, "social_check", payload, live=True)
     s["pending_read"] = {"job": job, "at": now}
     _save(P, s)
     return {"action": "fb_read_queued", "note": job}
@@ -408,13 +465,28 @@ def main(argv=None) -> int:
     g.add_argument("--connect", metavar="OFFICE")
     g.add_argument("--signin", metavar="OFFICE",
                    help="Facebook opens on the office computer; the owner signs in once")
+    g.add_argument("--browser", metavar="OFFICE",
+                   help="NO Meta key: the office computer reads + answers reviews on facebook.com "
+                        "after the owner signs in once (opens the sign-in window)")
     a = ap.parse_args(argv)
     from dataclasses import replace
     from automations.online_presence import offices
-    p = offices.get(a.connect or a.signin)
+    p = offices.get(a.connect or a.signin or a.browser)
     if not p:
-        print("✗ no office %r" % (a.connect or a.signin))
+        print("✗ no office %r" % (a.connect or a.signin or a.browser))
         return 1
+    if a.browser:
+        if not p.facebook_url:
+            print("✗ %s has no Facebook page link on its sign-up -- add facebook_url first" % p.key)
+            return 1
+        if p.facebook_via != "browser":
+            p = replace(p, facebook_via="browser")
+            offices.save(p)
+        job = queue_signin(p)
+        print("✓ %s will answer Facebook reviews on facebook.com. Sign-in opens on their computer "
+              "within a few minutes (job %s): the owner signs in with their own Facebook that "
+              "manages %s." % (p.key, job[:8], p.business_name))
+        return 0
     if a.signin:
         job = queue_signin(p)
         print("✓ Facebook will open on %s's computer within a few minutes (job %s) -- "

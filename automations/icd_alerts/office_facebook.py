@@ -150,6 +150,12 @@ def _answered(story: str, page_id: str, token: str) -> bool:
 
 def read_job(payload: Dict, log=print) -> Dict:
     k = _key()
+    if payload.get("via") == "browser" or (not k.get("token") and payload.get("page_url")):
+        # no key on this computer: read the Page's Reviews tab like a person
+        # (office_fb_browser.read_reviews, 11/17)
+        from automations.icd_alerts import office_fb_browser as FBB
+        return FBB.read_reviews(str(payload.get("page_url") or ""), str(payload.get("page_name") or ""),
+                                payload.get("skip") or [], log=log)
     if not k.get("token"):
         return {"status": "signed_out", "error": "no Facebook page key on this computer"}
     skip = set(payload.get("skip") or [])
@@ -187,6 +193,10 @@ def reply_job(payload: Dict, live: bool, log=print) -> Dict:
     if not live:
         return {"status": "dry_run", "story": story}
     k = _key()
+    if not k.get("token") and payload.get("page_name"):
+        # an office with no key: every reply is typed on facebook.com
+        from automations.icd_alerts import office_fb_browser as FBB
+        return FBB.browser_reply(story, text, str(payload["page_name"]), log=log)
     if not k.get("token"):
         return {"status": "signed_out", "error": "no Facebook page key", "story": story}
     try:

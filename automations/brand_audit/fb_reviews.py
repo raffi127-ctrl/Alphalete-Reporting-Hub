@@ -174,6 +174,8 @@ def process(*, live: bool = False, profile=None, reviews=None, post=None) -> Lis
     k = {} if office_side else _keys()
     P = RR._profile(profile)
     page_id = getattr(profile, "facebook_page_id", "") if profile else k["facebook_page_id"]
+    if not page_id and office_side and getattr(profile, "facebook_via", "") == "browser":
+        page_id = profile.facebook_url             # read on facebook.com: no page id needed
     if not page_id:
         return [{"action": "no_facebook_page"}]
     token = "" if office_side else _page_token(k, page_id)
