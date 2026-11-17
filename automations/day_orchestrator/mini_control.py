@@ -3549,12 +3549,34 @@ def _action_relay_faults(args: str) -> tuple[bool, str]:
         count = row[_P.F_COUNT] if len(row) > _P.F_COUNT else ""
         first = row[_P.F_FIRST] if len(row) > _P.F_FIRST else ""
         last = row[_P.F_LAST] if len(row) > _P.F_LAST else ""
-        out.append(f"row {i} | {stage} | x{count or '?'} first {first or '?'} last {last or '?'}\n"
-                   f"  {str(row[_P.F_SUMMARY]).strip()}\n"
-                   f"  {str(row[_P.F_DETAIL]).strip()[:3500]}")
+        detail = str(row[_P.F_DETAIL]).strip()
+        out.append((f"row {i} | {stage} | x{count or '?'} first {first or '?'} last {last or '?'}",
+                    str(row[_P.F_SUMMARY]).strip(), detail))
     if not out:
         return True, f"no {stage_prefix or 'fault'} rows for {office} on {day.isoformat()}"
-    return True, "\n".join(out)
+    # The Result cell keeps ~480 characters and a Detail is up to 6000, so the
+    # full rows go to their own tab of the control workbook (cleared and
+    # rewritten each call; a Detail longer than a cell continues on the next
+    # line); the laptop reads the tab with gspread. The Result says the heads.
+    title = "Relay Faults"
+    try:
+        sh = _fill._client().open_by_key(CONTROL_SHEET_ID)
+        try:
+            ws = sh.worksheet(title)
+            ws.clear()
+        except Exception:  # noqa: BLE001 -- worksheet-not-found
+            ws = sh.add_worksheet(title=title, rows=400, cols=1)
+        lines = [f"{office} {stage_prefix or '*'} {day.isoformat()} -- read {_dt.datetime.now():%H:%M:%S}"]
+        for head, summary, detail in out:
+            lines += [head, summary]
+            lines += [detail[k:k + 4000] for k in range(0, len(detail), 4000)] or [""]
+            lines.append("")
+        ws.update("A1", [[l] for l in lines][:390], value_input_option="RAW")
+        where = f"full rows in the '{title}' tab of the control workbook"
+    except Exception as e:  # noqa: BLE001
+        where = f"tab write failed ({type(e).__name__}); Result shows the heads only"
+    heads = " · ".join(f"{h} :: {sm[:120]}" for h, sm, _ in out)
+    return True, f"{len(out)} row(s) -- {where} · {heads}"
 
 
 def _action_sheets_whoami(args: str) -> tuple[bool, str]:
