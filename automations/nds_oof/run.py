@@ -147,12 +147,17 @@ def gaps_text(over: List[Dict], now: dt.datetime) -> str:
 # Tracker; this page wants the client picked on the page itself.
 _CLIENT_JS = """(label) => {
     const want = label.trim().toLowerCase();
+    const text = el => ((el.tagName === 'INPUT' ? el.value : el.innerText) || '')
+        .trim().toLowerCase();
+    // The chooser's own card first. 2026-11-16 6:30pm: the first cut took the
+    // first element with the name on it, which was the HIDDEN header dropdown
+    // toggle (same words, display:none) -- clicked it, nothing happened.
+    for (const el of document.querySelectorAll('a.client-option'))
+        if (text(el) === want) return el;
     let best = null;
     for (const el of document.querySelectorAll(
-            'a, button, option, li, label, span, div, td, input')) {
-        const t = ((el.tagName === 'INPUT' ? el.value : el.innerText) || '')
-            .trim().toLowerCase();
-        if (t !== want) continue;
+            'a, button, option, li, label, h5, span, div, td, input')) {
+        if (text(el) !== want || el.offsetParent === null) continue;   // visible only
         if (!best || best.contains(el)) best = el;      // the deepest match
     }
     return best;
@@ -193,7 +198,8 @@ def open_client_grid(page, rqst: str, mdy: str) -> str:
             _log("client pick: no grid and no %r on the page" % C.CAMPAIGN_LABEL)
             return ""
         info = el.evaluate(
-            """el => ({tag: el.tagName, href: el.getAttribute('href') || '',
+            """el => ({tag: el.tagName + '.' + (el.className || '').split(' ')[0],
+                       href: el.getAttribute('data-href') || el.getAttribute('href') || '',
                        onclick: el.getAttribute('onclick') || '',
                        parent: (el.parentElement ? el.parentElement.outerHTML : '')
                            .replace(/\\s+/g, ' ').slice(0, 300)})""")
@@ -241,6 +247,9 @@ _DIAG_JS = """async (urls) => {
                       table: t.includes('id="table-dispositions"'),
                       tr: (t.match(/<tr/g) || []).length,
                       user: (t.match(/var _telemapper = \\{[\\s\\S]{0,500}/) || [''])[0],
+                      js: k !== 'today' ? '' : Array.from(
+                          t.matchAll(/client-option|primaryD2DClientChoice/g)).slice(0, 12)
+                          .map(m => t.slice(Math.max(0, m.index - 500), m.index + 900)).join(' ~~~ '),
                       body: k === 'today' && i >= 0 ? t.slice(Math.max(0, i - 4000), i + 120000) : ''};
         } catch (e) { out[k] = {err: String(e)}; }
     }
@@ -273,6 +282,9 @@ def grid_diag(page, rqst: str, today: dt.date) -> None:
         body = blank(re.sub(r"\s+", " ", body))
         for i in range(0, min(len(body), 180000), 45000):
             rows.append(["body %d" % (i // 45000 + 1), body[i:i + 45000], ""])
+        js = blank(re.sub(r"\s+", " ", (got.get("today") or {}).get("js") or ""))
+        for i in range(0, min(len(js), 90000), 45000):
+            rows.append(["js %d" % (i // 45000 + 1), js[i:i + 45000], ""])
         from automations.recruiting_report import fill as _fill
         sh = _fill._client().open_by_key(DIAG_SHEET)
         try:
