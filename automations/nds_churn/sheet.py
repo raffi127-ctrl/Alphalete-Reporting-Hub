@@ -3,9 +3,10 @@
 Born as a duplicate of LUCY CHURN (Carlos 2026-11-09: "see if we can remake
 this report ... remove that [CRU/IRU] column ... anything that involved the
 captainship, we wouldn't need"), reshaped once by --setup:
-  * the top-left box (A5:D12, redrawn 11/10) with its activation rates
-    (E:F), the per-rep list (AG, written here since 11/15 -- the LUCY CHURN
-    machinery in vantura_churn.fill is no longer used on this tab);
+  * the top-left box (A4:G9, one row per product since 11/17: Disconnects |
+    Activations | Pending | Churn % | the two activation rates) and the
+    per-rep list (AG, written here since 11/15 -- the LUCY CHURN machinery
+    in vantura_churn.fill is no longer used on this tab);
   * the 0-30 day rolloff as THREE STACKED TABLES (A15:N, since 11/15 --
     Carlos: "let's make into tables one for wireless no BYODs, BYODs, &
     airs"): ALL WIRELESS (non-BYOD) / BYODs / AIR, each a band row carrying
@@ -18,7 +19,8 @@ captainship, we wouldn't need"), reshaped once by --setup:
     cleared the one the single list read; its columns P:AE stay hidden);
   * the tier charts show the SOW's NDS tiers (comp.py) -- what a port line
     pays at each 0-30 day band, at the 90-day tier the latest Churn Notice
-    placed us; the live band is marked "◀ now" by the daily run;
+    placed us; the live band is marked "◀ now" by the daily run (I4:N10
+    since 11/17 -- the box took the column that kept the two apart);
   * A13:N14 carries the status line (notice tiers, live rates, the <=19
     auto-tier rule, the rep DNQ rule). No captain decelerator anywhere.
 
@@ -130,80 +132,50 @@ def ensure_churn_tab(sh, log=print) -> Tuple[object, bool]:
     return ws, True
 
 
-def write_tier_tables(ws, ts: Optional[dict], log=print) -> None:
-    """H4:N12 -- the two NDS tier charts at the notice's 90-day tier, the
-    live 0-30 band marked '◀ now' when `ts` (compute.tier_status) is given."""
-    t90n, t90b = comp.notice_90(False), comp.notice_90(True)
-    live_n = ts["products"]["non_byod"]["tier"] if ts else None
-    live_b = ts["products"]["byod"]["tier"] if ts else None
-    rows = []
-    for t in TIER_ROWS:
-        oof, infp = comp.payout(f"{t}-{t90n}", False)
-        boof, binfp = comp.payout(f"{t}-{t90b}", True)
-        rows.append([
-            f"Tier {t}" + (" ◀ now" if t == live_n else ""),
-            comp.NONBYOD_0_30_LABEL[t], f"${oof} / ${infp}",
-            f"Tier {t}" + (" ◀ now" if t == live_b else ""),
-            comp.BYOD_0_30_LABEL[t], f"${boof}", f"${binfp}",
-        ])
-    _retry(lambda: ws.batch_update([
-        {"range": "H4", "values": [[
-            f"Churn Tiers — Port Non-BYOD (paid at 90-day Tier {t90n})"]]},
-        {"range": "K4", "values": [[
-            f"Churn Tiers — Port BYOD (paid at 90-day Tier {t90b})"]]},
-        {"range": "H6:N6", "values": [["Tier", "0-30 Day", "OOF / INFP $",
-                                        "Tier", "0-30 Day", "OOF $", "INFP $"]]},
-        {"range": "H7:N10", "values": rows},
-        {"range": "H11:N12", "values": [[""] * 7, [""] * 7]},
-    ], value_input_option="USER_ENTERED"))
-    # Layout the duplicate carried from the B2B tab and the theme leaves
-    # alone: stray fills on the two spare chart rows and a bold B2B marker
-    # row (column widths: table_format_requests). Idempotent, so every run
-    # re-asserts it.
-    white = {"red": 1, "green": 1, "blue": 1}
-    reqs = [
-        {"repeatCell": {"range": {"sheetId": ws.id, "startRowIndex": 10,
-                                  "endRowIndex": 12, "startColumnIndex": 7,
-                                  "endColumnIndex": 14},
-                        "cell": {"userEnteredFormat": {"backgroundColor": white}},
-                        "fields": "userEnteredFormat.backgroundColor"}},
-        {"repeatCell": {"range": {"sheetId": ws.id, "startRowIndex": 6,
-                                  "endRowIndex": 10, "startColumnIndex": 7,
-                                  "endColumnIndex": 14},
-                        "cell": {"userEnteredFormat": {
-                            "textFormat": {"bold": False},
-                            "horizontalAlignment": "CENTER"}},
-                        "fields": "userEnteredFormat.textFormat.bold,"
-                                  "userEnteredFormat.horizontalAlignment"}},
-    ]
-    _retry(lambda: ws.spreadsheet.batch_update({"requests": reqs}))
-    log(f"  ✓ {ws.title}: tier charts written (90-day Tier {t90n}/{t90b}; "
-        f"live bands {live_n}/{live_b})")
-
-
-# The top-left box, redrawn 2026-11-10 (Carlos: "my churn is being looked at
-# also without BYODs"): eight rows under the Product header, A5:D12.
-BOX_FIRST_ROW = 5
-BOX_ROWS = [                    # (compute.product_box key, label, 'act' | 'pend')
-    ("all_orders", "All Orders", "act"),
-    ("all_orders", "All Orders Pending", "pend"),
-    ("wireless", "All Wireless", "act"),
-    ("wireless", "All Wireless Pending", "pend"),
-    ("byod", "BYODs", "act"),
-    ("byod", "BYODs Pending", "pend"),
-    ("air", "Air", "act"),
-    ("internet", "Internet", "act"),
+# Rows 4-12 of A:N, the top block: the box (A4:G9), one blank column (H) and
+# the two tier charts (I4:K10 Non-BYOD, L4:N10 BYOD). write_top_block writes
+# all of it in ONE atomic batch every run -- values, formats, merges and the
+# Churn % colour rules -- so the block is what this file says, never what an
+# older layout left behind.
+#
+# The box was redrawn 2026-11-17 (Carlos: "the pending orders should be
+# another column not another row. The order of the columns should be
+# disconnected - activations - pending"): one row per product under seven
+# headers. From 11/10 it was eight rows in A5:F12, a Pending row under All
+# Orders / All Wireless / BYODs. The seventh column took the blank one that
+# kept the box off the tier charts, so the charts sit one column further
+# right and the BYOD chart's two pay columns are one "OOF / INFP $", the
+# way the Non-BYOD chart always showed them.
+TOP_FIRST_ROW = 4
+TOP_LAST_ROW = 12                # the status line starts on the next row
+BOX_HEADERS = ("Product", "Disconnects", "Activations", "Pending", "Churn %",
+               "0-30 Day Activation Rate", "31-60 Day Activation Rate")
+BOX_ROWS = [                     # (compute.product_box key, label)
+    ("all_orders", "All Orders"),
+    ("wireless", "All Wireless"),
+    ("byod", "BYODs"),
+    ("air", "Air"),
+    ("internet", "Internet"),
 ]
-BOX_LAST_ROW = BOX_FIRST_ROW + len(BOX_ROWS) - 1          # 12
-BOX_WIRELESS_CHURN_CELLS = ("D5", "D7", "D9")   # the wireless colour ramp
-BOX_AIR_CHURN_CELL = "D11"
-BOX_COL_A_PX = 170                              # "All Wireless Pending" in bold 12pt needs the room
+BOX_FIRST_ROW = TOP_FIRST_ROW + 1                         # 5
+BOX_LAST_ROW = BOX_FIRST_ROW + len(BOX_ROWS) - 1          # 9
+BOX_W = len(BOX_HEADERS)                                  # A:G
+BOX_DISC, BOX_ACT, BOX_PEND, BOX_CHURN, BOX_RATE = 1, 2, 3, 4, 5    # 0-based columns
+BOX_WIRELESS_RAMP = ("all_orders", "wireless", "byod")    # rows on the wireless Churn % ramp
+BOX_AIR_RAMP = ("air",)                                   # the Air ramp; Internet has none
+BOX_COL_A_PX = 170                              # the box labels in bold 12pt need the room
 BOX_NOTE = ("Top-left box: phone lines (ported or new-number) + Air; no tablets, "
             "watches, upgrades or Internet; All Wireless = non-BYOD phones; BYODs = "
             "BYOD phones; activated / disconnected by activation date in the last 30 "
             "days; Pending = sold in the last 30 days, not activated, not canceled; "
             "activation rate per row = activated ÷ sold, by sale date (0-30 = the "
             "last 30 days, 31-60 = the 30 before).")
+TIER_COL0 = BOX_W + 1                           # I: the Non-BYOD chart; the BYOD chart follows
+TIER_W = 3                                      # Tier | 0-30 Day | OOF / INFP $
+TIER_HEADERS = ("Tier", "0-30 Day", "OOF / INFP $")
+TIER_TITLE_ROWS = 2                             # each title is merged over rows 4-5
+TIER_HEADER_ROW = TOP_FIRST_ROW + TIER_TITLE_ROWS         # 6
+TIER_BAND = {4: VF.GREEN, 3: VF.GREEN_PALE, 2: VF.AMBER, 1: VF.ROSE}   # the theme's ramp
 
 # The rolloff tables (Carlos 2026-11-15: "The NDS customer churn. Let's
 # make into tables one for wireless no BYODs, BYODs, & airs"). Until then
@@ -248,6 +220,10 @@ assert LIST_COL_PX[0] == BOX_COL_A_PX
 assert LIST_HEADERS[C.T_ALL_PCT].startswith("All Orders")
 assert LIST_HEADERS[C.T_OWN_PCT].startswith(C.BOX_LABELS["wireless"])
 assert LIST_HEADERS[C.T_DISC_DATE] == "Disconnect Date"
+assert BOX_RATE + len(C.BUCKETS) == BOX_W
+assert TIER_COL0 + 2 * TIER_W == len(LIST_HEADERS)        # the charts end on N
+assert TIER_HEADER_ROW + len(TIER_ROWS) <= TOP_LAST_ROW
+assert BOX_LAST_ROW <= TOP_LAST_ROW
 
 
 def table_headers(cls: str) -> tuple:
@@ -627,72 +603,6 @@ def ensure_recent_highlight(ws, log=print) -> str:
     return what
 
 
-def _unmerge_box_rates(ws, log=print) -> None:
-    """The tab was duplicated with E5:E7 / F5:F7 merged (one office-wide
-    rate across the three product rows); per-row rates need them apart --
-    a value written into a merge's hidden cell is silently dropped (11/10:
-    All Wireless came out blank). Only merges touching E5:F12 go."""
-    meta = _retry(lambda: ws.spreadsheet.fetch_sheet_metadata(
-        {"fields": "sheets(properties(sheetId),merges)"}))
-    merges = next((sh.get("merges", []) for sh in meta.get("sheets", [])
-                   if sh["properties"]["sheetId"] == ws.id), [])
-    r0, r1, c0, c1 = BOX_FIRST_ROW - 1, BOX_LAST_ROW, 4, 6        # E5:F12, half-open
-    hit = [m for m in merges
-           if m["startRowIndex"] < r1 and m["endRowIndex"] > r0
-           and m["startColumnIndex"] < c1 and m["endColumnIndex"] > c0]
-    if hit:
-        _retry(lambda: ws.spreadsheet.batch_update({"requests": [
-            {"unmergeCells": {"range": dict(m, sheetId=ws.id)}} for m in hit]}))
-        log(f"  ✓ {ws.title}: unmerged {len(hit)} range(s) over E5:F12 (per-row rates)")
-
-
-def write_box_rates(ws, rates: dict, log=print) -> None:
-    """E5:F12 -- the 0-30 / 31-60 activation rate per box row
-    (compute.box_activation_rates), banded like the office rate was; the
-    Pending rows and a bucket with no sales stay blank (not 0%)."""
-    _unmerge_box_rates(ws, log=log)
-    white = {"red": 1, "green": 1, "blue": 1}
-    vals = []
-    # Every rate cell styled like E5:F5 (the original office-rate cells):
-    # the rows below carried leftovers -- a small italic note format on row
-    # 9, borders on 5-7 only -- that the duplicate and earlier layouts left.
-    fmt = [{"copyPaste": {
-        "source": {"sheetId": ws.id, "startRowIndex": BOX_FIRST_ROW - 1,
-                   "endRowIndex": BOX_FIRST_ROW, "startColumnIndex": 4, "endColumnIndex": 6},
-        "destination": {"sheetId": ws.id, "startRowIndex": BOX_FIRST_ROW,
-                        "endRowIndex": BOX_LAST_ROW, "startColumnIndex": 4, "endColumnIndex": 6},
-        "pasteType": "PASTE_FORMAT", "pasteOrientation": "NORMAL"}}]
-    for i, (key, _label, kind) in enumerate(BOX_ROWS):
-        r0 = BOX_FIRST_ROW - 1 + i
-        row = []
-        for ci, bucket in ((4, "0-30"), (5, "31-60")):
-            rate = rates[key][bucket]["rate"] if kind == "act" else None
-            row.append("" if rate is None else round(rate, 4))
-            colour = VF.band_for(rate, bucket) if rate is not None else None
-            fmt.append({"repeatCell": {
-                "range": {"sheetId": ws.id, "startRowIndex": r0, "endRowIndex": r0 + 1,
-                          "startColumnIndex": ci, "endColumnIndex": ci + 1},
-                "cell": {"userEnteredFormat": {
-                    "backgroundColor": VF.BAND_BG[colour] if colour else white,
-                    "numberFormat": {"type": "PERCENT", "pattern": "0.0%"},
-                    "horizontalAlignment": "CENTER"}},
-                "fields": "userEnteredFormat(backgroundColor,numberFormat,"
-                          "horizontalAlignment)"}})
-        vals.append(row)
-    _retry(lambda: ws.batch_update(
-        [{"range": f"E{BOX_FIRST_ROW}:F{BOX_LAST_ROW}", "values": vals}],
-        value_input_option="USER_ENTERED"))
-    _retry(lambda: ws.spreadsheet.batch_update({"requests": fmt}))
-
-    def _r(key, b):
-        s = rates[key][b]
-        return (f"{s['activated']}/{s['sold']} = {s['rate']:.1%}" if s["rate"] is not None
-                else "no sales")
-    log(f"  ✓ {ws.title}: box rates E5:F12 -- "
-        + "; ".join(f"{label} 0-30 {_r(key, '0-30')}, 31-60 {_r(key, '31-60')}"
-                    for key, label, kind in BOX_ROWS if kind == "act"))
-
-
 def _a1_span_to_range(a1: str, sheet_id: int) -> dict:
     """'P15:Q34' -> a GridRange (two-letter columns welcome)."""
     m = re.match(r"([A-Z]{1,2})(\d+):([A-Z]{1,2})(\d+)$", a1.replace("$", ""))
@@ -736,84 +646,181 @@ def ensure_borders(ws, layout: list, log=print) -> None:
         + (f" and the rep list ({rep_a1})" if rep_a1 else ""))
 
 
-def _a1_to_range(a1: str, sheet_id: int) -> dict:
-    col = ord(a1[0]) - 65
-    row = int(a1[1:]) - 1
-    return {"sheetId": sheet_id, "startRowIndex": row, "endRowIndex": row + 1,
-            "startColumnIndex": col, "endColumnIndex": col + 1}
+# ---------------------------------------------------------- top block ----
+
+_MEDIUM = {"style": "SOLID_MEDIUM"}
+_BOXED = {"top": _MEDIUM, "bottom": _MEDIUM, "left": _MEDIUM, "right": _MEDIUM}
+_PCT2 = {"type": "PERCENT", "pattern": "0.00%"}
+_PCT1 = {"type": "PERCENT", "pattern": "0.0%"}
 
 
-def _retarget_churn_colours(ws, log=print) -> None:
-    """Move the two Churn % gradient rules (born on D5 = Wireless and D6 =
-    Air) onto the redrawn rows: wireless ramp on D5 / D7 / D9, Air ramp on
-    D11. Idempotent -- a rule already on the right cells is left alone."""
-    meta = ws.spreadsheet.fetch_sheet_metadata(
-        params={"fields": "sheets(properties(sheetId),conditionalFormats)"})
-    rules = next((sh.get("conditionalFormats", []) for sh in meta.get("sheets", [])
-                  if sh["properties"]["sheetId"] == ws.id), [])
-    want = {}
+def _cell(value=None, **fmt) -> dict:
+    """One CellData: a number, a formula ('=...') or text (None / '' =
+    blank) with its format."""
+    c = {"userEnteredFormat": fmt} if fmt else {}
+    if value is None or value == "":
+        return c
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        c["userEnteredValue"] = {"numberValue": value}
+    elif isinstance(value, str) and value.startswith("="):
+        c["userEnteredValue"] = {"formulaValue": value}
+    else:
+        c["userEnteredValue"] = {"stringValue": str(value)}
+    return c
+
+
+def top_block_cells(box: Optional[dict], rates: Optional[dict],
+                    ts: Optional[dict]) -> list:
+    """Rows 4-12 x A:N as CellData, pure ({} = blank and unformatted).
+
+    The box: Product | Disconnects | Activations | Pending | Churn % (=
+    disconnects / activations, a formula so the colour ramp reads it) |
+    0-30 / 31-60 day activation rate (compute.box_activation_rates, banded
+    like the office rate; a bucket with no sales stays blank, not 0%).
+    The charts: the SOW's 0-30 day bands at the notice's 90-day tier, the
+    live band marked '◀ now' when `ts` (compute.tier_status) is given.
+    box / rates None = labels only (a tab just made by --setup)."""
+    w = len(LIST_HEADERS)
+    grid = [[{} for _ in range(w)] for _ in range(TOP_LAST_ROW - TOP_FIRST_ROW + 1)]
+    head = dict(backgroundColor=VF.HEADER_BG, horizontalAlignment="CENTER",
+                verticalAlignment="MIDDLE", wrapStrategy="WRAP", borders=_BOXED,
+                textFormat={"bold": True, "fontFamily": "Arial", "fontSize": 12,
+                            "foregroundColor": WHITE})
+    data = dict(horizontalAlignment="CENTER", verticalAlignment="MIDDLE", borders=_BOXED,
+                textFormat={"bold": True, "fontFamily": "Arial", "fontSize": 12})
+    for c, text in enumerate(BOX_HEADERS):
+        grid[0][c] = _cell(text, **head)
+    disc_col, act_col = VF._colletter(BOX_DISC), VF._colletter(BOX_ACT)
+    for i, (key, label) in enumerate(BOX_ROWS):
+        r = BOX_FIRST_ROW + i
+        row = grid[r - TOP_FIRST_ROW]
+        d = box[key] if box else None
+        row[0] = _cell(label, **data)
+        row[BOX_DISC] = _cell(int(d["disc"]) if d else None, **data)
+        row[BOX_ACT] = _cell(int(d["act"]) if d else None, **data)
+        row[BOX_PEND] = _cell(int(d["pend"]) if d else None, **data)
+        row[BOX_CHURN] = _cell(f'=IFERROR({disc_col}{r}/{act_col}{r},"")' if d else None,
+                               numberFormat=_PCT2, **data)
+        for j, bucket in enumerate(C.BUCKETS):
+            rate = rates[key][bucket]["rate"] if rates else None
+            colour = VF.band_for(rate, bucket) if rate is not None else None
+            row[BOX_RATE + j] = _cell(None if rate is None else round(rate, 4),
+                                      numberFormat=_PCT1,
+                                      backgroundColor=VF.BAND_BG[colour] if colour else WHITE,
+                                      **data)
+
+    title = dict(backgroundColor=BAND_BG, horizontalAlignment="CENTER",
+                 verticalAlignment="MIDDLE", wrapStrategy="WRAP", borders=_BOXED,
+                 textFormat={"bold": True, "foregroundColor": WHITE})
+    sub = dict(backgroundColor=VF._rgb(VF.SLATE), horizontalAlignment="CENTER",
+               verticalAlignment="MIDDLE", wrapStrategy="WRAP", borders=_BOXED,
+               textFormat={"bold": True, "foregroundColor": VF._rgb(VF.NAVY)})
+    tier = dict(horizontalAlignment="CENTER", verticalAlignment="MIDDLE", borders=_BOXED,
+                textFormat={"bold": False, "fontFamily": "Arial", "fontSize": 12})
+    hr = TIER_HEADER_ROW - TOP_FIRST_ROW
+    for c0, byod, name, labels, key in (
+            (TIER_COL0, False, "Non-BYOD", comp.NONBYOD_0_30_LABEL, "non_byod"),
+            (TIER_COL0 + TIER_W, True, "BYOD", comp.BYOD_0_30_LABEL, "byod")):
+        t90 = comp.notice_90(byod)
+        live = ts["products"][key]["tier"] if ts else None
+        for rr in range(TIER_TITLE_ROWS):
+            for cc in range(TIER_W):
+                grid[rr][c0 + cc] = _cell(
+                    f"Churn Tiers — Port {name} (paid at 90-day Tier {t90})"
+                    if (rr, cc) == (0, 0) else None, **title)
+        for cc, text in enumerate(TIER_HEADERS):
+            grid[hr][c0 + cc] = _cell(text, **sub)
+        for k, t in enumerate(TIER_ROWS):
+            oof, infp = comp.payout(f"{t}-{t90}", byod)
+            row = grid[hr + 1 + k]
+            row[c0] = _cell(f"Tier {t}" + (" ◀ now" if t == live else ""),
+                            backgroundColor=WHITE, **tier)
+            row[c0 + 1] = _cell(labels[t], backgroundColor=VF._rgb(TIER_BAND[t]), **tier)
+            row[c0 + 2] = _cell(f"${oof} / ${infp}", backgroundColor=WHITE, **tier)
+    return grid
+
+
+# Where the tab's two Churn % gradient rules have lived, as 0-based (row,
+# column) of a cell each has always covered: born on D5 (wireless) and D6
+# (Air) with the LUCY CHURN duplicate, D5/D7/D9 and D11 on the eight-row
+# box, the Churn % column of the one-row-per-product box since 11/17.
+_WIRELESS_RAMP_AT = {(4, 3), (4, BOX_CHURN)}
+_AIR_RAMP_AT = {(5, 3), (10, 3), (BOX_FIRST_ROW - 1 + 3, BOX_CHURN)}
+
+
+def churn_colour_requests(sheet_id: int, rules: list) -> list:
+    """Move the two Churn % gradient rules onto the box's Churn % column:
+    the wireless ramp on All Orders / All Wireless / BYODs, the Air ramp on
+    Air. Pure; a rule already on the right cells yields nothing."""
+    def cells_of(keys):
+        return [(BOX_FIRST_ROW - 1 + i, BOX_CHURN)
+                for i, (k, _label) in enumerate(BOX_ROWS) if k in keys]
+    reqs = []
     for idx, rule in enumerate(rules):
         if "gradientRule" not in rule:
             continue
-        cells = {(r["startRowIndex"], r["startColumnIndex"]) for r in rule["ranges"]}
-        if (4, 3) in cells:                       # D5: the wireless ramp
-            want[idx] = (rule, BOX_WIRELESS_CHURN_CELLS)
-        elif (5, 3) in cells or (10, 3) in cells:  # D6 (old) / D11: the Air ramp
-            want[idx] = (rule, (BOX_AIR_CHURN_CELL,))
-    reqs = []
-    for idx, (rule, targets) in want.items():
-        ranges = [_a1_to_range(a, ws.id) for a in targets]
-        if rule["ranges"] == ranges:
-            continue
-        new_rule = dict(rule)
-        new_rule["ranges"] = ranges
-        reqs.append({"updateConditionalFormatRule": {
-            "sheetId": ws.id, "index": idx, "rule": new_rule}})
-    if reqs:
-        _retry(lambda: ws.spreadsheet.batch_update({"requests": reqs}))
-    log(f"  ✓ {ws.title}: churn colour rules on {len(want)} rule(s) "
-        f"({'moved' if reqs else 'already in place'})")
-
-
-def write_product_box(ws, box: dict, log=print) -> None:
-    """A5:D12 from compute.product_box: label, count, disconnects, Churn %
-    (= C/B) for the activated rows; label + count only for the Pending
-    rows. Styled like the original Wireless row; column A widened so the
-    labels fit. Idempotent."""
-    rows = []
-    for i, (key, label, kind) in enumerate(BOX_ROWS):
-        r = BOX_FIRST_ROW + i
-        d = box[key]
-        if kind == "act":
-            rows.append([label, int(d["act"]), int(d["disc"]), f'=IFERROR(C{r}/B{r},"")'])
+        at = {(g.get("startRowIndex", 0), g.get("startColumnIndex", 0))
+              for g in rule.get("ranges", [])}
+        if at & _WIRELESS_RAMP_AT:
+            targets = cells_of(BOX_WIRELESS_RAMP)
+        elif at & _AIR_RAMP_AT:
+            targets = cells_of(BOX_AIR_RAMP)
         else:
-            rows.append([label, int(d["pend"]), "", ""])
-    _retry(lambda: ws.batch_update([
-        {"range": f"A{BOX_FIRST_ROW}:D{BOX_LAST_ROW}", "values": rows},
-    ], value_input_option="USER_ENTERED"))
-    sid = ws.id
-    reqs = [
-        # every box row looks like the first one (the original product row)
-        {"copyPaste": {
-            "source": {"sheetId": sid, "startRowIndex": BOX_FIRST_ROW - 1,
-                       "endRowIndex": BOX_FIRST_ROW, "startColumnIndex": 0, "endColumnIndex": 4},
-            "destination": {"sheetId": sid, "startRowIndex": BOX_FIRST_ROW,
-                            "endRowIndex": BOX_LAST_ROW, "startColumnIndex": 0, "endColumnIndex": 4},
-            "pasteType": "PASTE_FORMAT", "pasteOrientation": "NORMAL"}},
-        {"updateDimensionProperties": {
-            "range": {"sheetId": sid, "dimension": "COLUMNS", "startIndex": 0, "endIndex": 1},
-            "properties": {"pixelSize": BOX_COL_A_PX}, "fields": "pixelSize"}},
-    ]
+            continue
+        ranges = [{"sheetId": sheet_id, "startRowIndex": r, "endRowIndex": r + 1,
+                   "startColumnIndex": c, "endColumnIndex": c + 1} for r, c in targets]
+        if [_norm_range(g) for g in rule["ranges"]] == [_norm_range(g) for g in ranges]:
+            continue
+        reqs.append({"updateConditionalFormatRule": {
+            "sheetId": sheet_id, "index": idx, "rule": dict(rule, ranges=ranges)}})
+    return reqs
+
+
+def top_block_requests(sheet_id: int, cells: list, merges: list, rules: list) -> list:
+    """The one batch, pure: unmerge whatever sits in rows 4-12 of A:N,
+    write every cell (value + format, so nothing of an older layout
+    survives), merge the two chart titles, move the Churn % colour rules.
+    All or nothing -- a refused request leaves the block as it was."""
+    w = len(LIST_HEADERS)
+    r0, r1 = TOP_FIRST_ROW - 1, TOP_LAST_ROW                 # half-open
+    reqs = [{"unmergeCells": {"range": dict(m, sheetId=sheet_id)}} for m in merges
+            if m.get("startRowIndex", 0) < r1 and m["endRowIndex"] > r0
+            and m.get("startColumnIndex", 0) < w and m["endColumnIndex"] > 0]
+    reqs.append({"updateCells": {
+        "range": _grid_range(sheet_id, TOP_FIRST_ROW, TOP_LAST_ROW),
+        "rows": [{"values": row} for row in cells],
+        "fields": "userEnteredValue,userEnteredFormat"}})
+    for c0 in (TIER_COL0, TIER_COL0 + TIER_W):
+        reqs.append({"mergeCells": {
+            "range": _grid_range(sheet_id, TOP_FIRST_ROW,
+                                 TOP_FIRST_ROW + TIER_TITLE_ROWS - 1, c0, c0 + TIER_W),
+            "mergeType": "MERGE_ALL"}})
+    return reqs + churn_colour_requests(sheet_id, rules)
+
+
+def write_top_block(ws, box: Optional[dict], rates: Optional[dict],
+                    ts: Optional[dict], log=print) -> None:
+    """A4:N12 -- the box and the two tier charts (top_block_cells), in one
+    atomic batch. Idempotent, every run."""
+    meta = _retry(lambda: ws.spreadsheet.fetch_sheet_metadata(params={
+        "ranges": [f"'{ws.title}'"],
+        "fields": "sheets(properties(sheetId),merges,conditionalFormats)"}))
+    mine = next((sh for sh in meta.get("sheets", [])
+                 if sh.get("properties", {}).get("sheetId", 0) == ws.id), {})
+    reqs = top_block_requests(ws.id, top_block_cells(box, rates, ts),
+                              mine.get("merges", []), mine.get("conditionalFormats", []))
     _retry(lambda: ws.spreadsheet.batch_update({"requests": reqs}))
-    try:
-        _retarget_churn_colours(ws, log=log)
-    except Exception as e:  # noqa: BLE001 -- colours never block the numbers
-        log(f"  ⚠ churn colour rules not moved: {e}")
-    a, w, b, air = box["all_orders"], box["wireless"], box["byod"], box["air"]
-    log(f"  ✓ {ws.title}: box A5:D12 -- All Orders {a['act']}/{a['disc']} pend {a['pend']}; "
-        f"All Wireless {w['act']}/{w['disc']} pend {w['pend']}; BYODs {b['act']}/{b['disc']} "
-        f"pend {b['pend']}; Air {air['act']}/{air['disc']}; Internet "
-        f"{box['internet']['act']}/{box['internet']['disc']}")
+    moved = sum(1 for r in reqs if "updateConditionalFormatRule" in r)
+    last_col = VF._colletter(len(LIST_HEADERS) - 1)
+    counts = "; ".join(
+        f"{label} {box[key]['disc']}/{box[key]['act']}/{box[key]['pend']}"
+        for key, label in BOX_ROWS) if box else "labels only"
+    live = (f"{ts['products']['non_byod']['tier']}/{ts['products']['byod']['tier']}"
+            if ts else "unmarked")
+    log(f"  ✓ {ws.title}: top block A{TOP_FIRST_ROW}:{last_col}{TOP_LAST_ROW} -- box "
+        f"(disconnects/activations/pending) {counts}; tier charts at 90-day Tier "
+        f"{comp.notice_90(False)}/{comp.notice_90(True)}, live bands {live}; "
+        f"{moved} churn colour rule(s) moved")
 
 
 def write_status(ws, text: str, log=print) -> None:

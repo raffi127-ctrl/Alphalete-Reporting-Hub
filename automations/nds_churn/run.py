@@ -289,11 +289,16 @@ def main(argv=None) -> int:
     if a.setup:
         sh = S.open_board()
         ws, made = S.ensure_churn_tab(sh, log)
-        S.write_tier_tables(ws, None, log=log)
-        try:
-            VF.apply_theme(ws, log=log)
-        except Exception as e:  # noqa: BLE001 -- cosmetics never block setup
-            log(f"  ⚠ theme skipped: {e}")
+        if made:
+            # A fresh LUCY CHURN duplicate only: its theme first (it paints the
+            # B2B chart's four-column titles), then rows 4-12 the NDS way. On
+            # the live tab the daily run owns that block -- the theme would
+            # paint over it.
+            try:
+                VF.apply_theme(ws, log=log)
+            except Exception as e:  # noqa: BLE001 -- cosmetics never block setup
+                log(f"  ⚠ theme skipped: {e}")
+            S.write_top_block(ws, None, None, None, log=log)
         VF.hide_helper_columns(ws, log=log)
         log(f"=== setup done ({'created' if made else 'kept'} {S.TAB}) ===")
         return 0
@@ -397,13 +402,13 @@ def main(argv=None) -> int:
     except Exception as e:  # noqa: BLE001 -- a colour never blocks the numbers
         log(f"  ⚠ recent-disconnect highlight skipped: {e}")
     S.write_rep_list(ws, office, reps, log=log)      # office total + reps (Carlos 11/14)
-    # E5:F12 per box row (All Orders / All Wireless / BYODs / Air / Internet);
-    # a bucket with no sales stays blank, not 0.0% (NDS started 10/19, so
-    # 31-60 has nothing to rate until mid-November).
-    S.write_box_rates(ws, rates, log=log)
-    S.write_tier_tables(ws, ts, log=log)
     S.write_status(ws, status + "  " + S.BOX_NOTE, log=log)
-    S.write_product_box(ws, box, log=log)
+    # Rows 4-12 in one batch: the box (a row per product -- Disconnects |
+    # Activations | Pending | Churn % | the two activation rates, Carlos
+    # 11/17) and the tier charts. A rate bucket with no sales stays blank,
+    # not 0.0% (NDS started 10/19, so 31-60 has nothing to rate until
+    # mid-November).
+    S.write_top_block(ws, box, rates, ts, log=log)
     try:                                  # tables bordered for the gridline-less shot
         S.ensure_borders(ws, layout, log=log)
     except Exception as e:  # noqa: BLE001 -- a border never blocks the numbers
