@@ -121,6 +121,21 @@ def pull_long(today: dt.date, log=print, days: int = LOOKBACK_DAYS) -> Path:
     raise RuntimeError(f"NDS ORDERLOG {days}-day export failed after 3 tries: {last}")
 
 
+def export_owners(path: Path, ix: dict, log=print) -> List[Tuple[str, int]]:
+    """Distinct Owner & Office cells in the export with their row counts
+    (first line of the cell, upper-cased), most rows first -- to see whose
+    data the Tableau login actually returns (2026-11-17: Zaid's dry run found
+    0 lines; was it the spelling or the identity?)."""
+    i_owner = ix.get("owner")
+    if i_owner is None:
+        return []
+    cnt: collections.Counter = collections.Counter()
+    for r in C.read_rows(path)[1:]:
+        if len(r) > i_owner:
+            cnt[str(r[i_owner]).strip().upper().splitlines()[0] if str(r[i_owner]).strip() else "(blank)"] += 1
+    return cnt.most_common(60)
+
+
 # --------------------------------------------------------------- compute ----
 
 def is_nonbyod_port(ln: dict) -> bool:
@@ -571,8 +586,9 @@ def render_png(owner: dict, rep: dict, today: dt.date, recon_text: str, out: Pat
 # ------------------------------------------------------------------ diag ----
 
 def diag_lines(owner: dict, rep: dict, today: dt.date, recon: str, view: Optional[dict],
-               n_lines: int) -> List[str]:
+               n_lines: int, owner_cells=None) -> List[str]:
     out = [f"CAPTAIN REPORT {owner['name']} {today.isoformat()} -- {n_lines} line(s) on the owner",
+           "EXPORT OWNER CELLS: " + ("; ".join(f"{k} x{v}" for k, v in (owner_cells or [])) or "(none)"),
            "BOX (non-BYOD port phones): " + "; ".join(
                f"{BUCKET_LABEL[b]} {c['disc']}/{c['act']} = {_fmt_pct(c['pct'])}"
                for b, c in rep["box"].items()),
@@ -635,6 +651,10 @@ def run(owner_key: str, today: dt.date, *, dry_run: bool = False,
     path = Path(from_file) if from_file else pull_long(today, log)
     header, ix, lines = C.load_owner_lines(path, log=log, owner_tokens=owner["tokens"])
     log(f"[captain] {owner['name']}: {len(lines)} line(s) on the owner")
+    owner_cells = export_owners(path, ix, log)
+    if not lines:
+        log("[captain] NO lines on the owner -- the export's Owner & Office cells: "
+            + "; ".join(f"{k} x{v}" for k, v in owner_cells))
     rep = build(lines, today)
     if skip_reconcile:
         ok, recon, view = None, "not checked (--skip-reconcile)", None
@@ -643,13 +663,13 @@ def run(owner_key: str, today: dt.date, *, dry_run: bool = False,
     log("RECONCILE: " + ("OK" if ok else "UNVERIFIED" if ok is None else "MISMATCH") + " -- " + recon)
     recon_short = ("✓ reconciled to Smart Circle's Churn Rates view (all port lines, 0-30)"
                    if ok else "⚠ not reconciled to Smart Circle's Churn Rates view: " + recon)
-    for ln in diag_lines(owner, rep, today, recon, view, len(lines)):
+    for ln in diag_lines(owner, rep, today, recon, view, len(lines), owner_cells):
         log("  " + ln)
     png = render_png(owner, rep, today, recon_short,
                      OUT_DIR / f"nds_captain_{key}_{today.isoformat()}.png")
     log(f"[captain] picture {png} ({png.stat().st_size:,} bytes)")
     if dry_run:
-        write_diag(diag_lines(owner, rep, today, recon, view, len(lines)), log=log, tab=DIAG_TAB)
+        write_diag(diag_lines(owner, rep, today, recon, view, len(lines), owner_cells), log=log, tab=DIAG_TAB)
         try:
             shot_to_tab(png, log=log)
         except Exception as e:  # noqa: BLE001 -- the picture tab never fails a dry run
@@ -659,7 +679,7 @@ def run(owner_key: str, today: dt.date, *, dry_run: bool = False,
         return 0
     if ok is False:
         log("✗ 0-30 does not match the Churn Rates view -- nothing sent (--skip-reconcile overrides)")
-        write_diag(diag_lines(owner, rep, today, recon, view, len(lines)), log=log, tab=DIAG_TAB)
+        write_diag(diag_lines(owner, rep, today, recon, view, len(lines), owner_cells), log=log, tab=DIAG_TAB)
         return 1
     if dm:
         from automations.shared import slack_metrics_post as smp
