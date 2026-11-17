@@ -56,8 +56,15 @@ def _campaign_select(page):
     """The campaign dropdown top-left (RES-AT&T, ...). The page also carries
     HIDDEN selects (e.g. an address-form select#state, which the first probe
     run grabbed and hung on) — so only a VISIBLE select counts."""
+    # WAIT FOR THE RELOAD FIRST, same as the search box next door. Changing
+    # campaign and Show All both reload the whole View Progress page, and on a
+    # big office that reload outlasts 20s -- a page mid-reload has no select
+    # yet, so the wait dies on "waiting for navigation to finish" rather than
+    # on anything being wrong (2026-11-16, the evening eight of Raf's owner
+    # submits were lost to exactly that sentence at the sibling call).
+    _wait_loaded(page)
     sel = page.locator("select:visible").first
-    sel.wait_for(state="visible", timeout=20000)
+    sel.wait_for(state="visible", timeout=60000)
     return sel
 
 
@@ -482,7 +489,11 @@ def find_rep(page, name: str, *, verbose: bool = True, campaigns=None,
             continue
         tried.append(label)
         sel.select_option(label=label)
-        page.wait_for_load_state("networkidle")
+        # NOT networkidle: OwnerVille never reaches it -- it keeps a background
+        # connection open -- so this waited the full default 30s on every
+        # campaign of every person and then carried on anyway. The load event
+        # is the one that actually fires.
+        _wait_loaded(page)
         for widen in (False, True):
             if widen:
                 _show_all(page)
