@@ -433,6 +433,22 @@ def create(page, person, *, dry_run: bool = True, verbose: bool = True) -> str:
         # `said` was captured on the form itself, before open_rep_list moved
         # us. Fall back to a late read only because it costs nothing.
         bad = said or list(ovn._complaints(page) or [])
+        # ALREADY EXISTS IS NOT A CREATE PROBLEM, AND "ADD THEM BY HAND" IS
+        # THE WRONG INSTRUCTION FOR IT (2026-11-17). OwnerVille's uniqueness
+        # check is GLOBAL; the rep list we searched is scoped to this login's
+        # Office Access. So this person can exist on a record we cannot see,
+        # and a human following "add them by hand" on this login hits the same
+        # refusal -- or, on a login that can, makes the second record the
+        # Faith Moss note above exists to prevent.
+        if any("already exists" in c.lower() for c in bad):
+            raise Refused(
+                f"{who} already has an OwnerVille record under {email}, but "
+                f"it is not in this login's rep list — OwnerVille checks the "
+                f"email across ALL offices and the list only shows ours. So "
+                f"they cannot be created, and creating them is not what they "
+                f"need: find the existing record (an admin login, or the "
+                f"office that holds it) and put THAT one on the campaign. "
+                f"Nothing has been sent to them.")
         why = (f" (the form said: {'; '.join(bad)})" if bad else
                (" The form was still open after Add and said nothing, so a "
                 "required box or field it does not mark is refusing the save."
