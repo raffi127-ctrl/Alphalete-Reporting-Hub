@@ -196,6 +196,53 @@ def _complete_service(page, modal, name: str, *, campaign: str = ""):
     return section_states(modal2), modal2
 
 
+def _checked(box) -> bool:
+    try:
+        return bool(box is not None and box.is_checked())
+    except Exception:                                       # noqa: BLE001
+        return False
+
+
+def _tick(lab, box) -> bool:
+    """Tick the confirm box; True once the INPUT reads checked.
+
+    Every attempt used to click the input itself. On a styled checkbox the
+    real input is hidden behind its label, so all three clicks missed and the
+    visible label was never tried (Emilee Bennett, 2026-11-17). Now: the
+    label first, then the input, then a forced click, then a DOM click — and
+    the box is re-read after EACH one, so a second click never runs on a box
+    that's already ticked (a second click would un-tick it)."""
+    if box is None:                         # nothing to read back: one click
+        try:
+            lab.scroll_into_view_if_needed(timeout=5000)
+            lab.click(timeout=10000)
+            return True
+        except Exception:                                   # noqa: BLE001
+            return False
+    attempts = (
+        lambda: lab.click(timeout=10000),
+        lambda: box.click(timeout=10000),
+        lambda: box.click(timeout=10000, force=True),
+        lambda: box.evaluate("el => el.click()"),
+    )
+    for go in attempts:
+        try:
+            lab.scroll_into_view_if_needed(timeout=5000)
+        except Exception:                                   # noqa: BLE001
+            pass
+        try:
+            go()
+        except Exception:                                   # noqa: BLE001
+            pass
+        try:
+            box.page.wait_for_timeout(400)
+        except Exception:                                   # noqa: BLE001
+            pass
+        if _checked(box):
+            return True
+    return False
+
+
 def submit_one(page, name: str, *, dry_run: bool = True,
                campaign: str = "") -> tuple:
     """(outcome, detail). outcome: 'submitted' | 'would submit' | 'already' |
@@ -285,20 +332,8 @@ def submit_one(page, name: str, *, dry_run: bool = True,
     if dry_run:
         return "would submit", f"{matched}: all sections COMPLETED, confirm " \
                                f"box {'already ticked' if already_ticked else 'found'}"
-    if not already_ticked:
-        for attempt in ("normal", "scrolled", "forced"):
-            try:
-                if attempt == "scrolled":
-                    lab.scroll_into_view_if_needed(timeout=5000)
-                (box or lab).click(timeout=10000, force=(attempt == "forced"))
-                break
-            except Exception:                               # noqa: BLE001
-                continue
-        try:
-            if box is not None and not box.is_checked():
-                return "refused", f"{matched}: confirm box would not tick"
-        except Exception:                                   # noqa: BLE001
-            pass
+    if not already_ticked and not _tick(lab, box):
+        return "refused", f"{matched}: confirm box would not tick"
     try:
         ov._click_any(modal, "Save Changes", page=page)
         page.wait_for_timeout(3000)
