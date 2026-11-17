@@ -36,7 +36,15 @@ never start with a dash again:
 PRECISION: pgrep -f matches the WHOLE command line, so a wrapper shell
 (`zsh -c '… python -m automations.x …'`) or a grep for the module name matches
 too. A false "busy" costs a real deferral, so each hit is confirmed with `ps`:
-only a process whose argv[0] is a python binary counts. Best-effort — if ps
+only a process whose argv[0] is a python binary counts.
+
+SCOPE — this answers a question about the MODULE, not about one report. A
+multi-tenant module (automations.office_metrics.runner, shared by all 39
+office-metrics reports on Lucy 4, differing only in `--office`) makes every
+sibling look "busy" to every other. For a module whose runs share one browser
+profile that is the CORRECT answer — they really would collide — but a caller
+must not word it as "<my report> is already running", and must not spend a
+retry attempt on it. See describe() and run._retry_incomplete_parts. Best-effort — if ps
 can't answer we keep the pid (a spurious deferral is recoverable; a missed
 collision is the 2.5-hour morning this file is named after).
 
@@ -57,6 +65,20 @@ def _pattern(module: str) -> str:
     return "[-]m {}( |$)".format(module.replace(".", r"\."))
 
 
+def _ps_command(pid: str):
+    """`pid`'s full command line per ps.
+
+    Tri-state, and the caller must keep the three apart: None means ps itself
+    could not answer (we cannot tell), "" means the process is already gone,
+    and a string is the command line."""
+    try:
+        out = subprocess.run(["ps", "-o", "command=", "-p", pid],
+                             capture_output=True, text=True, timeout=10).stdout
+    except Exception:  # noqa: BLE001 — caller decides what "can't tell" means
+        return None
+    return (out or "").strip()
+
+
 def _is_python_process(pid: str) -> bool:
     """True if `pid`'s argv[0] looks like a python binary — i.e. it really is the
     `python -m <module>` run and not a shell/grep that merely mentions it.
@@ -64,16 +86,54 @@ def _is_python_process(pid: str) -> bool:
     Tri-state on purpose: ps failing (exception) keeps the pid (we can't tell,
     so assume busy); ps returning nothing means the process is already gone, so
     it is dropped."""
-    try:
-        out = subprocess.run(["ps", "-o", "command=", "-p", pid],
-                             capture_output=True, text=True, timeout=10).stdout
-    except Exception:  # noqa: BLE001 — can't tell → treat it as busy
-        return True
-    line = (out or "").strip()
+    line = _ps_command(pid)
+    if line is None:
+        return True            # can't tell → treat it as busy
     if not line:
         return False           # exited between pgrep and here
     argv0 = line.split()[0]
     return "python" in os.path.basename(argv0).lower()
+
+
+def _args_after(module: str, command: str) -> str:
+    """Whatever follows `<module>` on a command line — the part that says WHICH
+    run it is. "" when the module isn't on it (or ps couldn't answer)."""
+    if not command:
+        return ""
+    toks = command.split()
+    try:
+        i = toks.index(module)
+    except ValueError:
+        return ""
+    return " ".join(toks[i + 1:])
+
+
+def describe(module: str, pids=None) -> str:
+    """"pid 50306 (--office jacob --live)" per copy of `module` running here.
+
+    WHY THE ARGS AND NOT JUST THE PID (Megan 2026-11-17). The pattern keys on
+    the MODULE, and a module can be multi-tenant: all 39 office-metrics reports
+    run `automations.office_metrics.runner`, differing only in `--office`, and
+    they all live on Lucy 4. So the guard fires for a SIBLING office, and both
+    callers' messages used to name the report being BLOCKED as though it were
+    the one running — "lajahnik_metrics is ALREADY running here (pid 50306)"
+    when what held the profile was jacob's run. That reads as a report
+    relaunching itself in a loop, which is a different bug entirely and the one
+    it sent a person off to chase (three refusals, ~40 minutes, before the
+    module pattern explained it). The args are what tell the two apart.
+
+    Pass `pids` when you already probed, so this doesn't re-run pgrep and
+    describe a different set than the one you decided on. Best-effort: never
+    raises, and falls back to the bare pid when ps can't answer."""
+    pids = running_pids(module) if pids is None else list(pids)
+    bits = []
+    for pid in pids:
+        try:
+            tail = _args_after(module, _ps_command(pid) or "")
+        except Exception:  # noqa: BLE001 — a message helper must never raise
+            tail = ""
+        bits.append("pid {}{}".format(pid, " ({})".format(tail) if tail else ""))
+    return ", ".join(bits)
 
 
 def running_pids(module: str) -> List[str]:

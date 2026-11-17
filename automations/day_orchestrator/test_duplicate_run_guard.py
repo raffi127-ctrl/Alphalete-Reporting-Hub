@@ -382,6 +382,141 @@ class PidProbe(unittest.TestCase):
             self.assertEqual(R._already_running(MODULE), ["999"])
 
 
+SHARED = "automations.office_metrics.runner"
+
+
+class HolderIsNamed(unittest.TestCase):
+    """proc_guard.describe — WHICH copy holds the module, not just a pid.
+
+    A multi-tenant module makes every sibling look busy to every other: all 39
+    office-metrics reports run SHARED, differing only in --office, and all of
+    them live on Lucy 4. Blocking is right (they share one Chrome profile), but
+    naming the BLOCKED report as the running one is not — "lajahnik_metrics is
+    ALREADY running here (pid 50306)" when jacob's run held the profile reads
+    as a report relaunching itself in a loop (Megan 2026-11-17)."""
+
+    def _patch_ps(self, ps_map):
+        def run(cmd, **kw):
+            if cmd[0] == "pgrep":
+                return types.SimpleNamespace(
+                    returncode=0, stdout=" ".join(ps_map), stderr="")
+            return types.SimpleNamespace(
+                returncode=0, stdout=ps_map.get(cmd[-1], ""), stderr="")
+        fake = types.SimpleNamespace(run=run)
+        p = mock.patch.object(proc_guard, "subprocess", fake)
+        p.start()
+        self.addCleanup(p.stop)
+
+    def test_it_names_the_sibling_that_actually_holds_the_module(self):
+        self._patch_ps({"50306": "/repo/.venv/bin/python -u -m " + SHARED
+                                 + " --office jacob --live"})
+        note = proc_guard.describe(SHARED, ["50306"])
+        self.assertIn("50306", note)
+        self.assertIn("--office jacob", note)
+        # and it must NOT be phrased as the blocked report
+        self.assertNotIn("lajahnik", note)
+
+    def test_several_holders_are_all_named(self):
+        self._patch_ps({
+            "1": "/py -u -m " + SHARED + " --office jacob --live",
+            "2": "/py -u -m " + SHARED + " --office starr --live",
+        })
+        note = proc_guard.describe(SHARED, ["1", "2"])
+        self.assertIn("--office jacob", note)
+        self.assertIn("--office starr", note)
+
+    def test_it_falls_back_to_the_bare_pid_when_ps_says_nothing(self):
+        self._patch_ps({})
+        self.assertEqual(proc_guard.describe(SHARED, ["777"]), "pid 777")
+
+    def test_a_module_not_on_the_command_line_degrades_quietly(self):
+        self._patch_ps({"5": "/py -u -m something.else --flag"})
+        self.assertEqual(proc_guard.describe(SHARED, ["5"]), "pid 5")
+
+    def test_it_never_re_probes_when_given_pids(self):
+        """Describing a DIFFERENT set than the one the caller decided on would
+        name a process that was never the reason for the refusal."""
+        calls = []
+
+        def run(cmd, **kw):
+            calls.append(cmd[0])
+            return types.SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        p = mock.patch.object(proc_guard, "subprocess",
+                              types.SimpleNamespace(run=run))
+        p.start()
+        self.addCleanup(p.stop)
+        proc_guard.describe(SHARED, ["42"])
+        self.assertNotIn("pgrep", calls)
+
+    def test_describe_never_raises(self):
+        boom = types.SimpleNamespace(
+            run=lambda *a, **kw: (_ for _ in ()).throw(OSError("no ps")))
+        p = mock.patch.object(proc_guard, "subprocess", boom)
+        p.start()
+        self.addCleanup(p.stop)
+        self.assertEqual(proc_guard.describe(SHARED, ["9"]), "pid 9")
+
+
+class PartRetryDeferral(_GuardBase):
+    """_retry_incomplete_parts must not spend an attempt on a collision.
+
+    This path calls _run_report with args_override, which bypasses
+    _attempt_report_inner's pre-launch deferral and hits the last-line-of-defence
+    guard — reported as a FAILED run. The counter was already incremented, so a
+    retry that never executed burned one of MAX_AUTO_RETRIES (=2). On SHARED
+    that is near-certain, and it is why lajahnik_metrics' churn stayed
+    INCOMPLETE all of 2026-11-17 with no retries left."""
+
+    def _incomplete(self, auto_retries=0):
+        r = _Report(report_id="lajahnik_metrics", command=[SHARED],
+                    base_args=["--office", "lajahnik", "--live"])
+        r.verify = {"type": "manifest", "report_id": "lajahnik_metrics"}
+        ds, rs = self._fresh(r)
+        rs.status = state.INCOMPLETE
+        rs.auto_retries = auto_retries
+        self._p(mock.patch.object(
+            R, "_retryable_incomplete", lambda _rs, _r: True))
+        from automations.shared import run_manifest as _rm
+        self._p(mock.patch.object(
+            _rm, "retry_spec",
+            lambda mid: {"failed": ["churn"], "retry_args": ["--only", "churn"],
+                         "kind": "part"}))
+        return r, ds, rs
+
+    def test_a_collision_spends_no_attempt_and_runs_nothing(self):
+        self._busy(["50306"])
+        r, ds, rs = self._incomplete()
+        R._retry_incomplete_parts(ds, [r], TARGET, dry_run=False, simulate=False)
+        self.assertEqual(self.runs, [])        # nothing launched
+        self.assertEqual(rs.auto_retries, 0)   # budget intact
+        self.assertEqual(rs.status, state.INCOMPLETE)   # still retryable
+
+    def test_the_budget_survives_many_collisions(self):
+        """The old code went terminal after 2; a busy module must never do that."""
+        self._busy(["50306"])
+        r, ds, rs = self._incomplete()
+        for _ in range(R.MAX_AUTO_RETRIES + 3):
+            R._retry_incomplete_parts(ds, [r], TARGET,
+                                      dry_run=False, simulate=False)
+        self.assertEqual(rs.auto_retries, 0)
+        self.assertEqual(self.runs, [])
+
+    def test_a_free_module_still_retries_normally(self):
+        self._busy([])
+        r, ds, rs = self._incomplete()
+        R._retry_incomplete_parts(ds, [r], TARGET, dry_run=False, simulate=False)
+        self.assertEqual(self.runs, ["lajahnik_metrics"])
+        self.assertEqual(rs.auto_retries, 1)
+
+    def test_a_report_that_opted_out_of_the_guard_is_not_deferred(self):
+        self._busy(["50306"])
+        r, ds, rs = self._incomplete()
+        r.duplicate_guard = False
+        R._retry_incomplete_parts(ds, [r], TARGET, dry_run=False, simulate=False)
+        self.assertEqual(self.runs, ["lajahnik_metrics"])
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
 

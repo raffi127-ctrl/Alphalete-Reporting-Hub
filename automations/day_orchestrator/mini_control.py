@@ -963,11 +963,22 @@ def _action_rerun(args: str) -> tuple[bool, str]:
     # Eve 2026-09-01). See registry.Report.duplicate_guard.
     busy = _running_pids(r.command[0]) if getattr(r, "duplicate_guard", True) else []
     if busy:
-        return False, (f"{report_id} is ALREADY running here (pid "
-                       f"{', '.join(busy)}) — not starting a second copy: two "
-                       "runs collide on the shared Chrome profile and both time "
-                       "out. Wait for it to finish, or kill that pid first and "
-                       "re-queue.")
+        # Name the MODULE and the running copy's own args, never this report, as
+        # though it were the thing running. The guard keys on the module, and a
+        # multi-tenant one (39 office-metrics reports share
+        # automations.office_metrics.runner on Lucy 4, differing only in
+        # --office) fires for a SIBLING. "lajahnik_metrics is ALREADY running
+        # here (pid 50306)" — when jacob's run held the profile — reads as a
+        # report relaunching itself, and cost ~40 minutes chasing that instead
+        # (Megan 2026-11-17). See proc_guard.describe.
+        from automations.day_orchestrator import proc_guard
+        who = (proc_guard.describe(r.command[0], busy)
+               or "pid " + ", ".join(busy))
+        return False, (f"{report_id} can't start: {r.command[0]} is already "
+                       f"running here ({who}) — a second copy collides on the "
+                       "shared Chrome profile and both time out. If those args "
+                       "are a DIFFERENT report, it shares this module: wait for "
+                       "it to finish, then re-queue.")
     if r.source_type in ("tableau", "appstream"):
         try:
             from automations.day_orchestrator import chrome_guard

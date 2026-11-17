@@ -1321,9 +1321,15 @@ def _run_report(r, target, *, dry_run, simulate, args_override=None):
     if getattr(r, "duplicate_guard", True):
         busy = _already_running(r.command[0])
         if busy:
-            return False, ("already running here (pid {}) — a second copy would "
-                           "collide on the browser profile and both would time out"
-                           .format(", ".join(busy)))
+            # The module plus the running copy's args — on a multi-tenant module
+            # the holder is often a SIBLING report, and "already running" without
+            # the args reads as this report running twice (see proc_guard).
+            from automations.day_orchestrator import proc_guard
+            who = (proc_guard.describe(r.command[0], busy)
+                   or "pid " + ", ".join(busy))
+            return False, ("{} is already running here ({}) — a second copy "
+                           "would collide on the browser profile and both would "
+                           "time out".format(r.command[0], who))
     # -u is load-bearing, not tidiness. The child's stdout is this log FILE, so
     # Python block-buffers it — and a timeout SIGKILL discards whatever is still
     # in that buffer. applicant_sync_morning timed out on 2026-08-18 and left a
@@ -2009,6 +2015,30 @@ def _retry_incomplete_parts(ds, todays, target, *, dry_run, simulate):
         if not spec:
             continue
         failed_before = list(spec.get("failed") or [])
+        # A COLLISION IS NOT AN ATTEMPT (Megan 2026-11-17). This path calls
+        # _run_report with args_override, which bypasses _attempt_report_inner's
+        # pre-launch deferral and lands on its last-line-of-defence guard — and
+        # that reads as a FAILED run (correct there: the report did not run).
+        # But the counter was already spent, so a retry that never executed
+        # burned one of MAX_AUTO_RETRIES (=2). On a multi-tenant module that is
+        # near-certain: all 39 office-metrics reports share
+        # automations.office_metrics.runner on Lucy 4, so lajahnik_metrics' two
+        # churn retries were both refused for a SIBLING office's run and the
+        # metric stayed INCOMPLETE all day with nothing left to retry it.
+        # Defer instead — no attempt spent, still INCOMPLETE, so the next
+        # 25-min pass tries again once the module is free. Mirrors what
+        # _attempt_report_inner already does for the scheduled path.
+        if getattr(r, "duplicate_guard", True):
+            busy = _already_running(r.command[0])
+            if busy:
+                from automations.day_orchestrator import proc_guard
+                who = (proc_guard.describe(r.command[0], busy)
+                       or "pid " + ", ".join(busy))
+                _log(f"  {rs.report_id}: auto-retry DEFERRED (no attempt "
+                     f"spent, {rs.auto_retries}/{MAX_AUTO_RETRIES} still "
+                     f"available) — {r.command[0]} is already running here "
+                     f"({who})")
+                continue
         rs.auto_retries += 1
         scope = ("whole report (checkpoint resume)" if spec.get("whole")
                  else f"failed part(s) {failed_before} → args {spec['retry_args']}")
