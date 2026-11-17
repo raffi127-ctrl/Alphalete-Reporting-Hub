@@ -268,11 +268,20 @@ def collect(P, rows: List[Dict], cl, *, dry: bool) -> List[Dict]:
             if status == "ok":
                 s.update(reviews=res.get("reviews") or [], read_at=time.time(), connected=True)
                 acts.append({"action": "fb_reviews_read", "note": "%d unanswered" % len(s["reviews"])})
+                if (s.get("paused") or {}).get("why") == "needs_signin":
+                    # The read got in, so Facebook IS signed in: the reply's
+                    # "signed out" was a one-off (Raf 11/17). Replies carry on.
+                    s.pop("paused", None)
+                    acts.append({"action": "fb_signin_false_alarm", "note": "replies carry on"})
                 acts.extend(_not_there(s, fb_state, s["reviews"], time.time()))
             else:
+                acts.append({"action": "fb_reviews_read_" + str(status), "note": res.get("error", "")})
                 if status == "signed_out":
                     s["connected"] = False
-                acts.append({"action": "fb_reviews_read_" + str(status), "note": res.get("error", "")})
+                    if browser(P) or (s.get("paused") or {}).get("why") == "needs_signin":
+                        # Now it's confirmed: tell the owner.
+                        s["paused"] = {"why": "needs_signin", "at": time.time(), "confirmed": True}
+                        acts.append(_owner_dm(P, cl, s, "needs_signin", dry))
         elif do == "fb_reply":
             story = res.get("story")
             st = (fb_state.get("reviews") or {}).get(story)
@@ -283,7 +292,13 @@ def collect(P, rows: List[Dict], cl, *, dry: bool) -> List[Dict]:
                 # Not this review's fault: it goes back to the front, untouched.
                 if fly.get("story") == story:
                     s.setdefault("outbox", []).insert(0, {"story": story, "comment": fly.get("comment", "")})
-                if status != "busy":
+                if status == "needs_signin":
+                    # One reply saying "signed out" isn't proof (Raf 11/17: the
+                    # read 10 min before got in fine). Hold the replies and let
+                    # the next read decide: it gets in -> carry on; it's signed
+                    # out too -> THEN the owner hears about it.
+                    s["paused"] = {"why": status, "at": time.time()}
+                elif status != "busy":
                     s["paused"] = {"why": status, "at": time.time()}
                     acts.append(_owner_dm(P, cl, s, status, dry))
                 acts.append({"action": "fb_reply_" + status, "note": res.get("error", "")})

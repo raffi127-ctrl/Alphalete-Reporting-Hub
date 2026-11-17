@@ -201,6 +201,30 @@ class Flow(Base):
         self.assertNotIn("paused", E._load(self.P))
         self.assertNotIn("s1", self._st()["reviews"], "a refused review comes back to be answered")
 
+    def test_one_signed_out_reply_holds_quietly_until_the_next_read(self):
+        # Raf 11/17: a reply said "signed out" 10 min after a read got in fine.
+        acts = E.collect(self.P, [_ans("fb_reply", status="needs_signin", story="s9")], self.cl, dry=False)
+        self.assertEqual(self.cl.posts, [], "no DM on one reply's word")
+        self.assertEqual(E._load(self.P)["paused"]["why"], "needs_signin")
+        acts = E.collect(self.P, [_ans("fb_reviews", status="ok", reviews=[])], self.cl, dry=False)
+        self.assertIn("fb_signin_false_alarm", [a["action"] for a in acts])
+        self.assertNotIn("paused", E._load(self.P))
+        self.assertEqual(self.cl.posts, [])
+
+    def test_the_next_read_signed_out_too_tells_the_owner(self):
+        P = offices.Presence(key="kash", business_name="Kash", slack_channel="C1", approvers=("U1",),
+                             facebook_page_id="9", reviews_via="eco", owner_slack_id="UOWNER")
+        E.collect(P, [_ans("fb_reply", status="needs_signin", story="s9")], self.cl, dry=False)
+        E.collect(P, [_ans("fb_reviews", status="signed_out", error="Facebook signed out")], self.cl, dry=False)
+        self.assertEqual([p["channel"] for p in self.cl.posts], ["UOWNER"])
+        self.assertEqual(E._load(P)["paused"]["why"], "needs_signin")
+
+    def test_a_checkpoint_still_tells_the_owner_at_once(self):
+        P = offices.Presence(key="kash", business_name="Kash", slack_channel="C1", approvers=("U1",),
+                             facebook_page_id="9", reviews_via="eco", owner_slack_id="UOWNER")
+        E.collect(P, [_ans("fb_reply", status="checkpoint", story="s9")], self.cl, dry=False)
+        self.assertEqual(len(self.cl.posts), 1)
+
     def test_signing_in_keeps_an_approved_card_and_its_check_mark(self):
         # Megan 11/16: "I already approved these responses as they were posted before".
         self._pass([{"open_graph_story": {"id": "s2"}, "recommendation_type": "negative"}])
