@@ -27,8 +27,8 @@ class Day:
     ns_showed: List[str] = field(default_factory=list)
     # {'first last' lowercase: start time} from the calendar; {} = not read
     ns_times: Dict[str, dt.time] = field(default_factory=dict)
-    # {'first last' lowercase: who hired them} off the new-start detail pages
-    # (Eveliz 2026-11-17). {} = no such column -- the picture drops the column.
+    # {'first last' lowercase: who did their 2nd round} (Eveliz/Megan
+    # 2026-11-17). {} = not read -- the picture drops the column.
     ns_hired_by: Dict[str, str] = field(default_factory=dict)
 
     def ns_with_times(self) -> List[Tuple[Optional[dt.time], str]]:
@@ -82,40 +82,82 @@ def names_of(header: List[str], rows: List[List[str]]) -> List[str]:
     return out
 
 
-# Who hired a new start, by detail-page header, best first. Matched by NAME,
-# never position. 'hired by' is the plain ask; the 2nd-round interviewer is who
-# offers the job when the page has no 'hired by' column.
-HIRED_BY_COLS = ("hired by", "hiring manager", "2nd interview by",
-                 "second interview by", "2nd round interviewer",
-                 "2nd interviewer", "2nd round by")
+# WHO HIRED A NEW START = whoever is marked as having done their 2nd round
+# (Megan 2026-11-17). The new-start detail pages have no such column (seen on
+# Lucy 3, Eveliz 11/17: first/last/email/phone/rating/job board/date and
+# time/ad), so it comes off "Total Second Interviews" -> "Done By 2nd" on the
+# days before the first day ([[project_new-starts-hired-by-column]]).
+DONE_BY_2ND = "done by 2nd"
+_NOBODY = {"", "none", "select=none", "select", "-", "--"}
 
 
-def hired_by_col(header: List[str]) -> Optional[int]:
+def _clean_who(v: str) -> str:
+    v = " ".join((v or "").split())
+    v = re.sub(r"^SELECT=", "", v, flags=re.I).strip()
+    return "" if v.lower() in _NOBODY else v
+
+
+def hired_by(header: List[str], rows: List[List[str]],
+             col: str = DONE_BY_2ND) -> Dict[str, str]:
+    """{'first last' lowercase: who did the 2nd round} off one 'Total Second
+    Interviews' detail page. Raises when the column is gone (a renamed column
+    must be seen, not read as 'nobody'); a blank / None cell is left out."""
     h = [" ".join((x or "").lower().split()) for x in header]
-    for want in HIRED_BY_COLS:
-        if want in h:
-            return h.index(want)
-    for want in HIRED_BY_COLS:
-        for i, x in enumerate(h):
-            if want in x:
-                return i
-    return None
-
-
-def hired_by(header: List[str], rows: List[List[str]]) -> Dict[str, str]:
-    """{'first last' lowercase: hirer}. {} when the page has no such column;
-    a blank cell is left out (shown as a dash, never guessed)."""
-    ci = hired_by_col(header)
-    if ci is None:
-        return {}
-    fi, li = _col(header, "first name"), _col(header, "last name")
+    ci = _col(h, col)
+    fi, li = _col(h, "first name"), _col(h, "last name")
     out = {}
     for r in rows:
-        who = " ".join((r[ci] if ci < len(r) else "").split())
+        who = _clean_who(r[ci] if ci < len(r) else "")
         name = ("%s %s" % (r[fi] if fi < len(r) else "",
                            r[li] if li < len(r) else "")).strip()
         if who and name:
-            out.setdefault(" ".join(name.lower().split()), who)
+            out.setdefault(_key(name), who)
+    return out
+
+
+def days_back(day: dt.date, n: int) -> List[dt.date]:
+    """The n days before `day`, newest first, no Sundays (no interviews)."""
+    out, d = [], day
+    while len(out) < n:
+        d -= dt.timedelta(days=1)
+        if d.weekday() != 6:
+            out.append(d)
+    return out
+
+
+def second_round_by(app, names: List[str], day: dt.date,
+                    look_back: int = C.HIRED_BY_LOOK_BACK, log=print) -> Dict[str, str]:
+    """{'first last' lowercase: who did the 2nd round} for `names`, walking
+    Retention Details back from the day before `day`, one report week at a
+    time, and stopping as soon as everyone is found. The NEWEST 2nd round wins
+    (a redo replaces the first try). Anyone not found is left out -> a dash.
+    The office must already be selected."""
+    from automations.ad_photo_threads.appstream_ads import open_week, sunday_of
+    from automations.linkedin_2nd_round_contacts.run import (_READ_TABLE, _count,
+                                                             date_header)
+    want = {_key(n) for n in names}
+    out: Dict[str, str] = {}
+    days = days_back(day, look_back)
+    for sunday in sorted({sunday_of(d) for d in days}, reverse=True):
+        if want <= set(out):
+            break
+        open_week(app, sunday)
+        hrefs = [(d, app.detail_href(C.L_SECOND, date_header(d)))
+                 for d in days if sunday_of(d) == sunday]
+        for d, h in hrefs:                    # newest day first
+            if want <= set(out):
+                break
+            if not h or not _count(h):
+                continue
+            app._goto_detail(h)
+            t = app.page.evaluate(_READ_TABLE)
+            for k, v in hired_by(t["header"], t["rows"]).items():
+                if k in want:
+                    out.setdefault(k, v)
+    missing = sorted(want - set(out))
+    log("  2nd round done by: %d of %d found in %d days back%s"
+        % (len(want) - len(missing), len(want), look_back,
+           (" (not found: %s)" % ", ".join(missing)) if missing else ""))
     return out
 
 
@@ -167,15 +209,10 @@ def read_day(app, office: C.Office, day: dt.date, labels=C.LABELS,
             out.first = timed(t["header"], t["rows"], day, lbl)
         elif lbl == C.L_SECOND:
             out.second = timed(t["header"], t["rows"], day, lbl)
-        elif lbl in (C.L_NS_SCHED, C.L_NS_SHOWED):
-            if lbl == C.L_NS_SCHED:
-                out.ns_scheduled = names_of(t["header"], t["rows"])
-            else:
-                out.ns_showed = names_of(t["header"], t["rows"])
-            for k, v in hired_by(t["header"], t["rows"]).items():
-                out.ns_hired_by.setdefault(k, v)
-            if hired_by_col(t["header"]) is None:
-                log("  %s: no hired-by column (header: %s)" % (lbl, t["header"]))
+        elif lbl == C.L_NS_SCHED:
+            out.ns_scheduled = names_of(t["header"], t["rows"])
+        elif lbl == C.L_NS_SHOWED:
+            out.ns_showed = names_of(t["header"], t["rows"])
         log("  %s: %d" % (lbl, n))
     return out
 
