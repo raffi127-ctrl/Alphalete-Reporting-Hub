@@ -291,14 +291,29 @@ def _ov_upload_note(name: str, photo, act: dict, *,
             return ("\nOwnerVille: a photo is already on their profile — "
                     f"left as-is{as_who}" + _sheet_note(name, act))
         return (f"\n⚠ OwnerVille: couldn't find *{name}* in View Progress "
-                "(tried every campaign + Show All) — please upload this one "
-                "manually")
+                f"{_looked_on(res)} — please upload this one manually")
     except Exception as e:  # noqa: BLE001
         act["ov"] = {"status": "error", "error": str(e)[:200]}
         print(f"  ⚠ OV upload failed for {name}: {type(e).__name__}: "
               f"{str(e)[:150]}")
         return ("\n⚠ OwnerVille: upload didn't go through — please upload "
                 "this one manually")
+
+
+def _looked_on(res: dict) -> str:
+    """Name the campaigns the lookup actually walked.
+
+    It used to say "tried every campaign" while the walk was pinned to
+    RES-AT&T alone (Megan 2026-11-16) -- so James Turnage read as absent from
+    OwnerVille when he had only not been looked for anywhere else
+    (2026-11-17). A line that names what was searched can't lie about it."""
+    tried = [str(t) for t in (res.get("tried") or []) if str(t).strip()]
+    if not tried:
+        return "(+ Show All)"
+    shown = ", ".join(tried[:4])
+    if len(tried) > 4:
+        shown += f" +{len(tried) - 4} more"
+    return f"(looked on {shown}, + Show All)"
 
 
 def _sheet_note(name: str, act: dict) -> str:

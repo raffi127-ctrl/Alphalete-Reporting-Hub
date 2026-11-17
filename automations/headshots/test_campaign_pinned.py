@@ -1,15 +1,23 @@
-"""Headshots look on ONE campaign now, not every campaign in the dropdown.
+"""Headshots look on the office's campaign FIRST, then the owner's others.
 
 Megan, 2026-11-16: "we should just assume headshots are for at&t for now to
-speed it up." The walk cost one page load per campaign per person on a job
-that ticks every five minutes, and Raf's office gained a third campaign that
-same day (Charter Communications D2D) -- so the walk got longer and gained a
-new way to match a different rep who shares a surname.
+speed it up" -- the walk cost one page load per campaign per person on a job
+that ticks every five minutes, and Raf's office had just gained a third
+campaign (Charter Communications D2D), which also gave the walk a new way to
+match a different rep who shares a surname.
+
+Megan, 2026-11-17: "make this so it looks for the name again in each campaign
+the owner has on their OV" -- James Turnage came back "not found" having been
+looked for on RES-AT&T only. Both asks hold at once because of the ORDER: the
+office's campaign goes first, so a normal run still finds them on the first
+page load and only a miss pays for the rest. The surname risk is held by
+`fuzzy_ok` -- on the extra campaigns the name must match exactly.
 """
 from __future__ import annotations
 
 import ast
 import unittest
+from unittest import mock
 from pathlib import Path
 
 from automations.headshots import ov_upload as U
@@ -64,21 +72,84 @@ class TheDefaultIsAtAndT(unittest.TestCase):
             OC.office = was
 
 
-class NoCallSiteWalksEveryCampaign(unittest.TestCase):
+class TheWalkStartsAtTheOfficesCampaign(unittest.TestCase):
 
-    def test_both_lookups_name_a_campaign(self):
+    def test_the_lookup_names_the_office_campaign_and_widens(self):
         """find_rep's default is still the full walk -- deliberately, for any
-        caller that wants it -- so the pinning has to be at the call."""
+        caller that wants it -- so the ORDER has to come from the call."""
         src = code()
         body = src[src.index("def upload_on_page"):]
-        calls = body.count("find_rep(")
-        self.assertEqual(calls, 2, "expected the lookup and the verify")
-        self.assertEqual(body.count("_campaign_for(office_key)"), calls,
-                         "every find_rep in the upload path names a campaign")
+        self.assertEqual(body.count("find_rep("), 2,
+                         "expected the lookup and the verify")
+        self.assertIn("_campaign_for(office_key)", body)
+        self.assertIn("then_rest=True", body)
+
+    def test_the_verify_rereads_the_campaign_it_was_found_on(self):
+        body = code()[code().index("def upload_on_page"):]
+        self.assertIn("campaigns=[campaign]", body)
 
     def test_the_office_key_reaches_the_upload(self):
         self.assertIn("office_key", code()[code().index("def upload_on_page"):
                                            code().index("def upload_on_page") + 400])
+
+
+class WideningIsOrderedAndExactOnly(unittest.TestCase):
+    """The walk is (label, may-a-typo-be-forgiven) pairs: the office's own
+    campaign(s) first with fuzzy ON, every other campaign after with it OFF."""
+
+    class FakeOption:
+        def __init__(self, texts):
+            self.texts = texts
+
+        def all_inner_texts(self):
+            return self.texts
+
+    class FakeSelect:
+        def __init__(self, texts):
+            self.texts = texts
+            self.picked = []
+
+        def locator(self, _):
+            return WideningIsOrderedAndExactOnly.FakeOption(self.texts)
+
+        def select_option(self, label=None):
+            self.picked.append(label)
+            raise _Stop(label)
+
+    def _walk(self, dropdown, campaigns, then_rest):
+        """Run find_rep far enough to see which campaign it picks first."""
+        sel = self.FakeSelect(dropdown)
+        page = mock.MagicMock()
+        with mock.patch.object(U, "_lucy_rqst", return_value="x"), \
+                mock.patch.object(U, "_campaign_select", return_value=sel), \
+                mock.patch.object(U, "_wait_loaded"):
+            try:
+                U.find_rep(page, "John Smith", verbose=False,
+                           campaigns=campaigns, then_rest=then_rest)
+            except _Stop:
+                pass
+        return sel.picked
+
+    def test_the_offices_campaign_is_tried_first(self):
+        picked = self._walk(["Charter Communications D2D", "RES-AT&T", "NDS"],
+                            ["RES-AT&T"], True)
+        self.assertEqual(picked, ["RES-AT&T"])
+
+    def test_a_pinned_walk_without_widening_is_unchanged(self):
+        picked = self._walk(["RES-AT&T", "NDS"], ["RES-AT&T"], False)
+        self.assertEqual(picked, ["RES-AT&T"])
+
+    def test_only_the_offices_campaign_forgives_a_typo(self):
+        """A surname twin on a campaign the office does not work can never be
+        reached by the fuzzy matcher."""
+        src = code()
+        body = src[src.index("def find_rep"):src.index("def _click_any")]
+        self.assertIn("if row is None and fuzzy_ok:", body)
+        self.assertIn("(o.strip(), False)", body)
+
+
+class _Stop(Exception):
+    pass
 
 
 if __name__ == "__main__":

@@ -423,7 +423,7 @@ def _campaign_for(office_key: str = ""):
 
 
 def find_rep(page, name: str, *, verbose: bool = True, campaigns=None,
-             rqst: str | None = None):
+             rqst: str | None = None, then_rest: bool = False):
     """Locate the rep across campaigns/filters, tolerating typos.
 
     Returns (row, campaign, matched_name) or (None, tried_campaigns, None).
@@ -443,6 +443,15 @@ def find_rep(page, name: str, *, verbose: bool = True, campaigns=None,
     surname on a campaign this report has no business touching, and generate
     that person's bundle. Generating is sending; there is no unsend. Narrowing
     the search is what makes "not found" mean "not found where they belong".
+
+    `then_rest` (Megan 2026-11-17, after James Turnage came back "not found"
+    off RES-AT&T alone) walks the campaigns given FIRST and then every OTHER
+    campaign in the owner's dropdown. The order is the point: the office's own
+    campaign is nearly always a hit on the first page load, so the common run
+    costs exactly what the pinned walk cost -- only a miss pays for the rest.
+    On those extra campaigns the name must match EXACTLY: a forgiven typo may
+    only pick someone off the campaign the office actually works, so a surname
+    twin on another campaign can never be mistaken for them.
 
     `rqst` is for a caller that already holds the session token -- an ICD's
     own computer (automations/icd_alerts/headshot_jobs.py), which signs in
@@ -468,7 +477,8 @@ def find_rep(page, name: str, *, verbose: bool = True, campaigns=None,
     except Exception:
         pass                      # the select wait below is the real gate
     sel = _campaign_select(page)
-    options = sel.locator("option").all_inner_texts()
+    every = sel.locator("option").all_inner_texts()
+    options = list(every)
     if campaigns:
         # Match on the DROPDOWN's own labels, never on the caller's string: the
         # option reads "Water – Primo / RSW B2B" with an en dash and a suffix,
@@ -482,9 +492,14 @@ def find_rep(page, name: str, *, verbose: bool = True, campaigns=None,
             # than silently falling back to walking everything — a silent
             # fallback is how the wrong-campaign bug hid for a morning.
             return None, [f"{'/'.join(campaigns)} (not in this dropdown)"], None
+    # (label, may a typo be forgiven here?) -- see `then_rest`.
+    walk = [(o.strip(), True) for o in options if o.strip()]
+    if campaigns and then_rest:
+        named = {lbl for lbl, _ in walk}
+        walk += [(o.strip(), False) for o in every
+                 if o.strip() and o.strip() not in named]
     tried = []
-    for opt in options:
-        label = opt.strip()
+    for label, fuzzy_ok in walk:
         if not label:
             continue
         tried.append(label)
@@ -514,7 +529,7 @@ def find_rep(page, name: str, *, verbose: bool = True, campaigns=None,
                     page.wait_for_timeout(1500)
                     row = _rep_row(page, name, debug=False)
                 matched = name
-                if row is None:
+                if row is None and fuzzy_ok:
                     # Exact text failed — allow a typo, but never a guess
                     # between near-twins.
                     row, got = _fuzzy_row(page, name, verbose=verbose)
@@ -604,7 +619,7 @@ def upload_on_page(page, name: str, photo: Path | None, *,
     own login (icd_alerts/headshot_jobs.py) -- one uploader, not a copy: a
     fix here reaches every office machine on its next self-update."""
     row, campaign, matched = find_rep(page, name, verbose=verbose,
-                                      rqst=rqst,
+                                      rqst=rqst, then_rest=True,
                                       campaigns=_campaign_for(office_key))
     if row is None:
         return {"status": "not_found", "name": name, "tried": campaign}
@@ -677,8 +692,10 @@ def upload_on_page(page, name: str, photo: Path | None, *,
     time.sleep(2)
 
     # Verify: back on the table, the pill should now be green.
-    row2, _, _ = find_rep(page, name, verbose=False,
-                          campaigns=_campaign_for(office_key))
+    # Verify on the campaign they were FOUND on, not the office default --
+    # with the walk widened (then_rest) that is not always the same one.
+    row2, _, _ = find_rep(page, name, verbose=False, rqst=rqst,
+                          campaigns=[campaign])
     verified = row2 is not None and _photo_pill(row2) == "uploaded"
     return {"status": "uploaded", "name": name, "campaign": campaign,
             "verified": verified, "replaced": bool(replace and

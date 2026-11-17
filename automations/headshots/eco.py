@@ -171,9 +171,13 @@ def result_line(r: Dict) -> str:
         return ("*%s* — OwnerVille (test, nothing uploaded): found, Photo "
                 "pill is %s%s" % (name, res.get("pill") or "?", as_who))
     if st == "not_found":
+        tried = [str(x) for x in (res.get("tried") or []) if str(x).strip()]
+        where = ("every campaign + Show All" if not tried
+                 else "looked on %s%s, + Show All"
+                      % (", ".join(tried[:4]),
+                         "" if len(tried) <= 4 else " +%d more" % (len(tried) - 4)))
         return ("⚠ *%s* — OwnerVille: couldn't find them in View Progress "
-                "(every campaign + Show All) — please upload this one by "
-                "hand" % name)
+                "(%s) — please upload this one by hand" % (name, where))
     return ("⚠ *%s* — OwnerVille: the upload didn't go through on the office "
             "computer — please upload this one by hand" % name)
 
