@@ -865,7 +865,18 @@ def run(owner_key: str, today: dt.date, *, dry_run: bool = False,
                    f"0-30 Day {b30['disc']}/{b30['act']} = {_fmt_pct(b30['pct'])} · "
                    f"90 Day {b90['disc']}/{b90['act']} = {_fmt_pct(b90['pct'])} · "
                    f"as of {today.month}/{today.day}. Source: Tableau NDS-SN Order Log.")
-        res = smp.dm_users_with_file(png, users=users, comment=comment, file_name=png.name)
+        try:
+            res = smp.dm_users_with_file(png, users=users, comment=comment, file_name=png.name)
+        except smp.SlackPostError as e:
+            # Lucy 1 has no 'Lucy' bot token file (2026-11-17); the per-user
+            # metrics token it posts the NDS boards with can DM too.
+            log(f"[captain] Lucy bot token unavailable ({str(e)[:80]}) -- sending with the metrics user token")
+            res = smp.dm_users_with_file(png, users=users, comment=comment, file_name=png.name,
+                                         as_bot=False)
         log(f"[captain] sent ({res.get('mode')}) to {users}: ok={res.get('ok')}")
+    try:                                  # the picture as sent, readable from the mini
+        shot_to_tab(png, log=log)
+    except Exception as e:  # noqa: BLE001
+        log(f"[captain] shot tab failed: {type(e).__name__}: {e}")
     print("=== done ===", flush=True)
     return 0
