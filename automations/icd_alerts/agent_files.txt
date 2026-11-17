@@ -76,6 +76,8 @@ automations/icd_alerts/sterling_setup.py
 automations/icd_alerts/pnl.py
 automations/icd_alerts/apex_signin.py
 automations/icd_alerts/apex_guard.py
+automations/icd_alerts/apex_login.py
+automations/icd_alerts/apex_2fa_setup.py
 automations/carlos_payroll_pull/__init__.py
 automations/carlos_payroll_pull/run.py
 automations/icd_alerts/messages_probe.py

@@ -48,6 +48,13 @@ READ_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 # test that pins this list has to change too -- on purpose.
 ALLOWED_WRITES = frozenset({
     ("apexapi.herbjoyent.com", "/auth/token"),
+    # Lucy's own sign-in (apex_login, 2026-11-17): the password form and the
+    # 2-step code form. Apex is ASP.NET Identity (its account pages are
+    # /Identity/Account/Manage/...), whose sign-in forms post here. A sign-in
+    # cannot change payroll. CONFIRM against the "sign-in window sent" list
+    # from the owner's setup (apex_2fa_setup runs in "watch").
+    ("apex.herbjoyent.com", "/identity/account/login"),
+    ("apex.herbjoyent.com", "/identity/account/loginwith2fa"),
 })
 
 # Cloudflare's "are you human" check in front of Apex. It answers Cloudflare,
@@ -97,7 +104,7 @@ def allowed(method: str, url: str) -> bool:
         return False
     if m in READ_METHODS:
         return True
-    if (host, path) in ALLOWED_WRITES:
+    if (host, path.lower()) in ALLOWED_WRITES:
         return True
     return any(host == h and (path + "/").startswith(pre)
                for h, pre in CLOUDFLARE_CHECK)

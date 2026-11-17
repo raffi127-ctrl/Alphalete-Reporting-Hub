@@ -25,8 +25,20 @@ class AllowList(unittest.TestCase):
     def test_pinned_to_what_the_probe_measured(self):
         # Probe 2026-11-16 (Lucy 2): the ONLY write the read path needs.
         # Changing this list is a decision, not a refactor.
-        self.assertEqual(G.ALLOWED_WRITES,
-                         {("apexapi.herbjoyent.com", "/auth/token")})
+        self.assertEqual(G.ALLOWED_WRITES, {
+            ("apexapi.herbjoyent.com", "/auth/token"),
+            # Lucy's own sign-in (apex_login): password form + 2-step form.
+            ("apex.herbjoyent.com", "/identity/account/login"),
+            ("apex.herbjoyent.com", "/identity/account/loginwith2fa"),
+        })
+
+    def test_signin_forms_pass_but_not_the_rest_of_identity(self):
+        self.assertTrue(G.allowed("POST", "https://apex.herbjoyent.com/Identity/Account/Login?ReturnUrl=%2F"))
+        self.assertTrue(G.allowed("POST", "https://apex.herbjoyent.com/Identity/Account/LoginWith2fa"))
+        for path in ("/Identity/Account/Register", "/Identity/Account/LoginWithRecoveryCode",
+                     "/Identity/Account/ForgotPassword", "/Identity/Account/Manage/EnableAuthenticator",
+                     "/Identity/Account/Manage/Disable2fa"):
+            self.assertFalse(G.allowed("POST", "https://apex.herbjoyent.com" + path), path)
 
     def test_reads_pass(self):
         for m in ("GET", "head", "OPTIONS"):

@@ -81,6 +81,14 @@ SYSTEMS = {
         "stamp": "apex-autoprompt.txt",
         "name": "Apex",
     },
+    # Lucy signs into Apex BY HERSELF from then on (apex_2fa_setup, Eve +
+    # Megan 2026-11-16): the owner sets the authenticator app up with her
+    # once. Offered only to offices in pnl.APEX_SETUP_KEYS.
+    "apex_2fa": {
+        "module": "automations.icd_alerts.apex_2fa_setup",
+        "stamp": "apex-2fa-autoprompt.txt",
+        "name": "Apex code app",
+    },
     "ownerville_password": {
         "module": "automations.icd_alerts.run",
         "args": ["--set-ownerville-login"],

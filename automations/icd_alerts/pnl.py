@@ -47,6 +47,11 @@ from automations.icd_alerts import config as C
 
 # Offices whose owner asked for the PNL. Jairo first (2026-10-29, Megan OK).
 PNL_KEYS = frozenset({"jairo15"})
+# Offices where, when Apex is signed out, the window offered is the ONE-TIME
+# authenticator setup (apex_2fa_setup) instead of the plain sign-in -- after
+# it Lucy signs in by herself (apex_login). Empty until Eve has a time with
+# the owner: the setup needs him at the Mac for ~5 minutes.
+APEX_SETUP_KEYS = frozenset()
 
 TABLEAU = "https://us-east-1.online.tableau.com"
 # The view our Lucys already read for DD by rep (override_bulletin.pulls
@@ -401,7 +406,18 @@ def read_apex(log=print):
             try:
                 AP.goto_payroll_entry(page)
             except SystemExit:      # its "session expired" -- the login form
-                return "signed out", None
+                # Lucy signs in by herself when the owner set the app up with
+                # her (apex_login) -- under the same lock, one try per run.
+                from automations.icd_alerts import apex_login as L
+                login = L.creds()
+                if not login:
+                    return "signed out", None
+                if L.stopped():
+                    return "signed out (Lucy's own sign-in stopped after %d failed tries)" % L.MAX_FAILS, None
+                ok, step = L.sign_in(page, login, log=log)
+                if not ok:
+                    return "signed out (Lucy's own sign-in %s)" % step, None
+                AP.goto_payroll_entry(page)
             today = dt.date.today()
             done = [pp for pp in AP.list_periods(page) if pp[2] < today]
             if not done:
@@ -476,11 +492,21 @@ def run_apex_check(log=print) -> int:
             log("pnl: %s apex %s" % (rec["office_key"], status))
             continue
         state["apex_tried_v1"] = time.time()
-        if status == "signed out":
+        if status.startswith("signed out"):
             from automations.icd_alerts import autoprompt as AU
-            shown = AU.offer("apex", log=log)
-            line = ("Apex not signed in on this computer yet (sign-in window %s)"
-                    % ("opened" if shown else "not opened: nobody at the Mac"))
+            from automations.icd_alerts import apex_login as L
+            if L.creds():
+                line = "Apex " + status
+                if L.stopped():
+                    shown = AU.offer("apex_2fa", log=log)
+                    line += " -- setup window %s" % (
+                        "opened" if shown else "not opened: nobody at the Mac")
+            else:
+                setup = rec["office_key"] in APEX_SETUP_KEYS
+                shown = AU.offer("apex_2fa" if setup else "apex", log=log)
+                line = ("Apex not signed in on this computer yet (%s window %s)"
+                        % ("code-app setup" if setup else "sign-in",
+                           "opened" if shown else "not opened: nobody at the Mac"))
         elif status != "ok":
             line = "Apex " + status
         else:
