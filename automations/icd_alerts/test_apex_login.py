@@ -129,6 +129,16 @@ class Wiring(unittest.TestCase):
         src = inspect.getsource(S.prove)
         self.assertLess(src.index('G.install(ctx, "block")'), src.index("L.sign_in("))
 
+    def test_colten_gets_the_dd_check_but_no_apex_window_yet(self):
+        from automations.icd_alerts import pnl
+        self.assertIn("colten", pnl.PNL_KEYS)
+        self.assertNotIn("colten", pnl.APEX_SETUP_KEYS)
+        self.assertNotIn("colten", pnl.APEX_HAND_SIGNIN_KEYS)
+        with mock.patch.object(pnl.C, "active_enrollments",
+                               return_value=[{"office_key": "colten"}]),                 mock.patch.object(pnl, "_apex_login_saved", return_value=False),                 mock.patch.object(pnl, "read_apex") as read,                 mock.patch.object(pnl, "_load", return_value={}),                 mock.patch.object(pnl, "_save"):
+            self.assertEqual(pnl.run_apex_check(log=lambda *a: None), 0)
+        read.assert_not_called()
+
     def test_autoprompt_knows_the_setup(self):
         from automations.icd_alerts import autoprompt as AU
         self.assertEqual(AU.SYSTEMS["apex_2fa"]["module"],

@@ -46,12 +46,20 @@ from typing import Dict, List, Optional, Tuple
 from automations.icd_alerts import config as C
 
 # Offices whose owner asked for the PNL. Jairo first (2026-10-29, Megan OK).
-PNL_KEYS = frozenset({"jairo15"})
+PNL_KEYS = frozenset({
+    "jairo15",
+    "colten",      # asked in Slack 2026-11-13 ("AI doing P&L"); DD check first (Eve 2026-11-17)
+})
 # Offices where, when Apex is signed out, the window offered is the ONE-TIME
 # authenticator setup (apex_2fa_setup) instead of the plain sign-in -- after
 # it Lucy signs in by herself (apex_login). Empty until Eve has a time with
 # the owner: the setup needs him at the Mac for ~5 minutes.
 APEX_SETUP_KEYS = frozenset()
+# Offices that still get the plain hand sign-in window when Apex is signed out
+# (the 2026-10-29 step). Every OTHER PNL office gets NO Apex window at all
+# until it is in APEX_SETUP_KEYS -- only the DD check runs, nothing on screen
+# (Colten, Eve 2026-11-17: "sin que él vea nada").
+APEX_HAND_SIGNIN_KEYS = frozenset({"jairo15"})
 
 TABLEAU = "https://us-east-1.online.tableau.com"
 # The view our Lucys already read for DD by rep (override_bulletin.pulls
@@ -476,6 +484,11 @@ def apex_due(state: Dict, now: Optional[dt.datetime] = None) -> bool:
             ) >= APEX_RETRY_MINUTES * 60
 
 
+def _apex_login_saved() -> bool:
+    from automations.icd_alerts import apex_login as L
+    return bool(L.creds())
+
+
 def run_apex_check(log=print) -> int:
     """Export the newest pay period, match it to the DD by name, and file
     what was found as `probe-pnl-apex` -- counts and names, never money."""
@@ -487,6 +500,10 @@ def run_apex_check(log=print) -> int:
     for rec in C.active_enrollments():
         if not wanted(rec):
             continue
+        key = rec["office_key"]
+        if (key not in APEX_SETUP_KEYS and key not in APEX_HAND_SIGNIN_KEYS
+                and not _apex_login_saved()):
+            continue        # DD only for now: no Apex window, no fault
         status, path = read_apex(log=log)
         if status.startswith("busy"):
             log("pnl: %s apex %s" % (rec["office_key"], status))
