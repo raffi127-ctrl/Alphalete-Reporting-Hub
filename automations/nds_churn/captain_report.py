@@ -542,16 +542,23 @@ def _reps_html(rep: dict) -> str:
             '<th class="wh">90 Day churn</th><th class="wh">Activation rate 0-30</th>'
             '<th class="wh">Activation rate 31-60</th></tr>')
     blank = {"act": 0, "disc": 0, "pct": None}
-    trs = [f'<tr class="total"><td class="lbl">OFFICE TOTAL</td>{_pct_cell("0-30", tot["0-30"])}'
-           f'{_pct_cell("90", tot["90"])}{_rate_cell(rep["office_rate"]["0-30"])}'
-           f'{_rate_cell(rep["office_rate"]["31-60"])}</tr>']
+    total = (f'<tr class="total"><td class="lbl">OFFICE TOTAL</td>{_pct_cell("0-30", tot["0-30"])}'
+             f'{_pct_cell("90", tot["90"])}{_rate_cell(rep["office_rate"]["0-30"])}'
+             f'{_rate_cell(rep["office_rate"]["31-60"])}</tr>')
+    trs = []
     for n in names:
         r = reps.get(n, {})
         rr = rates.get(n, {})
         trs.append(f'<tr><td class="lbl">{_e(n)}</td>{_pct_cell("0-30", r.get("0-30", blank))}'
                    f'{_pct_cell("90", r.get("90", blank))}{_rate_cell(rr.get("0-30"))}'
                    f'{_rate_cell(rr.get("31-60"))}</tr>')
-    return f"<table>{head}{''.join(trs)}</table>"
+    # Two tables side by side (Carlos 2026-11-17: "split that into two so
+    # that the white space on the right gets covered up"): the total tops the
+    # left one, the reps continue down the right one in the same order.
+    half = (len(trs) + 1) // 2
+    left = f"<table>{head}{total}{''.join(trs[:half])}</table>"
+    right = f"<table>{head}{''.join(trs[half:])}</table>" if trs[half:] else ""
+    return f'<div class="two">{left}{right}</div>'
 
 
 def _table_html(bucket: str, rows: List[dict], box: dict, today: dt.date) -> str:
