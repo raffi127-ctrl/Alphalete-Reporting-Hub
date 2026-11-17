@@ -139,13 +139,17 @@ class WideningIsOrderedAndExactOnly(unittest.TestCase):
         picked = self._walk(["RES-AT&T", "NDS"], ["RES-AT&T"], False)
         self.assertEqual(picked, ["RES-AT&T"])
 
-    def test_only_the_offices_campaign_forgives_a_typo(self):
-        """A surname twin on a campaign the office does not work can never be
-        reached by the fuzzy matcher."""
+    def test_a_typo_off_campaign_is_held_to_a_higher_bar(self):
+        """A typo is still forgiven on the owner's other campaigns -- OV holds
+        "James Turnag" for James Turnage -- but only a close one, because the
+        person wanted may not be on that campaign at all. The score bars are
+        exercised for real in test_row_names_js."""
         src = code()
         body = src[src.index("def find_rep"):src.index("def _click_any")]
-        self.assertIn("if row is None and fuzzy_ok:", body)
+        self.assertIn("min_score=_MIN_SCORE if fuzzy_ok else _MIN_SCORE_OTHER",
+                      body)
         self.assertIn("(o.strip(), False)", body)
+        self.assertGreater(U._MIN_SCORE_OTHER, U._MIN_SCORE)
 
 
 class _Stop(Exception):

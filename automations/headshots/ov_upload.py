@@ -147,12 +147,33 @@ def _rep_row(page, name: str, *, debug: bool = False,
 # is reported for manual handling instead (Megan 2026-08-24).
 _MIN_SCORE = 0.86        # below this, not the same person
 _MIN_MARGIN = 0.06       # winner must beat the runner-up by this much
+# A campaign the office does not work (the widened walk, see find_rep) gets a
+# HIGHER bar: the person we want may not be in that table at all, so a near
+# miss there is likelier to be a stranger than a typo. "James Turnag" for
+# James Turnage scores 0.95 and still lands; "James Turner" (~0.88) does not.
+_MIN_SCORE_OTHER = 0.93
 
-_ROW_NAMES_JS = """() => [...document.querySelectorAll('tbody tr')].map(tr => {
-    const lines = (tr.innerText || '').split('\\n')
-        .map(s => s.trim()).filter(Boolean);
-    return lines.length ? lines[0] : '';
-})"""
+# What the table calls each row's person. NOT "the row's first line": the
+# columns are not the same on every campaign -- on Raf's Charter
+# Communications - D2D the first line is the EMPLOYEE ID, so this read
+# '9576433' as somebody's name and every score computed against it was
+# meaningless (2026-11-17, James Turnage). Pick the first cell that looks like
+# a person instead: has a letter, is not an id, not an email, not one of the
+# table's own control words.
+_ROW_NAMES_JS = """() => {
+    const JUNK = /^(edit|action|remove|uploaded|upload|photo|view|select|roadmap|yes|no|n\\/a|pending|submitted)$/i;
+    const looksLikeName = t => /[A-Za-z]/.test(t) && !t.includes('@')
+        && !/^[\\d().\\s-]+$/.test(t) && !JUNK.test(t.replace(/\\s+/g, ' ').trim());
+    return [...document.querySelectorAll('tbody tr')].map(tr => {
+        const cells = [...tr.querySelectorAll('td')]
+            .map(td => ((td.innerText || '').split('\\n')[0] || '').trim())
+            .filter(Boolean);
+        const pool = cells.length ? cells
+            : (tr.innerText || '').split('\\n').map(s => s.trim()).filter(Boolean);
+        const named = pool.find(looksLikeName);
+        return named || '';
+    });
+}"""
 
 
 def _name_key(s: str) -> str:
@@ -184,11 +205,13 @@ def _name_score(want: str, got: str) -> float:
     return SequenceMatcher(None, a, b).ratio()
 
 
-def _fuzzy_row(page, name: str, *, verbose: bool = True):
+def _fuzzy_row(page, name: str, *, verbose: bool = True,
+               min_score: float = _MIN_SCORE):
     """Best typo-tolerant row match, or None. Returns (row, matched_name).
 
     Refuses to return an ambiguous winner — two near-equal candidates mean
-    a human decides, never the bot."""
+    a human decides, never the bot. `min_score` is raised by the caller on a
+    campaign the office does not work (see _MIN_SCORE_OTHER)."""
     try:
         names = page.evaluate(_ROW_NAMES_JS)
     except Exception:
@@ -200,7 +223,10 @@ def _fuzzy_row(page, name: str, *, verbose: bool = True):
         return None, None
     best, idx, got = scored[0]
     runner = scored[1][0] if len(scored) > 1 else 0.0
-    if best < _MIN_SCORE:
+    if best < min_score:
+        if verbose and best >= 0.75:
+            print(f"    closest on this campaign: {got!r} ({best:.2f}) — "
+                  f"under the {min_score:.2f} bar, not treating it as them")
         return None, None
     if best - runner < _MIN_MARGIN:
         if verbose:
@@ -230,6 +256,24 @@ def _sample_rows(page, limit: int = 3) -> str:
         except Exception:
             out.append("(unreadable)")
     return f"{n} row(s): " + " | ".join(out)
+
+
+def _miss_rows(page, limit: int = 4) -> str:
+    """Every narrowed row in full on a miss -- the 50-character cut landed
+    exactly on the spelling in question (2026-11-17, "... edit james turnag"),
+    which is the one place a debug line must not stop."""
+    try:
+        rows = page.locator("tbody tr")
+        n = rows.count()
+    except Exception:
+        return ""
+    out = []
+    for i in range(min(limit, n)):
+        try:
+            out.append(_norm(rows.nth(i).inner_text(timeout=2000))[:250])
+        except Exception:
+            out.append("(unreadable)")
+    return " | full: " + " || ".join(out) if out else ""
 
 
 def _row_names(page, limit: int = 6) -> str:
@@ -469,9 +513,11 @@ def find_rep(page, name: str, *, verbose: bool = True, campaigns=None,
     campaign in the owner's dropdown. The order is the point: the office's own
     campaign is nearly always a hit on the first page load, so the common run
     costs exactly what the pinned walk cost -- only a miss pays for the rest.
-    On those extra campaigns the name must match EXACTLY: a forgiven typo may
-    only pick someone off the campaign the office actually works, so a surname
-    twin on another campaign can never be mistaken for them.
+    On those extra campaigns a typo is still forgiven -- OwnerVille really
+    does hold "James Turnag" for James Turnage -- but at a higher bar
+    (_MIN_SCORE_OTHER), because the person we want may not be in that table at
+    all, so a near miss there is likelier to be a stranger than a typo. The
+    ambiguity guard in _fuzzy_row is unchanged and still refuses near-twins.
 
     `rqst` is for a caller that already holds the session token -- an ICD's
     own computer (automations/icd_alerts/headshot_jobs.py), which signs in
@@ -512,7 +558,7 @@ def find_rep(page, name: str, *, verbose: bool = True, campaigns=None,
             # than silently falling back to walking everything — a silent
             # fallback is how the wrong-campaign bug hid for a morning.
             return None, [f"{'/'.join(campaigns)} (not in this dropdown)"], None
-    # (label, may a typo be forgiven here?) -- see `then_rest`.
+    # (label, is this the office's own campaign?) -- see `then_rest`.
     walk = [(o.strip(), True) for o in options if o.strip()]
     if campaigns and then_rest:
         named = {lbl for lbl, _ in walk}
@@ -549,10 +595,13 @@ def find_rep(page, name: str, *, verbose: bool = True, campaigns=None,
                     page.wait_for_timeout(1500)
                     row = _rep_row(page, name, debug=False)
                 matched = name
-                if row is None and fuzzy_ok:
+                if row is None:
                     # Exact text failed — allow a typo, but never a guess
-                    # between near-twins.
-                    row, got = _fuzzy_row(page, name, verbose=verbose)
+                    # between near-twins, and only a close one on a campaign
+                    # the office does not work.
+                    row, got = _fuzzy_row(
+                        page, name, verbose=verbose,
+                        min_score=_MIN_SCORE if fuzzy_ok else _MIN_SCORE_OTHER)
                     if row is not None:
                         matched = got or name
                 if row:
@@ -562,7 +611,8 @@ def find_rep(page, name: str, *, verbose: bool = True, campaigns=None,
                     return row, label, matched
             if verbose:
                 print(f"    ({label}{' / Show All' if widen else ''}: "
-                      f"{_sample_rows(page)}{_row_names(page)})")
+                      f"{_sample_rows(page)}{_row_names(page)}"
+                      f"{_miss_rows(page)})")
     return None, tried, None
 
 
