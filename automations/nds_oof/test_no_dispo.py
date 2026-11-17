@@ -94,6 +94,15 @@ class NoDispo(unittest.TestCase):
         self.assertEqual(B.TEXT_ROUTES[(C.CAMPAIGN_LABEL, C.KIND_NO_DISPO)], [B.TEXT_GROUP_ATT])
 
 
+class ClientPick(unittest.TestCase):
+    def test_what_the_pick_added_rides_along(self):
+        u = ("https://v2.ownerville.com/index.cfm?p=89&rqst=ABC&startDate=11/16/2026"
+             "&endDate=11/16/2026")
+        self.assertEqual(R.extra_query(u), "")
+        self.assertEqual(R.extra_query(u + "&invD2DClientId=1"), "&invD2DClientId=1")
+        self.assertEqual(R.extra_query(""), "")
+
+
 class SlotPulls(unittest.TestCase):
     def test_a_slot_alone_makes_the_tick_pull(self):
         """3:15 on 2026-11-06: board + gaps not due, so the tick returned

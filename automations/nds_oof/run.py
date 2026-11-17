@@ -138,6 +138,96 @@ def gaps_text(over: List[Dict], now: dt.datetime) -> str:
     return "%s 15 min gaps — %s\n\n%s" % (C.TEAM, _clock(now).replace(":00", ""), "\n".join(lines))
 
 
+# --- "Choose a Client" (ownerville, first seen 2026-11-16) ---------------------
+# From 1:30pm on 2026-11-16 Disposition by Rep stopped opening on the pinned
+# campaign for Carlos's login: the page came up as the menu plus
+# "Disposition by Rep / Choose a Client / BASE Energy / RES AT&T OOF / VZN" and
+# no grid, so every board tick died on "grid never rendered a header row"
+# (Carlos: "wheres the knocks board?"). The p=88 pin still steers the Time
+# Tracker; this page wants the client picked on the page itself.
+_CLIENT_JS = """(label) => {
+    const want = label.trim().toLowerCase();
+    let best = null;
+    for (const el of document.querySelectorAll(
+            'a, button, option, li, label, span, div, td, input')) {
+        const t = ((el.tagName === 'INPUT' ? el.value : el.innerText) || '')
+            .trim().toLowerCase();
+        if (t !== want) continue;
+        if (!best || best.contains(el)) best = el;      // the deepest match
+    }
+    return best;
+}"""
+_GRID_HEAD = "#table-dispositions thead th"
+_OWN_KEYS = {"p", "rqst", "startdate", "enddate"}
+
+
+def extra_query(url: str) -> str:
+    """'&k=v...' for whatever the client pick added to the address, so the
+    scrape's own navigation can carry it. '' when it added nothing."""
+    from urllib.parse import parse_qsl, urlsplit, urlencode
+    keep = [(k, v) for k, v in parse_qsl(urlsplit(str(url or "")).query,
+                                         keep_blank_values=True)
+            if k.lower() not in _OWN_KEYS]
+    return ("&" + urlencode(keep)) if keep else ""
+
+
+def open_client_grid(page, rqst: str, mdy: str) -> str:
+    """Open the day's Disposition by Rep; if ownerville asks which client,
+    pick C.CAMPAIGN_LABEL. Returns the extra query the scrape must carry
+    ('' = nothing extra). Never raises: the scrape reports a dead grid."""
+    try:
+        page.goto("https://v2.ownerville.com/index.cfm?p=89&rqst=%s"
+                  "&startDate=%s&endDate=%s" % (rqst, mdy, mdy),
+                  wait_until="networkidle", timeout=25000)
+    except Exception:  # noqa: BLE001
+        return ""
+    try:
+        page.wait_for_selector(_GRID_HEAD, timeout=8000)
+        return ""                       # the grid opened by itself
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        handle = page.evaluate_handle(_CLIENT_JS, C.CAMPAIGN_LABEL)
+        el = handle.as_element() if handle else None
+        if el is None:
+            _log("client pick: no grid and no %r on the page" % C.CAMPAIGN_LABEL)
+            return ""
+        info = el.evaluate(
+            """el => ({tag: el.tagName, href: el.getAttribute('href') || '',
+                       onclick: el.getAttribute('onclick') || '',
+                       parent: (el.parentElement ? el.parentElement.outerHTML : '')
+                           .replace(/\\s+/g, ' ').slice(0, 300)})""")
+        _log("client pick: %s href=%r onclick=%r"
+             % (info.get("tag"), re.sub(r"rqst=[^&]+", "rqst=…", info.get("href", ""))[:90],
+                info.get("onclick", "")[:70]))
+        parent = str(info.get("parent") or "")
+        parent = re.sub(r"rqst=[^&\"']+", "rqst=…", parent)
+        for i in range(0, len(parent), 150):
+            _log("client pick html %d -- %s" % (i // 150 + 1, parent[i:i + 150]))
+        if info.get("tag") == "OPTION":
+            el.evaluate("""el => { const s = el.parentElement; s.value = el.value;
+                s.dispatchEvent(new Event('change', {bubbles: true})); }""")
+        else:
+            el.click()
+        try:
+            page.wait_for_load_state("networkidle", timeout=20000)
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            page.wait_for_selector(_GRID_HEAD, timeout=20000)
+            built = True
+        except Exception:  # noqa: BLE001
+            built = False
+        extra = extra_query(page.url)
+        _log("client pick: chose %r -> grid %s, page %s, carries %r"
+             % (C.CAMPAIGN_LABEL, "BUILT" if built else "still missing",
+                re.sub(r"rqst=[^&]+", "rqst=…", str(page.url))[-110:], extra))
+        return extra
+    except Exception as e:  # noqa: BLE001
+        _log("client pick failed: %s: %s" % (type(e).__name__, str(e)[:120]))
+        return ""
+
+
 # --- pull --------------------------------------------------------------------
 def pull(today: dt.date, *, want_board: bool, headless: bool = True):
     """ONE session: campaign pinned, gaps feed, and (hourly) the board rows."""
@@ -157,7 +247,8 @@ def pull(today: dt.date, *, want_board: bool, headless: bool = True):
                 if cap._int(r.get("minutesSinceLastKnock")) > C.GAP_THRESHOLD_MIN]
         if want_board:
             try:
-                rows = KP._scrape_day_on_page(page, rqst, today, verbose=True)
+                carry = open_client_grid(page, rqst, mdy)
+                rows = KP._scrape_day_on_page(page, rqst + carry, today, verbose=True)
             except Exception as e:  # noqa: BLE001
                 # THE GAPS DO NOT WAIT ON THE GRID (2026-11-16). Ownerville's
                 # Disposition by Rep grid never built from 1:30pm on, the
