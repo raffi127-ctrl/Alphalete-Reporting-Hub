@@ -26,7 +26,8 @@ WE 10/25, same as Lucy 3). Once the owner signs into Apex in Lucy's window
 (apex_signin; autoprompt puts it up when he is at the Mac), the newest pay
 period is exported to this computer and matched to the DD by rep name; the
 `probe-pnl-apex` line says how many matched and who did not. The sheet comes
-after that.
+after that. Lucy's Apex browser runs under a lock (apex_guard): it can read,
+it cannot change anything in Apex.
 
     python -m automations.icd_alerts.pnl --check      # run the DD check now
     python -m automations.icd_alerts.pnl --apex       # run the Apex check now
@@ -373,6 +374,7 @@ def read_apex(log=print):
     from patchright.sync_api import sync_playwright
     from automations.carlos_payroll_pull import run as AP
     from automations.icd_alerts import apex_signin as AS
+    from automations.icd_alerts import apex_guard as G
 
     if AS.signin_open():
         return "busy (sign-in window open)", None
@@ -383,10 +385,18 @@ def read_apex(log=print):
     with sync_playwright() as p:
         try:
             ctx = p.chromium.launch_persistent_context(
-                str(AS.APEX_PROFILE_DIR), headless=True, args=["--disable-sync"])
+                str(AS.APEX_PROFILE_DIR), headless=True, args=["--disable-sync"],
+                **G.launch_args())
         except Exception as e:  # noqa: BLE001 -- profile held
             return "busy (%s)" % type(e).__name__, None
+        guard = None
         try:
+            # THE LOCK, before Apex is touched: reads only (apex_guard). If
+            # it cannot be put on, Apex is not opened.
+            try:
+                guard = G.install(ctx, "block")
+            except Exception as e:  # noqa: BLE001
+                return "failed: lock did not go on (%s)" % type(e).__name__, None
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             try:
                 AP.goto_payroll_entry(page)
@@ -401,6 +411,8 @@ def read_apex(log=print):
         except Exception as e:  # noqa: BLE001
             return "failed: %s: %s" % (type(e).__name__, str(e)[:200]), None
         finally:
+            if guard:
+                guard.save()
             try:
                 ctx.close()
             except Exception:  # noqa: BLE001
@@ -452,6 +464,7 @@ def run_apex_check(log=print) -> int:
     """Export the newest pay period, match it to the DD by name, and file
     what was found as `probe-pnl-apex` -- counts and names, never money."""
     from automations.icd_alerts import relay as R
+    from automations.icd_alerts import apex_guard as G
 
     state = _load()
     filed = 0
@@ -479,6 +492,9 @@ def run_apex_check(log=print) -> int:
             # the browser to knocks tries again within the hour.
             if pay and weeks:
                 state["apex_ok_v1"] = dt.date.today().isoformat()
+        lock = G.summary()
+        if lock:
+            line += "; " + lock
         log("pnl: %s %s" % (rec["office_key"], line))
         R.report_fault("probe-pnl-apex", "%s: %s" % (_owner_name(rec), line),
                        office_key=rec["office_key"], log=log)

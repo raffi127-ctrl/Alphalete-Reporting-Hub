@@ -59,6 +59,7 @@ def run(log=print) -> int:
     from patchright.sync_api import sync_playwright
     from automations.carlos_payroll_pull import run as AP
     from automations.shared import browser_banner
+    from automations.icd_alerts import apex_guard as G
 
     log("")
     log("  Opening Apex in Lucy's browser.")
@@ -74,7 +75,16 @@ def run(log=print) -> int:
     try:
         with sync_playwright() as p:
             ctx = p.chromium.launch_persistent_context(
-                str(APEX_PROFILE_DIR), headless=False, args=["--disable-sync"])
+                str(APEX_PROFILE_DIR), headless=False, args=["--disable-sync"],
+                **G.launch_args())
+            # A person's hands: nothing stopped, but whatever Lucy's lock would
+            # stop is written down -- that is how the sign-in / 2-step requests
+            # get learned before Lucy signs in alone (apex_guard).
+            guard = None
+            try:
+                guard = G.install(ctx, "watch")
+            except Exception:  # noqa: BLE001 -- the list is a note here
+                pass
             browser_banner.attach(ctx, BANNER, BANNER_DETAIL)
             try:
                 page = ctx.pages[0] if ctx.pages else ctx.new_page()
@@ -102,6 +112,8 @@ def run(log=print) -> int:
                 log("  open again later.")
                 return 1
             finally:
+                if guard:
+                    guard.save()
                 try:
                     ctx.close()
                 except Exception:  # noqa: BLE001
