@@ -62,6 +62,14 @@ AUDIT_LABELS = (LABEL_SHOWED, LABEL_OFFERED, LABEL_BOB, LABEL_NS_SCHED,
                 LABEL_NS_SHOWED)
 
 # Raf's clocks.
+# THE EVENING PASS CLEANS UP THE SAME DAY (Raf, 2026-11-17). A second round
+# that is over and was marked NEITHER "showed up" NOR "offered" is somebody who
+# did not come, and keeping them in reception's contacts for a week teaches
+# people the group is full of names that mean nothing. The earlier passes never
+# do this: at 6am and 11:30 the day is still running and a blank only means
+# nobody has marked it yet, which is the same rule the onboarding board lives
+# by. The contact is moved to FORMER_GROUP, not destroyed.
+EVENING_HOUR = 19
 NOT_HIRED_DAYS = 7
 NO_SHOW_DAYS = 21
 BADGE_DAYS = 21

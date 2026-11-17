@@ -23,12 +23,12 @@ def test_text_part_shows_the_url_and_html_puts_it_on_the_word():
 
     # plain text keeps the URL visible -- a stranger can see where it goes
     assert "Slack <{}>".format(SLACK) in text
-    assert "Skool <{}>".format(SKOOL) in text
+    assert "Skool COMMUNITIES <{}>".format(SKOOL) in text
     assert "[[" not in text
 
     # HTML puts the link on the word
     assert '<a href="{}">Slack</a>'.format(SLACK) in html
-    assert '<a href="{}">Skool</a>'.format(SKOOL) in html
+    assert '<a href="{}">Skool COMMUNITIES</a>'.format(SKOOL) in html
     assert "[[" not in html
 
 

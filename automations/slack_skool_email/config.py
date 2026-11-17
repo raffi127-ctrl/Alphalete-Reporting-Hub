@@ -90,12 +90,11 @@ download these three apps and set up your accounts.
 
 1. [[Slack->slack]] - download the app first, then join through this link.
 
-2. [[Skool->skool]] - download the app first, then join through this link.
+2. [[Skool COMMUNITIES->skool]] - download the app first, then join through this link.
 
 3. TeleMapper 3 by KLE - just download it, no login needed yet.
 
-You'll also get a separate email from Blueink with your I-9 and W-4. Please
-fill those out before you come in - it speeds everything up on your first day.
+You'll also get a separate email from **Blueink** with your **I-9 and W-4**. Please fill those out before you come in - it speeds everything up on your first day.
 
 See you soon!
 

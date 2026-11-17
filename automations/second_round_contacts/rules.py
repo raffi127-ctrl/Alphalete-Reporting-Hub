@@ -9,7 +9,8 @@ from automations.second_round_contacts import config as C
 KEEP, WAIT, DELETE, HIRED = "keep", "wait", "delete", "hired"
 
 
-def decide(entry: dict, facts: dict, today: dt.date) -> Tuple[str, str]:
+def decide(entry: dict, facts: dict, today: dt.date,
+           evening: bool = False) -> Tuple[str, str]:
     """(verdict, reason) for one tracked contact.
 
     facts: offered / bob / ns_sched / ns_showed -> the date that list first
@@ -19,6 +20,14 @@ def decide(entry: dict, facts: dict, today: dt.date) -> Tuple[str, str]:
     if entry.get("status") == "hired":
         return KEEP, "hired and badged -- kept for good (rehires)"
     sr = dt.date.fromisoformat(entry["second_round"])
+    # THE EVENING PASS, on the day itself. Their second round has been and
+    # gone and nobody marked them showed up or offered, so they are not
+    # coming. Only ever on the evening run -- earlier in the day a blank
+    # means "nobody has said yet" (Raf, 2026-11-17).
+    if evening and sr == today and not facts.get("showed") \
+            and not facts.get("offered"):
+        return DELETE, ("second round %s: neither showed up nor offered by "
+                        "the end of the day" % sr)
     showed = facts.get("ns_showed")
     if showed:
         prog = facts.get("progress")

@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alphalete.second-round-contacts-evening</string>
+
+    <!-- The 7pm 2nd-round scan + end-of-day cleanup (Raf, 2026-11-17).
+         LUCY 1: that is the box with the reception accounts' contacts tokens.
+         Install:  lucy rerun install_second_round_contacts_evening_agent
+         Path is the laptop placeholder; install_agent.py rewrites it to that
+         machine's repo path.
+
+         NOTE ON COMMENTS IN THIS FILE: never write two hyphens together inside
+         an XML comment. It ends the comment early and makes the plist
+         unparseable to plistlib even though plutil still accepts it, which
+         shows up as a Hub card that cries wolf forever. The blueink docs plist
+         carried exactly that defect from the day it was written until
+         2026-11-16, so no command line flags are spelled out here. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/megan/1st Claude Folder/deploy/second_round_contacts_evening.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/megan/1st Claude Folder</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/megan/1st Claude Folder</string>
+    </dict>
+
+    <!-- 7:00pm EVERY DAY, machine LOCAL time. No Weekday key: second rounds
+         are booked any day of the week.
+
+         WHY NOT THE 4am BATCH. A 7pm start would hold every machine's
+         orchestrator open till 8pm and delay every stuck-report alert with it,
+         which test_schedule_config.py refuses on purpose. The 6am and 11:30am
+         passes of the same scan DO live in the batch.
+
+         WHY THE EVENING. The cleanup step removes a second round that happened
+         today and was marked neither showed up nor offered. That only reads
+         true once the day is over: earlier, a blank means nobody has marked it
+         yet. TIME KNOB: edit StartCalendarInterval here, not the wrapper. -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>19</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/second-round-contacts-evening.launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/second-round-contacts-evening.launchd.err.log</string>
+</dict>
+</plist>

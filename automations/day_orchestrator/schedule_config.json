@@ -15582,6 +15582,29 @@
    "timeout_minutes": 45,
    "verify": null
   },
+  "install_second_round_contacts_evening_agent": {
+   "on_scheduler": false,
+   "machine": "Lucy 1",
+   "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_second_round_contacts_evening_agent --machine \"Lucy 1\"` can install/refresh the STANDALONE com.alphalete.second-round-contacts-evening LaunchAgent (19:00 machine-local, every day, deploy/second_round_contacts_evening.sh). Lucy 1 because that is the box with the reception accounts' contacts tokens. The 6am and 11:30am passes of the same scan are ordinary scheduler entries (second_round_contacts, second_round_contacts_pm); only the 7pm one needs its own clock, because a 7pm not_before is not allowed in the batch. install_agent writes no Sheet data; it loads the plist.",
+   "display_name": "Install 2nd-round evening scan + cleanup (daily 7pm)",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.day_orchestrator.install_agent"
+   ],
+   "base_args": [
+    "second-round-contacts-evening"
+   ],
+   "cadence": {
+    "weekdays": [],
+    "not_before": "19:00"
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 5,
+   "verify": null
+  },
   "install_icd_onboarding_no_shows_agent": {
    "on_scheduler": false,
    "machine": "Lucy 3",
@@ -17601,7 +17624,7 @@
    "order": 62.7,
    "on_scheduler": true,
    "machine": "Lucy 1",
-   "display_name": "2nd rounds -> owners' reception contacts (noon)",
+   "display_name": "2nd rounds -> owners' reception contacts (6am)",
    "command": [
     "automations.second_round_contacts.run"
    ],
@@ -17609,7 +17632,7 @@
     "--write"
    ],
    "cadence": {
-    "not_before": "12:00",
+    "not_before": "06:00",
     "weekdays": [
      0,
      1,
@@ -17629,14 +17652,14 @@
    "timeout_minutes": 20,
    "verify": null,
    "report_id": "linkedin-2nd-round-contacts",
-   "_note": "Raf 2026-10-30 (#l10-alphalete 'Daily Update / Google Contacts / Lucy ECHO for New Owners'): every second round of a new owner's office lands in that owner's reception Gmail contacts (group '2nd Rounds', name 'First Last (2R m/d)'), from the '2R Contacts' tab on the Org workbook (Owner | AppStream office | reception email | Active). Carlos 2026-10-31: owners mark ApplicantStream late, so two passes a day; each re-reads the week. Dry by default; the card passes --write. Needs that account's contacts-rw-token-<local>.json on Lucy 1."
+   "_note": "Raf 2026-10-30 (#l10-alphalete 'Daily Update / Google Contacts / Lucy ECHO for New Owners'): every second round of a new owner's office lands in that owner's reception Gmail contacts (group '2nd Rounds', name 'First Last (2R m/d)'), from the '2R Contacts' tab on the Org workbook (Owner | AppStream office | reception email | Active). Carlos 2026-10-31: owners mark ApplicantStream late, so two passes a day; each re-reads the week. Dry by default; the card passes --write. Raf 2026-11-17 (onboarding review): the scan runs 6am / 11:30am / 7pm machine-local, replacing the old noon + 3:30pm pair. The 7pm pass is its own LaunchAgent (deploy/second_round_contacts_evening.sh) -- the 4am batch does not stay up that late. Needs that account's contacts-rw-token-<local>.json on Lucy 1."
   },
   "second_round_contacts_pm": {
    "close_on": "exit_zero",
    "order": 62.8,
    "on_scheduler": true,
    "machine": "Lucy 1",
-   "display_name": "2nd rounds -> owners' reception contacts (3:30pm)",
+   "display_name": "2nd rounds -> owners' reception contacts (11:30am)",
    "command": [
     "automations.second_round_contacts.run"
    ],
@@ -17644,7 +17667,7 @@
     "--write"
    ],
    "cadence": {
-    "not_before": "15:30",
+    "not_before": "11:30",
     "weekdays": [
      0,
      1,
@@ -17664,7 +17687,7 @@
    "timeout_minutes": 20,
    "verify": null,
    "report_id": "linkedin-2nd-round-contacts",
-   "_note": "Raf 2026-10-30 (#l10-alphalete 'Daily Update / Google Contacts / Lucy ECHO for New Owners'): every second round of a new owner's office lands in that owner's reception Gmail contacts (group '2nd Rounds', name 'First Last (2R m/d)'), from the '2R Contacts' tab on the Org workbook (Owner | AppStream office | reception email | Active). Carlos 2026-10-31: owners mark ApplicantStream late, so two passes a day; each re-reads the week. Dry by default; the card passes --write. Needs that account's contacts-rw-token-<local>.json on Lucy 1."
+   "_note": "Raf 2026-10-30 (#l10-alphalete 'Daily Update / Google Contacts / Lucy ECHO for New Owners'): every second round of a new owner's office lands in that owner's reception Gmail contacts (group '2nd Rounds', name 'First Last (2R m/d)'), from the '2R Contacts' tab on the Org workbook (Owner | AppStream office | reception email | Active). Carlos 2026-10-31: owners mark ApplicantStream late, so two passes a day; each re-reads the week. Dry by default; the card passes --write. Raf 2026-11-17 (onboarding review): the scan runs 6am / 11:30am / 7pm machine-local, replacing the old noon + 3:30pm pair. The 7pm pass is its own LaunchAgent (deploy/second_round_contacts_evening.sh) -- the 4am batch does not stay up that late. Needs that account's contacts-rw-token-<local>.json on Lucy 1."
   },
   "second_round_contacts_audit": {
    "close_on": "exit_zero",

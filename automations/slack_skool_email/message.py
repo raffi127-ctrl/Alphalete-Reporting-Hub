@@ -65,6 +65,7 @@ def render_text(*, slack_link: str = "", skool_link: str = "") -> str:
     urls = _links(slack_link, skool_link)
     out = _LINK_RE.sub(
         lambda m: "{} <{}>".format(m.group(1), urls[m.group(2)]), body)
+    out = re.sub(r"\*\*(.+?)\*\*", r"\1", out)   # the emphasis is HTML-only
     if "[[" in out:
         raise CopyError("unrendered link marker left in the body: {!r}"
                         .format(out[out.index("[["):][:40]))
@@ -91,7 +92,13 @@ def render_html(*, slack_link: str = "", skool_link: str = "") -> str:
         return '<a href="{}">{}</a>'.format(
             _html.escape(urls[m.group(2)], quote=True), m.group(1))
 
-    linked = marker.sub(_anchor, escaped)
+    # **word** -> bigger and blue. Raf, 2026-11-17: the two things they must
+    # actually DO were being skimmed past. Substituted after escaping, so the
+    # copy still cannot inject markup.
+    linked = re.sub(r"\*\*(.+?)\*\*",
+                    lambda m: '<span style="color:#1a56db;font-size:17px;'
+                              'font-weight:bold">%s</span>' % m.group(1),
+                    marker.sub(_anchor, escaped))
     if "[[" in linked:
         raise CopyError("unrendered link marker left in the HTML body")
 

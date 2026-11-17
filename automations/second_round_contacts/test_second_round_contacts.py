@@ -46,8 +46,67 @@ class Rules(unittest.TestCase):
         f = {"ns_showed": dt.date(2026, 9, 1), "progress": None}
         self.assertEqual(rules.decide(ent(), f, T)[0], rules.WAIT)
 
+    # --- the 7pm pass (Raf, 2026-11-17) ---------------------------------
+
+    def test_blank_on_the_day_waits_until_the_evening(self):
+        """At 6am and 11:30 a blank only means nobody has marked it yet."""
+        e = ent("2026-10-31")
+        self.assertEqual(rules.decide(e, {}, T)[0], rules.WAIT)
+
+    def test_evening_removes_neither_showed_nor_offered(self):
+        v, why = rules.decide(ent("2026-10-31"), {}, T, evening=True)
+        self.assertEqual(v, rules.DELETE)
+        self.assertIn("neither showed up nor offered", why)
+
+    def test_evening_keeps_someone_marked_showed_up(self):
+        f = {"showed": dt.date(2026, 10, 31)}
+        self.assertEqual(rules.decide(ent("2026-10-31"), f, T, evening=True)[0],
+                         rules.WAIT)
+
+    def test_evening_keeps_someone_offered_the_job(self):
+        f = {"offered": dt.date(2026, 10, 31)}
+        self.assertEqual(rules.decide(ent("2026-10-31"), f, T, evening=True)[0],
+                         rules.WAIT)
+
+    def test_evening_only_judges_todays_second_rounds(self):
+        """Yesterday's blanks keep the normal week-long grace, not a same-day
+        cut: the evening rule is about a day that has just finished."""
+        self.assertEqual(rules.decide(ent("2026-10-30"), {}, T, evening=True)[0],
+                         rules.WAIT)
+
+    def test_evening_never_touches_a_graduated_contact(self):
+        self.assertEqual(rules.decide(ent("2026-10-31", status=S.HIRED), {}, T,
+                                      evening=True)[0], rules.KEEP)
+
     def test_hired_is_kept_forever(self):
         self.assertEqual(rules.decide(ent(status=S.HIRED), {}, dt.date(2027, 6, 1))[0], rules.KEEP)
+
+
+class EveningFlag(unittest.TestCase):
+    def test_evening_implies_audit(self):
+        """--evening alone used to be silently ignored on an adds run, which
+        reads as 'the cleanup ran and found nothing'."""
+        with mock.patch.object(RUN.R, "open_tab", return_value=None), \
+                mock.patch.object(RUN.R, "read", return_value=[]), \
+                mock.patch.object(RUN, "run_audit", return_value=0) as audit, \
+                mock.patch.object(RUN, "run_pass", return_value=0) as adds:
+            RUN.main(["--evening"])
+        self.assertEqual(adds.call_count, 0)
+        # no active owners, so neither runs -- the point is that it did not
+        # fall through to the adds branch.
+        self.assertEqual(audit.call_count, 0)
+
+    def test_evening_takes_the_audit_branch(self):
+        owner = mock.Mock(owner="Raf", label="Raf", active=True, account="raf")
+        with mock.patch.object(RUN.R, "open_tab", return_value=None), \
+                mock.patch.object(RUN.R, "read", return_value=[owner]), \
+                mock.patch.object(RUN.K, "has_token", return_value=True), \
+                mock.patch.object(RUN, "run_audit", return_value=0) as audit, \
+                mock.patch.object(RUN, "run_pass", return_value=0) as adds:
+            RUN.main(["--evening"])
+        self.assertEqual(adds.call_count, 0)
+        self.assertEqual(audit.call_count, 1)
+        self.assertTrue(audit.call_args.kwargs["evening"])
 
 
 class Roster(unittest.TestCase):

@@ -204,6 +204,7 @@ def gather_facts(app, offices: List[str], keys: set, today: dt.date) -> Dict[str
 
 
 def run_audit(owners: List[R.Owner], *, write: bool, ownerville: bool = True,
+              evening: bool = False,
               ws=None, today: Optional[dt.date] = None) -> int:
     from automations.applicant_tracker.applicantstream import session
     today = today or dt.date.today()
@@ -260,7 +261,7 @@ def run_audit(owners: List[R.Owner], *, write: bool, ownerville: bool = True,
             e = st[account][k]
             name = " ".join(x for x in (e.get("first_name"), e.get("last_name")) if x)
             f = dict(f, progress=progress.get(name))
-            verdict, why = rules.decide(e, f, today)
+            verdict, why = rules.decide(e, f, today, evening=evening)
             if verdict == rules.DELETE:
                 deleted += 1
                 _log("    %s %s: %s" % ("remove" if write else "would remove", e.get("display", name), why))
@@ -299,10 +300,22 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--write", action="store_true", help="create / remove contacts (default: dry run)")
     ap.add_argument("--audit", action="store_true", help="run Raf's removal rules instead of the adds")
+    ap.add_argument("--evening", action="store_true",
+                    help="the end-of-day pass: also drop today's second rounds "
+                         "that were marked neither showed up nor offered. "
+                         "Never pass this before the day is over -- earlier, a "
+                         "blank only means nobody has marked it yet.")
     ap.add_argument("--owner", default=None, help="only this roster row (name as on the tab)")
     ap.add_argument("--date", default=None, help="adds: read only this day (YYYY-MM-DD)")
     ap.add_argument("--no-ownerville", action="store_true", help="audit without the View Progress check")
     args = ap.parse_args(argv)
+    # The evening rule is a REMOVAL rule, and removals only happen on the audit
+    # side. Passing --evening on an adds run used to be silently ignored, which
+    # reads as "the 7pm cleanup ran and found nothing" -- so it implies --audit
+    # instead of doing nothing.
+    if args.evening and not args.audit:
+        args.audit = True
+        _log("--evening implies --audit (removals only happen on the audit pass)")
     C.OUT_DIR.mkdir(parents=True, exist_ok=True)
     try:
         ws = R.open_tab()
@@ -325,7 +338,9 @@ def main(argv=None) -> int:
         _log("nothing to do")
         return 0
     if args.audit:
-        failed = run_audit(active, write=args.write, ownerville=not args.no_ownerville, ws=ws)
+        failed = run_audit(active, write=args.write,
+                           ownerville=not args.no_ownerville,
+                           evening=args.evening, ws=ws)
     else:
         try:
             days = [dt.date.fromisoformat(args.date)] if args.date else days_to_read(dt.date.today())
