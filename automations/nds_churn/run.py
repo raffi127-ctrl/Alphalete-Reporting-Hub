@@ -287,6 +287,9 @@ def main(argv=None) -> int:
     ap.add_argument("--url-extra", default="", metavar="PARAMS",
                     help="with --captain: extra query parameters for the ORDERLOG "
                          "export URL (a Tableau URL filter), e.g. IF%%2FOOF=IF%%2COOF")
+    ap.add_argument("--search-range", default="", metavar="LABEL",
+                    help="with --captain: the export's 'Search Date Range' value, URL-encoded "
+                         "(default Order%%20Date), e.g. Activation%%20Date")
     a = ap.parse_args(argv)
     log = print
     today = dt.date.fromisoformat(a.today) if a.today else dt.date.today()
@@ -294,7 +297,7 @@ def main(argv=None) -> int:
         from automations.nds_churn import captain_report as CR
         return CR.run(a.captain, today, dry_run=a.dry_run, from_file=a.from_file,
                       dm=a.dm, skip_reconcile=a.skip_reconcile, url_extra=a.url_extra,
-                      log=log)
+                      search_range=a.search_range, log=log)
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     from automations.recruiting_report.fill import _retry, worksheet_ci
     from automations.vantura_churn import fill as VF

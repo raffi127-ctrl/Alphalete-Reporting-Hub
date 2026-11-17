@@ -102,7 +102,7 @@ def _looks_like_csv(b: bytes) -> bool:
 
 
 def pull_long(today: dt.date, log=print, days: int = LOOKBACK_DAYS,
-              url_extra: str = "") -> Path:
+              url_extra: str = "", search_range: str = "") -> Path:
     """The NDS-SN ORDERLOG over `days` of Order Date, cached per day beside
     the daily 60-day file (its own name, so nds_metrics never reuses it).
     `url_extra` = extra query parameters appended as given (a Tableau URL
@@ -110,7 +110,8 @@ def pull_long(today: dt.date, log=print, days: int = LOOKBACK_DAYS,
     import hashlib
     from automations.office_metrics import nds_orderlog as NO
     from automations.shared.tableau_patchright import tableau_session
-    tag = f"_{hashlib.md5(url_extra.encode()).hexdigest()[:6]}" if url_extra else ""
+    key = url_extra + "|" + search_range
+    tag = f"_{hashlib.md5(key.encode()).hexdigest()[:6]}" if key != "|" else ""
     out = OUT_DIR / f"nds_orderlog_{days}d{tag}_{today.isoformat()}.csv"
     out.parent.mkdir(parents=True, exist_ok=True)
     if out.exists() and out.stat().st_size > 500 and _looks_like_csv(out.read_bytes()):
@@ -119,6 +120,10 @@ def pull_long(today: dt.date, log=print, days: int = LOOKBACK_DAYS,
     if out.exists():
         out.unlink()
     url = NO._orderlog_url(today - dt.timedelta(days=days), today)
+    if search_range:                      # which date the Start/End window applies to
+        url = url.replace("Search%20Date%20Range=Order%20Date",
+                          f"Search%20Date%20Range={search_range}")
+        log(f"[captain] Search Date Range = {search_range}")
     if url_extra:
         url += "&" + url_extra.lstrip("&?")
         log(f"[captain] extra URL params: {url_extra}")
@@ -703,10 +708,21 @@ def missing_reps(path: Path, ix: dict, view: Optional[dict], rep: dict) -> List[
             own = str(r[i_owner]).strip().upper().splitlines()[0] if i_owner is not None else "?"
             found[n][own].append((C.parse_date(r[i_od]) if i_od is not None else None,
                                   C.parse_date(r[i_po]) if i_po is not None else None))
+    # Spelling fallback: any Rep cell carrying the name's last word.
+    lasts = {n: n.split()[-1] for n in want if len(n.split()[-1]) > 3}
+    fuzzy: Dict[str, collections.Counter] = collections.defaultdict(collections.Counter)
+    for r in C.read_rows(path)[1:]:
+        if i_rep is None or len(r) <= i_rep:
+            continue
+        cell = str(r[i_rep]).strip().lower()
+        for n, last in lasts.items():
+            if n not in found and last in cell:
+                fuzzy[n][str(r[i_rep]).strip()] += 1
     out = []
     for n, disp in sorted(want.items()):
         if n not in found:
-            out.append(f"  {disp}: NOT in the export at all")
+            near = "; ".join(f"{k} x{v}" for k, v in fuzzy[n].most_common(3)) if fuzzy.get(n) else ""
+            out.append(f"  {disp}: NOT in the export at all" + (f" (last-name matches: {near})" if near else ""))
             continue
         for own, dates in found[n].items():
             ods = [d for d, _ in dates if d]
@@ -731,7 +747,8 @@ def shot_to_tab(png: Path, log=print, tab: str = SHOT_TAB) -> None:
 
 def run(owner_key: str, today: dt.date, *, dry_run: bool = False,
         from_file: Optional[str] = None, dm: Optional[str] = None,
-        skip_reconcile: bool = False, url_extra: str = "", log=print) -> int:
+        skip_reconcile: bool = False, url_extra: str = "", search_range: str = "",
+        log=print) -> int:
     from automations.nds_churn.run import write_diag
     key = (owner_key or "").strip().lower()
     if key not in OWNERS:
@@ -739,7 +756,8 @@ def run(owner_key: str, today: dt.date, *, dry_run: bool = False,
         return 2
     owner = OWNERS[key]
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    path = Path(from_file) if from_file else pull_long(today, log, url_extra=url_extra)
+    path = Path(from_file) if from_file else pull_long(today, log, url_extra=url_extra,
+                                                       search_range=search_range)
     header, ix, lines = C.load_owner_lines(path, log=log, owner_tokens=owner["tokens"])
     field_counts = {f: export_field_values(path, ix, f) for f in ("if_oof", "measure", "product")}
     log("[captain] export field values: " + "; ".join(
@@ -761,7 +779,8 @@ def run(owner_key: str, today: dt.date, *, dry_run: bool = False,
     diag = diag_lines(owner, rep, today, recon, view, len(lines), owner_cells)
     diag.insert(3, "EXPORT FIELD VALUES: " + "; ".join(
         f"{f}: " + ", ".join(f"{k} x{v}" for k, v in vals) for f, vals in field_counts.items())
-        + (f"; URL EXTRA: {url_extra}" if url_extra else ""))
+        + (f"; URL EXTRA: {url_extra}" if url_extra else "")
+        + (f"; SEARCH RANGE: {search_range}" if search_range else ""))
     if extra:
         diag += ["VIEW REPS MISSING FROM OUR OWNER SLICE:"] + extra
     for ln in diag:
