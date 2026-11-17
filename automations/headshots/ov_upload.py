@@ -63,9 +63,24 @@ def _campaign_select(page):
 
 def _search_box(page):
     """DataTables' search input top-right of the progress table."""
+    # A page MID-RELOAD has no search box yet. Show All and a campaign change
+    # now reload the whole View Progress page (2026-11-16: "&showViewRange=0"),
+    # and on a big office that reload outlasts 20s -- every new start in Raf's
+    # owner submit died here with "waiting for navigation to finish". Let the
+    # reload land first, then give the box a real wait.
+    _wait_loaded(page)
     box = page.locator("input[type='search']:visible").first
-    box.wait_for(state="visible", timeout=20000)
+    box.wait_for(state="visible", timeout=60000)
     return box
+
+
+def _wait_loaded(page, timeout: int = 120000) -> None:
+    """Wait for the page's LOAD event -- not networkidle, which OwnerVille
+    never reaches (it keeps a background connection open)."""
+    try:
+        page.wait_for_load_state("load", timeout=timeout)
+    except Exception:                                       # noqa: BLE001
+        pass
 
 
 def _rep_row(page, name: str, *, debug: bool = False,
@@ -221,23 +236,28 @@ def _show_all(page) -> None:
     if radios.count() >= 2:
         target = radios.last
         try:
-            target.check(timeout=5000)
-        except Exception:
-            # The input sits under a styled span — actionability never
-            # settles (mini probe #4). Force it, then raw JS as last resort.
+            already = target.is_checked()
+        except Exception:                                   # noqa: BLE001
+            already = False
+        if not already:
+            # ONE click. The radio now RELOADS the page (URL gains
+            # "&showViewRange=0"), so check() -- which clicks and then reads
+            # the box back -- loses the element to the reload and raises, and
+            # the old fallbacks then clicked AGAIN and again, each click
+            # restarting the slow Show All load (2026-11-16: 8 of Raf's owner
+            # submits timed out "waiting for navigation to finish").
             try:
-                target.click(force=True, timeout=5000)
-            except Exception:
+                target.click(force=True, timeout=5000, no_wait_after=True)
+            except Exception:                               # noqa: BLE001
+                # The input sits under a styled span -- raw JS as last resort.
                 target.evaluate(
                     "el => { el.checked = true;"
                     " el.dispatchEvent(new Event('click',  {bubbles: true}));"
                     " el.dispatchEvent(new Event('change', {bubbles: true})); }")
     else:
-        page.get_by_text("Show All").first.click()
-    try:
-        page.wait_for_load_state("networkidle", timeout=60000)
-    except Exception:
-        pass
+        page.get_by_text("Show All").first.click(no_wait_after=True)
+    page.wait_for_timeout(1000)     # let the reload START before waiting on it
+    _wait_loaded(page)
     page.wait_for_timeout(1500)     # the Show All table is even bigger
 
 
