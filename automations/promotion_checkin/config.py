@@ -32,10 +32,24 @@ OWNER = os.environ.get("PROMO_OWNER", "Rafael Hidalgo")
 # Post as Jiraiya (the /dd bot). #alphalete-lvl1-chat is where the Level 1
 # leaders live; Jiraiya must be a MEMBER of it to post.
 CHANNEL_ID = os.environ.get("PROMO_CHANNEL_ID", "C09JG28CD27")   # #alphalete-lvl1-chat
-# Every channel the live card goes to (same cadence, one board read, N posts).
+
+# TWO DIFFERENT CARDS, same cadence (Megan 2026-11-17):
+#
+#   BOARD card  -> #alphalete-lvl1-chat. Pick-list read off OUR Sales Board.
+#                  This office only, so every rep on it is one of Raf's and the
+#                  trainer/owner are already known. UNCHANGED.
+#   ORG card    -> #top-leaders-alphalete-org. The org's leaders are not on
+#                  Raf's board, so there is nothing to pick from: the card
+#                  opens a short form instead (rep name + trainer typed in,
+#                  ICD and level picked). See message.build_org_message.
+#
 # #top-leaders-alphalete-org is PRIVATE — Jiraiya must be invited (Megan 2026-11-09).
-CHANNEL_IDS = tuple(c.strip() for c in os.environ.get(
-    "PROMO_CHANNEL_IDS", f"{CHANNEL_ID},C067TTGFEFR").split(",") if c.strip())
+LVL1_CHANNEL_IDS = tuple(c.strip() for c in os.environ.get(
+    "PROMO_CHANNEL_IDS", CHANNEL_ID).split(",") if c.strip())
+ORG_CHANNEL_IDS = tuple(c.strip() for c in os.environ.get(
+    "PROMO_ORG_CHANNEL_IDS", "C067TTGFEFR").split(",") if c.strip())
+# Kept for anything that still asks for "every channel this posts to".
+CHANNEL_IDS = LVL1_CHANNEL_IDS + ORG_CHANNEL_IDS
 # Preview target: DM this user the interactive card before it goes to the channel.
 PREVIEW_USER = os.environ.get("PROMO_PREVIEW_USER", "").strip()
 
@@ -71,3 +85,15 @@ ACTION_LEVEL = "promo_pick_level"         # the "Promoted to" single-select
 ACTION_REMOVE = "promo_remove_open"       # "Remove a mistake" button (opens modal)
 REMOVE_CALLBACK = "promo_remove_modal"    # the remove modal's callback_id
 ACTION_REMOVE_PICK = "promo_remove_pick"  # the remove modal's multi-select
+
+# --- The ORG card (#top-leaders-alphalete-org): type-it-in form --------------
+# Slack allows free-text inputs only in a MODAL (an `input` block is invalid in
+# a posted message), so the org card is one button that opens the form.
+ACTION_ADD = "promo_add_open"             # "Add a promotion" button (opens form)
+MANUAL_CALLBACK = "promo_manual_modal"    # the form's callback_id
+# One block_id per field; the handler reads these back off the submission.
+FIELD_FIRST = "promo_first"
+FIELD_LAST = "promo_last"
+FIELD_TRAINER = "promo_trainer"
+FIELD_ICD = "promo_icd"
+FIELD_LEVEL = "promo_level"

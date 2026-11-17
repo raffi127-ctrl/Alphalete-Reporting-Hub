@@ -17,7 +17,26 @@ from . import message as M
 from . import recognition as R
 
 
-_BUTTONS = (C.ACTION_SUBMIT, C.ACTION_NONE, C.ACTION_REMOVE)
+_BUTTONS = (C.ACTION_SUBMIT, C.ACTION_NONE, C.ACTION_REMOVE, C.ACTION_ADD)
+
+
+def _is_org_card(payload) -> bool:
+    """True for the #top-leaders-alphalete-org card (the type-it-in one).
+
+    Read off the CARD's own blocks, not the channel id, so a preview DM of the
+    org card behaves like the org card."""
+    for b in (payload.get("message") or {}).get("blocks", []):
+        for el in b.get("elements", []) or []:
+            if el.get("action_id") == C.ACTION_ADD:
+                return True
+    return False
+
+
+def _org_owner_scope():
+    """The Owner strings the ORG card is allowed to list/clear: every ICD in the
+    org EXCEPT Raf's own, whose rows belong to the #alphalete-lvl1-chat card."""
+    from . import icds as I
+    return {v for v in I.owner_values() if v.strip().lower() != C.OWNER.strip().lower()}
 
 
 def is_promo_action(payload) -> bool:
@@ -71,7 +90,10 @@ def handle_action(web, payload, *, write_sheet=None, verbose=False):
     if action is None:
         return {"noop": True}                 # a mid-pick select change — ignore
 
-    # "Remove a mistake" — open a modal listing only THIS office's logged reps.
+    # The org card's "Add a promotion" — open the type-it-in form.
+    if action == C.ACTION_ADD:
+        return _open_manual_modal(web, payload)
+    # "Remove a mistake" — open a modal listing only THIS CARD's logged reps.
     if action == C.ACTION_REMOVE:
         return _open_remove_modal(web, payload)
     # A card built with preview=True stamps its submit button value="preview";
@@ -147,12 +169,14 @@ def _open_remove_modal(web, payload):
     clicked = next((a for a in payload.get("actions", [])
                     if a.get("action_id") == C.ACTION_REMOVE), None)
     preview = (clicked or {}).get("value") == "preview"
+    org = _is_org_card(payload)
     try:
-        logged = R.logged_this_week()
+        logged = (R.logged_this_week(owners=_org_owner_scope()) if org
+                  else R.logged_this_week())
     except Exception as e:                     # noqa: BLE001
         logged = []
         print(f"[promo] logged_this_week failed {type(e).__name__}: {e}", flush=True)
-    view = M.remove_modal(week, logged, channel=ch, ts=ts, preview=preview)
+    view = M.remove_modal(week, logged, channel=ch, ts=ts, preview=preview, org=org)
     web.views_open(trigger_id=trigger, view=view)
     return {"remove": "opened", "n_logged": len(logged)}
 
@@ -179,7 +203,9 @@ def handle_remove_submission(web, payload, *, write_sheet=None):
     week = meta.get("week", "this week")
     if not picked:
         return {"removed": []}
-    res = R.remove_promotions(picked, dry_run=not write_sheet)
+    res = (R.remove_promotions(picked, owners=_org_owner_scope(),
+                               dry_run=not write_sheet) if meta.get("org")
+           else R.remove_promotions(picked, dry_run=not write_sheet))
     ch, ts = meta.get("channel"), meta.get("ts")
     blocks = M.removed_blocks(week, res, actor=actor)
     if ch and ts:
@@ -189,6 +215,73 @@ def handle_remove_submission(web, payload, *, write_sheet=None):
         web.chat_postMessage(channel=ch, blocks=blocks,
                              text=f"Removed {res.get('n', 0)} from {res.get('tab')}.")
     return {"removed": res.get("removed", []), "wrote": bool(write_sheet)}
+
+
+def _open_manual_modal(web, payload):
+    """Open the org card's form (rep + trainer typed in, ICD + level picked)."""
+    trigger = payload.get("trigger_id")
+    if not trigger:
+        return {"manual": "no_trigger"}
+    clicked = next((a for a in payload.get("actions", [])
+                    if a.get("action_id") == C.ACTION_ADD), None)
+    view = M.manual_modal(
+        _week_from_message(payload),
+        channel=(payload.get("channel") or {}).get("id", ""),
+        ts=(payload.get("message") or {}).get("ts", ""),
+        preview=(clicked or {}).get("value") == "preview")
+    web.views_open(trigger_id=trigger, view=view)
+    return {"manual": "opened"}
+
+
+def _field(vals, block_id):
+    """A form field's value — plain text or the picked option."""
+    act = (vals.get(block_id) or {}).get("v") or {}
+    if act.get("selected_option"):
+        return (act["selected_option"].get("value") or "").strip()
+    return (act.get("value") or "").strip()
+
+
+def handle_manual_submission(web, payload, *, write_sheet=None):
+    """Log ONE promotion typed into the org card's form.
+
+    The ICD picked becomes the recognition row's Owner — that's the whole point
+    of this card: the org's reps are not on our Sales Board, so nothing here is
+    inferred from it."""
+    if write_sheet is None:
+        write_sheet = _write_enabled()
+    import json
+    from automations.shared.name_case import titlecase_name
+    meta = {}
+    try:
+        meta = json.loads(payload.get("view", {}).get("private_metadata") or "{}")
+    except Exception:                          # noqa: BLE001
+        pass
+    if meta.get("preview"):
+        write_sheet = False
+    actor = (payload.get("user") or {}).get("id", "")
+    vals = (payload.get("view", {}).get("state") or {}).get("values") or {}
+    first = titlecase_name(_field(vals, C.FIELD_FIRST))
+    last = titlecase_name(_field(vals, C.FIELD_LAST))
+    trainer = titlecase_name(_field(vals, C.FIELD_TRAINER))
+    icd = _field(vals, C.FIELD_ICD)
+    level = _field(vals, C.FIELD_LEVEL) or C.LEVEL_CHOICES[0][1]
+    rep = " ".join(x for x in (first, last) if x).strip()
+    week = meta.get("week", "this week")
+    if not rep:
+        return {"manual": "empty"}
+
+    res = R.append_promotions(
+        [R.Promotion(name=rep, trainer=trainer, recognition=level, owner=icd)],
+        dry_run=not write_sheet)
+    blocks = M.manual_logged_blocks(week, rep, trainer, icd, level, res, actor=actor)
+    ch, ts = meta.get("channel"), meta.get("ts")
+    fallback = f"Logged {rep} ({level}) to {res.get('tab')}."
+    if ch and ts:
+        web.chat_postMessage(channel=ch, thread_ts=ts, blocks=blocks, text=fallback)
+    elif ch:
+        web.chat_postMessage(channel=ch, blocks=blocks, text=fallback)
+    return {"manual": "logged", "rep": rep, "icd": icd, "level": level,
+            "result": res, "actor": actor, "wrote": bool(write_sheet)}
 
 
 def _week_from_message(payload):

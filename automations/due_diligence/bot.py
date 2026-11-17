@@ -295,6 +295,17 @@ def _handler(client, req):
         except Exception as e:                # noqa: BLE001 — never crash the listener
             print(f"[knocks] dispatch failed {type(e).__name__}: {e}", flush=True)
         return
+    # Promotion Check-In — the org card's "Add a promotion" form came back.
+    if req.type == "interactive" and req.payload.get("type") == "view_submission" \
+            and req.payload.get("view", {}).get("callback_id") == "promo_manual_modal":
+        client.send_socket_mode_response(SocketModeResponse(envelope_id=req.envelope_id))
+        try:
+            from automations.promotion_checkin import handler as promo
+            threading.Thread(target=promo.handle_manual_submission,
+                             args=(client.web_client, req.payload), daemon=True).start()
+        except Exception as e:                # noqa: BLE001 — never crash the listener
+            print(f"[promo] manual dispatch failed {type(e).__name__}: {e}", flush=True)
+        return
     # Promotion Check-In "Remove a mistake" modal submit.
     if req.type == "interactive" and req.payload.get("type") == "view_submission" \
             and req.payload.get("view", {}).get("callback_id") == "promo_remove_modal":

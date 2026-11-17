@@ -89,13 +89,21 @@ def append_promotions(promos, *, sheet_id: str = None, dry_run: bool = True):
             "link": link, "n": len(rows)}
 
 
-def logged_this_week(*, sheet_id: str = None, owner: str = None):
-    """Reps THIS office logged on the current tab — [(rep, recognition)]. Only
-    rows whose Owner matches ours, so the remove-list never offers another
-    office's row."""
+def _owner_set(owner, owners):
+    """The Owner strings a remove/list call is allowed to touch. `owners` (a
+    set) is how the ORG card scopes itself to the ICDs it can log under;
+    `owner` (a single name) is the office card's one owner."""
+    if owners:
+        return {_norm(o) for o in owners if (o or "").strip()}
+    return {_norm(owner or C.OWNER)}
+
+
+def logged_this_week(*, sheet_id: str = None, owner: str = None, owners=None):
+    """Reps logged on the current tab — [(rep, recognition)]. Only rows whose
+    Owner is in scope, so the remove-list never offers another card's row."""
     from automations.recruiting_report import fill
     sheet_id = sheet_id or C.RECOGNITION_SHEET_ID
-    owner = owner or C.OWNER
+    scope = _owner_set(owner, owners)
     sh = fill._client().open_by_key(sheet_id)
     ws = _target_worksheet(sh)
     grid = ws.get_all_values()
@@ -104,20 +112,21 @@ def logged_this_week(*, sheet_id: str = None, owner: str = None):
     for row in grid[hdr + 1:]:
         if len(row) < 3 or not row[0].strip():
             continue
-        if _norm(row[2]) == _norm(owner):
+        if _norm(row[2]) in scope:
             rec = row[3].strip() if len(row) > 3 else ""
             out.append((row[0].strip(), rec))
     return out
 
 
 def remove_promotions(names, *, sheet_id: str = None, owner: str = None,
-                      dry_run: bool = True):
-    """Clear the row (A:E) for each named rep — but ONLY where Owner is ours, so
-    we can never blank another office's entry. Clearing (not deleting) leaves the
-    other rows exactly where they are. Returns {tab, wrote, removed, link}."""
+                      owners=None, dry_run: bool = True):
+    """Clear the row (A:E) for each named rep — but ONLY where the row's Owner is
+    in scope, so we can never blank a row this card didn't log. Clearing (not
+    deleting) leaves the other rows exactly where they are.
+    Returns {tab, wrote, removed, link}."""
     from automations.recruiting_report import fill
     sheet_id = sheet_id or C.RECOGNITION_SHEET_ID
-    owner = owner or C.OWNER
+    scope = _owner_set(owner, owners)
     want = {_norm(n) for n in names}
     sh = fill._client().open_by_key(sheet_id)
     ws = _target_worksheet(sh)
@@ -130,7 +139,7 @@ def remove_promotions(names, *, sheet_id: str = None, owner: str = None,
         row = grid[i]
         if len(row) < 3 or not row[0].strip():
             continue
-        if _norm(row[0]) in want and _norm(row[2]) == _norm(owner):
+        if _norm(row[0]) in want and _norm(row[2]) in scope:
             ranges.append(f"A{i + 1}:E{i + 1}")     # 1-based row
             removed.append(row[0].strip())
     if ranges and not dry_run:

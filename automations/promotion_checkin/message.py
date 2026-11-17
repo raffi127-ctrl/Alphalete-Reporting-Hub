@@ -97,6 +97,115 @@ def build_message(week_label, reps_by_team, *, final_call: bool = False,
     return blocks
 
 
+def build_org_message(week_label, *, final_call: bool = False,
+                      preview: bool = False):
+    """The ORG card for #top-leaders-alphalete-org (Megan 2026-11-17).
+
+    The org's leaders are NOT on Raf's Sales Board, so a pick-list read off that
+    board would offer them the wrong office's reps. This card asks instead: one
+    button that opens a short form (rep's first/last name and trainer typed in,
+    ICD and level picked). Same cadence, same recognition sheet — the ICD they
+    pick becomes the row's Owner.
+
+    The #alphalete-lvl1-chat card is untouched: that one stays the board
+    pick-list, Raf's reps only.
+    """
+    if final_call:
+        title = f"⏰ Final Call — Promotions · {week_label}"
+        ask = ("*Last chance before the Leader's Call.* Anyone in the org who "
+               "leveled up this week and isn't logged yet — hit *Add a "
+               "promotion* and fill in their details.")
+    else:
+        title = f"🏆 Weekly Promotion Check-In · {week_label}"
+        ask = ("*Did anyone level up this week?* Hit *Add a promotion* and tell "
+               "me the rep, their trainer, their ICD and the new level — I'll "
+               "add them to tonight's recognition sheet. One rep per form; add "
+               "as many as you like.")
+    return [
+        {"type": "header", "text": {"type": "plain_text", "text": title}},
+        {"type": "section", "text": {"type": "mrkdwn", "text": ask}},
+        {"type": "actions", "elements": [
+            {"type": "button", "action_id": C.ACTION_ADD, "style": "primary",
+             "value": "preview" if preview else "live",
+             "text": {"type": "plain_text", "text": "➕ Add a promotion"}},
+            {"type": "button", "action_id": C.ACTION_NONE,
+             "text": {"type": "plain_text", "text": "No promotions this week"}},
+            {"type": "button", "action_id": C.ACTION_REMOVE,
+             "value": "preview" if preview else "live",
+             "text": {"type": "plain_text", "text": "✏️ Remove a mistake"}},
+        ]},
+        {"type": "context", "elements": [{"type": "mrkdwn",
+            "text": f"{week_label} · promotions log to Monday's recognition "
+                    "sheet under the ICD you pick"}]},
+    ]
+
+
+def manual_modal(week_label, *, channel: str = "", ts: str = "",
+                 preview: bool = False):
+    """The org card's form: rep name + trainer typed in, ICD + level picked.
+
+    Free text needs a modal — Slack rejects an `input` block in a posted
+    message. private_metadata carries the card's channel+ts (so the receipt
+    lands under it) and the preview stamp (so a preview card never writes).
+    """
+    import json
+    from . import icds as I
+    pm = json.dumps({"channel": channel, "ts": ts, "week": week_label,
+                     "preview": bool(preview)})
+
+    def _text(block_id, label, placeholder):
+        return {"type": "input", "block_id": block_id,
+                "label": {"type": "plain_text", "text": label},
+                "element": {"type": "plain_text_input", "action_id": "v",
+                            "placeholder": {"type": "plain_text",
+                                            "text": placeholder[:150]}}}
+
+    icd_opts = [{"text": {"type": "plain_text", "text": lbl[:75]},
+                 "value": val[:75]} for (lbl, val) in I.icd_choices()]
+    level_opts = [{"text": {"type": "plain_text", "text": lbl}, "value": rec}
+                  for (lbl, rec) in C.LEVEL_CHOICES]
+    return {
+        "type": "modal", "callback_id": C.MANUAL_CALLBACK, "private_metadata": pm,
+        "title": {"type": "plain_text", "text": "Log a promotion"},
+        "submit": {"type": "plain_text", "text": "Log it"},
+        "close": {"type": "plain_text", "text": "Cancel"},
+        "blocks": [
+            {"type": "section", "text": {"type": "mrkdwn",
+             "text": f"Who got promoted this week (*{week_label}*)?"}},
+            _text(C.FIELD_FIRST, "Rep's first name", "Jordan"),
+            _text(C.FIELD_LAST, "Rep's last name", "Reyes"),
+            _text(C.FIELD_TRAINER, "Their trainer", "First and last name"),
+            {"type": "input", "block_id": C.FIELD_ICD,
+             "label": {"type": "plain_text", "text": "Their ICD (office owner)"},
+             "element": {"type": "static_select", "action_id": "v",
+                         "placeholder": {"type": "plain_text", "text": "Pick the ICD…"},
+                         "options": icd_opts}},
+            {"type": "input", "block_id": C.FIELD_LEVEL,
+             "label": {"type": "plain_text", "text": "Promoted to"},
+             "element": {"type": "static_select", "action_id": "v",
+                         "placeholder": {"type": "plain_text", "text": "Level…"},
+                         "options": level_opts, "initial_option": level_opts[0]}},
+        ],
+    }
+
+
+def manual_logged_blocks(week_label, rep, trainer, icd, level, result, *,
+                         actor: str = ""):
+    """Thread receipt after one form submit on the org card."""
+    by = f" by <@{actor}>" if actor else ""
+    if result.get("added"):
+        note = "" if result.get("wrote") else "  _(preview — sheet not changed)_"
+        text = (f":trophy: *Logged{by}* to the <{result['link']}|{result['tab']} "
+                f"recognition tab>{note}:\n"
+                f"• *{rep}* — {level}\n"
+                f"   _trainer {trainer} · ICD {icd}_")
+    else:
+        text = (f":information_source: *{rep}* is already on the "
+                f"<{result['link']}|{result['tab']} tab> for {week_label} — "
+                "nothing logged twice.")
+    return [{"type": "section", "text": {"type": "mrkdwn", "text": text}}]
+
+
 def confirmation_blocks(week_label, result, *, actor: str = ""):
     """Replace the card after a submit. `result` = recognition.append_promotions()."""
     added = result.get("added", [])
@@ -118,14 +227,16 @@ def confirmation_blocks(week_label, result, *, actor: str = ""):
 
 
 def remove_modal(week_label, logged, *, channel: str = "", ts: str = "",
-                 preview: bool = False):
-    """A modal listing what OUR office logged this week, to un-log a mistake.
+                 preview: bool = False, org: bool = False):
+    """A modal listing what THIS CARD logged this week, to un-log a mistake.
     `logged` = [(rep, recognition)]. private_metadata carries the card's channel+ts
-    (so the submission can reply under it) and the preview flag (so a preview card's
-    remove never writes the sheet)."""
+    (so the submission can reply under it), the preview flag (so a preview card's
+    remove never writes the sheet) and `org` — which card asked, so the removal
+    stays inside that card's own rows (the org card can't clear Raf's, and the
+    office card can't clear another ICD's)."""
     import json
     pm = json.dumps({"channel": channel, "ts": ts, "week": week_label,
-                     "preview": bool(preview)})
+                     "preview": bool(preview), "org": bool(org)})
     if not logged:
         return {
             "type": "modal", "callback_id": C.REMOVE_CALLBACK,
