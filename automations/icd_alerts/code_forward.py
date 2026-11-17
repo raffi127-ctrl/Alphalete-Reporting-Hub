@@ -62,8 +62,15 @@ NUMBER to tap on the owner's phone, and saving a forwarding filter asks for it
 AGAIN -- none of which our steps said. Owners can't be kept on a call, so now
 Lucy opens her own Gmail window (gmail_browser): the owner signs in and taps
 the number on their phone, Lucy presses everything else, and the filter is
-read back from Gmail. Anything unexpected falls back to the steps below, which
-now mention the phone too. LUCY_CLICKS_GMAIL turns it off.
+read back from Gmail. LUCY_CLICKS_GMAIL turns it off.
+
+NO HAND STEPS WHEN IT FAILS (Eve 2026-11-17: the hand steps are the ones 7 of
+18 owners never finished). Lucy tries once more by herself; if it still fails
+the owner is told nothing is needed now and it comes back at the next code,
+and we get a "codeforward" fault saying where Gmail stopped -- ours to fix
+once, for every office. An owner who didn't sign in or didn't tap the phone is
+not a fault: they are just asked again next time. The steps below are only
+for a computer with no Lucy browser at all.
 """
 from __future__ import annotations
 
@@ -112,6 +119,17 @@ NOT_ARRIVED = (
 ALL_SET = ("All set! From now on, Lucy types SaraPlus's codes for you.\n\n"
            "Only SaraPlus's code emails are forwarded. The rest of your inbox "
            "stays private.")
+TRY_LATER = ("No problem, there's nothing to do right now.\n\n"
+             "Lucy couldn't finish this today. She'll try again by herself the "
+             "next time SaraPlus asks for a code. We've been told, so we'll "
+             "look into it too.")
+SIGN_IN_LATER = ("No problem, there's nothing to do right now.\n\n"
+                 "Lucy will ask again the next time SaraPlus asks for a code. "
+                 "Then just sign in to Gmail in the window Lucy opens.")
+TAP_LATER = ("No problem, there's nothing to do right now.\n\n"
+             "Lucy will ask again the next time SaraPlus asks for a code. Then "
+             "just tap the number Lucy shows you on your phone.")
+FAULT_STAGE = "codeforward"
 LEFT_OPEN = ("Your sign-in worked and Lucy is running, so nothing is broken.\n\n"
              "This last step isn't finished yet. No problem: you'll see it "
              "again the next time SaraPlus asks for a code.")
@@ -235,12 +253,23 @@ def _finish(ask, say=print, address: str = "", office_key: str = "",
     _already_working marks this computer once a code has really arrived."""
     if lucy and _lucy_clicks():
         from automations.icd_alerts import gmail_browser as GB
-        made = GB.make_filter(ask, address, say)
-        _step(office_key, "lucy's gmail filter: %s" % made)
-        if made == GB.MADE:
-            _mark(REPORTING_INBOX)
-            ask.message(ALL_SET)
-            return "done"
+        heard = []
+
+        def say_and_keep(m=""):
+            heard.append(str(m))
+            say(m)
+        made = GB.STUCK
+        for _ in range(2):
+            made = GB.make_filter(ask, address, say_and_keep)
+            _step(office_key, "lucy's gmail filter: %s" % made)
+            if made == GB.MADE:
+                _mark(REPORTING_INBOX)
+                ask.message(ALL_SET)
+                return "done"
+            if made in _owners_part() or made == GB.NO_BROWSER:
+                break
+        if made != GB.NO_BROWSER:
+            return _not_today(ask, office_key, made, heard)
     if LUCY_MAKES_FILTER:
         from automations.icd_alerts import gmail_filters as G
         made = G.set_up(ask, address, [FILTER], say)
@@ -345,10 +374,17 @@ def walk_through(ask, say=print, office_key: str = "", can_skip: bool = True,
 
 def _lucy_adds(ask, say, address: str, office_key: str) -> str:
     """Lucy's Gmail window does it all, in ONE window: our address, the wait
-    for Lucy 1, the filter. A word for walk_through when it got anywhere; ""
-    sends the owner to the hand-built steps."""
+    for Lucy 1, the filter. Tried twice; then the owner is told it comes back
+    and we are told where it stopped (_not_today). "" only for a computer with
+    no Lucy browser, which gets the hand-built steps."""
     from automations.icd_alerts import gmail_browser as GB
     from automations.icd_alerts import relay as R
+
+    heard = []
+
+    def say_and_keep(m=""):
+        heard.append(str(m))
+        say(m)
 
     def confirmed():
         if not R.report_forward(address, office_key=office_key):
@@ -361,21 +397,58 @@ def _lucy_adds(ask, say, address: str, office_key: str) -> str:
             _step(office_key, "gmail did not confirm in time")
         return NOT_YET
 
-    added, made = GB.add_and_filter(ask, address, confirmed, say)
-    _step(office_key, "lucy's gmail: %s / filter: %s" % (added, made))
-    if added not in (GB.ADDED, GB.ALREADY):
-        return ""
-    if made == NOT_SENT:
-        return made
-    if made in (NOT_YET, GB.NOT_ACCEPTED, None):
-        ask.message(LEFT_OPEN)
-        return NOT_YET
-    if made == GB.MADE:
-        _mark(REPORTING_INBOX)
-        ask.message(ALL_SET)
-        return "done"
-    # Confirmed, but Lucy couldn't save the filter: the hand-built box.
-    return _finish(ask, say, address, office_key, lucy=False)
+    what = GB.STUCK
+    for attempt in range(2):
+        added, made = GB.add_and_filter(ask, address, confirmed, say_and_keep,
+                                        introduce=attempt == 0)
+        _step(office_key, "lucy's gmail: %s / filter: %s" % (added, made))
+        if added == GB.NO_BROWSER:
+            return ""
+        if added in (GB.ADDED, GB.ALREADY):
+            if made == GB.MADE:
+                _mark(REPORTING_INBOX)
+                ask.message(ALL_SET)
+                return "done"
+            if made == NOT_SENT:
+                return made
+            if made in (NOT_YET, None):
+                ask.message(LEFT_OPEN)
+                return NOT_YET
+            what = made
+        else:
+            what = added
+        if what in _owners_part():
+            break
+    return _not_today(ask, office_key, what, heard)
+
+
+def _not_today(ask, office_key: str, what: str, heard) -> str:
+    """Lucy's window didn't make it. The owner: nothing to do, it comes back.
+    Us: a fault naming where Gmail stopped, unless it was the owner's part."""
+    from automations.icd_alerts import gmail_browser as GB
+    from automations.icd_alerts import relay as R
+    if what == GB.NO_TAP:
+        ask.message(TAP_LATER)
+    elif what in _owners_part():
+        ask.message(SIGN_IN_LATER)
+    else:
+        where = next((h.strip() for h in reversed(heard) if "gmail" in h.lower()), "")
+        R.report_fault(FAULT_STAGE,
+                       "SaraPlus code forward: Lucy's Gmail window stopped (%s). "
+                       "Last step: %s -- ours to fix" % (what, where or "none"),
+                       office_key=office_key)
+        ask.message(TRY_LATER)
+    _step(office_key, "not today: %s" % what)
+    return NOT_TODAY
+
+
+def _owners_part():
+    """Not ours to fix: the owner didn't sign in, or didn't tap the phone."""
+    from automations.icd_alerts import gmail_browser as GB
+    return (GB.NO_SIGNIN, GB.WRONG_ACCOUNT, GB.NO_TAP)
+
+
+NOT_TODAY = "not done yet"
 
 
 NOT_SENT = "address not sent"

@@ -269,8 +269,10 @@ class LucyMakesTheFilter(OnTheMac):
 
 class LucyClicksGmail(unittest.TestCase):
     """Eve 2026-11-17: Lucy's Gmail window does the clicks; the owner signs in
-    and taps the number on their phone. Anything else: the hand steps.
-    OnTheMac's setting up, NOT its tests: those are the hand road."""
+    and taps the number on their phone. When it fails: one more try, then
+    "nothing to do, it comes back" for the owner and a fault for us -- never
+    the hand steps. OnTheMac's setting up, NOT its tests: those are the hand
+    road, for a computer with no Lucy browser."""
 
     _go = OnTheMac._go
 
@@ -293,7 +295,7 @@ class LucyClicksGmail(unittest.TestCase):
         self.add = mock.Mock(return_value=GB.ADDED)
         self.made = mock.Mock(return_value=GB.MADE)
 
-        def one_window(ask, address, confirmed, say=print):
+        def one_window(ask, address, confirmed, say=print, introduce=True):
             got = self.add(ask, address, say)
             if got not in (GB.ADDED, GB.ALREADY):
                 return got, None
@@ -302,6 +304,12 @@ class LucyClicksGmail(unittest.TestCase):
                 return got, ok if isinstance(ok, str) else GB.NOT_ACCEPTED
             return got, self.made(ask, address, say)
         p = mock.patch.object(GB, "add_and_filter", side_effect=one_window)
+        p.start()
+        self.addCleanup(p.stop)
+        self.faults = []
+        p = mock.patch.object(R, "report_fault",
+                              side_effect=lambda stage, summary, **k:
+                              self.faults.append((stage, summary)) or True)
         p.start()
         self.addCleanup(p.stop)
         # The standalone filter (already-confirmed road) must not run here.
@@ -324,25 +332,65 @@ class LucyClicksGmail(unittest.TestCase):
         self.assertEqual(self._go(FakeAsk(CF.YES)), "done")
         self.assertTrue(CF.already_set_up())
 
-    def test_a_gmail_that_looks_different_gets_the_hand_steps(self):
+    def test_a_gmail_that_looks_different_is_tried_again_then_reported(self):
         self.add.return_value = self.GB.STUCK
         ask = FakeAsk(CF.YES)
-        self.assertEqual(self._go(ask), "done")
-        self.assertIn(CF.STEPS % (CF.REPORTING_INBOX, "owner@gmail.com"), ask.shown)
-        self.assertEqual(self.opened[0], CF.for_account(CF.ADD_URL, "owner@gmail.com"))
+        self.assertEqual(self._go(ask), CF.NOT_TODAY)
+        self.assertEqual(self.add.call_count, 2, "one more try by herself")
+        self.assertEqual(ask.shown, [CF.TRY_LATER], "no hand steps")
+        self.assertEqual(self.opened, [], "no hand-built Gmail tab")
+        self.assertEqual([f[0] for f in self.faults if f[0] == CF.FAULT_STAGE],
+                         [CF.FAULT_STAGE])
+        summary = [f[1] for f in self.faults if f[0] == CF.FAULT_STAGE][0]
+        self.assertIn("ours to fix", summary)
+        self.assertIn(self.GB.STUCK, summary)
+        self.assertFalse(CF.already_set_up(), "it comes back next time")
 
-    def test_nobody_signing_in_gets_the_hand_steps(self):
+    def test_the_second_try_can_finish_it(self):
+        self.add.side_effect = [self.GB.STUCK, self.GB.ADDED]
+        ask = FakeAsk(CF.YES)
+        self.assertEqual(self._go(ask), "done")
+        self.assertEqual(ask.shown, [CF.ALL_SET])
+        self.assertFalse([f for f in self.faults if f[0] == CF.FAULT_STAGE])
+
+    def test_nobody_signing_in_is_asked_again_not_reported(self):
         self.add.return_value = self.GB.NO_SIGNIN
         ask = FakeAsk(CF.YES)
+        self.assertEqual(self._go(ask), CF.NOT_TODAY)
+        self.assertEqual(self.add.call_count, 1, "no retry: it is the owner's part")
+        self.assertEqual(ask.shown, [CF.SIGN_IN_LATER])
+        self.assertFalse([f for f in self.faults if f[0] == CF.FAULT_STAGE])
+
+    def test_no_tap_on_the_phone_is_asked_again_not_reported(self):
+        self.made.return_value = self.GB.NO_TAP
+        ask = FakeAsk(CF.YES)
+        self.assertEqual(self._go(ask), CF.NOT_TODAY)
+        self.assertEqual(ask.shown, [CF.TAP_LATER])
+        self.assertFalse([f for f in self.faults if f[0] == CF.FAULT_STAGE])
+
+    def test_a_filter_lucy_could_not_make_is_reported_no_filter_box(self):
+        self.made.return_value = self.GB.STUCK
+        ask = FakeAsk(CF.YES)
+        self.assertEqual(self._go(ask), CF.NOT_TODAY)
+        self.assertNotIn(CF.FILTER_STEPS, ask.shown)
+        self.assertEqual(ask.shown[-1], CF.TRY_LATER)
+        self.assertTrue([f for f in self.faults if f[0] == CF.FAULT_STAGE])
+        self.assertFalse(CF.already_set_up())
+
+    def test_no_lucy_browser_gets_the_hand_steps(self):
+        self.add.return_value = self.GB.NO_BROWSER
+        ask = FakeAsk(CF.YES)
         self.assertEqual(self._go(ask), "done")
         self.assertIn(CF.STEPS % (CF.REPORTING_INBOX, "owner@gmail.com"), ask.shown)
 
-    def test_a_filter_lucy_could_not_make_opens_the_filter_box(self):
-        self.made.return_value = self.GB.STUCK
-        ask = FakeAsk(CF.YES)
-        self.assertEqual(self._go(ask), "done")
-        self.assertIn(CF.FILTER_STEPS, ask.shown)
-        self.assertFalse(CF.already_set_up(), "OK on the box proves nothing")
+    def test_already_confirmed_filter_retried_then_reported(self):
+        self.alone.return_value = self.GB.STUCK
+        with mock.patch.object(R, "forward_confirmed", return_value=True):
+            ask = FakeAsk(CF.YES)
+            self.assertEqual(self._go(ask), CF.NOT_TODAY)
+        self.assertEqual(self.alone.call_count, 2)
+        self.assertNotIn(CF.FILTER_STEPS, ask.shown)
+        self.assertEqual(ask.shown[-1], CF.TRY_LATER)
 
     def test_never_confirmed_is_left_open(self):
         with mock.patch.object(CF, "_wait_for_gmail", return_value=False):
