@@ -195,7 +195,7 @@ class LateAddsAreAddedNotRefused(_NoNetwork):
         ov.add_sales_rep = _add
         ov.docs_row_state = lambda modal: "REQUIRED ACTION"
         ov.open_docs_portal = lambda page, modal: object()
-        ov.generate_bundle = lambda tab, name, dry_run=True: None
+        ov.generate_bundle = lambda tab, name, dry_run=True, **kw: None
         ov.confirm_generated = lambda tab, name: True
         ov.tick_attestations = lambda page, modal, dry_run=True: ["BG", "Drug"]
         ov.close_tab = lambda tab: None
@@ -914,7 +914,7 @@ class AttestationFailureIsNotAFailedSendTest(_NoNetwork):
             def open_docs_portal(self, page, modal):
                 return type("T", (), {"close": lambda s: None})()
 
-            def generate_bundle(self, tab, name, dry_run=True):
+            def generate_bundle(self, tab, name, dry_run=True, **kw):
                 return None
 
             def confirm_generated(self, tab, name):
@@ -1077,7 +1077,7 @@ class PendingAsksTheRowNotTheChipTest(_NoNetwork):
             def open_docs_portal(self, page, modal):
                 return type("T", (), {"close": lambda s: None})()
 
-            def generate_bundle(self, tab, name, dry_run=True):
+            def generate_bundle(self, tab, name, dry_run=True, **kw):
                 calls["generated"] += 1
 
             def confirm_generated(self, tab, name):
@@ -1154,7 +1154,7 @@ class FastAddOnlyTrustsAProvenRosterTest(_NoNetwork):
                 return roster, complete
 
             def add_sales_rep(s, page, name, *, dry_run=True, employee_id=None,
-                              known_absent=False):
+                              known_absent=False, **kw):
                 s.asked.append(name)
                 s.known_absent_flags.append(known_absent)
                 return "added"
@@ -1220,7 +1220,7 @@ class PendingIsNeitherDoneNorSendable(_NoNetwork):
         ov.open_set_status = lambda page, name, **k: (object(), name)
         ov.docs_row_state = lambda modal: state
         ov.open_docs_portal = lambda page, modal: object()
-        ov.generate_bundle = lambda tab, name, dry_run=True: None
+        ov.generate_bundle = lambda tab, name, dry_run=True, **kw: None
         ov.confirm_generated = lambda tab, name: True
         ov.tick_attestations = lambda page, modal, dry_run=True: ["BG"]
         ov.close_tab = lambda tab: None
@@ -1616,7 +1616,7 @@ class SentTodayIsNotReopened(_NoNetwork):
         ov.open_set_status = _open
         ov.docs_row_state = lambda modal: "REQUIRED ACTION"
         ov.open_docs_portal = lambda page, modal: object()
-        ov.generate_bundle = lambda tab, name, dry_run=True: None
+        ov.generate_bundle = lambda tab, name, dry_run=True, **kw: None
         ov.confirm_generated = lambda tab, name: True
         ov.tick_attestations = lambda page, modal, dry_run=True: ["BG"]
         return ov
@@ -1984,7 +1984,7 @@ class TheBoardKeepsUpWithTheSending(_NoNetwork):
         ov.open_set_status = lambda page, name, **k: (object(), name)
         ov.docs_row_state = lambda modal: "REQUIRED ACTION"
         ov.open_docs_portal = lambda page, modal: object()
-        ov.generate_bundle = lambda tab, name, dry_run=True: None
+        ov.generate_bundle = lambda tab, name, dry_run=True, **kw: None
         ov.confirm_generated = lambda tab, name: True
         ov.tick_attestations = lambda page, modal, dry_run=True: ["BG"]
 
@@ -2046,7 +2046,7 @@ class PendingGetsItsOwnGreen(_NoNetwork):
         ov.open_set_status = lambda page, name, **k: (object(), name)
         ov.docs_row_state = lambda modal: state
         ov.open_docs_portal = lambda page, modal: object()
-        ov.generate_bundle = lambda tab, name, dry_run=True: None
+        ov.generate_bundle = lambda tab, name, dry_run=True, **kw: None
         ov.confirm_generated = lambda tab, name: True
         ov.tick_attestations = lambda page, modal, dry_run=True: ["BG"]
 
@@ -2146,7 +2146,7 @@ class AJustAddedRepGetsAMomentBeforeTheirPortal(_NoNetwork):
                 order.append(("portal", None))
                 return object()
 
-            def generate_bundle(s, tab, name, dry_run=True):
+            def generate_bundle(s, tab, name, dry_run=True, **kw):
                 return None
 
             def confirm_generated(s, tab, name):

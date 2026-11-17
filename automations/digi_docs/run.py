@@ -93,6 +93,13 @@ def main(argv=None) -> int:
                          "Add everyone missing FIRST, then send, because a "
                          "rep who isn't in OwnerVille yet has nothing to "
                          "generate against.")
+    ap.add_argument("--office", default="",
+                    help="which office's new starts these are, by its ECO "
+                         "office key. Left out, Alphalete's own — whose "
+                         "bundle answers are config.py's constants. Any "
+                         "other office's come off the Office Settings tab, "
+                         "and an office nobody has asked is REFUSED, never "
+                         "sent Alphalete's contract.")
     ap.add_argument("--tab", default="",
                     help="a specific D2D OBCL tab (default: the newest)")
     ap.add_argument("--today", action="store_true",
@@ -642,6 +649,23 @@ def _ensure_ownerville_session(dry: bool) -> str:
     return f"ownerville mint failed ({last})"
 
 
+def _office_settings(args):
+    """The bundle answers for the office this run is for.
+
+    Alphalete is the default because it is the office the constants were
+    written for, not because defaulting is safe -- for any other office
+    `for_office` refuses until somebody has run the setup question on that
+    office's own computer, which is the only place the real bundle labels
+    can be read.
+    """
+    from automations.digi_docs import office_config as OC
+    key = (getattr(args, "office", "") or "").strip().lower() or OC.HOUSE
+    s = OC.for_office(key)
+    print(f"office: {s.office} · campaign {s.campaign!r} · "
+          f"bundle type {s.bundle_type!r}", flush=True)
+    return s
+
+
 def _phases(args) -> int:
     """Add every rep, then send every bundle — batched, never a full cycle per
     person. The two phases live on different pages, so interleaving pays the
@@ -785,13 +809,26 @@ def _phases(args) -> int:
     # BEFORE THE BROWSER, NOT DURING IT. See _ensure_ownerville_session: a
     # dead session is only fixable here, because once ov.session() below is
     # driving a browser the mint can no longer start.
+    # WHOSE BUNDLE, decided ONCE and before anything opens. for_office
+    # raises for an office nobody has asked, and that has to stop the run
+    # rather than fall through to the house answers: the bundle list is per
+    # campaign, so the wrong one is a different contract mailed to a real
+    # person with no unsend.
+    try:
+        settings = _office_settings(args)
+    except Exception as e:                          # noqa: BLE001
+        _refuse(refused, str(e), dry)
+        return _write_back(args, ws, send, added, done, refused,
+                           tinted_dry=dry, do_send=do_send,
+                           fatal=f"{type(e).__name__}")
     mint_note = _ensure_ownerville_session(dry)
     if mint_note:
         _refuse(refused, mint_note, dry, alert=False)
     try:
         _work(ov, page_ctx=ov.session(headless=not dry), do_add=do_add,
               do_send=do_send, send=send, add_list=add_list, dry=dry,
-              added=added, done=done, refused=refused, args_ns=args, ws=ws)
+              added=added, done=done, refused=refused, args_ns=args, ws=ws,
+              settings=settings)
     except Exception as e:                          # noqa: BLE001
         fatal = f"{type(e).__name__}: {str(e).splitlines()[0][:160]}"
         print(f"\n⛔ the run stopped before it finished — {fatal}")
@@ -826,7 +863,7 @@ def _tint_now(ws, c, dry, color=None) -> None:
 
 
 def _work(ov, *, page_ctx, do_add, do_send, send, add_list, dry,
-          added, done, refused, args_ns=None, ws=None):
+          added, done, refused, args_ns=None, ws=None, settings=None):
     """The two phases. Split out only so the caller can wrap the whole thing
     in one try/except without burying the loops inside it.
 
@@ -868,7 +905,7 @@ def _work(ov, *, page_ctx, do_add, do_send, send, add_list, dry,
                         streak_add.ok()
                         continue
                     outcome = ov.add_sales_rep(
-                        page, c.name, dry_run=dry,
+                        page, c.name, dry_run=dry, settings=settings,
                         employee_id=getattr(args_ns, "employee_id", "") or None,
                         # A RETRY ALWAYS RE-CHECKS. known_absent skips the "is
                         # this person already here?" lookup, which is only safe
@@ -937,7 +974,8 @@ def _work(ov, *, page_ctx, do_add, do_send, send, add_list, dry,
                     created.append(c.name)
                     try:
                         outcome = ov.add_sales_rep(
-                            page, c.name, dry_run=dry, known_absent=False)
+                            page, c.name, dry_run=dry, known_absent=False,
+                            settings=settings)
                         if outcome in ("added", "dry", "exists"):
                             added.append(c.name)
                     except ov.Refused as e2:
@@ -1056,7 +1094,8 @@ def _work(ov, *, page_ctx, do_add, do_send, send, add_list, dry,
                         # what the alert says, and what people will act on.
                         try:
                             outcome = ov.add_sales_rep(
-                                page, c.name, dry_run=dry, known_absent=True)
+                                page, c.name, dry_run=dry, known_absent=True,
+                                settings=settings)
                         except ov.Refused as none_such:
                             if ("add sales rep" not in str(none_such).lower()
                                     or dry):
@@ -1066,7 +1105,8 @@ def _work(ov, *, page_ctx, do_add, do_send, send, add_list, dry,
                             _create_missing(ov, page, c)
                             created.append(c.name)
                             outcome = ov.add_sales_rep(
-                                page, c.name, dry_run=dry, known_absent=False)
+                                page, c.name, dry_run=dry, known_absent=False,
+                                settings=settings)
                         if outcome in ("added", "dry", "exists"):
                             added.append(c.name)
                         # LET A BRAND-NEW REP SETTLE (2026-09-28). Breija Smith
@@ -1156,7 +1196,8 @@ def _work(ov, *, page_ctx, do_add, do_send, send, add_list, dry,
                                 f"OwnerVille.")
                         continue
                     tab = ov.open_docs_portal(page, modal)
-                    ov.generate_bundle(tab, c.name, dry_run=dry)
+                    ov.generate_bundle(tab, c.name, dry_run=dry,
+                                       settings=settings)
                     if not dry and not ov.confirm_generated(tab, c.name):
                         why = ""
                         if hasattr(ov, "why_not_generated"):

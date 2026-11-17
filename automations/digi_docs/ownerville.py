@@ -92,9 +92,26 @@ def session(*, headless: bool = True, verbose: bool = True):
 
 # --- phase 2: add the reps ------------------------------------------------
 
+def bundle_settings(settings=None):
+    """This office's Digi Docs answers; Alphalete's when none were passed.
+
+    ONE PLACE DECIDES. Every caller here used `config`'s four constants
+    directly, which is correct for exactly one office -- the one they were
+    written for. `office_config.for_office` refuses an office nobody has
+    asked rather than defaulting, and that refusal is the whole point: a
+    bundle is a contract, and the wrong one is mailed to a real person before
+    anybody notices. So `None` means the HOUSE office explicitly, never
+    "whatever the constants happen to say".
+    """
+    if settings is not None:
+        return settings
+    from automations.digi_docs import office_config as OC
+    return OC.for_office(OC.HOUSE)
+
+
 def add_sales_rep(page, name: str, *, dry_run: bool = True,
                   verbose: bool = True, employee_id: str | None = None,
-                  known_absent: bool = False) -> str:
+                  known_absent: bool = False, settings=None) -> str:
     """`+ Add Sales Rep` on View Progress. Returns 'added' | 'exists' | 'dry'.
 
     ADDING MAILS THEM (Megan 2026-08-31). OwnerVille sends the new start their
@@ -119,8 +136,9 @@ def add_sales_rep(page, name: str, *, dry_run: bool = True,
         # the narrow search is not just a saving: a same-surname hit on another
         # campaign would return "exists" for someone who is NOT on ours, and
         # this person would never be added at all.
-        row, _campaign, _matched = find_rep(page, name, verbose=False,
-                                            campaigns=[config.ADD_CAMPAIGN])
+        row, _campaign, _matched = find_rep(
+            page, name, verbose=False,
+            campaigns=[bundle_settings(settings).campaign])
         if row is not None:
             if verbose:
                 print(f"  {name}: already in OwnerVille")
@@ -135,7 +153,8 @@ def add_sales_rep(page, name: str, *, dry_run: bool = True,
     # — "Water - Primo / RSW B2B". A morning of new starts went in under it
     # before anyone noticed (2026-08-31), and the campaign is not cosmetic: the
     # bundle list is per campaign, so the wrong one means the wrong contract.
-    _select_campaign(page, config.ADD_CAMPAIGN, verbose=verbose)
+    _select_campaign(page, bundle_settings(settings).campaign,
+                     verbose=verbose)
     _click_any(page, "Add Sales Rep", page=page)
     modal = page.locator("div[role='dialog'], .modal:visible").filter(
         has_text="Add Sales Rep").first
@@ -1040,6 +1059,21 @@ def _pick_typeahead(tab, wanted: str, *, kind: str, control,
             f"Select Bundle offers {len(real)} options ({real[:4]}), expected "
             f"only {wanted!r} — the campaign or the plan changed. Refusing "
             "rather than picking one.")
+    if not wanted:
+        # AN OFFICE MAY LEAVE THE BUNDLE BLANK, which office_config spells
+        # "read it off the page (single option)" -- under a bundle type the
+        # dropdown holds exactly one real option, so asking an owner to retype
+        # a string the page can read is input this codebase does not do. The
+        # refusal above has already proved there is only one, so taking it is
+        # not a guess. Nothing is assumed when the list is empty.
+        if len(real) != 1:
+            raise Refused(
+                f"Select Bundle holds {len(real)} options ({real[:4]}) and "
+                "this office has no Bundle answer, so there is nothing to "
+                "read off the page. Refusing rather than picking one.")
+        wanted = real[0]
+        if verbose:
+            print(f"    bundle read off the page: {wanted!r}")
     if wanted not in real:
         raise Refused(f"Select Bundle has no {wanted!r} (saw {real[:4]})")
 
@@ -1075,7 +1109,7 @@ def _required_fields_filled(tab) -> tuple:
 
 
 def generate_bundle(tab, name: str, *, dry_run: bool = True,
-                    verbose: bool = True) -> str:
+                    verbose: bool = True, settings=None) -> str:
     """The reveal chain. Each step waits for the control the previous revealed.
 
     bundle type -> `Generate Bundle` -> Select Bundle -> commission boxes ->
@@ -1092,27 +1126,28 @@ def generate_bundle(tab, name: str, *, dry_run: bool = True,
     # 1. Bundle Type. It is a RADIO, so click the input rather than the text —
     #    a text click lands on the label's text node and can leave the radio
     #    unset, which then makes step 2 look like the broken one.
-    _choose_bundle_type(tab, config.BUNDLE_TYPE, verbose=verbose)
+    s = bundle_settings(settings)
+    _choose_bundle_type(tab, s.bundle_type, verbose=verbose)
 
     # 2. Reveals the bundle dropdown — it does NOT generate anything.
     _click_any(tab, "Generate Bundle", page=tab)
-    kind, control = _bundle_dropdown(tab, config.BUNDLE, timeout=20000)
+    kind, control = _bundle_dropdown(tab, s.bundle, timeout=20000)
     if control is None:
         _dump_controls(tab, "after Generate Bundle")
         raise Refused(
             f"{name}: 'Generate Bundle' revealed no bundle dropdown. Either the "
-            f"bundle type {config.BUNDLE_TYPE!r} never got selected (the line "
+            f"bundle type {s.bundle_type!r} never got selected (the line "
             "above says whether its radio is CHECKED), or the dropdown renders "
             "differently than expected — the PG| lines list every control that "
             "IS on the page.")
 
     # 3. Reveals the commission checkboxes.
-    _pick_typeahead(tab, config.BUNDLE, kind=kind, control=control,
+    _pick_typeahead(tab, s.bundle, kind=kind, control=control,
                     expect_single=config.BUNDLE_EXPECT_SINGLE_OPTION,
                     verbose=verbose)
 
     # 4. Tick ours, leave the others strictly alone.
-    for label in config.COMMISSION_BUNDLES_TICK:
+    for label in s.commission:
         box = tab.locator("label", has_text=label).first
         box.wait_for(state="visible", timeout=20000)
         box.click(timeout=10000)
