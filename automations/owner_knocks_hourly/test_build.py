@@ -157,6 +157,15 @@ class RenderTests(unittest.TestCase):
         self.assertEqual([(s, sum(len(v) for v in o.values())) for s, o in got],
                          [("D2D", 1), ("B2B", 1)])
 
+    def test_carlos_is_drawn_under_d2d_in_one_line(self):
+        """Carlos 11/16: his B2B AT&T crew knocks doors -> D2D."""
+        everyone = {"Carlos Hidalgo": [dict(_rep("B", 5), _segment="B2B")]}
+        R.add_shared(everyone, {"Carlos Hidalgo": [_rep("N", 9)]})
+        got = R.by_segment(everyone)
+        self.assertEqual([(s, sorted(o)) for s, o in got],
+                         [("D2D", ["Carlos Hidalgo"])])
+        self.assertEqual(len(got[0][1]["Carlos Hidalgo"]), 2)
+
     def test_times_on_the_offices_clock_so_zones_dont_move_the_average(self):
         """Omar's login is Central and his office Eastern (OV_CLOCK)."""
         omar = SimpleNamespace(owner="Omar Mohamad", key="omar",

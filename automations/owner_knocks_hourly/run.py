@@ -150,11 +150,12 @@ def ranked(by_owner: Dict[str, List[Dict]]) -> List[Tuple[str, List[Dict]]]:
 def by_segment(by_owner: Dict[str, List[Dict]]
                ) -> List[Tuple[str, Dict[str, List[Dict]]]]:
     """[(D2D, {owner: rows}), (B2B, {owner: rows})], leaving off an empty one.
-    A row with no tag is D2D."""
+    A row with no tag is D2D; an owner in cfg.D2D_OWNERS is D2D outright."""
     out: Dict[str, Dict[str, List[Dict]]] = {}
     for name, rows in by_owner.items():
+        forced = (name or "").strip().lower() in cfg.D2D_OWNERS
         for r in rows:
-            seg = r.get(cfg.SEGMENT_FIELD) or cfg.D2D
+            seg = cfg.D2D if forced else (r.get(cfg.SEGMENT_FIELD) or cfg.D2D)
             out.setdefault(seg, {}).setdefault(name, []).append(r)
     return [(seg, out[seg]) for seg in cfg.SEGMENTS if seg in out]
 

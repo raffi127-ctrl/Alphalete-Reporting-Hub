@@ -66,6 +66,13 @@ SEGMENT_FIELD = "_segment"
 D2D, B2B = "D2D", "B2B"
 SEGMENTS = (D2D, B2B)            # top to bottom
 
+# Owners drawn under D2D whatever their office's campaign says. Carlos
+# Hidalgo 2026-11-16 (Slack): "We're listed as b2b can we get moved door 2
+# door" -- his carlos-b2batt crew knocks doors. By OWNER: all his rows (the
+# b2batt relay + his NDS crew) make one D2D line. The relay rows keep their
+# B2B tag underneath, so add_shared still adds his NDS crew beside them.
+D2D_OWNERS = frozenset({"carlos hidalgo"})
+
 # Chan's comparison line (Raf 2026-11-03: "add chans here for comparison").
 # Teal, on top, in no total: he is not in our org. This job pulls his rows
 # itself, on Lucy 1, right before it texts: gap_alerts used to have them in
