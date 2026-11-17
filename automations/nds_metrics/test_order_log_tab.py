@@ -26,9 +26,8 @@ class Rows(unittest.TestCase):
         self.assertEqual(r[T._COL["Notes"]], "")
         self.assertEqual(r[T._COL["Being worked on"]], "")
         self.assertEqual(r[T._COL["Delivered Message Sent"]], "")
-        self.assertEqual(T.HEADERS[T._COL["Notes"] - 1], "Taylor's Notes")        # 11/18: to the LEFT of Notes
-        self.assertEqual(T.HEADERS[T._COL["Customer"] - 1], "Line")              # 11/18: Line before Customer
-        self.assertEqual(T.HEADERS[T._COL["Order Date"] + 1], "Last Updated")    # 11/18: right after Order Date
+        self.assertEqual(T.HEADERS[T._COL["Notes"] - 1], "Taylor's Notes")        # 11/17 pm: to the LEFT of Notes
+        self.assertEqual(T.HEADERS[T._COL["Order Date"] + 1], "Last Updated")    # 11/17 pm: right after Order Date
         self.assertEqual(T.HEADERS[T._COL["Being worked on"] + 1], "Delivered Message Sent")
         self.assertEqual(T.HEADERS[T._COL["Delivered Message Sent"] + 1], "Shipping Status")  # 11/12 pm: carrier word, left of the notes
         self.assertEqual(T.HEADERS[T._COL["Shipping Status"] + 1], "Shipping Notes")
@@ -40,12 +39,15 @@ class Rows(unittest.TestCase):
         self.assertEqual(r[T._COL["Device"]], "iPhone 16")            # the model, feed's "line_phone"
         self.assertEqual(r[T._COL["Plan"]], "Unlimited")
         self.assertEqual(r[T._COL["Zip"]], "")                        # no index given -> blank
-        # 11/17: the customer-detail group sits together right after Customer
+        # 11/17: the customer-detail group sits together, folded beside Customer;
+        # 11/17 evening: Line Status just left of Customer, Device just right of
+        # it, both in view -- the group starts after Device
         c = T._COL["Customer"]
-        self.assertEqual(T.HEADERS[c + 1:c + 9], ("Email", "Zip", "DSI #", "Wireless Order #", "BAN", "Phone #",
-                                                  "Type", "Plan"))                # 11/18: + Type and Plan
-        self.assertEqual(T.HEADERS[c + 9:c + 12], ("Order Date", "Last Updated", "Device"))   # Device stays in view
-        self.assertEqual(T.HEADERS[-1], "Port Status")                           # 11/18: moved to the very end
+        self.assertEqual(T.HEADERS[c - 2:c + 2], ("Line", "Line Status", "Customer", "Device"))
+        self.assertEqual(T.HEADERS[c + 2:c + 10], ("Email", "Zip", "DSI #", "Wireless Order #", "BAN", "Phone #",
+                                                   "Type", "Plan"))
+        self.assertEqual(T.HEADERS[c + 10:c + 13], ("Order Date", "Last Updated", "Ship Date"))
+        self.assertEqual(T.HEADERS[-1], "Port Status")                           # 11/17 pm: moved to the very end
         self.assertEqual(T.HEADERS[T._COL["Activation Date"] + 1], "Disconnect Date")
         self.assertEqual(r[T._COL["Disconnect Date"]], "")
         self.assertEqual(r[T._COL["Taylor's Notes"]], "")
@@ -568,7 +570,8 @@ class Nov17Columns(unittest.TestCase):
     def test_group_is_added_folded_with_its_toggle_above_customer(self):
         start, end = T.group_span()
         self.assertEqual((start, end), (T._COL["Email"], T._COL["Plan"] + 1))
-        self.assertEqual(start, T._COL["Customer"] + 1)
+        self.assertEqual(start, T._COL["Device"] + 1)             # Device is the last column in view
+        self.assertEqual(T._COL["Device"], T._COL["Customer"] + 1)
         reqs = T.group_requests(7, [])
         self.assertFalse(reqs[0]["updateSheetProperties"]["properties"]["gridProperties"]["columnGroupControlAfter"])
         add = [r["addDimensionGroup"]["range"] for r in reqs if "addDimensionGroup" in r]
@@ -634,7 +637,7 @@ class Nov17Columns(unittest.TestCase):
 
 class NobodyUsesLetters(unittest.TestCase):
     def test_no_reader_addresses_the_tab_by_letter(self):
-        # 11/18: Carlos moved seven columns in two days and asked that "whatever
+        # 11/17 pm: Carlos moved seven columns in two days and asked that "whatever
         # fills all this out" keep up. It does only because every reader and
         # writer resolves by header name; this pins that for the modules that
         # touch the tab.
