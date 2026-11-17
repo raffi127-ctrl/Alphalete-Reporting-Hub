@@ -72,11 +72,42 @@ DAYS_KEPT: Optional[int] = None       # None = keep every line
 # export carries no pay-period field (probed 11/11), so it is computed.
 # Everything after Week Ending moved one column right (Delivered Message Sent
 # is X, was W); every reader resolves by header.
-HEADERS = ("Week Ending", "Pay Period", "Rep", "Customer", "Zip", "Email", "Order Date", "DSI #",
-           "Wireless Order #", "BAN", "Line", "Type", "Phone #", "Device", "Plan",
-           "Line Status", "Ship Date", "Delivered", "Activation Date", "Port Status",
-           "Last Updated", "Notes", "Being worked on", "Delivered Message Sent", "Shipping Status",
-           "Shipping Notes", "Churn Bucket")
+HEADERS = ("Week Ending", "Pay Period", "Rep", "Line", "Customer",
+           "Email", "Zip", "DSI #", "Wireless Order #", "BAN", "Phone #",     # GROUP_COLS, folded under Customer
+           "Type", "Plan",                                                    # ... these two too (11/18)
+           "Order Date", "Last Updated", "Device",
+           "Line Status", "Ship Date", "Delivered", "Activation Date", "Disconnect Date",
+           "Taylor's Notes", "Notes", "Being worked on", "Delivered Message Sent",
+           "Shipping Status", "Shipping Notes", "Churn Bucket", "Port Status")
+# 2026-11-18, Carlos, by the letters of the 11/17 layout: "group column M, N
+# and O into the same grouping" then "Actually keep N where its at" (Type and
+# Plan join the folded group, Device stays in view), "column L move to the left
+# of column D" (Line before Customer), "Column V to the right of Column K"
+# (Last Updated right after Order Date), "Column X to the left of column W"
+# (Taylor's Notes before Notes), "Move U to the right right at the end. idk
+# what its for" (Port Status last -- it is the feed's own port-in state for a
+# ported number, kept because a change in it restamps Last Updated).
+#
+# WHOEVER WRITES THIS TAB: the order above is the ONLY place the layout lives.
+# Every reader and writer finds its columns by header name -- this module's
+# rewrite (_COL), rc_contact_sync.delivered (Delivered Message Sent),
+# nds_metrics.att_order_status (Shipping Status / Shipping Notes),
+# customer_email, rc_contact_sync.followup, activation_by_week, rep_order_log,
+# nds_churn -- so a move here needs no change there. Never address this tab by
+# letter or index (test_no_reader_addresses_the_tab_by_letter).
+# 2026-11-17, Carlos, three things at once:
+#  * "lets do a grouping in the nds order log. it should be above customer the
+#    plus sign ... what i want to open up is the cx email, zip code, DSI #,
+#    Wireless order #, BAN, Phone #. all those columns lets have group inside of
+#    the cx name" -- GROUP_COLS sit together right after Customer as ONE column
+#    group, collapsed, its +/- above Customer (columnGroupControlAfter off).
+#  * "we need a taylors notes column next to the regular notes" -- typed by
+#    hand, carried like Notes.
+#  * "a column with the disconnect date needs to be added" -- after Activation
+#    Date, off the Tableau export: Status Date of the line whose DTR Status is
+#    Disconnected, by spe.TN (ZipIndex.disconnect_date); the SaraPlus feed
+#    carries no date for it.
+GROUP_COLS = ("Email", "Zip", "DSI #", "Wireless Order #", "BAN", "Phone #", "Type", "Plan")
 # "Shipping Status" left of Shipping Notes since 2026-11-12 pm, Carlos: "to the
 # left of shipping notes a shipping status and this status is only based off
 # of what we get from the tracking number" -- one short word per LINE off the
@@ -99,12 +130,12 @@ HEADERS = ("Week Ending", "Pay Period", "Rep", "Customer", "Zip", "Email", "Orde
 # status updates once a day and updating it on here". Written by
 # nds_metrics.att_order_status every morning (AT&T's order page + FedEx), carried
 # through every rewrite like Notes. Delivered Message Sent is column Y now.
-_LEAD = 2                       # columns in front of the feed's own row shape (Week Ending, Pay Period)
 # Carlos's own columns: typed by hand (or, for column S, by rc_contact_sync.delivered),
 # carried by line key through every rewrite. "Delivered Message Sent" was on the live
 # tab by hand before the code knew it (2026-10-29) -- a rewrite without it here would
 # have dropped the column.
-CARRIED = ("Notes", "Being worked on", "Delivered Message Sent", "Shipping Status", "Shipping Notes")   # in HEADERS order
+CARRIED = ("Taylor's Notes", "Notes", "Being worked on", "Delivered Message Sent", "Shipping Status",
+           "Shipping Notes")   # in HEADERS order
 # The typed columns' dropdown choices. "Not saveable" on Being worked on since
 # 2026-11-14, Carlos: "under the being worked on column/drop down lets add a
 # not saveable option" -- a customer nobody can win back, so the line stops
@@ -113,17 +144,14 @@ DROPDOWNS = {
     "Being worked on": ("Yes", "No", "Not saveable"),      # the third one = NOT_SAVEABLE (purple row)
     "Delivered Message Sent": ("Yes", "No"),
 }
-# the carried columns that sit AFTER Last Updated (line_row pads these; Shipping
-# Notes sits inside the feed's own span and is inserted where it belongs)
-_TRAILING = CARRIED             # all four sit after Last Updated now
 _COL = {h: i for i, h in enumerate(HEADERS)}
 _ID_COLS = ("DSI #", "Wireless Order #", "BAN", "Line")
 _TEXT_COLS = _ID_COLS + ("Zip", "Email")   # written as text, never a number
 _DATE_COLS = ("Week Ending", "Order Date", "Ship Date", "Delivered", "Activation Date",
-              "Last Updated")                # one date pattern, so a sort sees one 11/08/2026
+              "Disconnect Date", "Last Updated")                # one date pattern, so a sort sees one 11/08/2026
 # a change in any of these restamps Last Updated
-_STATE_COLS = ("Line Status", "Ship Date", "Delivered", "Activation Date", "Port Status",
-               "Type", "Phone #", "Device", "Plan")
+_STATE_COLS = ("Line Status", "Ship Date", "Delivered", "Activation Date", "Disconnect Date",
+               "Port Status", "Type", "Phone #", "Device", "Plan")
 DEAD = ("disconnected", "cancelled", "canceled")
 
 # Tabs this module must never write to, whatever TAB is set to.
@@ -158,29 +186,36 @@ def _norm(s) -> str:
     return " ".join(str(s or "").split()).strip().lower()
 
 
-def line_row(line: dict, stamp: str, zip_of=None, email_of=None, active_of=None) -> List[str]:
-    """One tab row from one wireless_pull line (the thread's own row shape).
-    `zip_of(line)` -> the customer's zip (ZipIndex.for_line); None/'' = blank.
-    `email_of(line)` -> the customer's e-mail (EmailIndex.for_line), same.
-    `active_of(line)` -> the line's Tableau activation date (ZipIndex.active_for_line)."""
+# the feed's own row (order_xlsx._row_of), by the tab's column names
+_FEED_COLS = ("Rep", "Customer", "Order Date", "DSI #", "Wireless Order #", "BAN", "Line", "Type",
+              "Phone #", "Plan", "Line Status", "Ship Date", "Delivered", "Port Status")
+
+
+def line_row(line: dict, stamp: str, zip_of=None, email_of=None, active_of=None,
+             disc_of=None) -> List[str]:
+    """One tab row from one wireless_pull line, built BY COLUMN NAME and laid
+    out in HEADERS order (positions are never assumed -- 11/17's regrouping
+    moved six columns). `zip_of(line)` -> the customer's zip (ZipIndex.for_line);
+    `email_of(line)` -> the e-mail (EmailIndex.for_line); `active_of(line)` /
+    `disc_of(line)` -> the line's Tableau activation / disconnect date
+    (ZipIndex.active_for_line / .disconnect_for_line). None/'' = blank."""
     import html
     from automations.nds_metrics.order_xlsx import _row_of
     # the feed is an HTML table: "AT&amp;T Premium" must read AT&T Premium
     core = [html.unescape(str(x or "")).strip() for x in _row_of(line)]
-    od = _parse_date(core[2])
-    model = html.unescape(str(device_model(line) or "")).strip()
-    zip_code = str((zip_of(line) if zip_of else "") or "").strip()
-    email = str((email_of(line) if email_of else "") or "").strip()
-    i_zip = _COL["Zip"] - _LEAD          # core has no Week Ending / Pay Period in front
-    core = core[:i_zip] + [zip_code, email] + core[i_zip:]
-    i_dev = _COL["Device"] - _LEAD
-    core = core[:i_dev] + [model] + core[i_dev:]
+    cell = dict(zip(_FEED_COLS, core))
+    od = _parse_date(cell["Order Date"])
     act = str((active_of(line) if active_of else "") or "").strip()
-    i_act = _COL["Activation Date"] - _LEAD
-    core = core[:i_act] + [act] + core[i_act:]
-    pay = pay_period_for(line.get("line_status"), _parse_date(act))
-    return ([_fmt(week_ending_sunday(od)) if od else "", pay] + core + [stamp]
-            + [""] * len(_TRAILING) + [_bucket(_parse_date(act), _parse_date(stamp))])
+    cell["Week Ending"] = _fmt(week_ending_sunday(od)) if od else ""
+    cell["Pay Period"] = pay_period_for(line.get("line_status"), _parse_date(act))
+    cell["Zip"] = str((zip_of(line) if zip_of else "") or "").strip()
+    cell["Email"] = str((email_of(line) if email_of else "") or "").strip()
+    cell["Device"] = html.unescape(str(device_model(line) or "")).strip()
+    cell["Activation Date"] = act
+    cell["Disconnect Date"] = str((disc_of(line) if disc_of else "") or "").strip()
+    cell["Last Updated"] = stamp
+    cell["Churn Bucket"] = _bucket(_parse_date(act), _parse_date(stamp))
+    return [cell.get(h, "") for h in HEADERS]            # the CARRIED columns start blank
 
 
 def _bucket(activation: Optional[dt.date], today: Optional[dt.date]) -> str:
@@ -271,10 +306,13 @@ class ZipIndex:
     order (sp.SPM Number = the feed's DSI #). 2026-11-10: all 317 tab lines
     matched by each key alone."""
 
-    def __init__(self, by_phone: dict, by_ban: dict, by_dsi: dict, active_by_phone: Optional[dict] = None):
+    def __init__(self, by_phone: dict, by_ban: dict, by_dsi: dict, active_by_phone: Optional[dict] = None,
+                 disc_by_phone: Optional[dict] = None):
         self.by_phone, self.by_ban, self.by_dsi = by_phone, by_ban, by_dsi
         # the line's DTR Active Date (Tableau = the paycheck), by spe.TN
         self.active_by_phone = active_by_phone or {}
+        # the Status Date of the line Tableau calls Disconnected, by spe.TN
+        self.disc_by_phone = disc_by_phone or {}
 
     def __len__(self):
         return len(self.by_phone)
@@ -298,6 +336,12 @@ class ZipIndex:
     def active_for_line(self, line: dict) -> str:
         return self.active_date(line.get("device"))
 
+    def disconnect_date(self, phone="") -> str:
+        return self.disc_by_phone.get(self._digits(phone), "")
+
+    def disconnect_for_line(self, line: dict) -> str:
+        return self.disconnect_date(line.get("device"))
+
     @classmethod
     def from_rows(cls, header: Sequence[str], rows: Sequence[Sequence[str]]) -> "ZipIndex":
         from automations.office_metrics.nds_orderlog import _cell, _find
@@ -306,10 +350,14 @@ class ZipIndex:
         iban = _find(list(header), "spe.account ban", "account ban")
         ispm = _find(list(header), "sp.spm number", "spm number")
         iact = _find(list(header), "dtr active date", "active date", "activation date")
+        # the disconnect date: Status Date on a line whose DTR Status is
+        # Disconnected (what nds_orderlog's Disconnects board dates by)
+        ist = _find(list(header), "dtr status (enriched)", "dtr status", "order status")
+        isd = _find(list(header), "dtr status date", "status date")
         if iz is None:
             raise RuntimeError("order-log export has no Customer Zip column -- header: %r"
                                % list(header)[:40])
-        by_phone, by_ban, by_dsi, active = {}, {}, {}, {}
+        by_phone, by_ban, by_dsi, active, disc = {}, {}, {}, {}, {}
         d = cls._digits
         for r in rows:
             if iact is not None and itn is not None:
@@ -317,6 +365,12 @@ class ZipIndex:
                 tn = d(_cell(r, itn))
                 if a and tn:
                     active.setdefault(tn, _fmt(a))
+            if ist is not None and isd is not None and itn is not None \
+                    and "disconnect" in _cell(r, ist).lower():
+                dd = _parse_date(_cell(r, isd))
+                tn = d(_cell(r, itn))
+                if dd and tn:
+                    disc.setdefault(tn, _fmt(dd))
             z = _cell(r, iz)
             if not z:
                 continue
@@ -324,7 +378,7 @@ class ZipIndex:
                 k = d(_cell(r, i)) if i is not None else ""
                 if k:
                     store.setdefault(k, z)
-        return cls(by_phone, by_ban, by_dsi, active)
+        return cls(by_phone, by_ban, by_dsi, active, disc)
 
     @classmethod
     def from_export(cls, today: dt.date, log=print) -> Optional["ZipIndex"]:
@@ -348,8 +402,9 @@ class ZipIndex:
             log("[nds] NDS Order Log tab: %s -- zips kept as they were" % e)
             return None
         log("[nds] NDS Order Log tab: zips for %d phone number(s) / %d BAN(s) / %d order(s), "
-            "activation dates for %d line(s) from %s"
-            % (len(zi.by_phone), len(zi.by_ban), len(zi.by_dsi), len(zi.active_by_phone), path.name))
+            "activation dates for %d line(s), disconnect dates for %d from %s"
+            % (len(zi.by_phone), len(zi.by_ban), len(zi.by_dsi), len(zi.active_by_phone),
+               len(zi.disc_by_phone), path.name))
         return zi
 
 
@@ -394,7 +449,7 @@ def merge(existing: Sequence[Sequence[str]], lines: Sequence[dict], *,
           today: dt.date, existing_header: Optional[Sequence[str]] = None,
           zip_of=None, zip_lookup=None, email_of=None,
           email_lookup=None, email_known=None, active_of=None,
-          active_lookup=None) -> Dict[str, object]:
+          active_lookup=None, disc_of=None, disc_lookup=None) -> Dict[str, object]:
     """Kept-if-absent, replaced-if-present, never aged out (DAYS_KEPT None;
     a number ages rows off past that many days by Order Date). Last Updated
     restamps only when the line's state changed. Notes
@@ -426,6 +481,8 @@ def merge(existing: Sequence[Sequence[str]], lines: Sequence[dict], *,
             row[_COL["Email"]] = str(email_lookup(row[_COL["DSI #"]]) or "")
         if active_lookup and not str(row[_COL["Activation Date"]]).strip():
             row[_COL["Activation Date"]] = str(active_lookup(row[_COL["Phone #"]]) or "")
+        if disc_lookup and not str(row[_COL["Disconnect Date"]]).strip():
+            row[_COL["Disconnect Date"]] = str(disc_lookup(row[_COL["Phone #"]]) or "")
         for c in _DATE_COLS:
             d = _parse_date(row[_COL[c]])
             if d:
@@ -436,7 +493,7 @@ def merge(existing: Sequence[Sequence[str]], lines: Sequence[dict], *,
     oldest = today - dt.timedelta(days=DAYS_KEPT) if DAYS_KEPT else None
     added = changed = 0
     for line in lines:
-        fresh = line_row(line, stamp, zip_of, email_of, active_of)
+        fresh = line_row(line, stamp, zip_of, email_of, active_of, disc_of)
         od = _parse_date(fresh[_COL["Order Date"]])
         if oldest and od and od < oldest:
             continue
@@ -450,6 +507,8 @@ def merge(existing: Sequence[Sequence[str]], lines: Sequence[dict], *,
                 fresh[_COL["Email"]] = prior[_COL["Email"]]
             if not fresh[_COL["Activation Date"]]:
                 fresh[_COL["Activation Date"]] = prior[_COL["Activation Date"]]
+            if not fresh[_COL["Disconnect Date"]]:
+                fresh[_COL["Disconnect Date"]] = prior[_COL["Disconnect Date"]]
             same = all(_norm(prior[_COL[c]]) == _norm(fresh[_COL[c]])
                        for c in _STATE_COLS)
             if same:
@@ -510,7 +569,43 @@ def status_rules() -> List[tuple]:
     ]
 
 
-def _format_requests(sheet_id: int, n_rows: int, existing_rules: int) -> List[dict]:
+def group_span() -> tuple:
+    """(start, end) column indexes of the customer-detail group -- GROUP_COLS
+    must sit together, right after Customer."""
+    idx = sorted(_COL[c] for c in GROUP_COLS)
+    if idx != list(range(idx[0], idx[0] + len(idx))) or idx[0] != _COL["Customer"] + 1:
+        raise RuntimeError("GROUP_COLS must be contiguous and start right after Customer")
+    return idx[0], idx[-1] + 1
+
+
+def group_requests(sheet_id: int, existing_groups: Sequence[dict]) -> List[dict]:
+    """The one column group, with its +/- above Customer. A group already on
+    exactly that span is left alone, so whether Carlos had it open or folded
+    survives the rewrite; anything else (an older span, a stray group) is
+    removed and the group is added folded."""
+    start, end = group_span()
+    reqs = [{"updateSheetProperties": {
+        "properties": {"sheetId": sheet_id, "gridProperties": {"columnGroupControlAfter": False}},
+        "fields": "gridProperties.columnGroupControlAfter"}}]
+    have = [(g.get("range", {}).get("startIndex", 0), g.get("range", {}).get("endIndex", 0))
+            for g in existing_groups or ()]
+    if have == [(start, end)]:
+        return reqs
+    # deepest first, so an outer group is never removed from under an inner one
+    for g in sorted(existing_groups or (), key=lambda g: -int(g.get("depth", 1))):
+        r = g.get("range", {})
+        reqs.append({"deleteDimensionGroup": {"range": {
+            "sheetId": sheet_id, "dimension": "COLUMNS",
+            "startIndex": r.get("startIndex", 0), "endIndex": r.get("endIndex", 0)}}})
+    rng = {"sheetId": sheet_id, "dimension": "COLUMNS", "startIndex": start, "endIndex": end}
+    reqs.append({"addDimensionGroup": {"range": rng}})
+    reqs.append({"updateDimensionGroup": {"dimensionGroup": {"range": rng, "depth": 1, "collapsed": True},
+                                          "fields": "collapsed"}})
+    return reqs
+
+
+def _format_requests(sheet_id: int, n_rows: int, existing_rules: int,
+                     existing_groups: Sequence[dict] = ()) -> List[dict]:
     n_cols = len(HEADERS)
 
     def rng(r0, r1, c0, c1):
@@ -536,7 +631,7 @@ def _format_requests(sheet_id: int, n_rows: int, existing_rules: int) -> List[di
     # "11/8/2026" (a date) -- Carlos: "when I'm sorting it, it's like they're
     # two different options". Every column is reset to AUTOMATIC first, then
     # the id/zip/e-mail columns get TEXT and the date columns one date pattern.
-    reqs.append({"repeatCell": {"range": rng(1, 1000, 0, max(n_cols, 26)),
+    reqs.append({"repeatCell": {"range": rng(1, 1000, 0, max(n_cols, 30)),
                                 "cell": {"userEnteredFormat": {"numberFormat": {"type": "NUMBER", "pattern": "General"}}},
                                 "fields": "userEnteredFormat.numberFormat"}})
     for name in _TEXT_COLS:
@@ -552,14 +647,16 @@ def _format_requests(sheet_id: int, n_rows: int, existing_rules: int) -> List[di
     # Shipping Notes' hover notes (att_order_status) belong to a line, not a
     # row: rows move on every rewrite, so the notes are wiped here and the
     # 06:50 job writes them back on the right cells.
-    reqs.append({"repeatCell": {"range": rng(1, 1000, _COL["Shipping Notes"], _COL["Shipping Notes"] + 1),
+    # (every column, not just Shipping Notes: a column move leaves the old
+    # column's notes behind on whatever lands there -- 11/17's regrouping)
+    reqs.append({"repeatCell": {"range": rng(1, 1000, 0, max(n_cols, 30)),
                                 "cell": {"note": ""}, "fields": "note"}})
     # "Being worked on" / "Delivered Message Sent": a Yes / No dropdown on every data row.
     # Cleared off EVERY column first: a rule stays on its letter when a column
     # is added (11/11: R, S, T and U all carried it, so Last Updated's dates and
     # the Notes showed red "invalid" corners -- Carlos: "Column R has a bunch of
     # red dots in the top-right corner").
-    reqs.append({"setDataValidation": {"range": rng(0, 1000, 0, max(n_cols, 26))}})
+    reqs.append({"setDataValidation": {"range": rng(0, 1000, 0, max(n_cols, 30))}})
     for name, options in DROPDOWNS.items():
         c_w = _COL[name]
         reqs.append({"setDataValidation": {"range": rng(1, 1000, c_w, c_w + 1), "rule": {
@@ -568,7 +665,7 @@ def _format_requests(sheet_id: int, n_rows: int, existing_rules: int) -> List[di
     # columns wide enough for full names (auto-fit, then a floor for the typed columns)
     reqs.append({"autoResizeDimensions": {"dimensions": {"sheetId": sheet_id, "dimension": "COLUMNS",
                                                          "startIndex": 0, "endIndex": n_cols}}})
-    for name, px in (("Notes", 220), ("Shipping Notes", 260), ("Shipping Status", 170), ("Being worked on", 130), ("Delivered Message Sent", 150),
+    for name, px in (("Notes", 220), ("Taylor's Notes", 220), ("Shipping Notes", 260), ("Shipping Status", 170), ("Being worked on", 130), ("Delivered Message Sent", 150),
                      ("Customer", 190), ("Rep", 190), ("Device", 170),
                      ("Email", 210), ("Pay Period", 185), ("Churn Bucket", 110)):
         c = _COL[name]
@@ -583,13 +680,14 @@ def _format_requests(sheet_id: int, n_rows: int, existing_rules: int) -> List[di
             "ranges": [rng(1, 1000, 0, n_cols)],
             "booleanRule": {"condition": {"type": "CUSTOM_FORMULA", "values": [{"userEnteredValue": formula}]},
                             "format": {"backgroundColor": {"red": r, "green": g, "blue": b}}}}}})
+    reqs.extend(group_requests(sheet_id, existing_groups))
     return reqs
 
 
 def push(lines: Sequence[dict], *, today: Optional[dt.date] = None,
          sheet_id: Optional[str] = None, log=print, zip_of=None,
          zip_lookup=None, email_of=None, email_lookup=None, email_known=None,
-         active_of=None, active_lookup=None) -> Dict[str, object]:
+         active_of=None, active_lookup=None, disc_of=None, disc_lookup=None) -> Dict[str, object]:
     """Merge today's feed lines into the tab and rewrite it."""
     from automations.recruiting_report.fill import _retry, open_by_key
     if TAB in PROTECTED_TABS:
@@ -601,7 +699,8 @@ def push(lines: Sequence[dict], *, today: Optional[dt.date] = None,
     result = merge(prior[1:] if prior else [], lines, today=today,
                    existing_header=prior[0] if prior else None, zip_of=zip_of,
                    zip_lookup=zip_lookup, email_of=email_of, email_lookup=email_lookup,
-                   email_known=email_known, active_of=active_of, active_lookup=active_lookup)
+                   email_known=email_known, active_of=active_of, active_lookup=active_lookup,
+                   disc_of=disc_of, disc_lookup=disc_lookup)
     rows = result["rows"]
     if not rows:
         raise RuntimeError("NDS Order Log merge produced no rows -- refusing to blank the tab")
@@ -614,12 +713,14 @@ def push(lines: Sequence[dict], *, today: Optional[dt.date] = None,
     _retry(lambda: ws.resize(rows=max(1000, len(body) + 50), cols=len(HEADERS)))
     _retry(lambda: ws.clear())
     _retry(lambda: ws.update(body, "A1", value_input_option="USER_ENTERED"))
-    meta = _retry(lambda: sh.fetch_sheet_metadata({"fields": "sheets(properties(sheetId),conditionalFormats)"}))
-    n_rules = 0
+    meta = _retry(lambda: sh.fetch_sheet_metadata(
+        {"fields": "sheets(properties(sheetId),conditionalFormats,columnGroups)"}))
+    n_rules, groups = 0, []
     for s in meta.get("sheets", []):
         if s["properties"]["sheetId"] == ws.id:
             n_rules = len(s.get("conditionalFormats", []))
-    _retry(lambda: sh.batch_update({"requests": _format_requests(ws.id, len(rows), n_rules)}))
+            groups = s.get("columnGroups", [])
+    _retry(lambda: sh.batch_update({"requests": _format_requests(ws.id, len(rows), n_rules, groups)}))
     log("[nds] NDS Order Log tab: %d line(s) on the tab (+%d new, %d changed, %d aged out)"
         % (len(rows), result["added"], result["changed"], result["aged_out"]))
     return result
@@ -683,7 +784,9 @@ def refresh(today: Optional[dt.date] = None, log=print) -> Optional[Dict[str, ob
                 email_lookup=emails.lookup if emails else None,
                 email_known=emails.known if emails else None,
                 active_of=zips.active_for_line if zips else None,
-                active_lookup=zips.active_date if zips else None)
+                active_lookup=zips.active_date if zips else None,
+                disc_of=zips.disconnect_for_line if zips else None,
+                disc_lookup=zips.disconnect_date if zips else None)
 
 
 def preview(today: Optional[dt.date] = None, log=print,
@@ -718,7 +821,9 @@ def preview(today: Optional[dt.date] = None, log=print,
                    email_lookup=emails.lookup if emails else None,
                    email_known=emails.known if emails else None,
                    active_of=zips.active_for_line if zips else None,
-                   active_lookup=zips.active_date if zips else None)
+                   active_lookup=zips.active_date if zips else None,
+                   disc_of=zips.disconnect_for_line if zips else None,
+                   disc_lookup=zips.disconnect_date if zips else None)
     rows = result["rows"]
     if not tab_ok:
         for r in rows:

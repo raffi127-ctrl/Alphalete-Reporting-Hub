@@ -47,6 +47,25 @@ class Parse(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             RD.names_of(['', 'email'], [['1', 'x']])
 
+    def test_hired_by_by_header_name(self):
+        h = ['', 'first name', 'last name', 'email', 'hired by']
+        got = RD.hired_by(h, [['1', 'Zandro', 'Diaz', '', 'Nick  Lee'],
+                              ['2', 'Ana', 'Ruiz', '', '']])
+        self.assertEqual(got, {"zandro diaz": "Nick Lee"})   # blank = left out
+
+    def test_hired_by_absent_is_empty_not_an_error(self):
+        self.assertEqual(RD.hired_by(['', 'first name', 'last name'],
+                                     [['1', 'A', 'B']]), {})
+
+    def test_hired_by_survives_the_hand_off(self):
+        d = RD.Day(day=DAY, owner="x", ns_scheduled=["Zandro Diaz"],
+                   ns_hired_by={"zandro diaz": "Nick Lee"})
+        _, _, back, _ = RD.from_payload(RD.to_payload(C.office("eveliz"), "showed", d))
+        self.assertEqual(back.ns_hired_by, {"zandro diaz": "Nick Lee"})
+        p = RD.to_payload(C.office("eveliz"), "showed", d)
+        del p["ns_hired_by"]                       # a payload queued before this
+        self.assertEqual(RD.from_payload(p)[2].ns_hired_by, {})
+
 
 class Copy(unittest.TestCase):
     def test_empty_day_sends_nothing(self):
@@ -61,6 +80,8 @@ class Copy(unittest.TestCase):
         self.assertEqual(msg, "New Starts Update: 3/4 showed — 75% retention")
         with tempfile.TemporaryDirectory() as t:
             self.assertTrue(R.showed_png(d, Path(t) / "s.png").exists())
+            d.ns_hired_by = {"a": "Nick Lee"}
+            self.assertTrue(R.showed_png(d, Path(t) / "h.png").exists())
 
     def test_morning_counts(self):
         d = RD.Day(day=DAY, owner="x", first=[(dt.time(8), "a")] * 3)

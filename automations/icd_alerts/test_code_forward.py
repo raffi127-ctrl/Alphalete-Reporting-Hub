@@ -45,6 +45,10 @@ def setUpModule():
     p = mock.patch.object(G, "set_up", return_value=G.DECLINED)
     p.start()
     unittest.addModuleCleanup(p.stop)
+    # Nor open Lucy's Gmail window: LucyClicksGmail turns it back on, mocked.
+    p = mock.patch.object(CF, "LUCY_CLICKS_GMAIL", False)
+    p.start()
+    unittest.addModuleCleanup(p.stop)
 
 
 class FakeAsk:
@@ -261,6 +265,105 @@ class LucyMakesTheFilter(OnTheMac):
                 mock.patch("builtins.print", side_effect=lambda *a, **k: said.append(a[0] if a else "")):
             self.assertEqual(CF.main(), 0)
         self.assertIn("  ALL SET. From now on, Lucy types SaraPlus's codes for you.", said)
+
+
+class LucyClicksGmail(unittest.TestCase):
+    """Eve 2026-11-17: Lucy's Gmail window does the clicks; the owner signs in
+    and taps the number on their phone. Anything else: the hand steps.
+    OnTheMac's setting up, NOT its tests: those are the hand road."""
+
+    _go = OnTheMac._go
+
+    def setUp(self):
+        OnTheMac.setUp(self)
+        from automations.icd_alerts import gmail_browser as GB
+        self.GB = GB
+        for name, value in (("LUCY_CLICKS_GMAIL", True),):
+            p = mock.patch.object(CF, name, value)
+            p.start()
+            self.addCleanup(p.stop)
+        p = mock.patch.object(GB, "available", return_value=True)
+        p.start()
+        self.addCleanup(p.stop)
+        # Each patch stopped on its own: mock.patch.stopall would also stop the
+        # module's (LUCY_CLICKS_GMAIL off, report_fault, _copy) for every test
+        # after this one -- it opened a real Gmail window once (11/17).
+        # add_and_filter, played out: add, then confirmed() (the real one,
+        # with the relay mocked above), then the filter -- one window.
+        self.add = mock.Mock(return_value=GB.ADDED)
+        self.made = mock.Mock(return_value=GB.MADE)
+
+        def one_window(ask, address, confirmed, say=print):
+            got = self.add(ask, address, say)
+            if got not in (GB.ADDED, GB.ALREADY):
+                return got, None
+            ok = confirmed()
+            if ok is not True:
+                return got, ok if isinstance(ok, str) else GB.NOT_ACCEPTED
+            return got, self.made(ask, address, say)
+        p = mock.patch.object(GB, "add_and_filter", side_effect=one_window)
+        p.start()
+        self.addCleanup(p.stop)
+        # The standalone filter (already-confirmed road) must not run here.
+        p = mock.patch.object(GB, "make_filter", return_value=GB.MADE)
+        self.alone = p.start()
+        self.addCleanup(p.stop)
+
+    def test_lucy_adds_confirms_and_makes_the_filter(self):
+        ask = FakeAsk(CF.YES)
+        self.assertEqual(self._go(ask), "done")
+        self.add.assert_called_once()
+        self.made.assert_called_once()
+        self.assertEqual(self.sent, ["owner@gmail.com"])
+        self.assertTrue(CF.already_set_up(), "Gmail's own filter list is the proof")
+        self.assertEqual(self.opened, [], "no hand-built Gmail tab")
+        self.assertEqual(ask.shown, [CF.ALL_SET])
+
+    def test_an_address_already_there_goes_on_the_same(self):
+        self.add.return_value = self.GB.ALREADY
+        self.assertEqual(self._go(FakeAsk(CF.YES)), "done")
+        self.assertTrue(CF.already_set_up())
+
+    def test_a_gmail_that_looks_different_gets_the_hand_steps(self):
+        self.add.return_value = self.GB.STUCK
+        ask = FakeAsk(CF.YES)
+        self.assertEqual(self._go(ask), "done")
+        self.assertIn(CF.STEPS % (CF.REPORTING_INBOX, "owner@gmail.com"), ask.shown)
+        self.assertEqual(self.opened[0], CF.for_account(CF.ADD_URL, "owner@gmail.com"))
+
+    def test_nobody_signing_in_gets_the_hand_steps(self):
+        self.add.return_value = self.GB.NO_SIGNIN
+        ask = FakeAsk(CF.YES)
+        self.assertEqual(self._go(ask), "done")
+        self.assertIn(CF.STEPS % (CF.REPORTING_INBOX, "owner@gmail.com"), ask.shown)
+
+    def test_a_filter_lucy_could_not_make_opens_the_filter_box(self):
+        self.made.return_value = self.GB.STUCK
+        ask = FakeAsk(CF.YES)
+        self.assertEqual(self._go(ask), "done")
+        self.assertIn(CF.FILTER_STEPS, ask.shown)
+        self.assertFalse(CF.already_set_up(), "OK on the box proves nothing")
+
+    def test_never_confirmed_is_left_open(self):
+        with mock.patch.object(CF, "_wait_for_gmail", return_value=False):
+            ask = FakeAsk(CF.YES)
+            self.assertEqual(self._go(ask), "not confirmed yet")
+        self.made.assert_not_called()
+        self.assertEqual(ask.shown[-1], CF.LEFT_OPEN)
+
+    def test_one_window_never_a_second_filter_session(self):
+        self.assertEqual(self._go(FakeAsk(CF.YES)), "done")
+        self.alone.assert_not_called()
+
+    def test_off_switch_is_the_old_road(self):
+        with mock.patch.object(CF, "LUCY_CLICKS_GMAIL", False):
+            self.assertEqual(self._go(FakeAsk(CF.YES)), "done")
+        self.add.assert_not_called()
+
+    def test_the_hand_steps_mention_the_phone(self):
+        self.assertIn("phone", CF.STEPS)
+        self.assertIn("phone", CF.NOT_ARRIVED)
+        self.assertIn("phone", CF.FILTER_STEPS)
 
 
 class MegansWay(OnTheMac):

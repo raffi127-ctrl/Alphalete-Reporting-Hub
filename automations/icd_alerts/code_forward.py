@@ -55,6 +55,15 @@ Google page reads as an error ("hasn't verified this app", then a small
 the start: its own "Add forwarding address" link adds ours, and once Gmail
 confirms, Lucy reopens the same box to save it. LUCY_MAKES_FILTER brings the
 Allow back.
+
+LUCY CLICKS THROUGH GMAIL (Eve 2026-11-17). 7 of 18 offices never finished,
+Kash three times. Tried end to end on a real Gmail: after "Next" Google shows a
+NUMBER to tap on the owner's phone, and saving a forwarding filter asks for it
+AGAIN -- none of which our steps said. Owners can't be kept on a call, so now
+Lucy opens her own Gmail window (gmail_browser): the owner signs in and taps
+the number on their phone, Lucy presses everything else, and the filter is
+read back from Gmail. Anything unexpected falls back to the steps below, which
+now mention the phone too. LUCY_CLICKS_GMAIL turns it off.
 """
 from __future__ import annotations
 
@@ -76,7 +85,8 @@ STEPS = (
     "2. Click Add forwarding address (blue, next to Forward it to).\n"
     "3. Click Add a forwarding address and PASTE into the box (hold Command "
     "and tap V). We already copied our address for you.\n"
-    "4. Click Next, Proceed, then OK.\n\n"
+    "4. Click Next. If Google shows a number, tap the same number on your "
+    "phone. Then click Proceed and OK.\n\n"
     "Please leave \"Disable forwarding\" selected. \"Forward a copy of incoming "
     "mail\" would send your whole inbox, and we don't want that.\n\n"
     "Click OK here when you're done. Then give Lucy up to 3 minutes to check. "
@@ -96,8 +106,12 @@ NOT_ARRIVED = (
     "Gmail just opened again. Please check:\n"
     "1. The account at the top right is %s\n"
     "2. Click Create filter, then Add forwarding address, and paste %s (we "
-    "copied it again for you). Then Next, Proceed and OK.\n\n"
+    "copied it again for you). Click Next. If Google shows a number, tap the "
+    "same number on your phone. Then Proceed and OK.\n\n"
     "Click OK here when that's done.")
+ALL_SET = ("All set! From now on, Lucy types SaraPlus's codes for you.\n\n"
+           "Only SaraPlus's code emails are forwarded. The rest of your inbox "
+           "stays private.")
 LEFT_OPEN = ("Your sign-in worked and Lucy is running, so nothing is broken.\n\n"
              "This last step isn't finished yet. No problem: you'll see it "
              "again the next time SaraPlus asks for a code.")
@@ -200,15 +214,33 @@ def _step(office_key: str, word: str) -> None:
 
 # Megan's way first (Eve 2026-11-16): no Google Allow page, see the top.
 LUCY_MAKES_FILTER = False
+# Lucy's own Gmail window does the clicks (Eve 2026-11-17), see the top.
+LUCY_CLICKS_GMAIL = True
 
 
-def _finish(ask, say=print, address: str = "", office_key: str = "") -> str:
+def _lucy_clicks() -> bool:
+    if not LUCY_CLICKS_GMAIL:
+        return False
+    from automations.icd_alerts import gmail_browser as GB
+    return GB.available()
+
+
+def _finish(ask, say=print, address: str = "", office_key: str = "",
+            lucy: bool = True) -> str:
     """The forward is confirmed: the filter is all that is left.
 
     First Lucy offers to make it herself (one Google Allow). Read back from
     Gmail, that is proof, so it marks. Otherwise the hand-built box, with no
     mark: OK on that box does not prove the filter was saved, and
     _already_working marks this computer once a code has really arrived."""
+    if lucy and _lucy_clicks():
+        from automations.icd_alerts import gmail_browser as GB
+        made = GB.make_filter(ask, address, say)
+        _step(office_key, "lucy's gmail filter: %s" % made)
+        if made == GB.MADE:
+            _mark(REPORTING_INBOX)
+            ask.message(ALL_SET)
+            return "done"
     if LUCY_MAKES_FILTER:
         from automations.icd_alerts import gmail_filters as G
         made = G.set_up(ask, address, [FILTER], say)
@@ -281,6 +313,10 @@ def walk_through(ask, say=print, office_key: str = "", can_skip: bool = True,
         # GMAIL OPENS ON THE RIGHT SCREEN (Megan 2026-10-29), now AFTER the
         # address, so the steps can name the account to be in: /u/0 is whichever
         # account this browser calls its first, not necessarily that one.
+        if _lucy_clicks():
+            said = _lucy_adds(ask, say, address, office_key)
+            if said:
+                return said
         _copy(REPORTING_INBOX, say)
         _open(for_account(ADD_URL, address), say)
         ask.message(STEPS % (REPORTING_INBOX, address))
@@ -305,6 +341,45 @@ def walk_through(ask, say=print, office_key: str = "", can_skip: bool = True,
     except Exception as e:  # noqa: BLE001
         say("      could not show the code-forward steps: %s" % type(e).__name__)
         return "skipped for now"
+
+
+def _lucy_adds(ask, say, address: str, office_key: str) -> str:
+    """Lucy's Gmail window does it all, in ONE window: our address, the wait
+    for Lucy 1, the filter. A word for walk_through when it got anywhere; ""
+    sends the owner to the hand-built steps."""
+    from automations.icd_alerts import gmail_browser as GB
+    from automations.icd_alerts import relay as R
+
+    def confirmed():
+        if not R.report_forward(address, office_key=office_key):
+            say("      could not reach the reporting team -- tell them %s" % address)
+            return NOT_SENT
+        for _ in range(TRIES):
+            if _wait_for_gmail(office_key, say, sleep=holding(ask)):
+                _step(office_key, "gmail confirmed, filter next")
+                return True
+            _step(office_key, "gmail did not confirm in time")
+        return NOT_YET
+
+    added, made = GB.add_and_filter(ask, address, confirmed, say)
+    _step(office_key, "lucy's gmail: %s / filter: %s" % (added, made))
+    if added not in (GB.ADDED, GB.ALREADY):
+        return ""
+    if made == NOT_SENT:
+        return made
+    if made in (NOT_YET, GB.NOT_ACCEPTED, None):
+        ask.message(LEFT_OPEN)
+        return NOT_YET
+    if made == GB.MADE:
+        _mark(REPORTING_INBOX)
+        ask.message(ALL_SET)
+        return "done"
+    # Confirmed, but Lucy couldn't save the filter: the hand-built box.
+    return _finish(ask, say, address, office_key, lucy=False)
+
+
+NOT_SENT = "address not sent"
+NOT_YET = "not confirmed yet"
 
 
 def offer_after_signin(ask=None, say=print) -> str:
@@ -355,7 +430,8 @@ FILTER_STEPS = (
     "1. Click Create filter.\n"
     "2. Check Forward it to.\n"
     "3. Pick %s.\n"
-    "4. Click Create filter again.\n\n"
+    "4. Click Create filter again. If Google asks to verify it's you, click "
+    "Continue and tap the number on your phone.\n\n"
     "Only SaraPlus's emails get forwarded. If our address isn't in the list yet, "
     "wait a minute and reload the page.\n\n"
     "Click OK here when you're done. Already saved it? Just click OK."

@@ -133,6 +133,22 @@ DAILY_LABEL_TO_METRIC = {
     "new starts showed":                 "new_starts_showed",
     "new starts scheduled":              "new_starts_scheduled",
     "new start retention":               "pct_new_start_retention",
+    # ATT Program - Focus Report wording (Raf 2026-11-17: the Daily Focus
+    # tabs read like the Monday 1on1 focus rows — same names, Booked above
+    # Showed). Prefix match is first-unclaimed-wins, so the plain "job
+    # offered"/"bob" rows still claim their metric before "...retention" /
+    # "bob conversion" sit below them.
+    "apps / pull":                       "pull",
+    "duplicate/already interviewed":     "removed_from_process_emails",
+    "duplicate / already interviewed":   "removed_from_process_emails",
+    "1st booked":                        "first_booked",
+    "1st showed":                        "first_showed",
+    "1st retention":                     "pct_first_retention",
+    "retention 1st showed booked for 2nd": "pct_first_showed_booked_2nd",
+    "2nd booked":                        "second_booked",
+    "2nd showed":                        "second_showed",
+    "2nd retention":                     "pct_second_retention",
+    "bob conversion":                    "pct_bob_conversion",
 }
 
 # Manual short-name → office_id map. Short names from col 22 of the Daily

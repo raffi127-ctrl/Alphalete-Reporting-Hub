@@ -27,6 +27,9 @@ class Day:
     ns_showed: List[str] = field(default_factory=list)
     # {'first last' lowercase: start time} from the calendar; {} = not read
     ns_times: Dict[str, dt.time] = field(default_factory=dict)
+    # {'first last' lowercase: who hired them} off the new-start detail pages
+    # (Eveliz 2026-11-17). {} = no such column -- the picture drops the column.
+    ns_hired_by: Dict[str, str] = field(default_factory=dict)
 
     def ns_with_times(self) -> List[Tuple[Optional[dt.time], str]]:
         """New starts sorted by start time; anyone without one goes last."""
@@ -79,6 +82,43 @@ def names_of(header: List[str], rows: List[List[str]]) -> List[str]:
     return out
 
 
+# Who hired a new start, by detail-page header, best first. Matched by NAME,
+# never position. 'hired by' is the plain ask; the 2nd-round interviewer is who
+# offers the job when the page has no 'hired by' column.
+HIRED_BY_COLS = ("hired by", "hiring manager", "2nd interview by",
+                 "second interview by", "2nd round interviewer",
+                 "2nd interviewer", "2nd round by")
+
+
+def hired_by_col(header: List[str]) -> Optional[int]:
+    h = [" ".join((x or "").lower().split()) for x in header]
+    for want in HIRED_BY_COLS:
+        if want in h:
+            return h.index(want)
+    for want in HIRED_BY_COLS:
+        for i, x in enumerate(h):
+            if want in x:
+                return i
+    return None
+
+
+def hired_by(header: List[str], rows: List[List[str]]) -> Dict[str, str]:
+    """{'first last' lowercase: hirer}. {} when the page has no such column;
+    a blank cell is left out (shown as a dash, never guessed)."""
+    ci = hired_by_col(header)
+    if ci is None:
+        return {}
+    fi, li = _col(header, "first name"), _col(header, "last name")
+    out = {}
+    for r in rows:
+        who = " ".join((r[ci] if ci < len(r) else "").split())
+        name = ("%s %s" % (r[fi] if fi < len(r) else "",
+                           r[li] if li < len(r) else "")).strip()
+        if who and name:
+            out.setdefault(" ".join(name.lower().split()), who)
+    return out
+
+
 def timed(header: List[str], rows: List[List[str]], day: dt.date,
           label: str) -> List[Tuple[dt.time, str]]:
     ti = _col(header, "interview date/time", "date/time")
@@ -127,10 +167,15 @@ def read_day(app, office: C.Office, day: dt.date, labels=C.LABELS,
             out.first = timed(t["header"], t["rows"], day, lbl)
         elif lbl == C.L_SECOND:
             out.second = timed(t["header"], t["rows"], day, lbl)
-        elif lbl == C.L_NS_SCHED:
-            out.ns_scheduled = names_of(t["header"], t["rows"])
-        elif lbl == C.L_NS_SHOWED:
-            out.ns_showed = names_of(t["header"], t["rows"])
+        elif lbl in (C.L_NS_SCHED, C.L_NS_SHOWED):
+            if lbl == C.L_NS_SCHED:
+                out.ns_scheduled = names_of(t["header"], t["rows"])
+            else:
+                out.ns_showed = names_of(t["header"], t["rows"])
+            for k, v in hired_by(t["header"], t["rows"]).items():
+                out.ns_hired_by.setdefault(k, v)
+            if hired_by_col(t["header"]) is None:
+                log("  %s: no hired-by column (header: %s)" % (lbl, t["header"]))
         log("  %s: %d" % (lbl, n))
     return out
 
@@ -219,6 +264,7 @@ def to_payload(office: C.Office, mode: str, d: Day,
             "second": [[t.strftime("%H:%M"), n] for t, n in d.second],
             "ns_scheduled": d.ns_scheduled, "ns_showed": d.ns_showed,
             "ns_times": {k: v.strftime("%H:%M") for k, v in d.ns_times.items()},
+            "ns_hired_by": dict(d.ns_hired_by),
             "usual": avg or {}}
 
 
@@ -230,7 +276,8 @@ def from_payload(p: Dict) -> Tuple[C.Office, str, Day, Dict[str, float]]:
             first=[(tt(a), b) for a, b in p["first"]],
             second=[(tt(a), b) for a, b in p["second"]],
             ns_scheduled=list(p["ns_scheduled"]), ns_showed=list(p["ns_showed"]),
-            ns_times={k: tt(v) for k, v in (p.get("ns_times") or {}).items()})
+            ns_times={k: tt(v) for k, v in (p.get("ns_times") or {}).items()},
+            ns_hired_by=dict(p.get("ns_hired_by") or {}))
     return C.office(p["office"]), p["mode"], d, dict(p.get("usual") or {})
 
 
