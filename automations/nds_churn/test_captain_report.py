@@ -127,6 +127,16 @@ class CaptainReportTest(unittest.TestCase):
         self.assertNotIn("CUST 5", h)      # Air
         self.assertIn("OLD 2", h)
 
+    def test_compare_against_view(self):
+        view = {"0-30": {"disc": 2, "base": 4}, "90": {"disc": 1, "base": 5}}
+        ok, txt = CR.compare(view, self.rep)
+        self.assertTrue(ok)
+        self.assertIn("view 2/4 vs ours 2/4 ✓", txt)
+        self.assertIn("90 Day view 1/5 vs ours 1/4 ✓", txt)     # within tolerance
+        ok2, txt2 = CR.compare({"0-30": {"disc": 3, "base": 4}, "90": None}, self.rep)
+        self.assertFalse(ok2)
+        self.assertIn("view has no rows", txt2)
+
     def test_captain_band(self):
         self.assertEqual(CR._band("0-30", 2.9), CR.GREEN)
         self.assertEqual(CR._band("0-30", 5.0), CR.RED)

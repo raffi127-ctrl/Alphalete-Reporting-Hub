@@ -381,20 +381,31 @@ def reconcile(owner_name: str, rep: dict, today: dt.date, log=print
             return None, f"view pull failed ({type(e).__name__}: {str(e)[:120]})", None
         if not view or not view.get("0-30"):
             return None, f"the Churn Rates view has no 0-30 rows for {owner_name}", view
-        v = view["0-30"]
-        ours = rep["all_port"]["0-30"]
-        ok = (v["disc"] == ours["disc"] and abs(v["base"] - ours["base"]) <= BASE_TOLERANCE)
+        ok, _ = compare(view, rep)
         if ok or fresh:
             break
         log(f"RECONCILE: 0-30 mismatch on the cached view -- re-pulling once")
-    v90 = view.get("90")
-    o90 = rep["all_port"]["90"]
-    txt90 = (f"90 Day view {v90['disc']}/{v90['base']} vs ours {o90['disc']}/{o90['base']}"
-             f"{' ✓' if v90['disc'] == o90['disc'] and abs(v90['base'] - o90['base']) <= BASE_TOLERANCE else ' ✗'}"
-             if v90 else f"90 Day: view has no rows; ours {o90['disc']}/{o90['base']}")
-    detail = (f"0-30 (all port lines) view {v['disc']}/{v['base']} vs ours "
-              f"{ours['disc']}/{ours['base']} {'✓' if ok else '✗'}; {txt90}")
+    ok, detail = compare(view, rep)
     return ok, detail, view
+
+
+def compare(view: dict, rep: dict) -> Tuple[bool, str]:
+    """(0-30 matches?, the text) -- view slots are {'disc', 'base'}, ours are
+    counts() dicts {'act', 'disc', 'pct'} (2026-11-17: the first Lucy 1 run
+    died on ours['base'])."""
+    from automations.nds_churn.run import BASE_TOLERANCE
+
+    def _same(v, o):
+        return v["disc"] == o["disc"] and abs(v["base"] - o["act"]) <= BASE_TOLERANCE
+
+    v, ours = view["0-30"], rep["all_port"]["0-30"]
+    ok = _same(v, ours)
+    v90, o90 = view.get("90"), rep["all_port"]["90"]
+    txt90 = (f"90 Day view {v90['disc']}/{v90['base']} vs ours {o90['disc']}/{o90['act']}"
+             f"{' ✓' if _same(v90, o90) else ' ✗'}"
+             if v90 else f"90 Day: view has no rows; ours {o90['disc']}/{o90['act']}")
+    return ok, (f"0-30 (all port lines) view {v['disc']}/{v['base']} vs ours "
+                f"{ours['disc']}/{ours['act']} {'✓' if ok else '✗'}; {txt90}")
 
 
 # ---------------------------------------------------------------- render ----
