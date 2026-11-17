@@ -8446,14 +8446,12 @@
    "close_on": "exit_zero",
    "on_scheduler": true,
    "display_name": "Fiber Tier Bonus Breakdown (sales away from tier)",
-   "_note": "LIVE for RAF ONLY from 2026-11-17 (Eve 11/16). One download of Tableau ATTTRACKER2_1-D2D/NewFiberInternetRepBreakdown (This Week, mon-sun) -> its own thread '🏆 Tier Bonus Breakdown' in the office metrics channel = board image(s) + one line per GROUP ('2 sales from Tier 3: Ana, Bill'), names only, NO tags (Eve + Raf 11/16). Refuses to post if the export's week is not the one asked for. Skips Mondays. Lucy 4 at 26.08 = right after raf_activation_rate_board (26.07), same channel. Other 18 Fiber Eco offices: drop '--office raf' only when Eve says.",
+   "_note": "LIVE for EVERY Fiber Lucy Eco office from 2026-11-17 (Eve 11/17; Raf Loom: 'anybody that has Lucy Eco and they're on fiber'). Was Raf-only 11/16-11/17. One download of Tableau ATTTRACKER2_1-D2D/NewFiberInternetRepBreakdown (This Week, mon-sun) -> its own thread '🏆 Tier Bonus Breakdown' in the office metrics channel = board image(s) + one line per GROUP ('2 sales from Tier 3: Ana, Bill'), names only, NO tags (Eve + Raf 11/16). Refuses to post if the export's week is not the one asked for. Skips Mondays. Lucy 4 at 26.08 = right after raf_activation_rate_board (26.07), same channel.",
    "command": [
     "automations.fiber_tier_bonus.run"
    ],
    "base_args": [
-    "--live",
-    "--office",
-    "raf"
+    "--live"
    ],
    "cadence": {
     "weekdays": [
