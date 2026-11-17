@@ -278,10 +278,19 @@ def main(argv=None) -> int:
                          "no customer data) to the probe tab, then stop -- for a "
                          "RECONCILE mismatch that names a rep")
     ap.add_argument("--dm", default=None, metavar="U...",
-                    help="after writing, DM the tab's picture to this user")
+                    help="after writing, DM the tab's picture to this user "
+                         "(with --captain: a comma-separated list)")
+    ap.add_argument("--captain", default=None, metavar="OWNER_KEY",
+                    help="one owner of Khalil's captainship (captain_report.OWNERS: "
+                         "zaid, atef, isaiah, juan, khalil, maxamad, carlos): the "
+                         "non-BYOD 0-30 + 90 Day churn picture, no tab written")
     a = ap.parse_args(argv)
     log = print
     today = dt.date.fromisoformat(a.today) if a.today else dt.date.today()
+    if a.captain:
+        from automations.nds_churn import captain_report as CR
+        return CR.run(a.captain, today, dry_run=a.dry_run, from_file=a.from_file,
+                      dm=a.dm, skip_reconcile=a.skip_reconcile, log=log)
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     from automations.recruiting_report.fill import _retry, worksheet_ci
     from automations.vantura_churn import fill as VF
