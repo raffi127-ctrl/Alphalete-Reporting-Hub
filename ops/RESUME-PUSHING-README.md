@@ -115,7 +115,7 @@ reach the office computer that does the pushing, which holds no Google access:
   Manage deployments > New version). Until then the office logs "the relay does
   not take phone lookups yet" and pushes exactly as before.
 
-## The 5am phone lookups (added 11/16)
+## The 5am phone lookups + billing check (added 11/16)
 
 Every morning at 5, the office computer looks up the numbers itself, before
 the day's pushing starts at 5:30:
@@ -139,6 +139,16 @@ minutes for the box to pass by itself, then skips that account until
 tomorrow), download anything, place a call, text anyone, remove anyone. A
 number that is not a US number (a +52) is saved but never typed — the
 applicant stays on the to-do list for a person.
+
+**It also checks every account's billing, twice a day.** At 5am (after the
+lookups) and again at 1pm, the office computer opens every one of the
+office's Indeed accounts, loads the All Jobs page and reads it for a payment
+or billing alert. "Sponsored Job benefits are unavailable until you add
+payment information" counts (Carlos's ruling, 11/16); the "Add billing
+identifiers" banner does not. An alert goes to Slack as a group DM to the
+office owner, the helpers and Megan/Eve, quoting what the page says; a clean
+sweep posts nothing. The page pictures are kept on the office computer under
+`output/octo-billing-<date>/`.
 
 How you know it ran: the to-do list is shorter at noon; the push report's
 sent count; the `probe-octo-lookup` row on the ICD Faults tab (names found /
