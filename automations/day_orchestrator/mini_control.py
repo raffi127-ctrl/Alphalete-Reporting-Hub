@@ -3507,6 +3507,56 @@ def _action_clear_untracked(args: str) -> tuple[bool, str]:
                   .format(rel, dest.name))
 
 
+def _action_relay_faults(args: str) -> tuple[bool, str]:
+    """READ-ONLY: an office computer's rows on the relay's 'ICD Faults' tab,
+    with their Detail -- the only road to what a machine nobody can reach
+    actually did (2026-11-17: the 5am Octo run's tally said "3 found, 6 not"
+    and nothing on the mini could say who).
+
+      relay_faults <office_key> [stage-prefix] [YYYY-MM-DD]
+
+    e.g. `relay_faults carlos probe-octo-lookup`. Default day = today. The
+    Detail is the row's JSON, cut at 3500 characters; summaries are never cut.
+    Runs on the machine whose Sheets token can open the relay workbook (Lucy 1).
+    """
+    import datetime as _dt
+    parts = (args or "").split()
+    if not parts:
+        return False, "relay_faults needs <office_key> [stage-prefix] [YYYY-MM-DD]"
+    office = parts[0].strip().lower()
+    stage_prefix = parts[1].strip() if len(parts) > 1 else ""
+    try:
+        day = _dt.date.fromisoformat(parts[2]) if len(parts) > 2 else _dt.date.today()
+    except ValueError:
+        return False, f"bad day {parts[2]!r} (YYYY-MM-DD)"
+    from automations.icd_alerts import post as _P
+    from automations.recruiting_report.fill import open_by_key as _open
+    try:
+        rows = _open(_P.RELAY_SPREADSHEET_ID).worksheet(_P.FAULTS_TAB).get_all_values()
+    except Exception as e:  # noqa: BLE001
+        return False, f"could not open the relay's {_P.FAULTS_TAB} tab: {type(e).__name__}: {str(e)[:120]}"
+    out = []
+    for i, row in enumerate(rows[1:], start=2):
+        if len(row) <= _P.F_DETAIL:
+            continue
+        if str(row[_P.F_OFFICE] or "").strip().lower() != office:
+            continue
+        if _P._day_key(row[_P.F_DAY]) != day.isoformat():
+            continue
+        stage = str(row[_P.F_STAGE] or "").strip()
+        if stage_prefix and not stage.startswith(stage_prefix):
+            continue
+        count = row[_P.F_COUNT] if len(row) > _P.F_COUNT else ""
+        first = row[_P.F_FIRST] if len(row) > _P.F_FIRST else ""
+        last = row[_P.F_LAST] if len(row) > _P.F_LAST else ""
+        out.append(f"row {i} | {stage} | x{count or '?'} first {first or '?'} last {last or '?'}\n"
+                   f"  {str(row[_P.F_SUMMARY]).strip()}\n"
+                   f"  {str(row[_P.F_DETAIL]).strip()[:3500]}")
+    if not out:
+        return True, f"no {stage_prefix or 'fault'} rows for {office} on {day.isoformat()}"
+    return True, "\n".join(out)
+
+
 def _action_sheets_whoami(args: str) -> tuple[bool, str]:
     """READ-ONLY: what Google identity does THIS machine's Sheets token use, and
     which office boards can it actually open?
@@ -10078,6 +10128,7 @@ ACTIONS = {
     "kill_report": _action_kill_report,
     "machine_info": _action_machine_info,
     "sheets_whoami": _action_sheets_whoami,
+    "relay_faults": _action_relay_faults,
     "slack_whoami": _action_slack_whoami,
     "slack_channel": _action_slack_channel,
     "slack_find": _action_slack_find,
