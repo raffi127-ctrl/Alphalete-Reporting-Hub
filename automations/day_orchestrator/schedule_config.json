@@ -9180,6 +9180,30 @@
    },
    "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
   },
+  "raf_all_in_one_focus_weekly": {
+   "order": 5,
+   "on_scheduler": true,
+   "display_name": "Raf All in One - NEW Focus Report",
+   "_note": "Eve 2026-11-17 (Raf Loom 11/16): fills the 'NEW Focus Report' tab of All in One Local Office - Raf every Monday. Top rows from ATT Program tab 'Raf Hidalgo', AI rows from '1st rd Recruiter %' (so it waits on recruiter_retention_weekly), interviewer rows from ARS REPORT (5) tab 'Rafael Hidalgo'. Empty cells only; Maud types the financials by hand. Sheets only, no logins.",
+   "source_type": "sheets",
+   "data_sources": [],
+   "command": [
+    "automations.raf_all_in_one_focus.run"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": [
+     0
+    ]
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [
+    "recruiter_retention_weekly"
+   ],
+   "verify": null,
+   "timeout_minutes": 20
+  },
   "org_active_headcount_daily": {
    "on_scheduler": true,
    "machine": "Lucy 1",
