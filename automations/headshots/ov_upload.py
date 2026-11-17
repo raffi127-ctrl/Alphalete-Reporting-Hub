@@ -96,8 +96,16 @@ def _rep_row(page, name: str, *, debug: bool = False,
 
     Probe #5 (2026-08-23) proved reading only the FIRST td misses real reps
     — DataTables likes a hidden control column up front. has_text matches
-    the name anywhere in the row instead; whitespace between first/last is
-    matched loosely (the cell breaks lines).
+    the name anywhere in the row instead.
+
+    WHITESPACE BETWEEN THE NAMES IS OPTIONAL (2026-11-17, James Turnage).
+    The pattern used to demand at least one space between the parts. His
+    Charter row renders the name as "James<br>Turnage", and a <br> puts
+    NOTHING into the text this matches against — the row reads "JamesTurnage"
+    — so the pattern could not hit him however many campaigns were walked.
+    inner_text() DOES turn that <br> into a newline, which is why every debug
+    line showed "james turnage" with a space while the match kept failing.
+    Allowing ZERO spaces reads both shapes.
 
     TWO ROWS IS NOT A MATCH (Megan 2026-08-31). This used to return
     `rows.first` whenever anything matched, so two reps sharing a name meant
@@ -115,7 +123,7 @@ def _rep_row(page, name: str, *, debug: bool = False,
     parts = [p for p in name.split() if p]
     if not parts:
         return None
-    pat = re.compile(r"\s+".join(re.escape(p) for p in parts), re.I)
+    pat = re.compile(r"\s*".join(re.escape(p) for p in parts), re.I)
     rows = page.locator("tbody tr").filter(has_text=pat)
     n = rows.count()
     if n == 1:
@@ -149,8 +157,9 @@ _MIN_SCORE = 0.86        # below this, not the same person
 _MIN_MARGIN = 0.06       # winner must beat the runner-up by this much
 # A campaign the office does not work (the widened walk, see find_rep) gets a
 # HIGHER bar: the person we want may not be in that table at all, so a near
-# miss there is likelier to be a stranger than a typo. "James Turnag" for
-# James Turnage scores 0.95 and still lands; "James Turner" (~0.88) does not.
+# miss there is likelier to be a stranger than a typo. A real typo still
+# lands ("James Turnag" for James Turnage scores 0.95); a different person
+# does not ("James Turner", ~0.88).
 _MIN_SCORE_OTHER = 0.93
 
 # What the table calls each row's person. NOT "the row's first line": the
@@ -159,17 +168,19 @@ _MIN_SCORE_OTHER = 0.93
 # '9576433' as somebody's name and every score computed against it was
 # meaningless (2026-11-17, James Turnage). Pick the first cell that looks like
 # a person instead: has a letter, is not an id, not an email, not one of the
-# table's own control words.
+# table's own control words. Keep the WHOLE cell with its line breaks
+# flattened to spaces -- that campaign writes the name as "James<br>Turnage",
+# so a first-line read gives the bare first name.
 _ROW_NAMES_JS = """() => {
     const JUNK = /^(edit|action|remove|uploaded|upload|photo|view|select|roadmap|yes|no|n\\/a|pending|submitted)$/i;
     const looksLikeName = t => /[A-Za-z]/.test(t) && !t.includes('@')
         && !/^[\\d().\\s-]+$/.test(t) && !JUNK.test(t.replace(/\\s+/g, ' ').trim());
     return [...document.querySelectorAll('tbody tr')].map(tr => {
+        const flat = t => (t || '').replace(/\\s+/g, ' ').trim();
         const cells = [...tr.querySelectorAll('td')]
-            .map(td => ((td.innerText || '').split('\\n')[0] || '').trim())
-            .filter(Boolean);
+            .map(td => flat(td.innerText)).filter(Boolean);
         const pool = cells.length ? cells
-            : (tr.innerText || '').split('\\n').map(s => s.trim()).filter(Boolean);
+            : (tr.innerText || '').split('\\n').map(flat).filter(Boolean);
         const named = pool.find(looksLikeName);
         return named || '';
     });

@@ -1,11 +1,18 @@
-"""The row-name reader, against the two table shapes OwnerVille really serves.
+"""Finding a rep, against the two table shapes OwnerVille really serves.
 
-2026-11-17, James Turnage. The reader used to take the row's FIRST LINE as the
-person's name. That is true on RES-AT&T and false on Raf's Charter
-Communications - D2D, where the first cell is the EMPLOYEE ID -- so every name
-read off that campaign was '9576433', and the typo matcher scored real names
-against a number. The walk had never reached Charter before (it was pinned to
-RES-AT&T), so nothing had ever exposed it.
+2026-11-17, James Turnage: he sat on Raf's Charter Communications - D2D the
+whole time, spelled correctly, and no search could ever have found him.
+
+  * The row writes the name as "James<br>Turnage". A <br> puts NOTHING into
+    the text Playwright matches against, so the row reads "JamesTurnage" and
+    a pattern wanting a space between the parts cannot hit. inner_text() DOES
+    render that <br> as a newline -- which is why every debug line printed
+    "james turnage" with a space while the match kept failing.
+  * The name reader took each row's FIRST LINE as the person. True on
+    RES-AT&T; on Charter the first cell is the EMPLOYEE ID and the name cell
+    breaks lines, so names read as '9576433' and then as a bare 'James'.
+
+Both were invisible until the walk was widened past RES-AT&T today.
 
 Runs a real headless browser, because the thing under test is JavaScript
 evaluated in the page -- a hand-rolled fake DOM would only prove the fake.
@@ -25,12 +32,17 @@ RES_ATT = """<table><tbody>
     <td>Roadmap - Remove</td></tr>
 </tbody></table>"""
 
+# Charter, as the live table really renders it: id first, and the name cell
+# broken by a <br>.
 CHARTER = """<table><tbody>
 <tr><td>9541175</td><td>brianrucker31@gmail.com</td><td>Edit</td>
-    <td>James Rucker</td><td>Photo</td></tr>
+    <td>James<br>Rucker</td><td>Photo</td></tr>
 <tr><td>9576433</td><td>jamesturnage23@gmail.com</td><td>Edit</td>
-    <td>James Turnag</td><td>Photo</td></tr>
+    <td>James<br>Turnage</td><td>Photo</td></tr>
 </tbody></table>"""
+
+# The same shape with OwnerVille dropping a letter, which it is entitled to do.
+CHARTER_TYPO = CHARTER.replace("James<br>Turnage", "James<br>Turnag")
 
 
 def _launcher():
@@ -76,16 +88,22 @@ class ThePageReaders(unittest.TestCase):
         self.assertEqual(self.names(RES_ATT), ["James Rucker (9541175)"])
 
     def test_the_charter_shape_reads_names_not_employee_ids(self):
-        """The bug: these came back as ['9541175', '9576433']."""
-        self.assertEqual(self.names(CHARTER), ["James Rucker", "James Turnag"])
+        """The bug: these came back as ['9541175', '9576433'], then 'James'."""
+        self.assertEqual(self.names(CHARTER), ["James Rucker", "James Turnage"])
+
+    def test_the_man_himself_is_found_across_the_line_break(self):
+        """THE case: 11/14 - 11/17 this returned None every five minutes."""
+        self.assertIsNotNone(U._rep_row(self.page(CHARTER), "James Turnage"))
 
     def test_an_exact_name_is_found_either_shape(self):
         self.assertIsNotNone(U._rep_row(self.page(RES_ATT), "James Rucker"))
         self.assertIsNotNone(U._rep_row(self.page(CHARTER), "James Rucker"))
 
-    def test_ownervilles_spelling_is_forgiven_at_the_higher_bar(self):
-        """OV holds "James Turnag"; the submitted name is James Turnage."""
-        row, got = U._fuzzy_row(self.page(CHARTER), "James Turnage",
+    def test_the_neighbour_is_not_him(self):
+        self.assertIsNone(U._rep_row(self.page(CHARTER), "James Smith"))
+
+    def test_a_typo_in_ownerville_is_forgiven_at_the_higher_bar(self):
+        row, got = U._fuzzy_row(self.page(CHARTER_TYPO), "James Turnage",
                                 verbose=False,
                                 min_score=U._MIN_SCORE_OTHER)
         self.assertIsNotNone(row)
