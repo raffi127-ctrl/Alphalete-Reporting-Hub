@@ -150,8 +150,12 @@ def showed_png(day, out: Path) -> Path:
     n_s, n_c = len(day.ns_scheduled), len(day.ns_showed)
     pct = int(round(100.0 * n_c / n_s)) if n_s else 0
 
-    pad, w = 24 * S, 560 * S
+    hired = getattr(day, "ns_hired_by", None) or {}
+    pad, w = 24 * S, (720 if hired else 560) * S
     rh = 34 * S
+    # Name | Hired By | 1st Day -- the middle column only when AppStream gave one
+    x_hired, x_day = pad + int(w * 0.40), pad + int(w * (0.76 if hired else 0.68))
+    fr_hired = _font("reg", 15)
     height = pad + 96 * S + (2 + max(len(people), 1)) * rh + pad
     img = Image.new("RGB", (pad * 2 + w, height), BG)
     d = ImageDraw.Draw(img)
@@ -169,13 +173,19 @@ def showed_png(day, out: Path) -> Path:
     y += rh
     d.rectangle([pad, y, pad + w, y + rh], fill=SUB_BG)
     d.text((pad + 12 * S, y + rh / 2), "Name", font=fs, fill=INK, anchor="lm")
-    d.text((pad + int(w * 0.68), y + rh / 2), "1st Day", font=fs, fill=INK, anchor="lm")
+    if hired:
+        d.text((x_hired, y + rh / 2), "Hired By", font=fs, fill=INK, anchor="lm")
+    d.text((x_day, y + rh / 2), "1st Day", font=fs, fill=INK, anchor="lm")
     y += rh
     for i, (name, ok) in enumerate(people):
         if i % 2:
             d.rectangle([pad, y, pad + w, y + rh], fill=ZEBRA)
         d.text((pad + 12 * S, y + rh / 2), name, font=fr, fill=INK, anchor="lm")
-        d.text((pad + int(w * 0.68), y + rh / 2), "Showed" if ok else "No show",
+        if hired:
+            who = hired.get(" ".join(name.lower().split()))
+            d.text((x_hired, y + rh / 2), who or "—", font=fr_hired,
+                   fill=INK if who else MUTED, anchor="lm")
+        d.text((x_day, y + rh / 2), "Showed" if ok else "No show",
                font=_font("bold", 15), fill=GREEN if ok else RED, anchor="lm")
         d.line([pad, y + rh, pad + w, y + rh], fill=GRID, width=S)
         y += rh
