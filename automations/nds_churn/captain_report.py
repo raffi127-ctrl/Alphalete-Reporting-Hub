@@ -591,7 +591,7 @@ def render_html(owner: dict, rep: dict, today: dt.date, recon_text: str) -> str:
     title = f"🐺 NDS Customer Churn — {owner['name']}"
     sub = (f"Non-BYOD port phone lines only · as of {today.month}/{today.day}/{today.year}"
            " · 0-30 Day and 90 Day buckets by activation date")
-    src = ("Source: Tableau NDS-SN Order Log (140-day window), counted the way Smart Circle's "
+    src = (f"Source: Tableau NDS-SN Order Log ({LOOKBACK_DAYS}-day window), counted the way Smart Circle's "
            f"Churn Rates view counts · {_e(recon_text)}")
     note = (
         "What's counted: ported voice lines on a financed or new phone — no BYOD, no Air, no Internet, "
