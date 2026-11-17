@@ -37,6 +37,9 @@ class FakeSlack:
     def reactions_add(self, **kw):
         return {}
 
+    def chat_getPermalink(self, **kw):
+        return {"permalink": "https://slack/p" + str(kw.get("message_ts"))}
+
 
 ECO = config.Office(key="omar", owner="Omar", channel="CO", uploader="eco",
                     eco_key="omar", mode="live")
@@ -67,8 +70,9 @@ def _run_scan(cl, state, enqueue, offices=(ECO,)):
 
 from automations.headshots import form as _F
 
-# Since 2026-11-09 a headshot comes in ONLY through the 📸 Add headshot form:
-# Jiraiya's post with the fixed line. LOOSE is the old free reply.
+# A plain reply -- photo + the person's name -- is the way in again (Megan
+# 2026-11-17). REPLY is a post from the retired 📸 form, which is still
+# read for a button left in an old thread; LOOSE is the plain reply.
 REPLY = {"ts": "101", "user": _F.JIRAIYA, "bot_id": "BJIR",
          "text": _F.line("John", "Smith", "UREP", False),
          "files": [{"mimetype": "image/jpeg", "name": "photo.jpg"}]}
@@ -217,35 +221,52 @@ class ARedoForAnEcoOfficeReplacesOnItsComputer(unittest.TestCase):
         self.assertIn("replaced", line)
 
 
-class FormOnly(unittest.TestCase):
-    """Megan 2026-11-09: no loose replies, "so we don't have errors"."""
+class APlainReplyIsTheWayIn(unittest.TestCase):
+    """Megan 2026-11-17: "go back to the way that it was" — a reply with the
+    photo and the person's name, no button."""
 
-    def test_a_loose_photo_and_name_is_never_processed(self):
+    def test_a_loose_photo_and_name_is_processed(self):
         cl, state = FakeSlack([{"ts": "100"}, LOOSE]), {}
-        enq = mock.Mock()
+        enq = mock.Mock(return_value="job-1")
         _run_scan(cl, state, enq)
-        enq.assert_not_called()
-        self.assertEqual(cl.files, [])
-        BUTTON.assert_called_once()
-
-    def test_the_button_is_offered_once_per_loose_reply(self):
-        state = {}
-        _run_scan(FakeSlack([{"ts": "100"}, LOOSE]), state, mock.Mock())
-        _run_scan(FakeSlack([{"ts": "100"}, LOOSE]), state, mock.Mock())
+        self.assertEqual(enq.call_args.args[1], "John Smith")
+        self.assertIn("John Smith", cl.files[0]["initial_comment"])
+        self.assertTrue(state["omar:102"]["done"])
         BUTTON.assert_not_called()
 
-    def test_a_typed_redo_gets_the_button(self):
+    def test_a_photo_with_no_name_is_asked_once_and_no_button(self):
         state = {}
-        msgs = [{"ts": "100"}, {"ts": "105", "user": "ULEAD", "text": "redo Jane Doe"}]
-        enq = mock.Mock()
-        _run_scan(FakeSlack(msgs), state, enq)
-        enq.assert_not_called()
-        BUTTON.assert_called_once()
-        self.assertIn("Redo", BUTTON.call_args.kwargs["text"])
+        noname = {"ts": "103", "user": "UREP", "text": "here you go",
+                  "files": [{"mimetype": "image/jpeg", "name": "a.jpg"}]}
+        cl = FakeSlack([{"ts": "100"}, noname])
+        _run_scan(cl, state, mock.Mock())
+        self.assertEqual(len(cl.posts), 1)
+        self.assertIn("who is it?", cl.posts[0]["text"])
+        _run_scan(FakeSlack([{"ts": "100"}, noname]), state, mock.Mock())
+        BUTTON.assert_not_called()
 
-    def test_a_plain_form_post_never_replaces(self):
+    def test_a_photo_plus_redo_replaces(self):
+        msgs = [{"ts": "100"},
+                {"ts": "106", "user": "ULEAD", "text": "redo Jane Doe",
+                 "files": [{"mimetype": "image/jpeg", "name": "a.jpg"}]}]
+        enq = mock.Mock(return_value="job-1")
+        with mock.patch.object(config, "ECO_REDO_READY", True):
+            _run_scan(FakeSlack(msgs), {}, enq)
+        self.assertEqual(enq.call_args.args[1], "Jane Doe")
+        self.assertTrue(enq.call_args.kwargs["replace"])
+
+    def test_a_typed_redo_with_no_photo_asks_for_a_new_photo(self):
+        msgs = [{"ts": "100"}, {"ts": "105", "user": "ULEAD", "text": "redo Jane Doe"}]
+        cl, enq = FakeSlack(msgs), mock.Mock()
+        _run_scan(cl, {}, enq)
+        enq.assert_not_called()
+        BUTTON.assert_not_called()
+        self.assertIn("NEW photo", cl.posts[0]["text"])
+
+    def test_a_form_post_from_an_old_button_still_works(self):
         enq = mock.Mock(return_value="job-1")
         _run_scan(FakeSlack([{"ts": "100"}, REPLY]), {}, enq)
+        self.assertEqual(enq.call_args.args[1], "John Smith")
         self.assertFalse(enq.call_args.kwargs["replace"])
 
     def test_ordinary_chatter_gets_nothing(self):
@@ -253,6 +274,69 @@ class FormOnly(unittest.TestCase):
         _run_scan(cl, {}, mock.Mock())
         self.assertEqual(cl.posts, [])
         BUTTON.assert_not_called()
+
+
+class AlreadyAnsweredInThisThread(unittest.TestCase):
+    """Taking the 📸 form off (Megan 2026-11-17) made the plain replies it
+    had brushed aside readable again -- and most of them had since gone
+    through the form and been answered. A second headshot for the same person
+    is not posted unless the reply asks for a redo."""
+
+    def _answer(self, name, ts="104"):
+        return {"ts": ts, "user": "ULUCY", "bot_id": "B9",
+                "text": f"<@UREP> *{name}* \u2014 headshot ready \u2935\nOwnerVille: ok \u2705"}
+
+    def test_a_second_copy_of_an_answered_name_is_skipped(self):
+        cl = FakeSlack([{"ts": "100"}, LOOSE, self._answer("John Smith")])
+        enq = mock.Mock()
+        _run_scan(cl, {}, enq)
+        enq.assert_not_called()
+        self.assertEqual(cl.files, [])
+
+    def test_a_middle_name_is_the_same_person(self):
+        loose = dict(LOOSE, text="John Robert Smith")
+        cl = FakeSlack([{"ts": "100"}, loose, self._answer("John Smith")])
+        _run_scan(cl, {}, mock.Mock())
+        self.assertEqual(cl.files, [])
+
+    def test_a_redo_is_still_done(self):
+        loose = dict(LOOSE, text="redo John Smith")
+        cl = FakeSlack([{"ts": "100"}, loose, self._answer("John Smith")])
+        enq = mock.Mock(return_value="j")
+        with mock.patch.object(config, "ECO_REDO_READY", True):
+            _run_scan(cl, {}, enq)
+        self.assertTrue(enq.call_args.kwargs["replace"])
+
+    def test_someone_else_is_unaffected(self):
+        cl = FakeSlack([{"ts": "100"}, LOOSE, self._answer("Jane Doe")])
+        enq = mock.Mock(return_value="j")
+        _run_scan(cl, {}, enq)
+        self.assertEqual(enq.call_args.args[1], "John Smith")
+
+
+class LucyAnswersThePhotoShePickedUp(unittest.TestCase):
+    """Megan 2026-11-17 wanted the answer ON the submission. Slack has no
+    thread inside a thread, so the post names the person who sent the photo
+    and links their message (which Slack quotes underneath)."""
+
+    def test_the_post_opens_with_the_submitter_and_links_their_photo(self):
+        cl = FakeSlack([{"ts": "100"}, LOOSE])
+        _run_scan(cl, {}, mock.Mock(return_value="j"))
+        c = cl.files[0]["initial_comment"]
+        self.assertTrue(c.startswith("<@UREP> "), c)
+        self.assertIn("https://slack/p102", c)
+
+    def test_a_form_post_credits_the_person_not_jiraiya(self):
+        cl = FakeSlack([{"ts": "100"}, REPLY])
+        _run_scan(cl, {}, mock.Mock(return_value="j"))
+        self.assertTrue(cl.files[0]["initial_comment"].startswith("<@UREP> "))
+
+    def test_nobody_is_tagged_twice_when_it_needs_doing_by_hand(self):
+        cl = FakeSlack([{"ts": "100"}, LOOSE])
+        _run_scan(cl, {}, mock.Mock(side_effect=eco.EcoError("down")))
+        c = cl.files[0]["initial_comment"]
+        self.assertEqual(c.count("<@UREP>"), 1, c)
+        self.assertIn("by hand", c)
 
 
 class TheAddHeadshotForm(unittest.TestCase):

@@ -363,6 +363,42 @@ def _name_key_of(s: str) -> str:
     return _name_key(s or "")
 
 
+# Our own finished-headshot post: "*First Last* — headshot ready/redone".
+_ANSWERED = re.compile(r"\*([^*]+)\*\s*—\s*headshot (?:ready|redone)")
+
+
+def _names_answered(replies: list, me: str | None) -> set:
+    """Who this thread ALREADY shows a finished headshot for.
+
+    When the 📸 form came off (Megan 2026-11-17) the plain replies that the
+    form-only tick had brushed aside were readable again -- and most of them
+    had since been sent through the form and answered, so a plain re-read
+    would have posted a second headshot for a dozen people. A name this
+    thread has already been answered for is skipped unless the reply says
+    "redo", which is the one way to ask for a new one on purpose."""
+    out = set()
+    for m in replies:
+        if not _is_our_post(m, me):
+            continue
+        for nm in _ANSWERED.findall(m.get("text") or ""):
+            out |= _answer_keys(nm)
+    out.discard("")
+    return out
+
+
+def _answer_keys(name: str) -> set:
+    """Both spellings of one name: the whole thing, and first+last only.
+
+    The same person comes in twice with a middle name one time and not the
+    other -- "Toni Mckinzee Gabaldon" and "Toni Gabaldon" in the 11/16
+    thread were the same headshot -- so first+last is matched too."""
+    keys = {_name_key_of(name)}
+    words = (name or "").split()
+    if len(words) > 2:
+        keys.add(_name_key_of(words[0] + " " + words[-1]))
+    return {k for k in keys if k}
+
+
 def redo(name: str, *, dry_run: bool = True,
          channel: str | None = None, office: str = "raf") -> dict:
     """Re-make ONE person's headshot from their ORIGINAL submitted photo.
@@ -444,9 +480,11 @@ def redo(name: str, *, dry_run: bool = True,
         cl.files_upload_v2(
             channel=channel, thread_ts=anchor["ts"], file=fh,
             filename=out_p.name,
-            initial_comment=(f"*{got}* — headshot redone ⤵{ov}"
-                             + by_hand_tags(ov, hs_form.submitter(m),
-                                            off.admin_slack_id)))
+            initial_comment=_answer_to(
+                cl, channel, m, hs_form.submitter(m),
+                f"*{got}* — headshot redone ⤵{ov}"
+                + by_hand_tags(ov, hs_form.submitter(m), off.admin_slack_id,
+                               already=(hs_form.submitter(m),))))
     return {"status": "redone", "name": got, "ts": m["ts"],
             "file": str(out_p), **act}
 
@@ -499,17 +537,24 @@ def scan(*, dry_run: bool = True, channel: str | None = None) -> list[dict]:
     return actions
 
 
-def by_hand_tags(note: str, submitter: str, admin: str) -> str:
+def by_hand_tags(note: str, submitter: str, admin: str,
+                 already: tuple = ()) -> str:
     """When a headshot has to be done by hand, tag who submitted it and the
     office's headshot admin (Megan 2026-11-10: "David needs done manually"
-    sat there unseen). Returns "" when nothing needs a person."""
+    sat there unseen). Returns "" when nothing needs a person.
+
+    `already` = people the post already @-names (since 2026-11-17 it opens
+    with the submitter), so nobody is tagged twice in one message."""
     low = (note or "").lower()
     if not any(k in low for k in ("by hand", "manually", "didn't go through")):
         return ""
     who = [u for u in dict.fromkeys([submitter, admin]) if u]
     if not who:
         return ""
-    return "\n" + " ".join(f"<@{u}>" for u in who) + " this one needs doing by hand in OwnerVille."
+    tags = [u for u in who if u not in already]
+    if not tags:
+        return "\nThis one needs doing by hand in OwnerVille."
+    return "\n" + " ".join(f"<@{u}>" for u in tags) + " this one needs doing by hand in OwnerVille."
 
 
 def _state_key(off, ts: str) -> str:
@@ -529,11 +574,15 @@ def _scan_office(cl, me, off, state: dict, actions: list, run: dict, *,
     for anchor in anchors:
         replies = cl.conversations_replies(
             channel=channel, ts=anchor["ts"], limit=200).get("messages", [])
+        answered = _names_answered(replies, me)
         for m in sorted(replies, key=lambda x: x.get("ts", "")):
             if m.get("ts") == anchor["ts"]:
                 continue
-            # A post from the 📸 Add headshot form (form.py) is Jiraiya's,
-            # so it looks like "ours" -- read it BEFORE that check.
+            # BACK TO A PLAIN REPLY (Megan 2026-11-17): photo + the person's
+            # First Last name in the same reply, the way it worked before the
+            # 📸 button. A form post from a thread that still has the button
+            # is read too -- it is Jiraiya's, so it looks like "ours", which is
+            # why it is read BEFORE that check.
             fm = hs_form.parse(m)
             if not fm and _is_our_post(m, me):
                 continue
@@ -552,24 +601,51 @@ def _scan_office(cl, me, off, state: dict, actions: list, run: dict, *,
             if st.get("done"):
                 continue
 
-            if not fm:
-                # FORM ONLY (Megan 2026-11-09: "so we don't have errors"). A
-                # photo dropped straight in is never guessed at -- no name
-                # read out of chatter, no second photo silently dropped. It
-                # gets the 📸 Add headshot button back, once, and is left.
-                if not st.get("asked") and run["asked"] < _MAX_ASKS_PER_RUN:
+            if fm:
+                # A form post (threads that still carry the button): the name
+                # is exactly what they typed, and the Redo box decides whether
+                # the profile photo is replaced.
+                name, is_redo = fm
+            else:
+                # "redo First Last" + a NEW photo = replace that person's
+                # headshot (Megan 2026-10-29). Strip the word first, or "Redo"
+                # reads as part of the name.
+                text = m.get("text", "") or ""
+                rm = _REDO_RE.match(text)
+                is_redo = bool(rm)
+                name = name_from_caption(rm.group(1) if rm else text)
+            if not name:
+                # Hard cap: however wrong we are about WHAT needs a name, a
+                # single run can never storm the thread again (2026-08-25).
+                if run["asked"] >= _MAX_ASKS_PER_RUN:
+                    print(f"  ask cap reached ({_MAX_ASKS_PER_RUN}) — "
+                          f"skipping the rest this run")
+                    continue
+                # Ask once; the reply retries every tick, so an edited reply
+                # gets picked up without re-asking.
+                if not st.get("asked"):
                     run["asked"] += 1
-                    actions.append({"ts": ts, "action": "ask_form"})
+                    actions.append({"ts": ts, "action": "ask_name"})
                     if not dry_run:
-                        _ask_with_button(cl, channel, anchor["ts"], m,
-                                         "headshots go through the button now, "
-                                         "so I get the name right.")
-                        state.setdefault(sk, {})["asked"] = True
-                        _save_state(state)
+                        try:
+                            who = m.get("user", "")
+                            cl.chat_postMessage(
+                                channel=channel, thread_ts=anchor["ts"],
+                                text=(f"<@{who}> got the photo — who is it? "
+                                      "Edit your reply to include the "
+                                      "person's *First Last* name and I'll "
+                                      "make the headshot."))
+                            state.setdefault(sk, {})["asked"] = True
+                            _save_state(state)
+                        except Exception:
+                            pass
                 continue
-            # The form's fixed line: the name is exactly what they typed, and
-            # the Redo box decides whether the profile photo is replaced.
-            name, is_redo = fm
+            if not is_redo and _answer_keys(name) & answered:
+                # Already answered in this thread (see _names_answered).
+                print(f"  already answered in this thread: {name} (ts={ts})")
+                actions.append({"ts": ts, "action": "already_answered",
+                                "name": name, "office": off.key})
+                continue
 
             try:
                 data = _download_image(imgs[0])
@@ -579,7 +655,31 @@ def _scan_office(cl, me, off, state: dict, actions: list, run: dict, *,
                                 "error": str(e)})
                 continue
 
-            out_p = process_one(data, name)
+            try:
+                out_p = process_one(data, name)
+            except Exception as e:  # noqa: BLE001
+                # One photo the cutout can't read (a corrupt file, or a
+                # format this machine has no plugin for) must not stop the
+                # rest of the thread -- with plain replies back (Megan
+                # 2026-11-17) anything can land here. Say so once.
+                print(f"  ⚠ could not make {name}'s headshot: "
+                      f"{type(e).__name__}: {str(e)[:150]}")
+                actions.append({"ts": ts, "action": "photo_failed",
+                                "name": name, "office": off.key,
+                                "error": str(e)[:200]})
+                if not dry_run and not st.get("asked"):
+                    try:
+                        cl.chat_postMessage(
+                            channel=channel, thread_ts=anchor["ts"],
+                            text=(f"<@{m.get('user', '')}> I couldn't open "
+                                  f"that photo of *{name}* — reply with it "
+                                  "again as a JPG or PNG and I'll make the "
+                                  "headshot."))
+                        state.setdefault(sk, {})["asked"] = True
+                        _save_state(state)
+                    except Exception:  # noqa: BLE001
+                        pass
+                continue
             act = {"ts": ts, "action": "processed", "name": name,
                    "file": str(out_p), "office": off.key}
 
@@ -599,14 +699,17 @@ def _scan_office(cl, me, off, state: dict, actions: list, run: dict, *,
             what = "headshot redone" if is_redo else "headshot ready"
             by = hs_form.submitter(m)
             state.setdefault(sk, {})["by"] = by
-            ov_note += by_hand_tags(ov_note, by, off.admin_slack_id)
+            ov_note += by_hand_tags(ov_note, by, off.admin_slack_id,
+                                    already=(by,))
 
             # Post the finished image into the week's thread + ✅ the reply.
             with open(out_p, "rb") as fh:
                 cl.files_upload_v2(
                     channel=channel, thread_ts=anchor["ts"], file=fh,
                     filename=out_p.name,
-                    initial_comment=f"*{name}* — {what} ⤵{ov_note}")
+                    initial_comment=_answer_to(
+                        cl, channel, m, by,
+                        f"*{name}* — {what} ⤵{ov_note}"))
             state.setdefault(sk, {})["done"] = True
             state[sk]["name"] = name
             _save_state(state)
@@ -624,22 +727,28 @@ def _scan_office(cl, me, off, state: dict, actions: list, run: dict, *,
             actions.append(act)
 
 
-def _ask_with_button(cl, channel: str, thread_ts: str, m: dict,
-                     why: str) -> None:
-    """Answer a reply the bot can't use with the 📸 Add headshot button
-    (form.py), posted by Jiraiya so the tap reaches the form. Plain words
-    from Lucy if the button can't be posted."""
-    who = m.get("user", "")
-    text = f"<@{who}> {why} Tap *📸 Add headshot*."
-    if hs_form.post_button(channel, thread_ts, text=text).get("action") == "posted":
-        return
+def _permalink(cl, channel: str, ts: str) -> str:
+    """Link to one message. Never raises -- the post goes out without it."""
+    if not ts:
+        return ""
     try:
-        cl.chat_postMessage(
-            channel=channel, thread_ts=thread_ts,
-            text=(f"<@{who}> {why} Tap the *📸 Add headshot* button in "
-                  "this thread to send it."))
+        return cl.chat_getPermalink(channel=channel,
+                                    message_ts=ts).get("permalink") or ""
     except Exception:  # noqa: BLE001
-        pass
+        return ""
+
+
+def _answer_to(cl, channel: str, m: dict, by: str, body: str) -> str:
+    """Make the finished headshot read as an answer to the photo it came from.
+
+    Megan 2026-11-17 asked for a reply ON that message. Slack has no thread
+    inside a thread, so this is the nearest thing and the whole of it: the
+    post opens with whoever sent the photo and ends with a link to their
+    message, which Slack shows underneath as a quote of it. (Their message
+    also gets the ✅ we already add.)"""
+    head = f"<@{by}> " if by else ""
+    link = _permalink(cl, channel, m.get("ts", ""))
+    return head + body + (f"\n↳ their photo: {link}" if link else "")
 
 
 # "redo First Last" (also "Redo: First Last", "redo - First Last").
@@ -649,10 +758,13 @@ _MAX_REDOS_PER_RUN = 3
 
 def _maybe_redo_reply(cl, off, m: dict, anchor: dict, state: dict,
                       actions: list, run: dict, *, dry_run: bool) -> None:
-    """A text reply asking for a "redo": answer with the 📸 Add headshot
-    button (a new photo + the Redo box), once per reply. Redos go through the
-    form like everything else (Megan 2026-11-09)."""
-    if not _REDO_RE.match(m.get("text") or ""):
+    """A "redo First Last" reply with NO photo. Re-making the headshot from
+    the same photo gives the same crop, so a redo needs a NEW photo: say so,
+    once per reply (Megan 2026-10-29). The photo + "redo First Last" reply is
+    handled in the main loop and REPLACES the profile photo. (`run.py --redo`
+    stays for re-running an original photo after a code fix.)"""
+    mt = _REDO_RE.match(m.get("text") or "")
+    if not mt:
         return
     ts = m["ts"]
     sk = _state_key(off, ts)
@@ -661,12 +773,17 @@ def _maybe_redo_reply(cl, off, m: dict, anchor: dict, state: dict,
     if run.get("redos", 0) >= _MAX_REDOS_PER_RUN:
         return
     run["redos"] = run.get("redos", 0) + 1
-    actions.append({"ts": ts, "action": "redo_needs_form"})
+    name = name_from_caption(mt.group(1)) or "them"
+    actions.append({"ts": ts, "action": "redo_needs_photo", "name": name})
     if dry_run:
         return
-    _ask_with_button(cl, off.channel, anchor["ts"], m,
-                     "to redo a headshot, tap the button, add a NEW photo "
-                     "and tick *Redo*.")
+    try:
+        cl.chat_postMessage(
+            channel=off.channel, thread_ts=anchor["ts"],
+            text=(f"<@{m.get('user', '')}> to redo *{name}*, reply with a NEW "
+                  f"photo and write *redo {name}* in the same reply."))
+    except Exception:  # noqa: BLE001 -- asked again next tick
+        return
     state.setdefault(sk, {})["done"] = True
     _save_state(state)
 
@@ -810,10 +927,16 @@ def main(argv: list[str] | None = None) -> int:
         print("No new headshot replies.")
         return 0
     for a in actions:
-        if a["action"] == "download_failed":
+        if a["action"] == "ask_name":
+            print(f"  needs a name (reply text wasn't one): ts={a['ts']}")
+        elif a["action"] == "download_failed":
             print(f"  download failed: ts={a['ts']}")
-        elif a["action"] in ("ask_form", "redo_needs_form"):
-            print(f"  pointed to the button: ts={a['ts']}")
+        elif a["action"] == "redo_needs_photo":
+            print(f"  redo asked without a photo: {a['name']}")
+        elif a["action"] == "already_answered":
+            print(f"  already answered in the thread: {a['name']}")
+        elif a["action"] == "photo_failed":
+            print(f"  photo wouldn't open: {a['name']} — {a['error']}")
         elif a["action"] == "office_failed":
             print(f"  office {a['office']} failed: {a['error']}")
         elif a.get("dry_run"):

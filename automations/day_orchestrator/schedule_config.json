@@ -1804,8 +1804,8 @@
    "timeout_minutes": 20
   },
   "headshots_buttons": {
-   "on_scheduler": true,
-   "_note": "Each MONDAY after Lucy 3 posts the headshot threads (8:30am): puts the 📸 Add headshot button into every LIVE office's thread that lacks one (automations/headshots/form.py). Runs HERE because only Jiraiya's button works and Jiraiya's token lives on Lucy 1. Idempotent: a thread that already has the button is left alone. Manual: `lucy rerun headshots_buttons --machine \"Lucy 1\"`.",
+   "on_scheduler": false,
+   "_note": "RETIRED 2026-11-17 (Megan: the button 'seems to not be working very well' -- headshots went back to a plain reply with the photo + the person's name). Both doors shut: on_scheduler false + cadence weekdays [], and the id is in hub_coverage._RETIRED so the card goes and the digest stops expecting it. It USED to put the 📸 Add headshot button into every live office's thread each Monday after Lucy 3 posts them, from Lucy 1 because only Jiraiya's button works and Jiraiya's token lives there. Reviving the form = delete the _RETIRED lines, set on_scheduler true + weekdays [0] here, and make run.py refuse loose photos again.",
    "display_name": "Headshot Bot — Monday form buttons",
    "machine": "Lucy 1",
    "command": [
@@ -1816,10 +1816,7 @@
     "--live"
    ],
    "cadence": {
-    "weekdays": [
-     0
-    ],
-    "not_before": "08:45"
+    "weekdays": []
    },
    "data_sources": [],
    "depends_on": [],

@@ -323,6 +323,15 @@ _RETIRED: frozenset = frozenset({
     # out + restore weekdays 0-5.
     "car-rides",
     "car_rides",
+    # Headshot Bot — Monday form buttons. Megan 2026-11-17: the 📸 Add
+    # headshot button "seems to not be working very well", so headshots went
+    # back to a plain reply (photo + the person's First Last name) and nothing
+    # posts the button any more. Both doors shut: on_scheduler false +
+    # weekdays [] in schedule_config. automations/headshots/form.py stays on
+    # disk so a button already sitting in a thread still works; reviving the
+    # form = delete these lines + flip the schedule entry back.
+    "headshots-buttons",
+    "headshots_buttons",
 })
 
 

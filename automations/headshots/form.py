@@ -1,4 +1,16 @@
-"""The "📸 Add headshot" button in each week's headshot thread.
+"""The "📸 Add headshot" button in each week's headshot thread. OFF.
+
+OFF SINCE 2026-11-17 (Megan: "it seems to not be working very well... go back
+to the way that it was"). Nothing posts the button any more -- not the Monday
+thread, not the tick, and the Monday headshots_buttons job is retired. A
+headshot comes in as a plain reply again: the photo + the person's First Last
+name in the same reply (run.py).
+
+What is kept and why: the listener below still answers a button that is
+already sitting in a thread, and run.py still reads this module's fixed line,
+so a submission someone makes through an old button is not dropped on the
+floor. Bringing the form back = post the button again (post_button /
+ensure_buttons) and make run.py refuse loose photos.
 
 Megan 2026-11-09: regulate how headshots come in, the way the LucyECO Social
 "📸 New post" form does (automations/online_presence/post_form.py). Free

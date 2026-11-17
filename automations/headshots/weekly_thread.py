@@ -47,11 +47,14 @@ def week_monday(today: Optional[dt.date] = None) -> dt.date:
 
 def prompt_text(monday: Optional[dt.date] = None) -> str:
     monday = monday or week_monday()
-    # Megan's wording — change only with her sign-off. Title only since
-    # 2026-11-09 (Megan): the 📸 Add headshot button replied under it says
-    # how, and "reply with photos" would steer people around the form.
-    return ":camera_with_flash: *{marker} — Week of {m}/{d}*".format(
-        marker=MARKER, m=monday.month, d=monday.day)
+    # Megan's exact wording (2026-08-23) — change only with her sign-off.
+    # Back since 2026-11-17: the 📸 button is gone, so the post says how
+    # again (one reply, the photo + the person's name).
+    return (
+        ":camera_with_flash: *{marker} — Week of {m}/{d}*\n"
+        "• Reply in this thread with headshot photos\n"
+        "• Put the person's FIRST & LAST name in the SAME reply"
+    ).format(marker=MARKER, m=monday.month, d=monday.day)
 
 
 def find_week_anchor(client=None, channel: str = CHANNEL_ID,
@@ -104,13 +107,8 @@ def post_prompt(*, dry_run: bool = True, channel: str = CHANNEL_ID,
         return None
     resp = client.chat_postMessage(channel=channel, text=text)
     print("Posted this week's headshot thread (ts={}).".format(resp.get("ts")))
-    # The 📸 Add headshot button as the thread's first reply (form.py,
-    # Megan 2026-11-09). Never fails the post.
-    try:
-        from automations.headshots import form as _form
-        print("  button: {}".format(_form.post_button(channel, resp.get("ts"))))
-    except Exception as e:  # noqa: BLE001
-        print("  (button not posted: {})".format(e))
+    # No 📸 Add headshot button under it any more (Megan 2026-11-17):
+    # people reply with the photo + the name, and run.py reads the reply.
     return resp.get("ts")
 
 
