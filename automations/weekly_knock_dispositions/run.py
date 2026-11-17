@@ -1,4 +1,4 @@
-"""Weekly Knock Dispositions — Sunday runner.
+"""Weekly Knock Dispositions — Sunday + Monday runner.
 
     python -m automations.weekly_knock_dispositions.run             # DRY-RUN
     python -m automations.weekly_knock_dispositions.run --live      # post
@@ -11,8 +11,19 @@ post by accident (--live opts in; the two flags are mutually exclusive).
 
 The date positional is ANY day inside the wanted Mon–Sat window; no date
 means the completed week (shared.report_week — on Sunday that's the Mon–Sat
-that just ended, and a Monday catch-up rerun still resolves to the same
-week, not the empty new one).
+that just ended, and a Monday run still resolves to the same week, not the
+empty new one).
+
+RUNS TWICE, SAME WEEK (Raf 2026-11-16: "It should be posted Monday as welll
+for the weekly view please"). Sunday posts the board into Sunday's Metrics
+thread; Monday posts THE SAME week's board into Monday's. Monday's daily
+🚪 Total Knocks board covers Sunday, which nobody knocks, so it always reads
+"No data available" — without the Monday pass the Monday thread carries no
+knock content at all, which is how Cyrus Wade's office read as missing it.
+Monday costs almost nothing: every office is already in knock_week_cache
+from Sunday (keyed by (office, saturday), shared across days on purpose), so
+no ownerville session opens. Cadence lives in day_orchestrator/
+schedule_config.json — weekdays [6, 0].
 
 Order of work: the org-wide PSS crosstab downloads FIRST in its own Tableau
 session, then ONE ownerville session (own Chrome profile — the shared one is
@@ -59,7 +70,8 @@ CARD_NAME = "Weekly Knock Dispositions"
 ESTIMATED_MINUTES = 90   # ~12 offices × (6 day pulls + 6 gap calls) + 1 crosstab
 
 REPORT_BREAKDOWN = """\
-Every Sunday, for each configured office (offices.py):
+Every Sunday — and again Monday, same week, into Monday's thread — for each
+configured office (offices.py):
 1. Downloads ONE org-wide rep-level PRODUCT SALES SUMMARY crosstab
    (DailyRepBDreportpull) for the completed Mon–Sat week.
 2. In one ownerville session: Disposition by Rep filtered to Mon–Sat via
@@ -69,8 +81,8 @@ Every Sunday, for each configured office (offices.py):
 3. Renders one board per office — Rep | Total Talk To's | Avg/Day (÷6)
    | Total Apps | Avg Talk To's per App | First/Last Knock | Avg Gap/Day
    | Total Gap Hours — plus an OFFICE TOTALS row.
-4. Posts each board as Lucy into that office's EXISTING Sunday Metrics
-   thread ("Metrics for: <date>") — Raf + Chan Park share #alphalete-sales
+4. Posts each board as Lucy into that office's EXISTING Metrics thread for
+   the day it runs ("Metrics for: <date>") — Raf + Chan Park share #alphalete-sales
    (Raf 2026-08-22); every enrolled knocks/gaps office posts in its own
    metrics channel (LIVE-WIDE per Raf, same day). Structural skips (cross-
    workspace, NDS) log and never fail the run.
@@ -156,12 +168,12 @@ def _write_manifest(all_names: list[str], ran: list[str],
         rem = None
         if failed:
             rem = _rm.make_remediation(
-                reason=f"{len(failed)} office(s) missing from Sunday's "
+                reason=f"{len(failed)} office(s) missing from today's "
                        f"{THREAD_NAME} thread in #alphalete-sales: "
                        f"{', '.join(failed)}.",
                 fix="Re-run ONLY the missing office(s): "
                     f"lucy rerun {REPORT_ID} " + " ".join(_retry_args(failed)),
-                message=f"Sunday's {THREAD_NAME} thread is missing "
+                message=f"Today's {THREAD_NAME} thread is missing "
                         f"{', '.join(failed)}. Usual causes: ownerville "
                         "session/impersonation, or the PSS crosstab pull — "
                         "the run log names which.")
@@ -237,7 +249,7 @@ def _tag_thread_header(smp, cfg: dict, thread_ts: str,
     if cfg.get("thread_title"):
         _append_header_line(
             smp, thread_ts,
-            f"\n📋 Weekly Knock Dispositions — {cfg['name']} (Sundays)",
+            f"\n📋 Weekly Knock Dispositions — {cfg['name']} (Sun + Mon)",
             f"Weekly Knock Dispositions — {cfg['name']}")
     elif slack_today <= NEW_BADGE_UNTIL:
         _append_header_line(smp, thread_ts, "\n\n" + NEW_BADGE_LINE,
@@ -648,11 +660,13 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
                          started_at=started_at)
         return 1
 
-    # --- 3. Post into each office's EXISTING Sunday Metrics thread ---------
+    # --- 3. Post into each office's EXISTING Metrics thread (today's) ------
     # (Raf 2026-08-22: no thread of its own — the board is one more metric in
-    # the morning stack.) ensure_metrics_thread is find-or-create with the
-    # exact header daily_metrics posts, so whichever report gets there first
-    # on Sunday opens the one thread and the other reuses it. Per-office
+    # the morning stack.) slack_today is the RUN day, so Sunday's pass lands
+    # in Sunday's thread and Monday's in Monday's — the same week's board in
+    # both, never a second copy in one thread. ensure_metrics_thread is
+    # find-or-create with the exact header daily_metrics posts, so whichever
+    # report gets there first opens the one thread and the other reuses it. Per-office
     # channels (enrolled offices) post into THEIR thread by overriding the
     # smp module channel/label around the calls — the same values the office
     # runner injects via env for its subprocesses.
@@ -770,8 +784,8 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(
         prog="weekly_knock_dispositions",
-        description="Sunday per-rep knock/talk-to productivity board(s) → "
-                    "#alphalete-sales.")
+        description="Sunday + Monday per-rep knock/talk-to productivity "
+                    "board(s) → #alphalete-sales.")
     ap.add_argument("date", nargs="?", default=None,
                     help="any day inside the wanted Mon–Sat week "
                          "(default: the completed week)")
@@ -780,7 +794,7 @@ def main(argv=None) -> int:
     ap.add_argument("--dry-run", action="store_true",
                     help="pull + render to output/, NO Slack post (default)")
     ap.add_argument("--live", action="store_true",
-                    help="pull + render + POST into the Sunday Metrics "
+                    help="pull + render + POST into today's Metrics "
                          "thread(s)")
     ap.add_argument("--preview", action="store_true",
                     help="dry-run, then DM the rendered board(s) to Megan "
