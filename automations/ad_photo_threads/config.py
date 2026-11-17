@@ -379,7 +379,7 @@ _MORE = [
     # ARS tab renamed "Salik Mallick" -> "Salik Malik".
     ("salik", "Salik Hammad", ARS_R_TO_Z, "Salik Malik", "21328", "Elite Prime Group",
      ["C0C1VT19BEX", "C05BPNNJGE7"], "C0C3RDDJ9MH",
-     r"elite\s*prime\s*group.*1st\s*round|^\W*first\s*round\s*thread"),
+     r"elite\s*prime\s*group.*1st\s*round|^\W*first\s*round\s*(interview\s*)?thread"),
     ("kash", "Kash Rai", ARS_J_TO_L, "Kash Rai", "22177", "Palace Acquisitions Inc",
      "C08U6GCS7SB", "C0C3VMK0B1U", r"palace\s*acquisitions.*1st\s*round"),
     ("cyrus", "Cyrus Wade", ARS_A_TO_C, "Cyrus Wade", "22815", "Ambient Marketing",
@@ -537,7 +537,7 @@ _MORE = [
 # 9/23 against office_metrics.OFFICE_TIMEZONES (ownerville addresses) and the
 # cities in each office's own ad titles. Everyone else comes from office_tz.
 _TZ = {
-    "salik": "America/Detroit",        # Southfield, MI (office_metrics; knocks spells him "Salik Mallick")
+    "salik": "America/Chicago",        # Houston TX since Oct (was Southfield, MI; knocks spells him "Salik Mallick")
     "samuel": "America/New_York",      # ads: Orlando / Kissimmee / Ocoee, FL
     "eveliz": "America/New_York",      # South Shore, Miami (her Eco sign-up)
     "atef": "America/Denver",          # ads: Denver / Lakewood / Aurora, CO
@@ -664,11 +664,9 @@ _ALIASES = {
     # title. Left alone: "AT&T Sales Agent" (live in Southfield AND Southgate),
     # "Entry Level Account Representative" (no longer live), "AT&T Retail
     # Sales Rep" (not on the list).
-    "salik": {
-        "AT&T Retail Sales Associate": "AT&T Retail Sales Associate – Dearborn MI",
-        "Entry Level AT&T Team Member": "Entry Level AT&T Team Member – Sterling Heights MI",
-        "Entry Level Sales Representative -AT&T": "Entry Level Sales Representative -AT&T – Livonia MI",
-    },
+    # Gone 11/17: Salik moved to Houston in October (Maddie 10/21, 10/26: "titles
+    # haven't changed since Detroit", 8 Houston ads) -- the city-less titles get
+    # their own threads now, not the old Michigan ones.
     # Eveliz 10/14 (Valeria, her live ad list): the interviewers paste titles
     # with broken spacing ("C ustomer ...", "Spanish/En glish") -- same ad as
     # the clean one -- and AT&T Assistant / Sales Assistant with extras.
@@ -741,7 +739,13 @@ _PAUSED_BEFORE = {"khalil": "2026-10-03",
 # (collect.slack_rows): one reply per candidate, "Name – Ad – YES – 1:15 –
 # :star:x4". Valeria 10/22: her tab has no Ad Title and its dates don't line
 # up with the threads (Cathrin Farag: Slack 10/12, sheet 10/15).
-_ROWS_FROM_SLACK = {"valeria"}
+# Salik 11/17 (Maddie): his tab left the R-Z sheet in October (new
+# interviewers, nothing posted since 10/5); the rows are the "//" / "||" lines
+# in his FIRST ROUND (INTERVIEW) THREAD (collect.multi_slack_rows).
+_ROWS_FROM_SLACK = {"valeria", "salik"}
+# First day read off Slack: Salik's older threads (another format) went out
+# from the sheet already, and read as Slack rows they're junk ("ASAP" ads).
+_SLACK_ROWS_SINCE = {"salik": "2026-10-23"}
 
 # Colten 10/10 asked for the Ad Scorecard for his funnel and Eveliz's; Raf
 # 10/11: "put it in his all in one". One tab each in Maud's "All In One -
@@ -796,6 +800,7 @@ OFFICES += [
         "sheet_id": book, "source_channel": src, "live_channel": live,
         "paused_before": _PAUSED_BEFORE.get(key, ""),
         "rows_from_slack": key in _ROWS_FROM_SLACK,
+        "slack_rows_since": _SLACK_ROWS_SINCE.get(key, ""),
         "sources": [{"office_id": oid, "stream": company, "label": company,
                      "tab": tab, "thread_re": re.compile(rx, re.I)}],
         **_SCORECARD_TABS.get(key, {}),
@@ -823,6 +828,7 @@ def office_zone(o: dict) -> str:
 TITLE_ALIASES: dict = {}
 TITLE_ONLY: dict = {}
 ROWS_FROM_SLACK = False     # set by use(); 1st rounds from the Slack thread, not the sheet
+SLACK_ROWS_SINCE = ""         # set by use(); "" = THREADS_SINCE
 SECOND_ROUNDS_OWNER = ""      # set by use(); "" = no 2nd-round lines
 SCORECARD_SECONDS_FROM_SHEET = False   # set by use()
 SCORECARD_TAG = ""            # set by use(); Slack user tagged on the post
@@ -865,6 +871,7 @@ def use(o: dict) -> None:
         next((s["office_id"] for s in o.get("sources") or [] if s.get("office_id")), "")
         if o.get("scorecard") else "")
     SCORECARD_FUNNEL_OFFERS = o.get("scorecard_funnel_offers", True)
+    global SLACK_ROWS_SINCE
     SECOND_ROUNDS_OWNER = o.get("second_rounds_owner") or ""
     SCORECARD_SECONDS_FROM_SHEET = bool(o.get("scorecard_seconds_from_sheet"))
     SCORECARD_TAG = o.get("scorecard_tag") or ""
@@ -873,6 +880,7 @@ def use(o: dict) -> None:
     TITLE_ALIASES = o.get("title_aliases") or {}
     TITLE_ONLY = o.get("title_only") or {}
     ROWS_FROM_SLACK = bool(o.get("rows_from_slack"))
+    SLACK_ROWS_SINCE = o.get("slack_rows_since") or ""
     SHEET_ID = o["sheet_id"]
     SOURCE_CHANNEL_ID = o["source_channel"]
     LIVE_CHANNEL_ID = o["live_channel"]
