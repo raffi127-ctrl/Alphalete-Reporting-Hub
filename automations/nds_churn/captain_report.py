@@ -156,6 +156,30 @@ def export_field_values(path: Path, ix: dict, field: str, top: int = 12) -> List
     return cnt.most_common(top)
 
 
+def export_date_span(path: Path, ix: dict, lines: List[dict]) -> str:
+    """Min..max Order Date and posted date in the WHOLE export and in the
+    owner slice -- does the Start/End window on the URL actually widen the
+    export? (2026-11-17: 140 and 200 days gave the same 2,270 lines.)"""
+    i_od, i_po = ix.get("order_date"), ix.get("posted")
+    ods, pos = [], []
+    for r in C.read_rows(path)[1:]:
+        if i_od is not None and len(r) > i_od:
+            d = C.parse_date(r[i_od])
+            if d:
+                ods.append(d)
+        if i_po is not None and len(r) > i_po:
+            d = C.parse_date(r[i_po])
+            if d:
+                pos.append(d)
+    o_ods = [ln["order_date"] for ln in lines if ln.get("order_date")]
+    o_pos = [ln["posted"] for ln in lines if ln.get("posted")]
+
+    def _span(v):
+        return f"{C.fmt_date(min(v))}..{C.fmt_date(max(v))} ({len(v)})" if v else "(none)"
+    return (f"export order dates {_span(ods)}, posted {_span(pos)}; owner order dates "
+            f"{_span(o_ods)}, posted {_span(o_pos)}")
+
+
 def export_owners(path: Path, ix: dict, log=print) -> List[Tuple[str, int]]:
     """Distinct Owner & Office cells in the export with their row counts
     (first line of the cell, upper-cased), most rows first -- to see whose
@@ -777,7 +801,8 @@ def run(owner_key: str, today: dt.date, *, dry_run: bool = False,
                    if ok else "⚠ not reconciled to Smart Circle's Churn Rates view: " + recon)
     extra = missing_reps(path, ix, view, rep)
     diag = diag_lines(owner, rep, today, recon, view, len(lines), owner_cells)
-    diag.insert(3, "EXPORT FIELD VALUES: " + "; ".join(
+    diag.insert(3, "EXPORT DATE SPAN: " + export_date_span(path, ix, lines))
+    diag.insert(4, "EXPORT FIELD VALUES: " + "; ".join(
         f"{f}: " + ", ".join(f"{k} x{v}" for k, v in vals) for f, vals in field_counts.items())
         + (f"; URL EXTRA: {url_extra}" if url_extra else "")
         + (f"; SEARCH RANGE: {search_range}" if search_range else ""))
