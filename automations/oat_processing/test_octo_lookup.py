@@ -380,6 +380,46 @@ class TheWholeMorning(unittest.TestCase):
         self.assertFalse((tmp / "octo-lookup.lock").exists())
 
 
+class OctoSaysWhy(unittest.TestCase):
+    def test_a_refusal_comes_back_with_its_reason_and_is_not_retried(self):
+        import io
+        import urllib.error
+        def err(*a, **k):      # a fresh error each call: its body can be read once
+            raise urllib.error.HTTPError("http://127.0.0.1:58888/api/profiles/start", 409, "Conflict", {},
+                                         io.BytesIO(b'{"error":"profile is running on another device"}'))
+        lines = []
+        with mock.patch.object(OL.urllib.request, "urlopen", side_effect=err), \
+             mock.patch.object(OL.time, "sleep") as slept:
+            d = OL._api("start", {"uuid": "a" * 32})
+            self.assertEqual((d["http"], d["error"]), (409, "profile is running on another device"))
+            self.assertIsNone(OL.octo_start("a" * 32, log=lines.append))
+        self.assertEqual(len(lines), 1, "a refusal is said once, not three times")
+        self.assertIn("another device", lines[0])
+        slept.assert_not_called()
+
+    def test_octos_already_started_means_another_computer(self):
+        """11/16 22:20: Peak and Fast Track answered HTTP 400 profiles.already_started
+        while this computer's active list showed neither -- Carlos had them open
+        on another computer, paying the bills."""
+        import io
+        import urllib.error
+        err = urllib.error.HTTPError("http://127.0.0.1:58888/api/profiles/start", 400, "Bad Request", {},
+                                     io.BytesIO(b'{"code":"profiles.already_started","error":"Profile is already started","error_code":2}'))
+        with mock.patch.object(OL.urllib.request, "urlopen", side_effect=err), \
+             mock.patch.object(OL.time, "sleep"):
+            self.assertIsNone(OL.octo_start("a" * 32, log=lambda m: None))
+        self.assertEqual(OL.last_start_error(), "in use on another computer")
+
+    def test_a_hiccup_is_retried(self):
+        import urllib.error
+        err = urllib.error.URLError("connection reset")
+        lines = []
+        with mock.patch.object(OL.urllib.request, "urlopen", side_effect=err), \
+             mock.patch.object(OL.time, "sleep"):
+            self.assertIsNone(OL.octo_start("a" * 32, log=lines.append))
+        self.assertEqual(len(lines), OL.OCTO_START_TRIES)
+
+
 class ItShips(unittest.TestCase):
     def test_both_files_are_in_both_lists(self):
         from automations.icd_alerts.package import AGENT_FILES

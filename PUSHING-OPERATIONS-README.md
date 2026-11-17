@@ -319,6 +319,13 @@ against the log file, or a tab dump; `rerun` args are shlex-split — a literal
 ## Changelog (auto-appended daily at 7 PM; newest first)
 
 ### 2026-11-16 (manual)
+- **Octo's refusals are logged in words** (release 2026.11.16.6): the 10:20pm
+  recheck of Peak and Fast Track said only "could not start" three times — Octo
+  had answered HTTP 400 `profiles.already_started` (Carlos had both open on
+  another computer, paying the bills) and `_api` dropped the body. Now the
+  body is read, a refusal (HTTP 400/401/403/404/409) is logged once and not
+  retried, and `profiles.already_started` with the profile absent from this
+  computer's active list reads **"in use on another computer"** in the tally.
 - **The billing check runs twice a day and the alert reaches Carlos on Slack**
   (Carlos, after paying off the two alerts: "check for it, and actually do it
   twice a day. Whenever this does happen, notify me through Slack as well").

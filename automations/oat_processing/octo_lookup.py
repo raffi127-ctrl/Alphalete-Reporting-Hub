@@ -404,8 +404,26 @@ def _api(path: str, payload: Optional[Dict] = None, timeout: int = 30):
     data = json.dumps(payload).encode("utf-8") if payload is not None else None
     req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"},
                                  method="POST" if data is not None else "GET")
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        raw = r.read().decode("utf-8", "replace")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            raw = r.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as e:
+        # Octo answers a refusal (profile open on another computer, unknown
+        # uuid, too many open) as an HTTP error WITH a body that says why.
+        # The reason is the whole point of the log line.
+        try:
+            raw = e.read().decode("utf-8", "replace")
+        except Exception:  # noqa: BLE001
+            raw = ""
+        try:
+            body = json.loads(raw)
+        except ValueError:
+            body = {"raw": raw[:300]}
+        if isinstance(body, dict):
+            body.setdefault("error", "HTTP %s" % e.code)
+            body["http"] = e.code
+            return body
+        return {"error": "HTTP %s" % e.code, "http": e.code, "raw": str(body)[:300]}
     try:
         return json.loads(raw)
     except ValueError:
@@ -427,8 +445,24 @@ def octo_active() -> List[Dict]:
         return []
 
 
+_LAST_START: Dict = {}      # what Octo said the last time a start failed
+
+
+def last_start_error() -> str:
+    """The last refusal in words: 'in use on another computer' for Octo's
+    profiles.already_started (the profile shows nowhere in THIS computer's
+    active list, so it is open on another one), else Octo's own text."""
+    d = _LAST_START or {}
+    if d.get("code") == "profiles.already_started":
+        return "in use on another computer"
+    return str(d.get("error") or d.get("code") or d.get("raw") or "no answer")[:120]
+
+
 def octo_start(uuid: str, log=_log) -> Optional[str]:
-    """The profile's debug endpoint, started here. None after OCTO_START_TRIES."""
+    """The profile's debug endpoint, started here. None after OCTO_START_TRIES
+    (or at once on a refusal) -- last_start_error() then says why."""
+    global _LAST_START
+    _LAST_START = {}
     for i in range(OCTO_START_TRIES):
         try:
             d = _api("start", {"uuid": uuid, "headless": False, "debug_port": True,
@@ -438,7 +472,11 @@ def octo_start(uuid: str, log=_log) -> Optional[str]:
         ws = (d or {}).get("ws_endpoint") if isinstance(d, dict) else None
         if ws:
             return ws
-        log("    octo start try %d: %s" % (i + 1, json.dumps(d)[:160]))
+        _LAST_START = d if isinstance(d, dict) else {"raw": str(d)[:200]}
+        reason = json.dumps(d, ensure_ascii=False)[:200] if isinstance(d, dict) else str(d)[:200]
+        log("    octo start try %d: %s" % (i + 1, reason))
+        if isinstance(d, dict) and d.get("http") in (400, 401, 403, 404, 409):
+            break           # a refusal, not a hiccup: another try says the same thing
         time.sleep(20)
     return None
 
@@ -1006,11 +1044,14 @@ def run(office_id, *, names: Optional[List[str]] = None, account: str = "",
                 if ws:
                     time.sleep(12)
             if not ws:
-                summary["accounts"][title] = "could not start"
+                why = last_start_error()
+                label = why if why == "in use on another computer" else "could not start (%s)" % why
+                summary["accounts"][title] = label
+                log("    %s" % label)
                 for it in its:
-                    summary["missing"].append([it["name"], it["domain"], "profile would not start"])
+                    summary["missing"].append([it["name"], it["domain"], label])
                 if billing:
-                    summary["billing"][title] = "could not start"
+                    summary["billing"][title] = label
                 continue
             # the names
             results: List[Dict] = []
