@@ -232,6 +232,26 @@ def _sample_rows(page, limit: int = 3) -> str:
     return f"{n} row(s): " + " | ".join(out)
 
 
+def _row_names(page, limit: int = 6) -> str:
+    """What the table calls each row's person, in full.
+
+    `_sample_rows` cuts at 50 characters of the whole row, which on a miss is
+    the one thing it must not do: James Turnage's Charter row read
+    "9576433 jamesturnage23@gmail.com edit james turnag" and the cut fell
+    exactly where the spelling was in question (2026-11-17). Short-timeout
+    and exception-swallowing like everything else in here."""
+    try:
+        names = [n for n in page.evaluate(_ROW_NAMES_JS) if n]
+    except Exception:
+        return ""
+    if not names:
+        return ""
+    shown = "; ".join(repr(n) for n in names[:limit])
+    if len(names) > limit:
+        shown += f" +{len(names) - limit} more"
+    return f" names: {shown}"
+
+
 def _show_all(page) -> None:
     """Flip 'Filter by Activation Date' from Show Last 3 Weeks to Show All.
 
@@ -542,7 +562,7 @@ def find_rep(page, name: str, *, verbose: bool = True, campaigns=None,
                     return row, label, matched
             if verbose:
                 print(f"    ({label}{' / Show All' if widen else ''}: "
-                      f"{_sample_rows(page)})")
+                      f"{_sample_rows(page)}{_row_names(page)})")
     return None, tried, None
 
 
