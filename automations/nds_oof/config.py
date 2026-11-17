@@ -97,7 +97,10 @@ WEEK_MONDAY_THREAD = "NDS Metrics"
 # Carlos 2026-11-13: "Anette look for her where you find cinthya. Nathaly look
 # for her where everyone else is at" -- Annett joins the borrowed list, Nathaly
 # knocks on Carlos's own Ownerville again and comes off it.
-BORROWED_ROWS = {"rafael": ["Cinthya Reyes", "Anette Climaco"]}  # Raf's row reads "Anette Climaco GP"
+# Carlos 2026-11-17: "annett and bri are on rafs ownerville" -- Brianna joins
+# the standing list (she was only picked up on days she rode with Cinthya).
+BORROWED_ROWS = {"rafael": ["Cinthya Reyes", "Anette Climaco",       # Raf's rows read "Anette Climaco GP",
+                            "Brianna Belen Contreras"]}              # "Brianna Belen GP"
 # Carlos 2026-11-14: "the people in Cynthia's car ride, those people are going
 # to be on Raf's ownerville today, and the rest of them you'll see on my
 # ownerville". So whoever rides with these leaders on the Stations car-ride
