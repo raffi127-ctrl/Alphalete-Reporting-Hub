@@ -81,9 +81,32 @@ CHAN = {
 _KG = {"knocks", "knocks_gaps"}
 
 # Enrolled offices EXCLUDED from this report by name (office_metrics keys).
-# drew: Precision Management is reworking their Slack workspace (Megan
-# 2026-08-22) — back in by deleting the line once they've settled.
-_EXCLUDED_KEYS = {"drew"}
+# (drew was here from 2026-08-22 — "Precision Management is reworking their
+# Slack workspace" — and came back 2026-11-17, see _FORCE_INCLUDE_KEYS.)
+_EXCLUDED_KEYS: set[str] = set()
+
+# Offices that get THIS board even though they carry no Knocks/Time-Gaps
+# section in office_metrics, so the derivation above would skip them.
+#
+# drew (Megan 2026-11-17, "Add Drew back"). Precision Management's reps do
+# not disposition in ownerville — that is why drew_metrics has no daily
+# knocks board at all (SECTION_OVERRIDES, Megan 2026-09-28: "he doesn't use
+# the dispos in OV so prob won't have knock data") — so deleting his line
+# from _EXCLUDED_KEYS alone would have changed nothing. His office DOES
+# record knock TIMES: Lucy's gap call-outs fire in
+# #precision-management-att-sales off the same ownerville Time Tracker this
+# board reads ("65+ min since a door", 2026-11-14). So he gets the reduced
+# knock-times + gaps board, the same shape isaiah (wireless) gets, with the
+# apps columns blank + flagged because NDS sales live in the NDS workbook.
+# If the Time Tracker comes back empty he is SKIPPED, not posted blank
+# (run.py's no-data branch for a pss_owner=None office) — the standing
+# never-post-blank rule holds either way.
+#
+# This turns on the WEEKLY board only; his daily metrics thread is
+# untouched. To give him the daily knocks board too, add "knocks" to
+# SECTION_OVERRIDES["drew"] in office_metrics/offices.py instead — then he
+# derives in here on his own and this line can go.
+_FORCE_INCLUDE_KEYS = {"drew"}
 
 # TEMPORARY (Megan 2026-08-23, "we will prob want this removed in a few
 # weeks"): host office → other offices whose TOTALS row is appended under
@@ -129,7 +152,7 @@ def enrolled_offices() -> list[dict]:
     Knocks/Time-Gaps board — mirrors the runner's section resolution:
     a committed SECTION_OVERRIDES entry wins (empty = posts nothing), else
     an onboarding subset, else the default = every board (which includes
-    knocks_gaps)."""
+    knocks_gaps). _FORCE_INCLUDE_KEYS offices join regardless."""
     from automations.office_metrics import offices as OM
     out: list[dict] = []
     for key, o in OM.OFFICES.items():
@@ -141,7 +164,7 @@ def enrolled_offices() -> list[dict]:
             enrolled = (OM.ONBOARDED_EXTRA.get(key, {})
                         .get("enrolled_reports") or [])
             has_kg = (not enrolled) or bool(_KG & {str(s) for s in enrolled})
-        if not has_kg:
+        if not has_kg and key not in _FORCE_INCLUDE_KEYS:
             continue
         # Room still held for an ECO sign-up (placeholder = Megan's DM user
         # id): nowhere real to post yet. Posting there failed Miguel's
