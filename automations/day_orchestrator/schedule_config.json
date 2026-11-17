@@ -209,6 +209,17 @@
   }
  },
  "reports": {
+  "cancel_feedback": {
+   "on_scheduler": false,
+   "_off_scheduler_note": "Texts customers who cancelled or disconnected (same rows as the #alphalete-sales daily cancels/disconnects) asking for written feedback, from Dylan's RC line; logs outreach + replies. DRY RUN by default (sends nothing). on_scheduler:false until approved live; runs only through `lucy rerun cancel_feedback [--scope full] [--live]`. Needs the dedicated RC JWT cancel-feedback-rc-creds.json ONLY for --live. Added 2026-11-17 (Dylan).",
+   "display_name": "Cancel/Disconnect Feedback Outreach",
+   "source_type": "tableau",
+   "data_sources": [],
+   "command": [
+    "automations.cancel_feedback.run"
+   ],
+   "base_args": []
+  },
   "rc_bank_totals_security": {
    "on_scheduler": false,
    "machine": "Lucy 2",
