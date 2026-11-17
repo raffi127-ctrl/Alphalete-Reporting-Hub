@@ -38,6 +38,16 @@ WHAT IT DOES, 5:00 AM LOCAL, ONCE A DAY (the agent's tick kicks it: maybe_kick):
      says who was found and who was not; Octo missing or every account walled
      is a loud fault the office sees.
 
+AND EVERY ACCOUNT'S BILLING, WHILE IT IS THERE (Carlos, the same evening: "can
+we also add in launching all of the accounts and checking if there's a billing
+issue with any of the accounts?"). After the lookups the run opens EVERY
+profile on file, loads the All Jobs page, and scans it for a payment or
+billing alert (the rules that read sixteen real pages clean on 11/16; the
+"Add billing identifiers" banner is not one). An alert is a loud fault with
+the alert's own words, routed to the office; a clean sweep is silent except
+for the tally. The page's screenshot stays on the office computer
+(output/octo-billing-<date>/<account>.png) -- the relay carries no pictures.
+
 WHAT IT NEVER DOES. It never clicks a "Verify you are human" box: a walled
 account waits up to four minutes for the wall to pass on its own (they do),
 then is skipped until tomorrow. It never downloads a resume, never places a
@@ -82,7 +92,7 @@ API_PORT = int(os.environ.get("OCTO_API_PORT", "58888"))
 RUN_START = (5, 0)
 RUN_UNTIL = (7, 0)
 LOCK_STALE_MINUTES = 60
-RUN_BUDGET_MIN = 45             # the whole run, all accounts
+RUN_BUDGET_MIN = 60             # the whole run: the lookups, then every account's billing
 ACCOUNT_BUDGET_MIN = 12         # one account's names
 WALL_WAIT_S = 240               # a wall that has not passed by then: skip the account
 PAUSE_S = 8                     # between names; ~25 fast loads trips Cloudflare
@@ -98,6 +108,22 @@ CSV_HEAD = ["name", "phone", "account_email", "indeed_name", "office_id", "found
 SOURCE = "octo-lookup"
 STAGE_QUIET = "probe-octo-lookup"       # the daily tally, read off the ICD Faults tab
 STAGE_LOUD = "octo-lookup"              # a person has to do something
+STAGE_BILLING = "octo-billing"          # an Indeed account shows a payment / billing alert
+
+JOBS_URL = ("https://employers.indeed.com/jobs?status=open%2Cpaused&claimed=false"
+            "&createdOnIndeed=true&tab=0&sortDirection=DESC")
+BILLING_WAIT_S = 150                    # the All Jobs page, incl. a wall passing by itself
+# The words a payment problem shows up in, on the All Jobs page (16 real
+# pages read clean with these on 2026-11-16), and the everyday page furniture
+# that uses the same words and means nothing.
+BILLING_KEYS = re.compile(
+    r"(payment (method|failed|declined|issue|problem|due)|past due|overdue|unpaid|declined|"
+    r"suspended|on hold|account (is )?(paused|restricted|disabled)|billing (issue|problem|error|hold)|"
+    r"outstanding balance|update your (payment|billing)|unable to (charge|process)|credit card|"
+    r"card (on file|expired|declined)|invoice|balance due|paused access|we.ve paused|"
+    r"verify your (identity|account)|action required)", re.I)
+BILLING_IGNORE = ("billing identifiers", "view billing history", "update payment method",
+                  "view performance report", "manage billing details", "export your billing reports")
 
 US_PHONE = re.compile(r"(?:\+?1[\s.\-]?)?\(?\b(\d{3})\)?[\s.\-]?(\d{3})[\s.\-]?(\d{4})\b")
 ANY_PHONE = re.compile(r"\+?\d[\d\s().\-]{7,}\d")
@@ -710,6 +736,83 @@ def lookup_names(ws: str, items: List[Dict], log=_log,
     return results
 
 
+# --- every account's billing --------------------------------------------------
+def billing_hits(text) -> List[str]:
+    """The lines of an All Jobs page that read like a payment or billing
+    alert, each with the line before and after, at most eight. The page's
+    own menu items (View billing history, Add billing identifiers ...) are
+    not alerts."""
+    lines = [l.strip() for l in str(text or "").splitlines() if l.strip()]
+    out = []
+    for i, l in enumerate(lines):
+        low = l.lower()
+        if BILLING_KEYS.search(l) and not any(ig in low for ig in BILLING_IGNORE):
+            out.append(" | ".join(lines[max(0, i - 1): i + 2])[:240])
+            if len(out) >= 8:
+                break
+    return out
+
+
+def check_billing(ws: str, title: str, shot_dir: Optional[Path], log=_log) -> Dict:
+    """One account's All Jobs page: status ok / problem / walled / error,
+    the alert lines, and where its screenshot went. Read-only: nothing on
+    the page is clicked, a wall is waited out and never touched."""
+    rec: Dict = {"title": title, "status": "error", "hits": [], "shot": "", "error": ""}
+    sync_playwright = _sync_playwright()
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.connect_over_cdp(ws, timeout=60000)
+            ctx = browser.contexts[0]
+            page = ctx.new_page()
+            try:
+                page.set_viewport_size({"width": 1500, "height": 1000})
+            except Exception:  # noqa: BLE001
+                pass
+            page.goto(JOBS_URL, wait_until="domcontentloaded", timeout=60000)
+            t, is_walled, deadline, reloaded = "", True, time.time() + BILLING_WAIT_S, False
+            while time.time() < deadline:
+                time.sleep(8)
+                if not reloaded and time.time() > deadline - BILLING_WAIT_S / 2:
+                    reloaded = True
+                    try:
+                        page.reload(wait_until="domcontentloaded", timeout=60000)
+                    except Exception:  # noqa: BLE001
+                        pass
+                t = body_text(page)
+                is_walled = walled(page)
+                if not is_walled and len(t) > 300:
+                    break
+            time.sleep(5)
+            t = body_text(page) or t
+            if shot_dir is not None:
+                try:
+                    shot_dir.mkdir(parents=True, exist_ok=True)
+                    shot = shot_dir / (re.sub(r"[^A-Za-z0-9]+", "_", title).strip("_") + ".png")
+                    try:
+                        page.screenshot(path=str(shot), full_page=False, timeout=20000,
+                                        animations="disabled")
+                    except Exception:  # noqa: BLE001 -- fonts never settle: ask Chrome directly
+                        import base64
+                        cdp = ctx.new_cdp_session(page)
+                        data = cdp.send("Page.captureScreenshot", {"format": "png"})["data"]
+                        shot.write_bytes(base64.b64decode(data))
+                    rec["shot"] = str(shot)
+                except Exception as e:  # noqa: BLE001 -- the picture is a bonus
+                    log("    %-28s no screenshot (%s)" % (title, type(e).__name__))
+            if is_walled or len(t) <= 300:
+                rec["status"] = "walled" if is_walled else "blank"
+            else:
+                rec["hits"] = billing_hits(t)
+                rec["status"] = "problem" if rec["hits"] else "ok"
+            try:
+                page.close()
+            except Exception:  # noqa: BLE001
+                pass
+    except Exception as e:  # noqa: BLE001
+        rec["error"] = "%s: %s" % (type(e).__name__, str(e)[:160])
+    return rec
+
+
 # --- one run ------------------------------------------------------------------
 def _write_lock() -> None:
     try:
@@ -773,7 +876,8 @@ def _report(office_id: str, summary: Dict, loud: str = "", log=_log) -> None:
         from automations.icd_alerts import relay as R
         body = {k: summary.get(k) for k in ("office", "date", "at", "snapshot", "listed",
                                             "skipped_recent", "found", "missing",
-                                            "accounts", "csv_rows", "elapsed_min")}
+                                            "accounts", "billing", "billing_problems",
+                                            "csv_rows", "elapsed_min")}
         R.report_fault(STAGE_QUIET, "octo lookup %s: %d found, %d not"
                        % (office_id, len(summary.get("found") or []),
                           len(summary.get("missing") or [])),
@@ -782,38 +886,50 @@ def _report(office_id: str, summary: Dict, loud: str = "", log=_log) -> None:
         if loud:
             R.report_fault(STAGE_LOUD, loud, json.dumps(body, ensure_ascii=False)[:1500],
                            office_key=key)
+        for title, hit in summary.get("billing_problems") or []:
+            R.report_fault(STAGE_BILLING,
+                           "Indeed account %s shows a payment or billing alert on its All Jobs "
+                           "page: \"%s\" -- open it in Octo Browser and fix the payment; its "
+                           "jobs may be paused until then." % (title, hit[:200]),
+                           json.dumps(body, ensure_ascii=False)[:1500], office_key=key)
     except Exception as e:  # noqa: BLE001 -- the telling, never the work
         log("could not file the tally: %s" % type(e).__name__)
 
 
 def run(office_id, *, names: Optional[List[str]] = None, account: str = "",
         only: Optional[List[str]] = None, dry: bool = False, scheduled: bool = False,
-        log=_log) -> Dict:
+        billing: bool = True, lookups: bool = True, log=_log) -> Dict:
+    """The morning's work for one office: the lookups (accounts with a name
+    to find first), then every account's All Jobs page for a billing alert.
+    One profile at a time, started and stopped here."""
     office_id = str(office_id)
     t0 = time.time()
     today = dt.date.today()
     summary: Dict = {"office": office_id, "date": today.isoformat(),
                      "at": dt.datetime.now().strftime("%H:%M"), "found": [], "missing": [],
-                     "accounts": {}, "csv_rows": None, "dry": dry}
+                     "accounts": {}, "billing": {}, "billing_problems": [],
+                     "csv_rows": None, "dry": dry}
     _write_lock()
     launched = False
     try:
-        if names:
-            items = [{"name": n.strip(), "account": account, "domain": domain(account)}
-                     for n in names if n.strip()]
-            info = {"snapshot": "(names given)", "listed": len(items), "skipped_recent": 0}
-        else:
-            items, info = wanted(office_id, today)
+        # WHO. The flagged list (or the names given), each with its account.
+        items: List[Dict] = []
+        info: Dict = {"snapshot": "(lookups off)", "listed": 0, "skipped_recent": 0}
+        if lookups:
+            if names:
+                items = [{"name": n.strip(), "account": account, "domain": domain(account)}
+                         for n in names if n.strip()]
+                info = {"snapshot": "(names given)", "listed": len(items), "skipped_recent": 0}
+            else:
+                items, info = wanted(office_id, today)
         summary.update({k: info.get(k) for k in ("snapshot", "snapshot_at", "listed", "skipped_recent")})
-        log("[octo] office %s: %d to look up (%s; %d listed, %d looked up this week already)"
+        log("[octo] office %s: %d to look up (%s; %d listed, %d looked up this week already)%s"
             % (office_id, len(items), info.get("snapshot") or "no flagged snapshot <= %d days"
-               % SNAPSHOT_MAX_AGE_DAYS, info.get("listed") or 0, info.get("skipped_recent") or 0))
-        if not items:
-            summary["result"] = "nothing to look up"
-            if scheduled:
-                _report(office_id, summary, log=log)
-            return summary
+               % SNAPSHOT_MAX_AGE_DAYS, info.get("listed") or 0, info.get("skipped_recent") or 0,
+               "; then every account's billing" if billing else ""))
 
+        # WHERE. Names grouped under their profile; with billing on, every
+        # other profile follows with no names.
         profs = profiles(office_id)
         groups: Dict[str, List[Dict]] = {}
         by_title: Dict[str, Dict] = {}
@@ -824,12 +940,19 @@ def run(office_id, *, names: Optional[List[str]] = None, account: str = "",
                 summary["missing"].append([it["name"], it["domain"], "no Octo profile for this account"])
                 log("    %-28s no Octo profile known for %r" % (it["name"], it["domain"] or it["account"]))
                 continue
-            if only and not any(_squash(o) in _squash(pr["title"]) for o in only):
-                continue
             groups.setdefault(pr["title"], []).append(it)
             by_title[pr["title"]] = pr
-        if not groups:
-            summary["result"] = "no account to open"
+        plan: List[Tuple[Dict, List[Dict]]] = [(by_title[t], its) for t, its in
+                                               sorted(groups.items(), key=lambda kv: -len(kv[1]))]
+        if billing:
+            for pr in profs:
+                if pr["title"] not in by_title:
+                    plan.append((pr, []))
+        if only:
+            plan = [(pr, its) for pr, its in plan
+                    if any(_squash(o) in _squash(pr["title"]) for o in only)]
+        if not plan:
+            summary["result"] = "nothing to do"
             if scheduled:
                 _report(office_id, summary, log=log)
             return summary
@@ -838,28 +961,31 @@ def run(office_id, *, names: Optional[List[str]] = None, account: str = "",
         if not ok:
             log("[octo] %s" % why)
             summary["result"] = why
-            for title, its in groups.items():
-                summary["accounts"][title] = "octo not available"
+            for pr, its in plan:
+                summary["accounts"][pr["title"]] = "octo not available"
                 for it in its:
                     summary["missing"].append([it["name"], it["domain"], "octo not available"])
             if scheduled:
                 _report(office_id, summary,
-                        loud=("%s, so the 5am phone lookups did not run. Install Octo Browser "
-                              "on the office computer and sign it in once; the lookups find it "
-                              "on their own the next morning." % why), log=log)
+                        loud=("%s, so the 5am phone lookups and the billing check did not run. "
+                              "Install Octo Browser on the office computer and sign it in once; "
+                              "the morning run finds it on its own." % why), log=log)
             return summary
 
         run_deadline = t0 + RUN_BUDGET_MIN * 60
         found_rows: List[Dict] = []
         walled_accounts = 0
-        for title, its in sorted(groups.items(), key=lambda kv: -len(kv[1])):
-            pr = by_title[title]
+        shot_dir = (_out_dir() / ("octo-billing-%s" % today.isoformat())) if billing else None
+        for pr, its in plan:
+            title = pr["title"]
             if time.time() > run_deadline:
                 summary["accounts"][title] = "out of time"
                 for it in its:
                     summary["missing"].append([it["name"], it["domain"], "out_of_time"])
+                if billing:
+                    summary["billing"][title] = "out of time"
                 continue
-            log("[octo] %s: %d name(s)" % (title, len(its)))
+            log("[octo] %s: %d name(s)%s" % (title, len(its), " + billing" if billing else ""))
             cur = next((a for a in octo_active() if a.get("uuid") == pr["uuid"]), None)
             ws = cur.get("ws_endpoint") if cur else None
             started_here = False
@@ -868,6 +994,8 @@ def run(office_id, *, names: Optional[List[str]] = None, account: str = "",
                 log("    profile is open without a debug port (somebody's window) -- skipped")
                 for it in its:
                     summary["missing"].append([it["name"], it["domain"], "account in use"])
+                if billing:
+                    summary["billing"][title] = "in use"
                 continue
             if not cur:
                 ws = octo_start(pr["uuid"], log)
@@ -878,53 +1006,74 @@ def run(office_id, *, names: Optional[List[str]] = None, account: str = "",
                 summary["accounts"][title] = "could not start"
                 for it in its:
                     summary["missing"].append([it["name"], it["domain"], "profile would not start"])
+                if billing:
+                    summary["billing"][title] = "could not start"
                 continue
+            # the names
             results: List[Dict] = []
-            for attempt in range(2):
-                try:
-                    results = lookup_names(ws, its, log,
-                                           deadline=min(run_deadline,
-                                                        time.time() + ACCOUNT_BUDGET_MIN * 60))
-                    break
-                except Exception as e:  # noqa: BLE001
-                    msg = "%s: %s" % (type(e).__name__, str(e)[:160])
-                    log("    attach failed (%s)" % msg[:120])
-                    if attempt == 0 and started_here:
-                        # The debug link hung: bounce the profile once.
-                        octo_stop(pr["uuid"])
-                        time.sleep(8)
-                        ws = octo_start(pr["uuid"], log) or ws
-                        time.sleep(15)
-                        continue
-                    results = [dict(it, status="error", error=msg) for it in its]
+            if its:
+                for attempt in range(2):
+                    try:
+                        results = lookup_names(ws, its, log,
+                                               deadline=min(run_deadline,
+                                                            time.time() + ACCOUNT_BUDGET_MIN * 60))
+                        break
+                    except Exception as e:  # noqa: BLE001
+                        msg = "%s: %s" % (type(e).__name__, str(e)[:160])
+                        log("    attach failed (%s)" % msg[:120])
+                        if attempt == 0 and started_here:
+                            octo_stop(pr["uuid"])      # the debug link hung: bounce it once
+                            time.sleep(8)
+                            ws = octo_start(pr["uuid"], log) or ws
+                            time.sleep(15)
+                            continue
+                        results = [dict(it, status="error", error=msg) for it in its]
+                n_found = 0
+                for r in results:
+                    r["office_id"] = office_id
+                    if r.get("status") == "found":
+                        n_found += 1
+                        found_rows.append(r)
+                        summary["found"].append([r["name"], r.get("domain", "")])
+                    else:
+                        summary["missing"].append([r["name"], r.get("domain", ""), r.get("status") or "?"])
+                if results and all(r.get("status") == "walled" for r in results):
+                    walled_accounts += 1
+                summary["accounts"][title] = "%d of %d found" % (n_found, len(its))
+                log("[octo] %s: %d of %d found" % (title, n_found, len(its)))
+            # the billing
+            if billing and time.time() < run_deadline:
+                b = check_billing(ws, title, shot_dir, log)
+                if b["status"] == "problem":
+                    summary["billing"][title] = "PROBLEM: " + b["hits"][0]
+                    summary["billing_problems"].append([title, b["hits"][0]])
+                    log("[octo] %s: BILLING ALERT -- %s" % (title, b["hits"][0][:160]))
+                elif b["status"] == "ok":
+                    summary["billing"][title] = "ok"
+                    log("[octo] %s: billing ok" % title)
+                else:
+                    summary["billing"][title] = b["status"] + (" (%s)" % b["error"][:80] if b.get("error") else "")
+                    log("[octo] %s: billing not read (%s)" % (title, summary["billing"][title][:100]))
+                if not its:
+                    summary["accounts"][title] = "billing only"
             if started_here:
                 octo_stop(pr["uuid"])
                 time.sleep(4)
-            n_found = 0
-            for r in results:
-                r["office_id"] = office_id
-                if r.get("status") == "found":
-                    n_found += 1
-                    found_rows.append(r)
-                    summary["found"].append([r["name"], r.get("domain", "")])
-                else:
-                    summary["missing"].append([r["name"], r.get("domain", ""), r.get("status") or "?"])
-            if results and all(r.get("status") == "walled" for r in results):
-                walled_accounts += 1
-            summary["accounts"][title] = "%d of %d found" % (n_found, len(its))
-            log("[octo] %s: %d of %d found" % (title, n_found, len(its)))
 
         if dry:
             summary["csv_rows"] = None
             log("[octo] DRY: %d number(s) read, nothing written" % len(found_rows))
-        else:
+        elif lookups:
             rows = merge_rows(read_csv(csv_path()), found_rows, today)
             write_csv(csv_path(), rows)
             summary["csv_rows"] = len(rows)
             log("[octo] output/%s: %d row(s) for the walk (%d new today)"
                 % (CSV_NAME, len(rows), len(found_rows)))
         summary["elapsed_min"] = round((time.time() - t0) / 60, 1)
-        summary["result"] = "%d found, %d not" % (len(summary["found"]), len(summary["missing"]))
+        checked = [t for t, v in summary["billing"].items() if v == "ok" or v.startswith("PROBLEM")]
+        summary["result"] = "%d found, %d not; billing: %d account(s) read, %d alert(s)" % (
+            len(summary["found"]), len(summary["missing"]), len(checked),
+            len(summary["billing_problems"]))
         try:
             rp = _out_dir() / ("octo-lookup-%s.json" % today.isoformat())
             rp.parent.mkdir(parents=True, exist_ok=True)
@@ -933,11 +1082,12 @@ def run(office_id, *, names: Optional[List[str]] = None, account: str = "",
         except OSError:
             pass
         loud = ""
-        if groups and walled_accounts == len(summary["accounts"]) and walled_accounts:
-            loud = ("Every Indeed account hit a 'Verify you are human' box this morning, so "
-                    "no phone number was read (the box is never clicked by Lucy). It usually "
-                    "passes by itself; if it is still there tomorrow, open one of the accounts "
-                    "in Octo Browser and click the box once.")
+        named = [pr["title"] for pr, _ in plan if groups.get(pr["title"])]
+        if named and walled_accounts == len(named):
+            loud = ("Every Indeed account with a name to look up hit a 'Verify you are human' box "
+                    "this morning, so no phone number was read (the box is never clicked by Lucy). "
+                    "It usually passes by itself; if it is still there tomorrow, open one of the "
+                    "accounts in Octo Browser and click the box once.")
         if scheduled:
             _report(office_id, summary, loud=loud, log=log)
         return summary
@@ -1022,6 +1172,8 @@ def main(argv=None) -> int:
     ap.add_argument("--dry", action="store_true", help="look up, write nothing")
     ap.add_argument("--wanted", action="store_true", help="print who would be looked up and stop")
     ap.add_argument("--scheduled", action="store_true", help="what the 5am kick runs (files the tally)")
+    ap.add_argument("--no-billing", action="store_true", help="the lookups only, skip the All Jobs pages")
+    ap.add_argument("--billing-only", action="store_true", help="every account's All Jobs page, no lookups")
     args = ap.parse_args(argv)
     names = [n for n in args.names.split(",") if n.strip()] if args.names else None
     only = [o for o in args.accounts.split(",") if o.strip()] if args.accounts else None
@@ -1040,9 +1192,10 @@ def main(argv=None) -> int:
                                                pr["title"] if pr else "NO PROFILE KNOWN"))
             continue
         s = run(oid, names=names, account=args.account, only=only, dry=args.dry,
-                scheduled=args.scheduled)
-        print(json.dumps({k: s.get(k) for k in ("office", "result", "accounts", "csv_rows",
-                                                 "elapsed_min")}))
+                scheduled=args.scheduled, billing=not args.no_billing,
+                lookups=not args.billing_only)
+        print(json.dumps({k: s.get(k) for k in ("office", "result", "accounts", "billing",
+                                                 "billing_problems", "csv_rows", "elapsed_min")}))
         if s.get("result", "").startswith("Octo Browser"):
             rc = 1
     return rc

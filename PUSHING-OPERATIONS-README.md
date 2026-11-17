@@ -127,7 +127,7 @@ Fix 2 (11/16 evening, Carlos: "automate this through the relay machine ...
 Octo Browser gets opened up and it looks for applicants' phone numbers for
 the ones that we don't have ... let's just do it at 5 in the morning"): the
 LOOKUP ITSELF now runs on the office computer — `oat_processing/octo_lookup.py`
-(ships, release 2026.11.16.3) — so the number never has to travel. In the 5am
+(ships, release 2026.11.16.3; billing check in .4) — so the number never has to travel. In the 5am
 hour, once a day, the agent's tick kicks it (`octo_lookup.maybe_kick`, own
 process, `~/.config/lucy-reports/octo-lookup.log`): it reads the newest
 flagged snapshot (`output/oat-flagged-*.json`, ≤3 days, `nophone` bucket),
@@ -144,6 +144,15 @@ this to …"). A verify wall is waited out (≤4 min, one reload), never clicked
 an account still walled is skipped until tomorrow. Off switch: env
 `OAT_OCTO_LOOKUP=0`. The relay 'Phone Lookups' road above stays for numbers
 found anywhere else, still gated on its redeploy.
+Same run, same evening (Carlos: "can we also add in launching all of the
+accounts and checking if there's a billing issue"): after the lookups it opens
+EVERY profile on file and reads the All Jobs page for a payment/billing alert
+(`octo_lookup.billing_hits`, the words that read 16 real pages clean on 11/16;
+"Add billing identifiers" and the billing menu items are not alerts). An alert
+= loud `octo-billing` fault quoting the page, routed to the office; clean =
+silent, tally only (`billing` in the probe row). Screenshots stay on the office
+computer (`output/octo-billing-<date>/`) — the relay carries no pictures from
+an office machine. Release 2026.11.16.4. Flags: `--billing-only`, `--no-billing`.
 
 **Changed: 11580 moved from Lucy 2 to Carlos's office computer (10/20, release
 2026.10.20.3); Atef (23467) and Khalil (11901) followed on 10/29.**
@@ -274,8 +283,9 @@ against the log file, or a tab dump; `rerun` args are shlex-split — a literal
   `probe-push-health` (every 15 min), `probe-push-stats` (every walk; feeds
   the hourly push report), `probe-push-todo` (every LIVE walk; the to-do
   list Lucy 1 posts at noon/4pm, since 11/15), `probe-octo-lookup` (the 5am
-  Octo lookups' tally: found / missing names and per-account status, no
-  numbers; since 11/16).
+  Octo run's tally: found / missing names, per-account status, and every
+  account's billing read — ok / walled / PROBLEM: <alert> — no numbers; since
+  11/16).
 - Local, office computer: `output/phone-lookups.csv` (the numbers the 5am
   Octo lookups found, name | phone | account_email | indeed_name | office_id |
   found_at | source; rows drop off after 7 days; the walk reads it every
@@ -297,6 +307,20 @@ against the log file, or a tab dump; `rerun` args are shlex-split — a literal
 ## Changelog (auto-appended daily at 7 PM; newest first)
 
 ### 2026-11-16 (manual)
+- **The 5am run also checks every Indeed account for a billing alert**
+  (Carlos, after seeing the 16 All Jobs screenshots clean: "can we also add in
+  launching all of the accounts and checking if there's a billing issue with
+  any of the accounts?"). `octo_lookup.check_billing` / `billing_hits`, run
+  after the lookups across every profile in `octo_profiles.json`; an alert is
+  a loud `octo-billing` fault with the page's own words (routed to the
+  office); a clean sweep only shows in the `probe-octo-lookup` tally. Release
+  2026.11.16.4. Tested on the laptop against the live accounts the same
+  evening (`--billing-only`): 16 pages read, Revolt skipped as in use, and
+  TWO alerts the morning screenshots did not show yet — Peak (Verizon Sales
+  Representative job) and Fast Track (AT&T Wireless Associate, Spanish): "Your
+  Sponsored Job benefits are unavailable until you add payment information
+  or update your plan." Whether that wording counts as a billing issue is
+  Carlos's call; if not, add it to `BILLING_IGNORE`.
 - **The no-number lookups run themselves, 5am, on the office computer**
   (Carlos: "automate this through the relay machine so that ... Octo Browser
   gets opened up and it looks for applicants' phone numbers for the ones that

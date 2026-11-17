@@ -252,6 +252,115 @@ class TheTallyNeverCarriesANumber(unittest.TestCase):
         self.assertIn('"A"', detail)
 
 
+class EveryAccountsBilling(unittest.TestCase):
+    CLEAN = ("Jobs\nAdd billing identifiers to your account\nView billing history\nUpdate payment method\n"
+             "Manage billing details\nOpen and paused jobs\nAccount Manager - Full Time\nSponsored\n"
+             "View performance report\n")
+
+    def test_a_clean_all_jobs_page_has_no_alert(self):
+        self.assertEqual(OL.billing_hits(self.CLEAN), [])
+
+    def test_a_payment_alert_is_quoted_with_its_neighbours(self):
+        page = self.CLEAN + "Your jobs are paused\nYour payment was declined. Update your payment method.\nFix now\n"
+        hits = OL.billing_hits(page)
+        self.assertEqual(len(hits), 1)
+        self.assertIn("payment was declined", hits[0])
+        self.assertIn("Your jobs are paused", hits[0])
+        self.assertIn("Fix now", hits[0])
+
+    def test_the_alert_is_a_loud_fault_to_the_office(self):
+        from automations.icd_alerts import relay as R
+        from automations.icd_alerts import post as P
+        summary = {"office": "11580", "date": "2026-11-17", "at": "05:20", "found": [], "missing": [],
+                   "accounts": {}, "billing": {"Peak Sales Strategies": "PROBLEM: Your payment was declined"},
+                   "billing_problems": [["Peak Sales Strategies", "Your payment was declined"]]}
+        with mock.patch.object(OL, "_push_office_key", return_value="carlos"), \
+             mock.patch.object(R, "report_fault", return_value=True) as rf:
+            OL._report("11580", summary, log=lambda m: None)
+        stages = [c[0][0] for c in rf.call_args_list]
+        self.assertEqual(stages, ["probe-octo-lookup", "octo-billing"])
+        text = rf.call_args_list[1][0][1]
+        self.assertIn("Peak Sales Strategies", text)
+        self.assertIn("Your payment was declined", text)
+        self.assertIn("send this to Carlos's Local Office", P.what_to_do("Carlos's Local Office", text))
+
+    def test_a_clean_sweep_files_only_the_tally(self):
+        from automations.icd_alerts import relay as R
+        summary = {"office": "11580", "found": [], "missing": [], "accounts": {},
+                   "billing": {"Peak Sales Strategies": "ok"}, "billing_problems": []}
+        with mock.patch.object(OL, "_push_office_key", return_value="carlos"), \
+             mock.patch.object(R, "report_fault", return_value=True) as rf:
+            OL._report("11580", summary, log=lambda m: None)
+        self.assertEqual([c[0][0] for c in rf.call_args_list], ["probe-octo-lookup"])
+        self.assertIn('"Peak Sales Strategies":"ok"', rf.call_args_list[0][0][2])
+
+    def test_the_cli_can_run_either_half_alone(self):
+        with mock.patch.object(OL, "run", return_value={"result": "x"}) as run:
+            OL.main(["--office", "11580", "--billing-only"])
+            self.assertEqual((run.call_args[1]["billing"], run.call_args[1]["lookups"]), (True, False))
+            OL.main(["--office", "11580", "--no-billing"])
+            self.assertEqual((run.call_args[1]["billing"], run.call_args[1]["lookups"]), (False, True))
+
+
+class TheWholeMorning(unittest.TestCase):
+    """run() end to end with the browser, Octo and the relay faked: the plan
+    (names first, then every other account for billing), the CSV, the
+    results file, the tally. The 11/16 laptop sweep crashed after the last
+    account on a line no unit touched -- this is that line's test."""
+
+    def test_lookups_then_billing_for_every_account(self):
+        tmp = _tmp()
+        profs = [{"title": "Peak Sales Strategies", "uuid": "a" * 32, "domains": ["peaksalesstrategiestx.com"]},
+                 {"title": "W Edge", "uuid": "d" * 32, "domains": ["wedgestrategies.com"]}]
+        want = ([{"name": "Edgar Hendricks", "account": "team@peaksalesstrategiestx.com",
+                  "domain": "peaksalesstrategiestx.com"}],
+                {"snapshot": "oat-flagged-2026-11-16.json", "listed": 1, "skipped_recent": 0})
+        order = []
+
+        def fake_lookup(ws, items, log, deadline=None):
+            order.append(("names", [i["name"] for i in items]))
+            return [dict(items[0], status="found", phone="817-555-1234", shown_as="Edgar H")]
+
+        def fake_billing(ws, title, shot_dir, log):
+            order.append(("billing", title))
+            return ({"title": title, "status": "problem", "hits": ["Action required | add payment information"],
+                     "shot": "", "error": ""} if title == "W Edge"
+                    else {"title": title, "status": "ok", "hits": [], "shot": "", "error": ""})
+
+        reported = []
+        with mock.patch.object(OL, "_out_dir", return_value=tmp), \
+             mock.patch.object(OL, "_app_dir", return_value=tmp), \
+             mock.patch.object(OL, "profiles", return_value=profs), \
+             mock.patch.object(OL, "wanted", return_value=want), \
+             mock.patch.object(OL, "ensure_octo", return_value=(True, "", False)), \
+             mock.patch.object(OL, "octo_active", return_value=[]), \
+             mock.patch.object(OL, "octo_start", return_value="ws://fake"), \
+             mock.patch.object(OL, "octo_stop") as stop, \
+             mock.patch.object(OL, "lookup_names", side_effect=fake_lookup), \
+             mock.patch.object(OL, "check_billing", side_effect=fake_billing), \
+             mock.patch.object(OL, "_report", side_effect=lambda *a, **k: reported.append((a, k))), \
+             mock.patch.object(OL.time, "sleep"):
+            s = OL.run("11580", scheduled=True)
+            state_after = OL._state()          # read while _app_dir is still the temp dir
+        self.assertEqual(order, [("names", ["Edgar Hendricks"]), ("billing", "Peak Sales Strategies"),
+                                 ("billing", "W Edge")])
+        self.assertEqual(stop.call_count, 2, "every profile started here is stopped")
+        self.assertEqual(s["found"], [["Edgar Hendricks", "peaksalesstrategiestx.com"]])
+        self.assertEqual(s["billing"], {"Peak Sales Strategies": "ok",
+                                        "W Edge": "PROBLEM: Action required | add payment information"})
+        self.assertEqual(s["billing_problems"], [["W Edge", "Action required | add payment information"]])
+        self.assertEqual(s["accounts"], {"Peak Sales Strategies": "1 of 1 found", "W Edge": "billing only"})
+        self.assertEqual(s["result"], "1 found, 0 not; billing: 2 account(s) read, 1 alert(s)")
+        self.assertEqual(s["csv_rows"], 1)
+        back = PL.rows_from_csv(tmp / "phone-lookups.csv")
+        self.assertEqual((back[0]["name"], back[0]["phone"]), ("Edgar Hendricks", "8175551234"))
+        self.assertTrue((tmp / ("octo-lookup-%s.json" % dt.date.today().isoformat())).exists())
+        self.assertEqual(len(reported), 1)
+        self.assertEqual(reported[0][1].get("loud", ""), "")
+        self.assertEqual(state_after.get("last_result"), s["result"])
+        self.assertFalse((tmp / "octo-lookup.lock").exists())
+
+
 class ItShips(unittest.TestCase):
     def test_both_files_are_in_both_lists(self):
         from automations.icd_alerts.package import AGENT_FILES
