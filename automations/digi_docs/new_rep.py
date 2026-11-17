@@ -388,6 +388,30 @@ def create(page, person, *, dry_run: bool = True, verbose: bool = True) -> str:
     except Exception:                                       # noqa: BLE001
         pass
 
+    # READ THE PAGE'S ANSWER NOW, WHILE IT IS STILL ON SCREEN (2026-11-17).
+    # The complaints read below used to happen AFTER open_rep_list had
+    # navigated three times looking for the row, so it questioned the rep LIST
+    # and always came back empty. Kaylon Scott failed three times running and
+    # the log could only ever say "we filled the form and saved, but no record
+    # appeared" -- true, and useless, because the reason was on the form we had
+    # already left. A validation failure here does not error: OwnerVille
+    # re-renders the form with its message and saves nothing.
+    said = []
+    try:
+        said = list(ovn._complaints(page) or [])
+    except Exception:                                       # noqa: BLE001
+        said = []
+    still_on_form = False
+    try:
+        still_on_form = bool(page.locator(
+            "input[name='fname']:visible").count())
+    except Exception:                                       # noqa: BLE001
+        pass
+    if verbose and (said or still_on_form):
+        print(f"    after Add: form still open={still_on_form}"
+              + (f" · page said: {'; '.join(said)}" if said else
+                 " · page said nothing"))
+
     # PROVE IT. Clicking Add is not evidence; the row is. Same reason the
     # Digi Docs day went wrong in the first place -- a step that "ran" is not
     # a step that landed.
@@ -406,12 +430,20 @@ def create(page, person, *, dry_run: bool = True, verbose: bool = True) -> str:
         if made:
             break
     if not made:
-        bad = ovn._complaints(page)
+        # `said` was captured on the form itself, before open_rep_list moved
+        # us. Fall back to a late read only because it costs nothing.
+        bad = said or list(ovn._complaints(page) or [])
+        why = (f" (the form said: {'; '.join(bad)})" if bad else
+               (" The form was still open after Add and said nothing, so a "
+                "required box or field it does not mark is refusing the save."
+                if still_on_form else
+                " The form closed after Add, so the save was accepted and the "
+                "record did not arrive — look for it by hand before creating "
+                "a second one."))
         raise Refused(f"{who} could not be created in OwnerVille — we "
                       f"filled the form and saved, but no record for {email} "
                       f"appeared. Add them by hand under Sales Reps → + Add "
-                      f"Sales Rep."
-                      + (f" (the form said: {'; '.join(bad)})" if bad else ""))
+                      f"Sales Rep." + why)
     if verbose:
         print(f"  ✓ {who}: created (id {made.get('id', '?')})")
     return "created"
