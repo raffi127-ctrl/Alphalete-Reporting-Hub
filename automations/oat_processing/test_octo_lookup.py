@@ -181,34 +181,53 @@ class WhenTheTickFires(unittest.TestCase):
         self.p.start()
         self.addCleanup(self.p.stop)
 
-    def test_the_five_am_hour_only(self):
-        self.assertTrue(OL.in_window(dt.datetime(2026, 11, 17, 5, 0)))
-        self.assertTrue(OL.in_window(dt.datetime(2026, 11, 17, 6, 59)))
-        self.assertFalse(OL.in_window(dt.datetime(2026, 11, 17, 4, 59)))
-        self.assertFalse(OL.in_window(dt.datetime(2026, 11, 17, 7, 0)))
-        self.assertFalse(OL.in_window(dt.datetime(2026, 11, 17, 12, 0)))
+    def test_the_five_am_and_one_pm_slots(self):
+        d = dt.datetime
+        self.assertEqual(OL.slot_now(d(2026, 11, 17, 5, 0)), "am")
+        self.assertEqual(OL.slot_now(d(2026, 11, 17, 6, 59)), "am")
+        self.assertEqual(OL.slot_now(d(2026, 11, 17, 13, 0)), "pm")
+        self.assertEqual(OL.slot_now(d(2026, 11, 17, 14, 59)), "pm")
+        for hm in ((4, 59), (7, 0), (12, 59), (15, 0), (21, 0)):
+            self.assertIsNone(OL.slot_now(d(2026, 11, 17, *hm)), hm)
+            self.assertFalse(OL.in_window(d(2026, 11, 17, *hm)))
+        self.assertTrue(OL.slot_has_lookups("am"))
+        self.assertFalse(OL.slot_has_lookups("pm"))
 
-    def test_once_a_day_and_never_over_a_running_one(self):
-        now = dt.datetime(2026, 11, 17, 5, 2)
-        self.assertTrue(OL.due(now))
-        OL._save_state({"last_day": "2026-11-17"})
-        self.assertFalse(OL.due(now))
-        OL._save_state({"last_day": "2026-11-16"})
-        self.assertTrue(OL.due(now))
-        OL._write_lock()
-        self.assertFalse(OL.due(dt.datetime.now()))
+    def test_once_per_slot_per_day_and_never_over_a_running_one(self):
+        am, pm = dt.datetime(2026, 11, 17, 5, 2), dt.datetime(2026, 11, 17, 13, 4)
+        self.assertEqual(OL.due(am), "am")
+        OL._save_state({"last_day_am": "2026-11-17"})
+        self.assertIsNone(OL.due(am), "the morning ran already")
+        self.assertEqual(OL.due(pm), "pm", "the afternoon has not")
+        OL._save_state({"last_day_am": "2026-11-17", "last_day_pm": "2026-11-17"})
+        self.assertIsNone(OL.due(pm))
+        OL._save_state({"last_day_am": "2026-11-16", "last_day_pm": "2026-11-16"})
+        self.assertEqual(OL.due(am), "am")
+        OL._lock_path().write_text(str(dt.datetime(2026, 11, 17, 5, 29).timestamp()))   # a run started at 5:29
+        self.assertIsNone(OL.due(dt.datetime(2026, 11, 17, 5, 30)))
         OL._clear_lock()
-        self.assertTrue(OL.due(now))
+        self.assertEqual(OL.due(am), "am")
 
-    def test_the_kick_starts_its_own_process_and_marks_the_day(self):
+    def test_the_kick_starts_its_own_process_and_marks_the_slot(self):
         with mock.patch.object(OL, "enabled", return_value=["11580"]), \
-             mock.patch.object(OL, "due", return_value=True), \
+             mock.patch.object(OL, "due", return_value="am"), \
              mock.patch.object(OL.subprocess, "Popen") as popen:
             self.assertTrue(OL.maybe_kick(log=lambda m: None))
         argv = popen.call_args[0][0]
         self.assertEqual(argv[1:], ["-m", "automations.oat_processing.octo_lookup",
                                     "--scheduled", "--office", "11580"])
-        self.assertEqual(OL._state().get("last_day"), dt.date.today().isoformat())
+        self.assertEqual(OL._state().get("last_day_am"), dt.date.today().isoformat())
+
+    def test_the_afternoon_kick_reads_billing_only(self):
+        with mock.patch.object(OL, "enabled", return_value=["11580"]), \
+             mock.patch.object(OL, "due", return_value="pm"), \
+             mock.patch.object(OL.subprocess, "Popen") as popen:
+            self.assertTrue(OL.maybe_kick(log=lambda m: None))
+        argv = popen.call_args[0][0]
+        self.assertEqual(argv[1:], ["-m", "automations.oat_processing.octo_lookup",
+                                    "--scheduled", "--billing-only", "--office", "11580"])
+        self.assertEqual(OL._state().get("last_day_pm"), dt.date.today().isoformat())
+        self.assertIsNone(OL._state().get("last_day_am"))
 
     def test_nothing_on_a_machine_without_profiles_or_a_push(self):
         with mock.patch.object(OL, "enabled", return_value=[]), \

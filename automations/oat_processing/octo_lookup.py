@@ -21,7 +21,8 @@ redeployed. Octo Browser profiles live in Octo's cloud, so the same profiles
 (the office's Indeed accounts, each with its own proxy and its login) open on
 whichever computer is signed in to Octo.
 
-WHAT IT DOES, 5:00 AM LOCAL, ONCE A DAY (the agent's tick kicks it: maybe_kick):
+WHAT IT DOES, 5:00 AM LOCAL (the agent's tick kicks it: maybe_kick; a second,
+billing-only pass runs at 1pm -- see SLOTS):
   1. who: the newest flagged snapshot the walk left (output/oat-flagged-*.json,
      <= 3 days old), its "nophone" bucket -- name + the Indeed account each
      applied through -- minus anyone already looked up this week.
@@ -86,11 +87,13 @@ IS_MAC = platform.system() == "Darwin"
 
 # --- knobs --------------------------------------------------------------------
 API_PORT = int(os.environ.get("OCTO_API_PORT", "58888"))
-# The first agent tick at or after 5:00 local runs it; a machine that was off
-# at five and wakes after seven waits for tomorrow (people use these accounts
-# in the day, and a profile open on two computers is a mess).
-RUN_START = (5, 0)
-RUN_UNTIL = (7, 0)
+# TWO PASSES A DAY (Carlos 2026-11-16: "check for it, and actually do it twice
+# a day"). The first agent tick inside a slot runs it; a machine that was off
+# for the whole slot waits for the next one. 5am: the lookups, then every
+# account's billing. 1pm: every account's billing only -- the lookups stay a
+# once-a-day, before-the-first-walk thing. (name, start, until, with lookups)
+SLOTS = (("am", (5, 0), (7, 0), True),
+         ("pm", (13, 0), (15, 0), False))
 LOCK_STALE_MINUTES = 60
 RUN_BUDGET_MIN = 60             # the whole run: the lookups, then every account's billing
 ACCOUNT_BUDGET_MIN = 12         # one account's names
@@ -1119,27 +1122,49 @@ def enabled() -> List[str]:
         return []
 
 
+def slot_now(now: Optional[dt.datetime] = None) -> Optional[str]:
+    """The slot this minute falls in ('am', 'pm'), or None."""
+    now = now or dt.datetime.now()
+    hm = (now.hour, now.minute)
+    for name, start, until, _ in SLOTS:
+        if start <= hm < until:
+            return name
+    return None
+
+
 def in_window(now: Optional[dt.datetime] = None) -> bool:
-    now = now or dt.datetime.now()
-    return RUN_START <= (now.hour, now.minute) < RUN_UNTIL
+    return slot_now(now) is not None
 
 
-def due(now: Optional[dt.datetime] = None) -> bool:
+def slot_has_lookups(slot: str) -> bool:
+    return any(name == slot and with_lookups for name, _, _, with_lookups in SLOTS)
+
+
+def due(now: Optional[dt.datetime] = None) -> Optional[str]:
+    """The slot to run now, or None: inside a slot, not run for that slot
+    today, and no run holding the lock."""
     now = now or dt.datetime.now()
-    if not in_window(now) or _lock_held(now.timestamp()):
-        return False
-    return _state().get("last_day") != now.date().isoformat()
+    slot = slot_now(now)
+    if not slot or _lock_held(now.timestamp()):
+        return None
+    if _state().get("last_day_" + slot) == now.date().isoformat():
+        return None
+    return slot
 
 
 def maybe_kick(log=print) -> bool:
-    """Called from every agent tick. Once a day, in the 5am hour, starts the
-    lookups in their OWN process and returns at once -- a run can take half
-    an hour and must never hold up a sweep."""
+    """Called from every agent tick. Once per slot per day starts the run in
+    its OWN process and returns at once -- a run can take half an hour and
+    must never hold up a sweep. The morning pass looks numbers up and reads
+    every account's billing; the afternoon pass reads the billing only."""
     offices = enabled()
-    if not offices or not due():
+    if not offices:
+        return False
+    slot = due()
+    if not slot:
         return False
     st = _state()
-    st["last_day"] = dt.date.today().isoformat()
+    st["last_day_" + slot] = dt.date.today().isoformat()
     st["last_start"] = dt.datetime.now().isoformat(timespec="seconds")
     _save_state(st)                     # before the start: a crash must not retry every 2 min
     root = _root()
@@ -1152,13 +1177,17 @@ def maybe_kick(log=print) -> bool:
     try:
         _app_dir().mkdir(parents=True, exist_ok=True)
         out = open(_log_path(), "a")
-        subprocess.Popen([sys.executable, "-m", "automations.oat_processing.octo_lookup",
-                          "--scheduled", "--office"] + offices,
+        argv = [sys.executable, "-m", "automations.oat_processing.octo_lookup", "--scheduled"]
+        if not slot_has_lookups(slot):
+            argv.append("--billing-only")
+        subprocess.Popen(argv + ["--office"] + offices,
                          stdout=out, stderr=subprocess.STDOUT, **kw)
     except Exception as e:  # noqa: BLE001 -- never lose a sweep to this
         log("octo lookup could not start: %s" % type(e).__name__)
         return False
-    log("octo phone lookups started in the background (office %s)" % ", ".join(offices))
+    log("octo %s started in the background (office %s)"
+        % ("phone lookups + billing check" if slot_has_lookups(slot) else "billing check",
+           ", ".join(offices)))
     return True
 
 

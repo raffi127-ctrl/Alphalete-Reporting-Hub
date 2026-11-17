@@ -153,6 +153,18 @@ EVERY profile on file and reads the All Jobs page for a payment/billing alert
 silent, tally only (`billing` in the probe row). Screenshots stay on the office
 computer (`output/octo-billing-<date>/`) — the relay carries no pictures from
 an office machine. Release 2026.11.16.4. Flags: `--billing-only`, `--no-billing`.
+Twice a day since release 2026.11.16.5 (Carlos, after paying the two alerts off
+the same night: "check for it, and actually do it twice a day ... notify me
+through Slack as well"): `octo_lookup.SLOTS` = 5am (lookups + billing) and 1pm
+(billing only), once per slot per day (`last_day_am` / `last_day_pm` in the
+state file). The Slack side is the existing fault road: `octo-billing` is a
+non-probe stage whose summary says "Octo Browser", so Lucy 1's `notify_faults`
+treats it as owner-must-act and sends it as ONE group DM to the office's
+owner (Carlos's Slack id is on his ICD Signup row) + helpers + Megan/Eve
+(`dm_office_people`), on the first sighting (not a PER_TICK stage, so no
+wait-for-repeat). The ruling: "Sponsored Job benefits are unavailable until
+you add payment information" COUNTS (Carlos 11/16) — do not add it to
+`BILLING_IGNORE`.
 
 **Changed: 11580 moved from Lucy 2 to Carlos's office computer (10/20, release
 2026.10.20.3); Atef (23467) and Khalil (11901) followed on 10/29.**
@@ -307,6 +319,14 @@ against the log file, or a tab dump; `rerun` args are shlex-split — a literal
 ## Changelog (auto-appended daily at 7 PM; newest first)
 
 ### 2026-11-16 (manual)
+- **The billing check runs twice a day and the alert reaches Carlos on Slack**
+  (Carlos, after paying off the two alerts: "check for it, and actually do it
+  twice a day. Whenever this does happen, notify me through Slack as well").
+  `octo_lookup.SLOTS`: 5am = lookups + billing, 1pm = billing only; the
+  `octo-billing` fault already lands as a group DM to the office owner via
+  `notify_faults` → `dm_office_people` (Carlos's Slack id is on record,
+  checked 11/16). Ruling: the "add payment information" wording counts as a
+  billing issue — keep flagging. Release 2026.11.16.5.
 - **The 5am run also checks every Indeed account for a billing alert**
   (Carlos, after seeing the 16 All Jobs screenshots clean: "can we also add in
   launching all of the accounts and checking if there's a billing issue with
