@@ -81,6 +81,68 @@ def find_by_email(page, cols: dict, email: str):
     return None
 
 
+# THE REP LIST HAS TWO HALVES AND WE ONLY EVER READ ONE (2026-11-17).
+# "Filter Sales Reps" on p=20 is a row of BUTTONS -- Active Sales Reps /
+# Inactive Sales Reps / Admin / Lead Rep -- not a <select>, which is why a
+# probe looking for a scope control found only the page-length menu and
+# concluded there was none. Active shows 322 reps; Inactive shows 11,543.
+# Everything this module has ever searched is that first 322.
+#
+# A retired rep is therefore invisible to find_by_email, so the run decides
+# they do not exist and tries to create them -- and OwnerVille, whose email
+# uniqueness check covers BOTH halves, answers "Email address already exists".
+# Kaylon Scott (9566725, retired 11-16-2026) and Berkley Eboigbodin (9561744,
+# retired 11-13-2026) each failed that way three times, and the advice we gave
+# -- add them by hand -- fails for a human on this login too.
+INACTIVE_FILTER = "Inactive Sales Reps"
+ACTIVE_FILTER = "Active Sales Reps"
+
+
+def _switch_filter(page, label: str, *, verbose: bool = True) -> bool:
+    """Click one of the 'Filter Sales Reps' buttons and let the table reload."""
+    try:
+        btn = page.get_by_role("button", name=label)
+        if not btn.count():
+            btn = page.get_by_text(label, exact=True)
+        if not btn.count():
+            return False
+        btn.first.click(timeout=15000)
+        page.wait_for_timeout(1500)
+        try:
+            page.wait_for_load_state("networkidle", timeout=30000)
+        except Exception:                                   # noqa: BLE001
+            pass
+        return True
+    except Exception:                                       # noqa: BLE001
+        return False
+
+
+def find_retired_by_email(page, email: str, *, verbose: bool = True):
+    """The RETIRED rep row for this email, or None. Leaves the list on Active.
+
+    Read-only: it moves the table's own filter and searches, and restores the
+    Active view so the caller's next read is the one it expects.
+    """
+    want = _norm_email(email)
+    if not want:
+        return None
+    if not _switch_filter(page, INACTIVE_FILTER, verbose=verbose):
+        return None
+    found = None
+    try:
+        cols = ovn._columns(page)
+        for row, _href in ovn._search_rows(page, want):
+            fields = ovn._row_fields(page, row, cols)
+            if _norm_email(fields.get("email")) == want:
+                found = fields
+                break
+    except Exception:                                       # noqa: BLE001
+        found = None
+    finally:
+        _switch_filter(page, ACTIVE_FILTER, verbose=False)
+    return found
+
+
 def _name_key(s: str) -> str:
     return " ".join(ovn.norm(s or "").split())
 
@@ -441,14 +503,25 @@ def create(page, person, *, dry_run: bool = True, verbose: bool = True) -> str:
         # refusal -- or, on a login that can, makes the second record the
         # Faith Moss note above exists to prevent.
         if any("already exists" in c.lower() for c in bad):
+            _cancel(page)
+            ovn.open_rep_list(page, verbose=False)
+            gone = find_retired_by_email(page, email, verbose=verbose)
+            if gone:
+                raise Refused(
+                    f"{who} is RETIRED in OwnerVille, not missing — record "
+                    f"{gone.get('id', '?')}, retired "
+                    f"{gone.get('retired date') or gone.get('retired') or '?'}"
+                    f". They cannot be created again, and they should not be: "
+                    f"somebody retired them. Reactivate that record if they "
+                    f"are really starting, then this pass will add them to "
+                    f"the campaign. Nothing has been sent to them.")
             raise Refused(
-                f"{who} already has an OwnerVille record under {email}, but "
-                f"it is not in this login's rep list — OwnerVille checks the "
-                f"email across ALL offices and the list only shows ours. So "
-                f"they cannot be created, and creating them is not what they "
-                f"need: find the existing record (an admin login, or the "
-                f"office that holds it) and put THAT one on the campaign. "
-                f"Nothing has been sent to them.")
+                f"{who} already has an OwnerVille record under {email} and it "
+                f"is in neither the active nor the retired list for this "
+                f"login. OwnerVille checks the email across all offices, so "
+                f"the record is one we cannot see. Find it on a wider login "
+                f"and put THAT record on the campaign rather than creating a "
+                f"second one. Nothing has been sent to them.")
         why = (f" (the form said: {'; '.join(bad)})" if bad else
                (" The form was still open after Add and said nothing, so a "
                 "required box or field it does not mark is refusing the save."
