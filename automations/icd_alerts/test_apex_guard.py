@@ -55,6 +55,23 @@ class AllowList(unittest.TestCase):
         self.assertFalse(G.allowed(
             "POST", "https://o418336.ingest.sentry.io/api/1/envelope/"))
 
+    def test_account_pages_stopped_even_for_a_get(self):
+        # A GET of EnableAuthenticator wrote a key onto Carlos's account
+        # (2026-11-17). Opening an account page is a change on Apex.
+        for url in ("https://apex.herbjoyent.com/Identity/Account/Manage/EnableAuthenticator",
+                    "https://apex.herbjoyent.com/identity/account/manage",
+                    "https://apex.herbjoyent.com/Identity/Account/Manage/ResetAuthenticator",
+                    "https://apex.herbjoyent.com/Manage/AddPhoneNumber",
+                    "https://apexapi.herbjoyent.com/Identity/Account/Manage/x"):
+            self.assertFalse(G.allowed("GET", url), url)
+
+    def test_signin_and_payroll_pages_still_open(self):
+        for url in ("https://apex.herbjoyent.com/Identity/Account/Login",
+                    "https://apex.herbjoyent.com/Identity/Account/LoginWith2fa",
+                    "https://apex.herbjoyent.com/payrolls",
+                    "https://apex.herbjoyent.com/"):
+            self.assertTrue(G.allowed("GET", url), url)
+
     def test_cloudflare_human_check_passes(self):
         self.assertTrue(G.allowed(
             "POST", "https://apex.herbjoyent.com/cdn-cgi/challenge-platform/h/b/flow/ov1/x"))

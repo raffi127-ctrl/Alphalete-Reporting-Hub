@@ -10,6 +10,11 @@ class Probe2fa(unittest.TestCase):
         self.assertNotRegex(out, r"\d")
         self.assertNotIn("carlos@x.com", out)
 
+    def test_secret_key_line_never_logged(self):
+        out = P.mask("Scan the QR Code or enter this key taop ccrx rdna weo4 into your app.")
+        self.assertNotIn("taop", out)
+        self.assertNotIn("ccrx", out)
+
     def test_candidates_same_site_no_logout(self):
         base = "https://apex.herbjoyent.com/"
         links = [("/profile", "My Profile"), ("/payrolls", "Payroll"),

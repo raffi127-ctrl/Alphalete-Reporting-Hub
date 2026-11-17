@@ -7,6 +7,11 @@ the app replace it (then the owner needs a code app too)? This looks at the
 account / security pages in Carlos's warm Apex window on Lucy 2 and prints
 what they say about 2-step, so the answer comes from Apex's own screen.
 
+RAN ONCE 2026-11-17 -- answer: Apex offers "Use Authenticator" and "Use SMS"
+as separate options. Its GET of EnableAuthenticator wrote an (unconfirmed)
+authenticator key onto Carlos's account; the lock now stops every account
+page (apex_guard.NEVER_OPEN), so a rerun can no longer open them.
+
 Under Lucy's Apex lock in "block" mode (icd_alerts.apex_guard): nothing that
 could change anything leaves the browser. Only page loads -- no buttons are
 clicked. Every digit and email in the printed text is masked (phone numbers,
@@ -34,7 +39,9 @@ SKIP = re.compile(r"logout|log-out|sign-?out", re.I)
 
 
 def mask(text: str) -> str:
-    """No phone numbers, no money, no emails in the log."""
+    """No phone numbers, no money, no emails, no secret keys in the log."""
+    if re.search(r"\bkey\b", text, re.I) and re.search(r"[a-z0-9]{4} [a-z0-9]{4}", text, re.I):
+        return "[a line with a secret key -- not logged]"
     text = re.sub(r"[\w.+-]+@[\w-]+\.[\w.]+", "[email]", text)
     return re.sub(r"\d", "#", text)
 
