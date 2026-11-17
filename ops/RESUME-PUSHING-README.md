@@ -1,6 +1,6 @@
 # Resume Pushing — How It Works
 
-*Written 10/8/2026. Plain-language guide to Lucy's resume-pushing automation.
+*Written 10/8/2026, updated 11/16. Plain-language guide to Lucy's resume-pushing automation.
 The deep technical doc is `~/recruiting-report/PUSHING-OPERATIONS-README.md`
 (auto-updated nightly on the mini). This one is the human version.*
 
@@ -90,6 +90,66 @@ will not click it — ever.** When a machine is walled:
   `RECHECK_BY_OFFICE` (`automations/icd_alerts/resume_push.py`) and ship a
   release (bump `agent_release.txt` AND the `# release:` line in
   `agent_files.txt`). Its next walk re-reads once. First used 11/15 for 11580.
+
+## Numbers found by hand go back to the push (added 11/16)
+
+When the to-do list says "no number", a person finds it (Indeed's **Call**
+pop-up on the candidate page has every applicant's number). Those numbers now
+reach the office computer that does the pushing, which holds no Google access:
+
+- They live on the relay workbook's **Phone Lookups** tab (Office | Office ID |
+  Name | Account | Phone | ... | Sent At | Status). The relay creates the tab the
+  first time it is asked.
+- On its next walk the office computer asks the relay for its own office's unsent
+  rows, and when it meets an applicant on the list it types the number in and
+  clicks Send to AI -- same send as a resume number -- then marks the row **Sent
+  At**. A refused send or a number that is not ten digits (a Mexico number) leaves
+  the row with a Status for a person; nobody is ever removed on this path.
+- Dropping a list: `python -m automations.oat_processing.phone_lookups_add
+  <the lookup CSV> --office carlos --office-id 11580` from a computer that holds
+  the office's relay key, Lucy's admin key, or a Sheets token for the workbook --
+  or paste the rows into the tab by hand. Names must be spelled the way the walk
+  reads them (the to-do list's spelling); the account is the Indeed account they
+  applied through.
+- Needs the relay script redeployed once (`resources/icd-alerts-relay.gs`, Deploy >
+  Manage deployments > New version). Until then the office logs "the relay does
+  not take phone lookups yet" and pushes exactly as before.
+
+## The 5am phone lookups (added 11/16)
+
+Every morning at 5, the office computer looks up the numbers itself, before
+the day's pushing starts at 5:30:
+
+1. It takes yesterday's "no number" list (the same one the noon/4pm to-do
+   post comes from).
+2. It opens each applicant's Indeed account in **Octo Browser** on that
+   computer, searches the name on the Candidates page, clicks **Call** and
+   reads the number off the pop-up. One account at a time, closed when done.
+3. It saves the numbers in a local file the push already reads
+   (`output/phone-lookups.csv`). The 5:30 walk types each number in and
+   clicks Send to AI — same send, same rules, nobody removed.
+
+What it needs: **Octo Browser installed and signed in on the office
+computer** (the profiles are the same everywhere, they live in Octo's
+cloud). If Octo is not there, the morning run posts a fault addressed to the
+office saying so, and the to-do list simply stays as it was.
+
+What it never does: click a "Verify you are human" box (it waits a few
+minutes for the box to pass by itself, then skips that account until
+tomorrow), download anything, place a call, text anyone, remove anyone. A
+number that is not a US number (a +52) is saved but never typed — the
+applicant stays on the to-do list for a person.
+
+How you know it ran: the to-do list is shorter at noon; the push report's
+sent count; the `probe-octo-lookup` row on the ICD Faults tab (names found /
+not found, no numbers). A person can still look numbers up by hand — the
+relay road above is unchanged.
+
+Under the hood: `automations/oat_processing/octo_lookup.py`, kicked once a
+day in the 5am hour from the agent's 2-minute tick; profile map in
+`octo_profiles.json` (override: `~/.config/lucy-reports/octo-profiles.json`);
+off switch `OAT_OCTO_LOOKUP=0`; by hand on any computer with Octo:
+`python -m automations.oat_processing.octo_lookup --office 11580 [--dry|--wanted]`.
 
 ## Common sights, decoded
 

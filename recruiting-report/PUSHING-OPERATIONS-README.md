@@ -95,8 +95,55 @@ Never "fix" this by merging the offices into one tick.
 5. Sends by automation appear in AppStream ledgers under the fleet identity —
    remember this when auditing "who did what" (humans share names with bots
    in per-admin breakdowns prior to 9/2).
+6. Looked-up numbers (11/16): only ten US digits are ever typed in; a row
+   under another Indeed account is somebody else and is not used; the office
+   key sees its own office's rows only; nothing on the lookup road removes an
+   applicant or a row. `OAT_NO_PHONE_LOOKUPS=1` reads as an empty list.
 
 ## 6. THE CHANGE→BREAKAGE LEDGER (look here before changing anything)
+
+**Changed: the push moved to office computers that hold no Google access
+(11580 on 10/20, 23467 + 11901 on 10/29, Raf's three on 11/3).**
+Broke: a phone number a person looked up for a "no number" applicant had no
+way back into the push. The office computer re-read the same resume, found
+nothing again (the settled cache then skipped it for a week), and the
+applicant stayed on the to-do list with their number sitting in a CSV on
+Carlos's laptop — 30 of them on 11/16.
+Why: on Lucy 2 the road existed as a Sheet the walk read
+(`emit_nophone_resumes` / `fill_nophone_from_tab`, tab `OAT_NoPhone_Resumes`);
+an office computer cannot open a Sheet, and nothing replaced the road when
+the walk moved. The repo is public, so the numbers cannot ship as a file.
+Fix (11/16): the relay's **'Phone Lookups' tab** and
+`oat_processing/phone_lookups.py` (ships). The walk asks the relay for its own
+office's unsent rows (office key) the first time it meets a no-number
+applicant, consults the list BEFORE the settled cache in `flag_no_phone`,
+types the ten digits in and does the same Send to AI as a resume number
+(`_send_with_number`), then marks the row. Rows are added with
+`oat_processing/phone_lookups_add.py` (ours). Needs the relay script
+redeployed by hand. LESSON: every Sheet a walk READS is a road that breaks
+when the walk moves to a machine without Google — list them with the side
+posts (previous entry) and give each a relay twin before the move.
+Fix 2 (11/16 evening, Carlos: "automate this through the relay machine ...
+Octo Browser gets opened up and it looks for applicants' phone numbers for
+the ones that we don't have ... let's just do it at 5 in the morning"): the
+LOOKUP ITSELF now runs on the office computer — `oat_processing/octo_lookup.py`
+(ships, release 2026.11.16.3) — so the number never has to travel. In the 5am
+hour, once a day, the agent's tick kicks it (`octo_lookup.maybe_kick`, own
+process, `~/.config/lucy-reports/octo-lookup.log`): it reads the newest
+flagged snapshot (`output/oat-flagged-*.json`, ≤3 days, `nophone` bucket),
+opens each applicant's Indeed account in Octo Browser (profile map
+`oat_processing/octo_profiles.json`, by the account's domain; local override
+`~/.config/lucy-reports/octo-profiles.json`), reads the number off the Call
+pop-up, and writes `output/phone-lookups.csv` — the file the walk already
+reads (`phone_lookups.load`, the hand-run road). The 5:30 walk types it in.
+Nothing is redeployed and nothing crosses the relay but a names-only tally
+(`probe-octo-lookup`). Needs Octo Browser installed AND signed in on the
+office computer (its profiles are cloud-synced, same uuids everywhere); if it
+is not, the job files a loud `octo-lookup` fault routed to the office ("send
+this to …"). A verify wall is waited out (≤4 min, one reload), never clicked;
+an account still walled is skipped until tomorrow. Off switch: env
+`OAT_OCTO_LOOKUP=0`. The relay 'Phone Lookups' road above stays for numbers
+found anywhere else, still gated on its redeploy.
 
 **Changed: 11580 moved from Lucy 2 to Carlos's office computer (10/20, release
 2026.10.20.3); Atef (23467) and Khalil (11901) followed on 10/29.**
@@ -214,12 +261,26 @@ against the log file, or a tab dump; `rerun` args are shlex-split — a literal
 - Local outputs (each machine): `output/oat-activity-<date>[-<office>].csv`,
   `oat-no-phone-queue.csv`, `oat-retext-queue.csv`,
   `oat-nophone-blocked-<date>-<office>.json` (blocked-read retry cache).
+- **Phone Lookups** tab of the relay workbook (`1_5YGHhZ0gCYVZzHl7TPnP-6_75xaI0kcjPinQdVTlKg`,
+  created by the relay on first use): Office | Office ID | Name | Account |
+  Phone | Added At | Added By | Note | Fetched At | Sent At | Status. One row
+  per looked-up number; the office computer reads its own office's unsent
+  rows every walk and marks them (`Sent At` = done; a Status with no Sent At
+  = needs a person). Written by `oat_processing/phone_lookups_add.py` or by
+  hand; no machine ever deletes a row.
 - **ICD Faults** tab of the relay workbook
   (`1_5YGHhZ0gCYVZzHl7TPnP-6_75xaI0kcjPinQdVTlKg`): the office computers'
   quiet `probe-` rows, one per office per day, Detail = the newest JSON —
   `probe-push-health` (every 15 min), `probe-push-stats` (every walk; feeds
   the hourly push report), `probe-push-todo` (every LIVE walk; the to-do
-  list Lucy 1 posts at noon/4pm, since 11/15).
+  list Lucy 1 posts at noon/4pm, since 11/15), `probe-octo-lookup` (the 5am
+  Octo lookups' tally: found / missing names and per-account status, no
+  numbers; since 11/16).
+- Local, office computer: `output/phone-lookups.csv` (the numbers the 5am
+  Octo lookups found, name | phone | account_email | indeed_name | office_id |
+  found_at | source; rows drop off after 7 days; the walk reads it every
+  walk), `output/octo-lookup-<date>.json` (that run's full results),
+  `~/.config/lucy-reports/octo-lookup.{json,log,lock}` (state, log, lock).
 
 ## 8. Verification protocol after ANY change
 
@@ -235,13 +296,76 @@ against the log file, or a tab dump; `rerun` args are shlex-split — a literal
 
 ## Changelog (auto-appended daily at 7 PM; newest first)
 
+### 2026-11-16 (manual)
+- **The no-number lookups run themselves, 5am, on the office computer**
+  (Carlos: "automate this through the relay machine so that ... Octo Browser
+  gets opened up and it looks for applicants' phone numbers for the ones that
+  we don't have ... let's just do it at 5 in the morning"). New
+  `oat_processing/octo_lookup.py` + `octo_profiles.json` (ship, release
+  2026.11.16.3), kicked from the agent tick next to the push
+  (`icd_alerts/run.py`). Snapshot → Octo profile per account → Candidates
+  list → search box → Call pop-up → `output/phone-lookups.csv` → the 5:30
+  walk sends. Ledger entry in §6 ("Fix 2"), files in §7. Lucy 1 side:
+  `post.what_to_do` routes an "Octo Browser …" fault to the office. Tested
+  on the laptop against the live accounts (Titanium, Kinetic, Haus; Revolt
+  skipped as "in use" because Carlos's own window was open). Tests:
+  `oat_processing/test_octo_lookup.py` (24). NOT yet seen on the office
+  computer: its first 5am run is 11/17 — verify by the `probe-octo-lookup`
+  row and `📞 looked-up phone` lines in its walk log. Open: six accounts have
+  no domain on file yet (New Ascendra, Pinnacle, Market Minds, Riot,
+  Maverick, VividReach) — matched by title until an applicant shows which
+  domain they use.
+- **Numbers a person looked up now reach the office push** (Carlos: "make sure
+  the Lucy that gets the relay machine to push all the resumes for me gets all
+  the phone numbers so that they can get sent to the call list"). Standing
+  road, not a one-off — see the new ledger entry in §6 and the 'Phone Lookups'
+  tab in §7. How it works:
+  - **Relay** (`resources/icd-alerts-relay.gs`, redeploy BY HAND: paste as the
+    whole Code.gs → Deploy → Manage deployments → pencil → Version: New
+    version): office-key call `phone_lookups` — `{office_id}` fetches the
+    office's unsent rows (stamps Fetched At), `{sent: [{row, name, status}]}`
+    marks them (`sent*` sets Sent At, anything else sets Status only),
+    `{add: [...]}` adds rows for the caller's own office; admin-key call
+    `phone_lookups_add {office, rows, by}`. An office never sees another
+    office's rows. Nothing on the road deletes.
+  - **Office computer** (`oat_processing/phone_lookups.py`, NEW, ships —
+    release 2026.11.16.1, listed in `package.AGENT_FILES` + `agent_files.txt`):
+    `flag_no_phone` (`run.py`) calls `_looked_up_number(a)` BEFORE the settled
+    no-number cache (that cache is exactly why the number was looked up). Match
+    = folded name + account domain, or a row with no account; the same name
+    under another account is somebody else. Hit → `_fill_phone_field` (ten
+    digits only) → `_send_with_number` (the resume arm's send block, lifted
+    out and shared) → `_pl_mark(hit, outcome)`. Not ten digits (`+52 …`) →
+    never typed, marked `bad_number`, applicant stays on the to-do list.
+    Dry run says what it would type. Relay not redeployed → log "the relay
+    does not take phone lookups yet", walk unchanged. Relay unreachable → the
+    last pull (`output/phone-lookups-<office>.json`, ≤3 days). Hand-run with
+    no enrollment → `output/phone-lookups.csv` (the lookup session's columns).
+    Off switch: env `OAT_NO_PHONE_LOOKUPS=1`. Nobody is removed on this path.
+  - **Ours** (`oat_processing/phone_lookups_add.py`, not shipped):
+    `python -m automations.oat_processing.phone_lookups_add <csv> --office
+    carlos --office-id 11580 [--by …] [--via office|admin|sheet] [--dry]` —
+    office key (`~/.config/office-admin/relay-<office>.json`, from
+    `office_admin.relay_client --setup`), else Lucy's admin key
+    (`~/.config/headshots/relay-admin-key`), else the Sheets token a Lucy
+    holds. The relay skips a name already waiting unsent, so a list dropped
+    twice doubles nobody.
+  - **Verify**: office log `[lookup] N number(s) waiting for office 11580
+    (relay)` then `📞 looked-up phone … → filled + sending`; the tab's Sent
+    At / Status; the push report's sent count; the to-do list shrinking.
+  - **Tests**: `oat_processing/test_phone_lookups.py` (33: shapes, CSV,
+    matching, loading, marking, the walk with a fake page, shipping, the drop
+    tool) + `office_admin/test_relay_script.py::test_the_phone_lookups_road_is_wired_end_to_end`.
+    Not covered: the Apps Script at runtime (no runtime here), the Lucy-side
+    sheet road live, the re-text path (lookups are not consulted there).
+
 ### 2026-11-15 (manual)
 - **The noon/4pm "recruiting to-do" post is back for the relay offices** —
   Carlos 11580, Atef 23467, Khalil 11901: every office on a relay machine in
   `ROTATION_BY_MACHINE` whose `offices.py` row says `post_todo` True. It had
   been gone since each office moved to its own computer (10/20, 10/29) — see
   the new ledger entry in §6. How it works now:
-  - **Office computer** (`icd_alerts/resume_push.py`, release 2026.11.15.9,
+  - **Office computer** (`icd_alerts/resume_push.py`, release 2026.11.15.10,
     `resume_push.py` only, no new shipped files): after every LIVE walk that
     finished, `_file_todo` reads the walk's flagged snapshot and files it as a
     quiet relay row — stage `probe-push-todo`, summary `push todo` (`push todo
