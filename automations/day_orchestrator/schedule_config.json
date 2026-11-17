@@ -8441,16 +8441,30 @@
    "report_id": "fiber-tier-bonus-probe"
   },
   "fiber_tier_bonus": {
+   "order": 26.08,
+   "machine": "Lucy 4",
    "close_on": "exit_zero",
-   "on_scheduler": false,
+   "on_scheduler": true,
    "display_name": "Fiber Tier Bonus Breakdown (sales away from tier)",
-   "_note": "BUILD (Raf Loom 2026-11-16). One download of Tableau ATTTRACKER2_1-D2D/NewFiberInternetRepBreakdown (This Week, mon-sun) -> for every active Lucy Eco office on campaign 'att': its own thread '🏆 Tier Bonus Breakdown' in the office metrics channel = board image + 'you're X away from Tier N' line per rep (tagged only on a unique channel-member name match). Skips Mondays. Off the scheduler until Eve OKs the sample; runs default to dry run (pass --post-to D087ZGE2B0F or --live). No machine on purpose: build runs go to the least-loaded Lucy.",
+   "_note": "LIVE for RAF ONLY from 2026-11-17 (Eve 11/16). One download of Tableau ATTTRACKER2_1-D2D/NewFiberInternetRepBreakdown (This Week, mon-sun) -> its own thread '🏆 Tier Bonus Breakdown' in the office metrics channel = board image(s) + one line per GROUP ('2 sales from Tier 3: Ana, Bill'), names only, NO tags (Eve + Raf 11/16). Refuses to post if the export's week is not the one asked for. Skips Mondays. Lucy 4 at 26.08 = right after raf_activation_rate_board (26.07), same channel. Other 18 Fiber Eco offices: drop '--office raf' only when Eve says.",
    "command": [
     "automations.fiber_tier_bonus.run"
    ],
-   "base_args": [],
+   "base_args": [
+    "--live",
+    "--office",
+    "raf"
+   ],
    "cadence": {
-    "weekdays": []
+    "weekdays": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ]
    },
    "data_sources": [],
    "depends_on": [],

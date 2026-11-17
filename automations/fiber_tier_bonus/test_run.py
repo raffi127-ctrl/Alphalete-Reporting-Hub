@@ -50,15 +50,24 @@ class TierBonus(unittest.TestCase):
         self.assertEqual(R.match_rep("José García", people), "U4")    # accents + middle name
         self.assertEqual(R.match_rep("Basil Elhassan", people), "")
 
-    def test_lines_tag_only_live(self):
-        reps = self.data["Rafael Hidalgo"]
-        ids = {"Alyssa Moreno": "U1"}
-        live = R.away_lines(reps, self.tiers, ids, tag=True)
-        test = R.away_lines(reps, self.tiers, ids, tag=False)
-        self.assertTrue(live[0].startswith("🔥"))
-        self.assertIn("<@U1>", "\n".join(live))
-        self.assertNotIn("<@", "\n".join(test))
-        self.assertIn("1 sale away* from Tier 2", "\n".join(live))
+    def test_lines_never_tag(self):
+        lines = R.away_lines(self.data["Rafael Hidalgo"], self.tiers)
+        self.assertTrue(lines[0].startswith("🔥"))
+        self.assertNotIn("<@", "\n".join(lines))
+        self.assertIn("*1 sale from Tier 2:* Alyssa Moreno", "\n".join(lines))
+
+    def test_lines_grouped_one_per_gap(self):
+        mk = lambda name, tot: R.Rep(name, [""] * 7, tot, "")
+        reps = [mk("Zed", 4), mk("Amy", 4), mk("Bo", 3), mk("Cy", 3),
+                mk("Di", 9), mk("Ed", 12), mk("Flo", 1)]
+        lines = R.away_lines(reps, self.tiers)
+        self.assertEqual(lines, [
+            "🔥 *Top tier — locked in:* Ed (12)",
+            "⚡ *1 sale from Tier 2:* Amy, Zed",
+            "*2 sales from Tier 4:* Di",
+            "*2 sales from Tier 2:* Bo, Cy",
+            "*4 sales from Tier 2:* Flo",
+        ])
 
     def test_html_renders_every_rep(self):
         h = R.build_html("Rafael Hidalgo", "Week of Nov 9 - Nov 15", self.days,
@@ -82,6 +91,44 @@ class TierBonus(unittest.TestCase):
         ps = R.pages(reps, self.tiers)
         self.assertEqual([len(p) for p in ps], [13, 12, 13, 12])
         self.assertTrue(all(r.total == 5 for r in ps[0] + ps[1]))
+
+    def test_real_export_two_measures_one_rep_each(self):
+        # Shape of the real export (Lucy 2, 2026-11-16): extra tier/flag columns
+        # before Monday, and a blank-headed Measure Names column, so every rep
+        # comes twice — once as the 1.00 helper, once as the sales count.
+        hdr = ["Owner Name", "Rep Volume Bonus Tiers (copy)", "Rep ",
+               "Rep Volume Bonus Tiers", "Reps that need 1 more for next tier (copy)", "",
+               "Mon (11-02)", "Tue (11-03)", "Wed (11-04)", "Thu (11-05)",
+               "Fri (11-06)", "Sat (11-07)", "Sun (11-08)", "Grand Total"]
+        t4, t1 = "TIER 4 (11+_New_Fiber)", "TIER 1 (0-4_New_Fiber)"
+        cnt = "New Fiber Internet Count (Rep tier bonus eligible)"
+        rows = [["", "", "", "", "", "", "sp.Order Date (copy)"], hdr,
+                ["Rafael Hidalgo", t1, "Andres Mejia", t1, "No", "Calculation1 (1)",
+                 "", "", "", "", "1.00", "1.00", "", "1.00"],
+                ["Rafael Hidalgo", t1, "Andres Mejia", t1, "No", cnt,
+                 "", "", "", "", "1", "0", "", "1"],
+                ["Rafael Hidalgo", t4, "Anthony Marchetti", t4, "No", "Calculation1 (1)",
+                 "1.00", "", "1.00", "", "1.00", "1.00", "1.00", "1.00"],
+                ["Rafael Hidalgo", t4, "Anthony Marchetti", t4, "No", cnt,
+                 "0", "", "2", "", "0", "6", "3", "11"]]
+        rows = [[c.strip() for c in r] for r in rows]     # read_csv strips cells
+        days, data = R.parse(rows)
+        self.assertEqual(days, hdr[6:13])
+        reps = data["Rafael Hidalgo"]
+        self.assertEqual([(r.name, r.total) for r in reps],
+                         [("Andres Mejia", 1), ("Anthony Marchetti", 11)])
+        self.assertEqual(reps[1].days, ["0", "", "2", "", "0", "6", "3"])
+
+    def test_week_comes_from_the_export(self):
+        import datetime as dt
+        d = dt.date(2026, 11, 16)
+        self.assertEqual(R.monday_in_headers(["Mon (11-02)", "Tue (11-03)"], d),
+                         dt.date(2026, 11, 2))
+        self.assertEqual(R.week_label(dt.date(2026, 11, 2)), "Week of Nov 2 - Nov 8")
+        # across New Year: a Dec 28 Monday seen on Jan 5 is last year's
+        self.assertEqual(R.monday_in_headers(["Mon (12-28)"], dt.date(2027, 1, 5)),
+                         dt.date(2026, 12, 28))
+        self.assertIsNone(R.monday_in_headers(["Rep Volume Bonus Tiers"], d))
 
     def test_owner_alias(self):
         self.assertTrue(R.same_owner("RAFAEL HIDALGO", "Rafael Hidalgo"))

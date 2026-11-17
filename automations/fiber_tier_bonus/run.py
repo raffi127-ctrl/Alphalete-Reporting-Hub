@@ -19,12 +19,11 @@ WHO GETS IT
   (icd_alerts.offices, campaign 'att'). Posted in the office's metrics channel
   (office_metrics.offices), or its Eco channel when it has no metrics row.
   Its own thread, next to the Metrics one: '🏆 Tier Bonus Breakdown — <date>'
-  → 1) the board image, 2) one line per rep, tagged: "you're X away from Tier N".
+  → 1) the board image, 2) one line per group: "2 sales from Tier 3: Ana, Bill".
 
-TAGS
-  A rep is tagged only when exactly ONE member of that channel matches their
-  first AND last name. Anything else (no match, two matches) prints the name
-  without the @ — a wrong tag is worse than no tag.
+NO TAGS (Eve + Raf, 2026-11-16): the tagged per-rep list was ~100 lines.
+  Names only, grouped; reps look at the post. match_rep/channel_people stay
+  for if tags ever come back, but nothing calls them.
 
 MONDAYS: 'This Week' restarts Monday, so a morning run would post an empty
 board. Mondays are skipped (the run exits 0).
@@ -114,6 +113,27 @@ def _int(cell: str) -> int:
         return 0
 
 
+_DAY_HDR = re.compile(r"^(mon|tue|wed|thu|fri|sat|sun)\w*\b", re.I)
+
+
+def _is_sales_measure(v: str) -> bool:
+    return "count" in (v or "").lower()
+
+
+def _measure_col(header: List[str], body: List[List[str]], rep_i: int,
+                 day_idx: List[int]) -> Optional[int]:
+    """The 'Measure Names' column, when the view has more than one measure:
+    a column (outside the day columns) whose cells name a sales COUNT on some
+    rows and something else on others. None when every row is one measure."""
+    for i in range(len(header)):
+        if i == rep_i or i in day_idx or header[i] == TOTAL_COL:
+            continue
+        vals = {r[i] for r in body if i < len(r) and r[i]}
+        if len(vals) >= 2 and any(_is_sales_measure(v) for v in vals):
+            return i
+    return None
+
+
 def parse(rows: List[List[str]]) -> Tuple[List[str], Dict[str, List[Rep]]]:
     """Crosstab -> (day labels, {owner: [Rep, ...]}).
 
@@ -130,8 +150,18 @@ def parse(rows: List[List[str]]) -> Tuple[List[str], Dict[str, List[Rep]]]:
     tier_i = next((i for i, h in enumerate(header) if "tier" in h.lower()), None)
     total_i = header.index(TOTAL_COL) if TOTAL_COL in header else None
     end = total_i if total_i is not None else len(header)
-    day_idx = [i for i in range(rep_i + 1, end) if header[i]]
+    # Day columns are the ones headed like a day ('Mon (11-09)'). The real
+    # export (2026-11-16) also carries 'Rep Volume Bonus Tiers' and 'Reps that
+    # need 1 more for next tier (copy)' between Rep and Monday — those are not days.
+    day_idx = [i for i in range(rep_i + 1, end) if _DAY_HDR.match(header[i])]
+    if not day_idx:
+        day_idx = [i for i in range(rep_i + 1, end) if header[i]]
     days = [header[i] for i in day_idx]
+    # The view has TWO measures, so the export repeats every rep on two rows:
+    # 'Calculation1 (1)' (a 1.00 helper) and 'New Fiber Internet Count (Rep tier
+    # bonus eligible)'. Reading both posted every rep twice, the helper as
+    # "at 1" (Raf's post, 2026-11-16). Keep only the sales-count row.
+    meas_i = _measure_col(header, rows[hi + 1:], rep_i, day_idx)
 
     out: Dict[str, List[Rep]] = {}
     owner = tier = ""
@@ -143,6 +173,8 @@ def parse(rows: List[List[str]]) -> Tuple[List[str], Dict[str, List[Rep]]]:
             tier = r[tier_i]
         name = r[rep_i]
         if not name or name in ("Total", TOTAL_COL) or owner in ("Total", TOTAL_COL):
+            continue
+        if meas_i is not None and not _is_sales_measure(r[meas_i]):
             continue
         cells = [r[i] for i in day_idx]
         total = _int(r[total_i]) if total_i is not None else sum(_int(c) for c in cells)
@@ -377,23 +409,57 @@ def build_html(owner: str, week: str, days: List[str], reps: List[Rep], tiers,
             f"</div></body></html>")
 
 
-def away_lines(reps: List[Rep], tiers, ids: Dict[str, str], *, tag: bool) -> List[str]:
-    """One line per rep, closest to the next tier first; top tier last."""
+def away_lines(reps: List[Rep], tiers) -> List[str]:
+    """One line per GROUP, not per rep, names only — NO tags (Eve + Raf
+    2026-11-16: the per-rep tagged list was ~100 lines; "they can just look at
+    the post"). Reps the same number of sales from the same tier share a line;
+    top tier first, then closest to the next tier."""
     def who(name: str) -> str:
-        uid = ids.get(name, "")
-        return f"<@{uid}>" if (tag and uid) else f"*{name}*"
-    climbing, top = [], []
+        return name
+    top: List[Rep] = []
+    groups: Dict[Tuple[int, int], List[Rep]] = {}
     for rp in reps:
         gap = away(rp.total, tiers)
         if gap is None:
-            top.append(f"🔥 {who(rp.name)} — Tier {tier_of(rp.total, tiers)} locked in ({rp.total} sales). Top tier!")
+            top.append(rp)
         else:
-            n, nxt = gap
-            s = "sale" if n == 1 else "sales"
-            climbing.append((n, rp.name.lower(),
-                             f"{'⚡ ' if n == 1 else ''}{who(rp.name)} — you're *{n} {s} away* "
-                             f"from Tier {nxt} (at {rp.total})"))
-    return top + [t for _, _, t in sorted(climbing)]
+            groups.setdefault(gap, []).append(rp)
+    out: List[str] = []
+    if top:
+        top.sort(key=lambda r: (-r.total, r.name.lower()))
+        out.append("🔥 *Top tier — locked in:* "
+                   + ", ".join(f"{who(r.name)} ({r.total})" for r in top))
+    # closest first; same gap -> the higher tier first
+    for (n, nxt) in sorted(groups, key=lambda g: (g[0], -g[1])):
+        members = sorted(groups[(n, nxt)], key=lambda r: r.name.lower())
+        s = "sale" if n == 1 else "sales"
+        out.append(f"{'⚡ ' if n == 1 else ''}*{n} {s} from Tier {nxt}:* "
+                   + ", ".join(who(r.name) for r in members))
+    return out
+
+
+_MD = re.compile(r"\((\d{1,2})-(\d{1,2})\)")
+
+
+def monday_in_headers(days: List[str], near: dt.date) -> Optional[dt.date]:
+    """The Monday the export's day columns start on ('Mon (11-02)'), with the
+    year taken from the date closest to `near`. None if no column has a date."""
+    for h in days:
+        m = _MD.search(h)
+        if not m:
+            continue
+        mo, d = int(m.group(1)), int(m.group(2))
+        cands = []
+        for y in (near.year - 1, near.year, near.year + 1):
+            try:
+                cands.append(dt.date(y, mo, d))
+            except ValueError:
+                pass
+        if not cands:
+            continue
+        first = min(cands, key=lambda c: abs((c - near).days))
+        return first - dt.timedelta(days=first.weekday())
+    return None
 
 
 def week_label(today: dt.date) -> str:
@@ -446,15 +512,20 @@ def run(args) -> int:
     tiers = tiers_from_captions(data)
     print(f"  {len(data)} owner(s) in the view · days {days} · tiers {tiers}", flush=True)
     aliases = _load_aliases()
-    week = week_label(day - dt.timedelta(days=7) if args.last_week else day)
-
-    client = None
-    if not args.no_tags:
-        try:
-            from automations.shared import slack_metrics_post as smp
-            client = smp._client()
-        except Exception as e:  # noqa: BLE001 — no tags, still a board
-            print(f"  Slack client unavailable ({e}); names without @", flush=True)
+    # The label comes from the export's own day columns, never from the
+    # calendar. On 2026-11-16 'Last Week' came back as Nov 2-8 and was posted
+    # to Raf titled 'Nov 9 - Nov 15'. A week other than the one asked for is
+    # refused — a wrong week tagged to every rep is worse than no post.
+    want = day - dt.timedelta(days=day.weekday() + (7 if args.last_week else 0))
+    got = monday_in_headers(days, day)
+    if got is None:
+        print("  could not read dates off the day columns — posting nothing", flush=True)
+        return 1
+    week = week_label(got)
+    if got != want and not args.csv:
+        print(f"  WRONG WEEK: export is {week}, expected {week_label(want)} — "
+              "posting nothing", flush=True)
+        return 1
 
     shared = {}
     for d in dests:
@@ -468,29 +539,18 @@ def run(args) -> int:
                   "(new spelling? add it to ICD Aliases)", flush=True)
             continue
         reps = data[owner_key]
-        ids: Dict[str, str] = {}
-        if client is not None:
-            try:
-                people = channel_people(client, d.channel_id)
-                ids = {r.name: match_rep(r.name, people) for r in reps}
-            except Exception as e:  # noqa: BLE001
-                print(f"  [{d.key}] could not read {d.channel_name} members ({e})", flush=True)
-        tagged = sum(1 for v in ids.values() if v)
         slug = "_".join(_fold(d.owner).split())
         chunks = pages(reps, tiers)
         imgs = [render(build_html(d.owner, week, days, chunk, tiers,
                                   part=(f"image {i} of {len(chunks)}" if len(chunks) > 1 else "")),
                        OUT_DIR / f"tier_bonus_{slug}_{day.isoformat()}_{i}.png")
                 for i, chunk in enumerate(chunks, 1)]
-        lines = away_lines(reps, tiers, ids, tag=bool(args.live))
+        lines = away_lines(reps, tiers)
         title = TITLE + (f" — {d.owner}" if shared[d.channel_id] > 1 else "")
         text = "\n".join([f"*Sales away from the next tier bonus* ({week})", ""] + lines)
-        print(f"\n[{d.key}] {d.owner} -> {d.channel_name}: {len(reps)} rep(s), "
-              f"{tagged} matched in Slack; {len(imgs)} image(s) "
+        print(f"\n[{d.key}] {d.owner} -> {d.channel_name}: {len(reps)} rep(s); "
+              f"{len(imgs)} image(s) "
               f"{[len(c) for c in chunks]} reps each: {[str(i) for i in imgs]}", flush=True)
-        for r in reps:
-            if not ids.get(r.name):
-                print(f"     no @ for {r.name!r}", flush=True)
         print("   " + text.replace("\n", "\n   "), flush=True)
         if not (args.live or args.post_to):
             continue
