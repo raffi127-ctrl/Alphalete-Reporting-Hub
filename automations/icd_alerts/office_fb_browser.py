@@ -175,6 +175,21 @@ def _already(pg, page_name: str, text: str) -> bool:
         return False
 
 
+_SEND_JS = r"""
+(name) => {
+  const box = [...document.querySelectorAll('div[contenteditable="true"][role="textbox"]')]
+      .find(b => (b.getAttribute('aria-label') || '').toLowerCase() === ('comment as ' + name).toLowerCase());
+  let f = box;
+  for (let i = 0; i < 10 && f; i++) {
+    const btn = f.querySelector('[role="button"][aria-label="Post comment"], button[aria-label="Post comment"]');
+    if (btn) { btn.click(); return true; }
+    f = f.parentElement;
+  }
+  return false;
+}
+"""
+
+
 def _box_text(box) -> str:
     try:
         return (box.inner_text(timeout=2000) or "").strip()
@@ -225,6 +240,12 @@ def browser_reply(story: str, text: str, page_name: str, log=print, *, practice:
                     pg.keyboard.press("Shift+Enter")
             pg.wait_for_timeout(500)
             pg.keyboard.press("Enter")
+            pg.wait_for_timeout(3000)
+            if _box_text(box):
+                # Enter didn't send (raf's Mac, 11/17: "still in the comment box").
+                # Its send button, by script -- a hidden window ignores real clicks.
+                # Only while the words are still in the box, so it never sends twice.
+                pg.evaluate(_SEND_JS, page_name)
             for _ in range(15):
                 pg.wait_for_timeout(1000)
                 if _checkpoint(pg):
