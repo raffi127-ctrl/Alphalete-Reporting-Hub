@@ -26,7 +26,8 @@ class Rows(unittest.TestCase):
         self.assertEqual(r[T._COL["Notes"]], "")
         self.assertEqual(r[T._COL["Being worked on"]], "")
         self.assertEqual(r[T._COL["Delivered Message Sent"]], "")
-        self.assertEqual(T.HEADERS[23], "Delivered Message Sent")   # column X on the live tab (11/12: Shipping Notes moved behind it)
+        self.assertEqual(T.HEADERS[T._COL["Notes"] + 1], "Taylor's Notes")        # 11/17: beside Notes
+        self.assertEqual(T.HEADERS[T._COL["Being worked on"] + 1], "Delivered Message Sent")
         self.assertEqual(T.HEADERS[T._COL["Delivered Message Sent"] + 1], "Shipping Status")  # 11/12 pm: carrier word, left of the notes
         self.assertEqual(T.HEADERS[T._COL["Shipping Status"] + 1], "Shipping Notes")
         self.assertEqual(T.HEADERS[T._COL["Ship Date"] + 1], "Delivered")
@@ -37,8 +38,15 @@ class Rows(unittest.TestCase):
         self.assertEqual(r[T._COL["Device"]], "iPhone 16")            # the model, feed's "line_phone"
         self.assertEqual(r[T._COL["Plan"]], "Unlimited")
         self.assertEqual(r[T._COL["Zip"]], "")                        # no index given -> blank
-        self.assertEqual(T.HEADERS[4], "Zip")                         # right after Customer
-        self.assertEqual(T.HEADERS[5], "Email")                       # 11/11: right after Zip
+        # 11/17: the customer-detail group sits together right after Customer
+        c = T._COL["Customer"]
+        self.assertEqual(T.HEADERS[c + 1:c + 7], ("Email", "Zip", "DSI #", "Wireless Order #", "BAN", "Phone #"))
+        self.assertEqual(T.HEADERS[c + 7], "Order Date")
+        self.assertEqual(T.HEADERS[T._COL["Activation Date"] + 1], "Disconnect Date")
+        self.assertEqual(r[T._COL["Disconnect Date"]], "")
+        self.assertEqual(r[T._COL["Taylor's Notes"]], "")
+        self.assertEqual((r[T._COL["DSI #"]], r[T._COL["Wireless Order #"]], r[T._COL["BAN"]], r[T._COL["Line"]],
+                          r[T._COL["Type"]]), ("DSI123", "WO555", "BAN9", "1", "New"))
         self.assertEqual(r[T._COL["Customer"]], "John Doe")
         self.assertEqual(r[T._COL["Order Date"]], "10/24/2026")
 
@@ -496,7 +504,9 @@ class HoverNoteTests(unittest.TestCase):
         reqs = [r["repeatCell"] for r in T._format_requests(7, 10, 0) if "repeatCell" in r]
         wipes = [r for r in reqs if r.get("fields") == "note"]
         self.assertEqual(len(wipes), 1)
-        self.assertEqual(wipes[0]["range"]["startColumnIndex"], T._COL["Shipping Notes"])
+        # 11/17: every column, so a column move leaves no note behind on the wrong column
+        self.assertEqual(wipes[0]["range"]["startColumnIndex"], 0)
+        self.assertGreater(wipes[0]["range"]["endColumnIndex"], T._COL["Shipping Notes"])
         self.assertEqual(wipes[0]["cell"], {"note": ""})
 
 
@@ -523,8 +533,7 @@ class NotSaveableColour(unittest.TestCase):
         self.assertEqual((c["red"], c["green"], c["blue"]), T.PURPLE)
 
 
-if __name__ == "__main__":
-    unittest.main()
+
 
 
 class NotSaveableMarks(unittest.TestCase):
@@ -546,3 +555,78 @@ class NotSaveableMarks(unittest.TestCase):
         m2 = T.marks_from_rows(hdr, [["Not saveable", "DSI9", "4", "214-555-0100"], ["", "DSI9", "5", ""]])
         self.assertEqual((m2["n"], m2["dsi_line"], m2["phone"]), (1, {("dsi9", "4")}, {"2145550100"}))
         self.assertEqual(T.marks_from_rows(list(T.HEADERS), [])["n"], 0)
+
+
+class Nov17Columns(unittest.TestCase):
+    """11/17: a folded column group under Customer, Taylor's Notes beside
+    Notes, and a Disconnect Date off the Tableau export."""
+
+    def test_group_is_added_folded_with_its_toggle_above_customer(self):
+        start, end = T.group_span()
+        self.assertEqual((start, end), (T._COL["Email"], T._COL["Phone #"] + 1))
+        self.assertEqual(start, T._COL["Customer"] + 1)
+        reqs = T.group_requests(7, [])
+        self.assertFalse(reqs[0]["updateSheetProperties"]["properties"]["gridProperties"]["columnGroupControlAfter"])
+        add = [r["addDimensionGroup"]["range"] for r in reqs if "addDimensionGroup" in r]
+        self.assertEqual((add[0]["startIndex"], add[0]["endIndex"], add[0]["dimension"]), (start, end, "COLUMNS"))
+        upd = [r["updateDimensionGroup"] for r in reqs if "updateDimensionGroup" in r]
+        self.assertTrue(upd[0]["dimensionGroup"]["collapsed"])
+
+    def test_an_existing_group_on_the_same_span_is_left_as_carlos_has_it(self):
+        start, end = T.group_span()
+        same = [{"range": {"startIndex": start, "endIndex": end}, "depth": 1}]          # open: no 'collapsed'
+        reqs = T.group_requests(7, same)
+        self.assertEqual([list(r)[0] for r in reqs], ["updateSheetProperties"])
+        stale = [{"range": {"startIndex": 4, "endIndex": 6}, "depth": 1}]
+        kinds = [list(r)[0] for r in T.group_requests(7, stale)]
+        self.assertEqual(kinds, ["updateSheetProperties", "deleteDimensionGroup", "addDimensionGroup",
+                                 "updateDimensionGroup"])
+        # the full rewrite carries them
+        self.assertIn("addDimensionGroup", [list(r)[0] for r in T._format_requests(7, 10, 0)])
+
+    def test_taylors_notes_is_carried_like_notes(self):
+        self.assertIn("Taylor's Notes", T.CARRIED)
+        prior = T.line_row(line(), "11/16/2026")
+        prior[T._COL["Taylor's Notes"]] = "called 11/16, voicemail"
+        prior[T._COL["Notes"]] = "carlos note"
+        out = T.merge([prior], [line()], today=TODAY)
+        self.assertEqual(out["rows"][0][T._COL["Taylor's Notes"]], "called 11/16, voicemail")
+        self.assertEqual(out["rows"][0][T._COL["Notes"]], "carlos note")
+
+    def test_old_layout_remaps_into_the_new_one_by_name(self):
+        old_hdr = ["Week Ending", "Pay Period", "Rep", "Customer", "Zip", "Email", "Order Date", "DSI #",
+                   "Wireless Order #", "BAN", "Line", "Type", "Phone #", "Device", "Plan", "Line Status",
+                   "Ship Date", "Delivered", "Activation Date", "Port Status", "Last Updated", "Notes",
+                   "Being worked on", "Delivered Message Sent", "Shipping Status", "Shipping Notes", "Churn Bucket"]
+        full = dict(zip(T.HEADERS, T.line_row(line(), "11/16/2026")))
+        full.update({"Notes": "n1", "Being worked on": "Not saveable", "Shipping Notes": "11/16: x", "Zip": "75060",
+                     "Email": "a@b.com"})
+        out = T.merge([[full[h] for h in old_hdr]], [], today=TODAY, existing_header=old_hdr)
+        r = dict(zip(T.HEADERS, out["rows"][0]))
+        self.assertEqual((r["Notes"], r["Being worked on"], r["Shipping Notes"], r["Zip"], r["Email"]),
+                         ("n1", "Not saveable", "11/16: x", "75060", "a@b.com"))
+        self.assertEqual((r["Phone #"], r["DSI #"], r["Taylor's Notes"], r["Disconnect Date"]),
+                         ("945-392-8474", "DSI123", "", ""))
+
+    def test_disconnect_date_off_the_export(self):
+        hdr = ["Customer Name", "Customer Zip Simple", "spe.TN", "spe.Account BAN", "sp.SPM Number",
+               "DTR Active Date", "DTR Status", "Status Date"]
+        zi = T.ZipIndex.from_rows(hdr, [
+            ["John Doe", "75060", "9453928474", "BAN9", "DSI123", "11/1/2026", "Disconnected", "11/12/2026"],
+            ["Jane Roe", "75061", "2145550000", "BAN1", "DSI1", "11/2/2026", "Posted", "11/2/2026"]])
+        self.assertEqual(zi.disconnect_date("945-392-8474"), "11/12/2026")
+        self.assertEqual(zi.disconnect_date("214-555-0000"), "")           # Posted: its status date is no disconnect
+        self.assertEqual(zi.disconnect_for_line(line()), "11/12/2026")
+        first = T.merge([], [line()], today=TODAY, disc_of=zi.disconnect_for_line)
+        self.assertEqual(first["rows"][0][T._COL["Disconnect Date"]], "11/12/2026")
+        prior = [list(x) for x in first["rows"]]
+        prior[0][T._COL["Disconnect Date"]] = ""
+        second = T.merge(prior, [], today=TODAY, disc_lookup=zi.disconnect_date)
+        self.assertEqual(second["rows"][0][T._COL["Disconnect Date"]], "11/12/2026")
+        third = T.merge(first["rows"], [line()], today=TODAY)              # no export today: kept
+        self.assertEqual(third["rows"][0][T._COL["Disconnect Date"]], "11/12/2026")
+        self.assertIn("Disconnect Date", T._DATE_COLS)
+
+
+if __name__ == "__main__":
+    unittest.main()
