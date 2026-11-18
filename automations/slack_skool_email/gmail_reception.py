@@ -206,6 +206,43 @@ def already_sent_today(search_phrase: str) -> bool:
     return bool(res.get("messages"))
 
 
+def already_sent_to(address: str, search_phrase: str,
+                    days: int = 30) -> bool:
+    """Has THIS person already had this email from this mailbox?
+
+    WHY PER PERSON AND NOT PER DAY. `already_sent_today` asks "did this go out
+    at all today", which was the right question while the whole cohort shared
+    one 8am send. It is the wrong one now: the email goes per start-date group
+    (so each group can be told its own day), and two groups can fall due on
+    the same morning -- a late BOB starting tomorrow alongside the Monday
+    cohort. A per-day guard would send the first group and silently swallow
+    the second, and the people it swallowed would never be mailed at all.
+
+    So the guard moved to the only granularity that cannot do that: the
+    person. It still asks GMAIL rather than a local marker, so it holds across
+    machines and across a hand-send by reception.
+
+    Thirty days, not one: this is "has this person ever had their welcome
+    email", and somebody whose start was pushed back a fortnight must not get
+    a second one.
+    """
+    addr = str(address or "").strip()
+    if not addr:
+        return False
+    q = 'in:sent subject:"{}" (to:{} OR bcc:{}) newer_than:{}d'.format(
+        search_phrase.replace('"', ""), addr, addr, int(days))
+    try:
+        res = _service().users().messages().list(
+            userId="me", q=q, maxResults=1).execute()
+    except Exception as exc:
+        # Same rule as the day guard: a broken check is never "send anyway".
+        raise GuardUnavailable(
+            "Couldn't check whether {} has already had this ({}). Refusing to "
+            "send rather than risk mailing somebody twice.".format(
+                addr, str(exc).split("\n")[0][:160]))
+    return bool(res.get("messages"))
+
+
 if __name__ == "__main__":
     import sys
     if "--auth" in sys.argv:

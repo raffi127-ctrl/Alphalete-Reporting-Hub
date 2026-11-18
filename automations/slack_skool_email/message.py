@@ -46,6 +46,29 @@ def _links(slack_link: str, skool_link: str) -> dict:
     return {"slack": slack, "skool": skool}
 
 
+def _fill_when(body: str, when: str) -> str:
+    """Put their day into the orientation sentence.
+
+    A MISSING DAY IS A REFUSAL, not an empty gap. The sentence reads "we're
+    excited to have you at orientation ." without it, and that version has
+    gone out to somebody if this ever returns quietly. The caller always knows
+    the group's start date -- `config.when_phrase` already turns an unknown one
+    into "on your first day" -- so arriving here with nothing is a bug in the
+    caller, not a case to paper over.
+    """
+    if config.WHEN_TOKEN not in body:
+        # Nothing to fill. Only legitimate while the copy carries no
+        # placeholder at all, which `config.early_send_blocked_by_copy`
+        # refuses for any lead above 0.
+        return body
+    if not str(when or "").strip():
+        raise CopyError(
+            "the copy has %s in it but no day was passed, so the email would "
+            "say \"at orientation .\" -- refusing to build it."
+            % config.WHEN_TOKEN)
+    return body.replace(config.WHEN_TOKEN, when)
+
+
 def _check_markers(body: str) -> None:
     """Both links must still be referenced somewhere in the copy."""
     used = {m.group(2) for m in _LINK_RE.finditer(body)}
@@ -58,9 +81,10 @@ def _check_markers(body: str) -> None:
             .format(", ".join(sorted(missing)), sorted(missing)[0]))
 
 
-def render_text(*, slack_link: str = "", skool_link: str = "") -> str:
+def render_text(*, slack_link: str = "", skool_link: str = "",
+                when: str = "") -> str:
     """The plain-text part. `[[Slack->slack]]` -> `Slack <https://...>`."""
-    body = config.BODY
+    body = _fill_when(config.BODY, when)
     _check_markers(body)
     urls = _links(slack_link, skool_link)
     out = _LINK_RE.sub(
@@ -72,14 +96,15 @@ def render_text(*, slack_link: str = "", skool_link: str = "") -> str:
     return out
 
 
-def render_html(*, slack_link: str = "", skool_link: str = "") -> str:
+def render_html(*, slack_link: str = "", skool_link: str = "",
+                when: str = "") -> str:
     """The HTML part. `[[Slack->slack]]` -> `<a href="...">Slack</a>`.
 
     Deliberately bare: no images, no CSS, no tracking. This email's only real
     failure mode is not being seen, and a 52-recipient BCC from a personal
     Gmail is already the shape spam filters watch -- decoration would push it.
     """
-    body = config.BODY
+    body = _fill_when(config.BODY, when)
     _check_markers(body)
     urls = _links(slack_link, skool_link)
 
@@ -117,8 +142,14 @@ render_body = render_text
 
 
 def build(recipients: List[str], *, slack_link: str = "",
-          skool_link: str = "") -> EmailMessage:
-    """One multipart/alternative message, every recipient in BCC."""
+          skool_link: str = "", when: str = "") -> EmailMessage:
+    """One multipart/alternative message, every recipient in BCC.
+
+    `when` is the day this GROUP starts, as `config.when_phrase` words it.
+    One message per start date is why the day can be named at all: the BCC
+    shape means every recipient reads the same sentence, so they all have to
+    be starting on the same day (see run._groups).
+    """
     if not recipients:
         raise CopyError("no recipients -- refusing to build an empty send")
 
@@ -127,8 +158,9 @@ def build(recipients: List[str], *, slack_link: str = "",
     msg["Subject"] = config.SUBJECT
     # No To: header on purpose -- see the module docstring.
     msg["Bcc"] = ", ".join(recipients)
-    msg.set_content(render_text(slack_link=slack_link, skool_link=skool_link))
+    msg.set_content(render_text(slack_link=slack_link, skool_link=skool_link,
+                                when=when))
     msg.add_alternative(
-        render_html(slack_link=slack_link, skool_link=skool_link),
+        render_html(slack_link=slack_link, skool_link=skool_link, when=when),
         subtype="html")
     return msg

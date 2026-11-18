@@ -39,6 +39,11 @@ def _people(tab_name: str = ""):
     from automations.blueink_docs import roster as bir
     ws, values = _open_tab(tab_name)
     people = bir.parse_tab(values, ws.title)
+    # Their own start date, off the chart each of them sits in. The day this
+    # email names comes from here, so it is attached before anybody is
+    # grouped (Megan, 2026-11-18: "change the day to be correct for when they
+    # actually start").
+    bir.attach_chart_dates(values, people, ws.title)
     return ws, values, people
 
 
@@ -80,6 +85,94 @@ def _recipients(people) -> List[str]:
     return out
 
 
+def _groups(people, today=None):
+    """[(start_date, [address, ...])] for everybody due, earliest day first.
+
+    ONE GROUP PER START DATE, because the email names the day and every
+    recipient of one BCC reads the same sentence. Two people starting on
+    different days cannot share a send any more -- that is the whole change.
+
+    Only people who are DUE: their floor is SEND_LEAD_DAYS before their own
+    start (automations.shared.new_start_timing). Somebody starting later is
+    not here yet and will be on a later morning's run.
+
+    A person with no readable start date is left out and reported by
+    `_undated` rather than quietly folded into the nearest group. An email
+    that names the wrong day is worse than one that is late.
+    """
+    import datetime as _dt
+
+    from automations.shared import new_start_timing as timing
+
+    today = today or _dt.date.today()
+    by_day = {}
+    seen = set()
+    for p_ in people:
+        if not p_.eligible:
+            continue
+        addr = (p_.email or "").strip()
+        key = addr.lower()
+        if not addr or key in seen:
+            continue                      # same de-dupe as _recipients
+        if not isinstance(p_.chart_date, _dt.date):
+            continue
+        if p_.chart_date < today:
+            continue                      # see _already_started
+        if not timing.due(p_.chart_date, today, config.SEND_LEAD_DAYS):
+            continue
+        seen.add(key)
+        by_day.setdefault(p_.chart_date, []).append(addr)
+    return sorted(by_day.items())
+
+
+def _already_started(people, today=None):
+    """Eligible people whose start day has already passed. They get nothing.
+
+    THE ONE PLACE THIS EMAIL DIFFERS FROM THE PAPERWORK. `new_start_timing`
+    treats the lead as a floor and keeps saying "due" after somebody's start,
+    which is right for Blue Ink -- an unsigned I-9 does not stop mattering
+    because Monday happened. It is wrong here: this email says "we're excited
+    to have you at orientation on Monday, November 16", and sending that on
+    the Wednesday after is worse than sending nothing.
+
+    Caught by the live preview on 2026-11-18, where the newest tab was still
+    dated 11.16 and the grouping had cheerfully lined up 46 people for an
+    email naming a day that had gone. `_wrong_week` would have stopped the
+    send that time, but that is a gate on the TAB -- the per-person rule is
+    what decides now, so it has to hold on its own.
+    """
+    import datetime as _dt
+    today = today or _dt.date.today()
+    return [p_ for p_ in people
+            if p_.eligible and (p_.email or "").strip()
+            and isinstance(p_.chart_date, _dt.date) and p_.chart_date < today]
+
+
+def _undated(people):
+    """Eligible people whose chart carries no date we can read.
+
+    Reported loudly: these are the only people a per-person clock cannot
+    place, and they get no email at all until somebody writes the date above
+    their chart.
+    """
+    import datetime as _dt
+    return [p_ for p_ in people
+            if p_.eligible and (p_.email or "").strip()
+            and not isinstance(p_.chart_date, _dt.date)]
+
+
+def _not_yet(people, today=None):
+    """Eligible people whose day is further off than the lead. Not a problem."""
+    import datetime as _dt
+
+    from automations.shared import new_start_timing as timing
+
+    today = today or _dt.date.today()
+    return [p_ for p_ in people
+            if p_.eligible and isinstance(p_.chart_date, _dt.date)
+            and not timing.due(p_.chart_date, today, config.SEND_LEAD_DAYS)]
+
+
 def _wrong_week(tab_title: str, *, explicit: bool = False, today=None):
     """A refusal message if this tab isn't THIS week's, or None if it's fine.
 
@@ -118,6 +211,16 @@ def _wrong_week(tab_title: str, *, explicit: bool = False, today=None):
     lead = getattr(config, "SEND_LEAD_DAYS", 0) or 0
     if lead and today <= dated <= today + _dt.timedelta(days=lead):
         return None
+    if dated > today:
+        # A tab further out than the lead. NOT the fault below -- the lineup
+        # has been built, nobody on it is due yet, and saying "this week's
+        # lineup hasn't been built" about next week's tab sends somebody
+        # looking for a problem that isn't there.
+        return ("Nothing to send yet: the newest tab is {!r} (dated {}), and "
+                "theirs goes out {} day(s) before they start. Nobody is due "
+                "until {}.".format(
+                    tab_title, dated, lead,
+                    (dated - _dt.timedelta(days=lead)).isoformat()))
     if dated != today:
         return (
             "Refusing to send: the newest tab is {!r} (dated {}), but today is "
@@ -181,10 +284,47 @@ def preview(tab_name: str = "", *, fetch_link: bool = True) -> int:
     print("From: {} ({})".format(config.FROM_ACCOUNT, config.MACHINE))
     print("Subject: {}\n".format(config.SUBJECT))
 
-    print("WOULD BCC ({}):".format(len(send_to)))
-    for p in people:
-        if p.eligible:
-            print("  - {:28} row {:>3}  {}".format(p.name, p.row, p.email))
+    # GROUPED BY THE DAY THEY START, because that is one send each and each
+    # one says a different day. The preview has to show the DAY as the email
+    # will word it -- that sentence is the whole point of the change, and a
+    # flat list of addresses would hide the one thing worth checking.
+    groups = _groups(people)
+    if groups:
+        print("WOULD SEND {} email(s), one per start day:".format(len(groups)))
+        for start, addrs in groups:
+            print('\n  {} -> "...at orientation {}"  ({} recipient(s))'.format(
+                start.isoformat(), config.when_phrase(start), len(addrs)))
+            for p in people:
+                if (p.email or "").strip() in addrs:
+                    print("     - {:28} row {:>3}  {}".format(
+                        p.name, p.row, p.email))
+    else:
+        print("NOBODY IS DUE TODAY - no email would go out.")
+
+    waiting = _not_yet(people)
+    if waiting:
+        print("\nNOT DUE YET ({}) - theirs goes {} day(s) before they "
+              "start:".format(len(waiting), config.SEND_LEAD_DAYS))
+        for p in waiting:
+            print("  - {:28} starts {}".format(p.name,
+                                               p.chart_date.isoformat()))
+
+    gone = _already_started(people)
+    if gone:
+        print("\nTHEIR DAY HAS PASSED ({}) - no welcome email, because it "
+              "would name a day that is gone:".format(len(gone)))
+        for p in gone:
+            print("  - {:28} started {}".format(p.name,
+                                                p.chart_date.isoformat()))
+
+    nodate = _undated(people)
+    if nodate:
+        print("\nNO START DATE ON THEIR CHART ({}) - these get NO email at "
+              "all, because there is no day to tell them:".format(len(nodate)))
+        for p in nodate:
+            print("  !! {:28} row {:>3}".format(p.name, p.row))
+
+    print("\n(eligible on the tab: {})".format(len(send_to)))
 
     missing = _no_email(people)
     if missing:
@@ -278,27 +418,68 @@ def send(tab_name: str = "", *, force: bool = False, slack: bool = False) -> int
 
     who = gm.assert_right_mailbox()
 
-    if not force:
-        try:
-            if gm.already_sent_today(config.SUBJECT_SEARCH):
-                print("Already sent from {} today (subject {!r}). Not sending "
-                      "again - pass --force if you really mean to."
-                      .format(who, config.SUBJECT))
-                return 0
-        except gm.GuardUnavailable as exc:
-            print(exc)
-            return 1
+    # NO WHOLE-DAY GUARD ANY MORE. `already_sent_today` would send the first
+    # group due this morning and silently swallow the second -- and two groups
+    # really can fall due together (a late BOB starting tomorrow alongside the
+    # Monday cohort). The guard is per person now, applied below, which cannot
+    # drop anybody. See gmail_reception.already_sent_to.
 
-    msg = message.build(send_to, slack_link=slack, skool_link=skool)
-    res = gm.send(msg)
-    print("Sent from {} to {} BCC recipient(s) off {!r}. id={}".format(
-        who, len(send_to), ws.title, res.get("id", "?")))
+    # ONE SEND PER START DATE. Each group is told its own day, so they cannot
+    # share a BCC -- see _groups.
+    _ws3, _v3, people = _people(ws.title)
+    groups = _groups(people)
+    if not groups:
+        print("Nobody is due today off {!r} - not sending.".format(ws.title))
+        return 0
+
+    sent_total, skipped = 0, []
+    for start, addrs in groups:
+        when = config.when_phrase(start)
+        fresh = []
+        for addr in addrs:
+            try:
+                if not force and gm.already_sent_to(addr,
+                                                    config.SUBJECT_SEARCH):
+                    skipped.append(addr)
+                    continue
+            except gm.GuardUnavailable as exc:
+                # Never "send anyway" on a broken guard. Stopping here leaves
+                # the earlier groups sent and says so, which is recoverable;
+                # carrying on could mail somebody their welcome twice.
+                print(exc)
+                print("Stopped after {} send(s).".format(sent_total))
+                return 1
+            fresh.append(addr)
+        if not fresh:
+            print("  {} ({}): everybody has already had theirs.".format(
+                start.isoformat(), when))
+            continue
+        msg = message.build(fresh, slack_link=slack, skool_link=skool,
+                            when=when)
+        res = gm.send(msg)
+        sent_total += len(fresh)
+        print("Sent from {} to {} BCC recipient(s) starting {} ({}). "
+              "id={}".format(who, len(fresh), start.isoformat(), when,
+                             res.get("id", "?")))
+
+    if skipped:
+        print("{} person/people already had theirs and were left out.".format(
+            len(skipped)))
+    for p_ in _already_started(people):
+        print("  - {} started {} - no welcome email, their day has "
+              "passed.".format(p_.name, p_.chart_date.isoformat()))
+    for p_ in _undated(people):
+        print("  !! {} has no start date on their chart - NOT emailed, "
+              "because there is no day to tell them.".format(p_.name))
+    waiting = _not_yet(people)
+    if waiting:
+        print("{} person/people start later; theirs goes {} day(s) "
+              "before.".format(len(waiting), config.SEND_LEAD_DAYS))
 
     if slack:
         from automations.slack_skool_email import slack_post
-        _ws2, _v2, people = _people(ws.title)
-        slack_post.post(ws.title, send_to, problems=_no_email(people),
-                        dry_run=False)
+        slack_post.post(ws.title, [a for _d, g in groups for a in g],
+                        problems=_no_email(people), dry_run=False)
     return 0
 
 

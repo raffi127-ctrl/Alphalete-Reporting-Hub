@@ -33,7 +33,13 @@ MACHINE = "Lucy 1"
 # Skool email, one send, per person, off their own start date rather than one
 # time for everybody."
 #
-# THIS IS WIRED BUT NOT TURNED ON, AND THE REASON IS THE COPY, NOT THE CODE.
+# ON SINCE 2026-11-18. It was wired and held back by the copy for exactly one
+# session: the sentence below said "orientation today", which is false two days
+# early, and Megan's words are hers to change. She changed them ("do 1 to
+# change the day to be correct for when they actually start"), so the sentence
+# now names each group's own start day and the lead is live.
+#
+# The original note, kept because it is why the shape is what it is:
 # Two sentences below are true only on the morning of the day itself:
 #
 #     "Good morning, and welcome to Alphalete Marketing!"
@@ -49,11 +55,29 @@ MACHINE = "Lucy 1"
 #
 # Blue Ink needed no such pause -- its copy already says "before your first
 # day", which is true at any lead.
-SEND_LEAD_DAYS = 0
+SEND_LEAD_DAYS = 2
 
-# Phrases that are only true on the day itself. Checked against BODY whenever
-# a lead is set, so the copy and the clock cannot drift apart silently.
-DAY_OF_PHRASES = ("orientation today", "Good morning")
+# Phrases that would be only true on the day itself. Checked against BODY
+# whenever a lead is set, so the copy and the clock cannot drift apart
+# silently. "orientation today" was in this list and in the copy until
+# 2026-11-18; Megan's instruction was to "change the day to be correct for
+# when they actually start", so the sentence now carries {when} and each
+# send names its own group's day.
+#
+# "Good morning" is deliberately NOT here. It was flagged once because the
+# original comment said it was "only ACCURATE because this goes at 8am on the
+# day itself" -- but any morning is a morning, and the send is still a morning
+# tick. What it is not is accurate at 4pm, which is what MORNING_SEND_BEFORE
+# guards.
+DAY_OF_PHRASES = ("orientation today",)
+
+# The placeholder the day goes in. A lead with no placeholder left in the copy
+# means somebody reworded the sentence and dropped it, and the email would go
+# out two days early saying nothing about when to turn up.
+WHEN_TOKEN = "{when}"
+
+# "Good morning" is in the copy, so the send has to actually BE morning.
+MORNING_SEND_BEFORE = 12
 
 
 def early_send_blocked_by_copy(lead_days: int = None) -> str:
@@ -71,14 +95,20 @@ def early_send_blocked_by_copy(lead_days: int = None) -> str:
     if lead <= 0:
         return ""
     found = [ph for ph in DAY_OF_PHRASES if ph.lower() in BODY.lower()]
-    if not found:
-        return ""
-    return (
-        "Refusing to send %d day(s) early: the email still says %s, which is "
-        "only true on the morning they start. Reword that line first -- it is "
-        "BODY in automations/slack_skool_email/config.py -- or set "
-        "SEND_LEAD_DAYS back to 0."
-        % (lead, " and ".join(repr(f) for f in found)))
+    if found:
+        return (
+            "Refusing to send %d day(s) early: the email still says %s, which "
+            "is only true on the morning they start. Reword that line first "
+            "-- it is BODY in automations/slack_skool_email/config.py -- or "
+            "set SEND_LEAD_DAYS back to 0."
+            % (lead, " and ".join(repr(f) for f in found)))
+    if WHEN_TOKEN not in BODY:
+        return (
+            "Refusing to send %d day(s) early: the copy has no %s in it, so "
+            "the email would never say which day to turn up on. Put it back "
+            "in the orientation sentence in BODY, or set SEND_LEAD_DAYS "
+            "back to 0." % (lead, WHEN_TOKEN))
+    return ""
 
 
 SUBJECT = "Welcome to Alphalete \u2014 3 apps to set up before orientation"
@@ -138,7 +168,7 @@ SUBJECT_SEARCH = "3 apps to set up before orientation"
 #     exist is worse than naming the sender.
 BODY = """Good morning, and welcome to Alphalete Marketing!
 
-We're excited to have you at orientation today. Before you arrive, please
+We're excited to have you at orientation {when}. Before you arrive, please
 download these three apps and set up your accounts.
 
 1. [[Slack->slack]] - download the app first, then join through this link.
@@ -268,3 +298,39 @@ def link_problems() -> list:
     resolves the Slack link out of Slack first -- see run._resolve_links."""
     return validate_links(slack_invite_link(), skool_link(),
                           slack_is_live=False)
+
+
+def when_phrase(start, today=None) -> str:
+    """How the email names their first day: "on Monday, November 23".
+
+    WHY THE WEEKDAY AND THE DATE, not one or the other. "On Monday" alone is
+    ambiguous the moment this lands on a Saturday -- which Monday? -- and a
+    bare date makes a reader count days. Together they are unmistakable and
+    they also let somebody spot an error: if the email says Monday and they
+    were told Tuesday, that is a conversation worth having BEFORE the day
+    rather than on it.
+
+    "tomorrow" / "today" are used when they are true, because that is how a
+    person would say it, and a late BOB really does get this the day before.
+
+    Returns a day-free phrase when the date is unknown. The sentence still
+    reads, and it promises nothing we cannot stand behind -- which is the
+    whole reason this is a separate function rather than an f-string at the
+    call site.
+    """
+    import datetime as dt
+
+    if isinstance(start, dt.datetime):
+        start = start.date()
+    if not isinstance(start, dt.date):
+        return "on your first day"
+    today = today or dt.date.today()
+    gap = (start - today).days
+    if gap == 0:
+        return "today"
+    if gap == 1:
+        return "tomorrow"
+    # %-d / %-m are not portable (CLAUDE.md: macOS AND Windows), so the day
+    # number is stripped of its leading zero by hand.
+    return "on %s, %s %d" % (start.strftime("%A"), start.strftime("%B"),
+                             start.day)
