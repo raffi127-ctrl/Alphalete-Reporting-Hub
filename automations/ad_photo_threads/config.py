@@ -167,6 +167,13 @@ NO_AD_ANSWERS = {
     # First Interviews 11/12 +-1. No clue -> the catch-all thread, like
     # Tranice Gordon. The key keeps the sheet's trailing dash.
     "2026-11-12|hemi kumar-": "Other (no ad)",
+    # Rashad, 11/18: three 11/12 1st rounds the OWNER ran himself (tab `Rashad
+    # Reed` rows 1602-1604; every other 11/12 row is Leny's), Ad Title blank.
+    # AppStream 23411 has none of them -- call list 45 days back nor Total
+    # First Interviews 11/11-11/13. No clue -> the catch-all thread.
+    "2026-11-12|carly ryan": "Other (no ad)",
+    "2026-11-12|aldo rivero": "Other (no ad)",
+    "2026-11-12|colson mcgee": "Other (no ad)",
 }
 # Eve 11/5: a person said this row is someone already on an ad thread under
 # another name: it only comes off the no-ad list, never posted twice.
