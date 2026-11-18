@@ -270,6 +270,16 @@ class TheTallyNeverCarriesANumber(unittest.TestCase):
         self.assertNotIn("817", detail)
         self.assertIn('"A"', detail)
 
+    def test_the_tally_says_what_ran_it(self):
+        from automations.icd_alerts import relay as R
+        summary = {"office": "11580", "found": [], "missing": [], "accounts": {}, "billing": {},
+                   "billing_problems": [], "ran": {"argv": ["--scheduled", "--billing-only"],
+                                                   "release": "2026.11.18.1", "lookups": False, "billing": True}}
+        with mock.patch.object(OL, "_push_office_key", return_value="carlos"), \
+             mock.patch.object(R, "report_fault", return_value=True) as rf:
+            OL._report("11580", summary, log=lambda m: None)
+        self.assertIn('"argv":["--scheduled","--billing-only"]', rf.call_args_list[0][0][2])
+
 
 class EveryAccountsBilling(unittest.TestCase):
     CLEAN = ("Jobs\nAdd billing identifiers to your account\nView billing history\nUpdate payment method\n"
@@ -371,6 +381,9 @@ class TheWholeMorning(unittest.TestCase):
         self.assertEqual(s["accounts"], {"Peak Sales Strategies": "1 of 1 found", "W Edge": "billing only"})
         self.assertEqual(s["result"], "1 found, 0 not; billing: 2 account(s) read, 1 alert(s)")
         self.assertEqual(s["csv_rows"], 1)
+        self.assertEqual((s["ran"]["lookups"], s["ran"]["billing"]), (True, True))
+        self.assertIn("argv", s["ran"])
+        self.assertIn("release", s["ran"])
         back = PL.rows_from_csv(tmp / "phone-lookups.csv")
         self.assertEqual((back[0]["name"], back[0]["phone"]), ("Edgar Hendricks", "8175551234"))
         self.assertTrue((tmp / ("octo-lookup-%s.json" % dt.date.today().isoformat())).exists())

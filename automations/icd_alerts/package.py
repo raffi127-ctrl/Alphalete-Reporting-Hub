@@ -188,6 +188,13 @@ AGENT_FILES = [
     # export shipped whole (stdlib at the top; its Google writes are never
     # called on an office Mac).
     "automations/icd_alerts/apex_signin.py",
+    # The owner's Apex sign-in, lock and 2-step code (lucy eco pnl, 2026-11-17
+    # releases .1-.3): they were in agent_files.txt -- so every office already
+    # downloads them -- but not declared here, and UpdateScriptTests blocked
+    # every release after. Declared 2026-11-18.
+    "automations/icd_alerts/apex_login.py",
+    "automations/icd_alerts/apex_guard.py",
+    "automations/icd_alerts/apex_2fa_setup.py",
     "automations/carlos_payroll_pull/__init__.py",
     "automations/carlos_payroll_pull/run.py",
     # Whether this Mac can read the owner's SaraPlus code texts (Eve 2026-10-29).

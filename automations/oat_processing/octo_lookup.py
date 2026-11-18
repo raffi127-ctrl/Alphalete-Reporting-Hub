@@ -894,6 +894,15 @@ def _save_state(st: Dict) -> None:
         pass
 
 
+def _release() -> str:
+    """The agent release this computer runs, or '?' (a laptop)."""
+    try:
+        from automations.icd_alerts import selfupdate as SU
+        return str(SU.applied_release() or "?")
+    except Exception:  # noqa: BLE001
+        return "?"
+
+
 def _push_office_key(office_id: str) -> str:
     """The relay enrollment that pushes this office here, or '' (a laptop)."""
     try:
@@ -915,7 +924,7 @@ def _report(office_id: str, summary: Dict, loud: str = "", log=_log) -> None:
         return
     try:
         from automations.icd_alerts import relay as R
-        body = {k: summary.get(k) for k in ("office", "date", "at", "snapshot", "listed",
+        body = {k: summary.get(k) for k in ("office", "date", "at", "ran", "snapshot", "listed",
                                             "skipped_recent", "found", "missing",
                                             "accounts", "billing", "billing_problems",
                                             "csv_rows", "elapsed_min")}
@@ -949,7 +958,13 @@ def run(office_id, *, names: Optional[List[str]] = None, account: str = "",
     summary: Dict = {"office": office_id, "date": today.isoformat(),
                      "at": dt.datetime.now().strftime("%H:%M"), "found": [], "missing": [],
                      "accounts": {}, "billing": {}, "billing_problems": [],
-                     "csv_rows": None, "dry": dry}
+                     "csv_rows": None, "dry": dry,
+                     # WHAT RAN THIS (2026-11-18): a 1pm row said "5 found" with no
+                     # billing read, and nothing on the row could say which
+                     # command, release or computer produced it.
+                     "ran": {"argv": sys.argv[1:], "release": _release(),
+                             "host": platform.node()[:40], "pid": os.getpid(),
+                             "lookups": bool(lookups), "billing": bool(billing)}}
     _write_lock()
     launched = False
     try:
