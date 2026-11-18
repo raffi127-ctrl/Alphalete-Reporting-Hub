@@ -2,6 +2,7 @@
 # Spectrum Knocks board — a picture of every Spectrum rep's day in
 # #alphalete-sales-knocking-data at 2:00 PM, 5:15 PM and 9:00 PM CT, Mon-Sat
 # (Raf + Eve 2026-11-18, same moments as the OwnerVille intraday boards).
+# --text: the same picture also goes to the iMessage room "Knocking Chat A-Players".
 # The agent ticks every 5 min; board.py posts each slot once, when it's due.
 # Manual preview (draws the PNG, posts nothing): bash deploy/spectrum_knocks_board.sh --slot eod --force
 set -u

@@ -6,7 +6,7 @@
     <!-- PATHS ARE MEGAN'S LAPTOP and are rewritten at install time by
          `lucy rerun install_spectrum_knocks_board_agent` (LUCY 4) to the machine's repo root. -->
     <key>ProgramArguments</key>
-    <array><string>/bin/bash</string><string>/Users/megan/1st Claude Folder/deploy/spectrum_knocks_board.sh</string><string>--tick</string><string>--send</string></array>
+    <array><string>/bin/bash</string><string>/Users/megan/1st Claude Folder/deploy/spectrum_knocks_board.sh</string><string>--tick</string><string>--send</string><string>--text</string></array>
     <key>WorkingDirectory</key><string>/Users/megan/1st Claude Folder</string>
     <key>EnvironmentVariables</key><dict><key>PYTHONPATH</key><string>/Users/megan/1st Claude Folder</string></dict>
     <!-- Every 5 min; board.py posts 2:00 PM / 5:15 PM / 9:00 PM CT once each, Mon-Sat. -->

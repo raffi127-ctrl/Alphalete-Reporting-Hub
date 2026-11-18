@@ -78,6 +78,15 @@ class BoardSlots(unittest.TestCase):
                 {"Rep": "D", "Doors": 9, "Assigned Houses": ""}]
         self.assertEqual([r["Rep"] for r in self.b.board_rows(summ)], ["D", "A", "B"])
 
+    def test_text_caption_is_plain_words(self):
+        rows = [{"Rep": "A", "Doors": 30, "Sold": 2, "Mobile Sold": 1},
+                {"Rep": "B", "Doors": 0, "Sold": 0}]
+        cap = self.b.text_caption(self.b.SLOTS[1], dt.date(2026, 11, 18), rows)
+        self.assertEqual(cap, "Spectrum Knocks · Money Lap · Wed 11/18 — "
+                              "1 reps, 30 doors, 3 sold")
+        self.assertNotIn("*", cap)
+        self.assertNotIn("http", cap)
+
 
 if __name__ == "__main__":
     unittest.main()

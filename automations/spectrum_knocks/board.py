@@ -7,6 +7,11 @@ three moments here, Central time, into #alphalete-sales-knocking-data.
 (The OwnerVille GPS threads in that channel have no Spectrum twin: Spectrum
 has no GPS check.)
 
+Raf 2026-11-18, right after: "can we get it posted on the knocking imessage
+chat?" -> `--text` sends the same picture to the iMessage room "Knocking Chat
+A-Players" (the room his GPS alerts and Line Up picture already text). Slack
+and the text are tracked apart, so one failing never re-posts the other.
+
 Who's on it: every rep who knocked today, most doors first, plus reps who have
 assigned houses but no doors yet (greyed, at the bottom — at 2 PM that's the
 "who isn't out yet" list). Same numbers as the "Spectrum Knocks" tab.
@@ -16,7 +21,7 @@ assigned houses but no doors yet (greyed, at the bottom — at 2 PM that's the
     # test post to Eve's own DM
     python -m automations.spectrum_knocks.board --slot eod --force --send --to D087ZGE2B0F
     # live (the LaunchAgent, every 5 min; posts each slot once, when it's due)
-    python -m automations.spectrum_knocks.board --tick --send
+    python -m automations.spectrum_knocks.board --tick --send --text
 """
 from __future__ import annotations
 
@@ -32,6 +37,7 @@ from automations.spectrum_knocks import pull
 
 CHANNEL_ID = "C0C8KBT065D"            # #alphalete-sales-knocking-data (private, Raf's)
 CHANNEL_NAME = "#alphalete-sales-knocking-data"
+TEXT_GROUP = "Knocking Chat A-Players"   # Raf's iMessage room
 SHEET_URL = ("https://docs.google.com/spreadsheets/d/"
              "1qUiljtWXhcy3OGhQ_81LnNPIsUXjad3MJi-VzjEIDV8/edit#gid=24854023")
 TZ = "America/Chicago"
@@ -241,12 +247,37 @@ def post(png: Path, caption: str, channel: str) -> None:
         file_uploads=[{"file": str(png), "filename": png.name}])
 
 
+# --- iMessage -----------------------------------------------------------------
+def text_caption(slot: Slot, day: dt.date, rows: List[dict]) -> str:
+    """Plain words (no Slack markup, no sheet link -- not everyone in the chat
+    can open the sheet)."""
+    knocked = [r for r in rows if r["Doors"]]
+    return ("Spectrum Knocks · %s · %s %s — %d reps, %d doors, %d sold"
+            % (slot.label, day.strftime("%a"), _md(day), len(knocked),
+               sum(r["Doors"] for r in knocked),
+               sum(r["Sold"] + r.get("Mobile Sold", 0) for r in knocked)))
+
+
+def send_text(png: Path, caption: str, live: bool) -> Dict:
+    """Picture + one line to TEXT_GROUP. live=False only checks this Lucy can
+    see the group (read-only) and sends nothing."""
+    from automations.b2b_dispositions import text_post as tp
+    from automations.gap_alerts import config as GA
+    if live and not GA.can_text():
+        raise RuntimeError("this machine can't text (not in TEXTING_MACHINES)")
+    return tp.send_to_group(TEXT_GROUP, caption, [png], dry_run=not live)
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--tick", action="store_true", help="post whichever slot is due now")
     ap.add_argument("--slot", choices=[s.key for s in SLOTS], help="this slot, now")
     ap.add_argument("--force", action="store_true", help="--slot even off-schedule")
     ap.add_argument("--send", action="store_true", help="post to Slack (default: preview)")
+    ap.add_argument("--text", action="store_true",
+                    help="also text the picture to %s" % TEXT_GROUP)
+    ap.add_argument("--check-text", action="store_true",
+                    help="only check this Lucy is in %s; sends nothing" % TEXT_GROUP)
     ap.add_argument("--to", default=CHANNEL_ID, help="channel/DM id (tests: Eve's DM)")
     ap.add_argument("--day", help="YYYY-MM-DD (default today, Central)")
     a = ap.parse_args(argv)
@@ -254,18 +285,30 @@ def main(argv: Optional[List[str]] = None) -> int:
     now = _now()
     state = _state()
     done = set((state.get("posted") or {}).keys())
+    if a.check_text:
+        r = send_text(Path(), "", live=False)
+        print("[spectrum_board] %s OK on this Lucy: %s (%s people)"
+              % (TEXT_GROUP, r["resolved_name"], r["participants"]))
+        return 0
     if a.tick:
-        slot = due(now, done)
+        slot = due(now, set())
         if slot is None:
             print("[spectrum_board] %s CT — nothing due" % _clock(now))
+            return 0
+        key = "%s|%s" % (now.date().isoformat(), slot.key)
+        want_slack = a.send and key not in done
+        want_text = a.text and (key + "|text") not in done
+        if not (want_slack or want_text):
+            print("[spectrum_board] %s CT — %s already posted" % (_clock(now), slot.label))
             return 0
     elif a.slot:
         slot = next(s for s in SLOTS if s.key == a.slot)
         if not a.force and due(now, set()) != slot:
             print("[spectrum_board] %s isn't due now (use --force)" % slot.label)
             return 0
+        want_slack, want_text = True, a.text
     else:
-        ap.error("give --tick or --slot")
+        ap.error("give --tick or --slot (or --check-text)")
     day = dt.date.fromisoformat(a.day) if a.day else now.date()
 
     summary = pull.run(day)
@@ -280,14 +323,24 @@ def main(argv: Optional[List[str]] = None) -> int:
                   sum(r["Doors"] for r in knocked),
                   sum(r["Sold"] + r.get("Mobile Sold", 0) for r in knocked), SHEET_URL))
     print("[spectrum_board] %s -> %s" % (caption.splitlines()[0], png))
-    if not a.send:
+    if not (a.send or a.text):
         print("[spectrum_board] PREVIEW — nothing posted")
         return 0
-    post(png, caption, a.to)
-    print("[spectrum_board] posted to %s" % a.to)
-    if a.tick and a.to == CHANNEL_ID:
-        state.setdefault("posted", {})["%s|%s" % (day.isoformat(), slot.key)] = now.isoformat()
-        _save(state, day)
+    key = "%s|%s" % (day.isoformat(), slot.key)
+    if a.send and want_slack:
+        post(png, caption, a.to)
+        print("[spectrum_board] posted to %s" % a.to)
+        if a.tick and a.to == CHANNEL_ID:
+            state.setdefault("posted", {})[key] = now.isoformat()
+            _save(state, day)
+    if want_text:
+        # Raises on failure (logged, ticket); Slack above is already saved, so
+        # the next tick retries only the text, inside the same late limit.
+        send_text(png, text_caption(slot, day, rows), live=True)
+        print("[spectrum_board] texted %s" % TEXT_GROUP)
+        if a.tick:
+            state.setdefault("posted", {})[key + "|text"] = now.isoformat()
+            _save(state, day)
     return 0
 
 

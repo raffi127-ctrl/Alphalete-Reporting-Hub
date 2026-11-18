@@ -2166,7 +2166,7 @@
    "on_scheduler": true,
    "hand_run_only": true,
    "machine": "Lucy 4",
-   "_note": "Spectrum Knocks board (Raf + Eve 2026-11-18): a picture of every Spectrum rep's day into #alphalete-sales-knocking-data (C0C8KBT065D) at 2:00 PM / 5:15 PM / 9:00 PM CT, Mon-Sat — same moments as the OwnerVille intraday boards. NOT a 4am-batch report: com.alphalete.spectrum-knocks-board on LUCY 4 ticks every 5 min and posts each slot once. This entry = the same tick by hand (posts only if a slot is due and not yet posted).",
+   "_note": "Spectrum Knocks board (Raf + Eve 2026-11-18): a picture of every Spectrum rep's day into #alphalete-sales-knocking-data (C0C8KBT065D) at 2:00 PM / 5:15 PM / 9:00 PM CT, Mon-Sat — same moments as the OwnerVille intraday boards. NOT a 4am-batch report: com.alphalete.spectrum-knocks-board on LUCY 4 ticks every 5 min and posts each slot once. This entry = the same tick by hand (posts only if a slot is due and not yet posted). --text (Raf 2026-11-18, 'can we get it posted on the knocking imessage chat?'): the same picture + one line also goes to the iMessage room 'Knocking Chat A-Players'; Slack and text are tracked apart in output/spectrum_knocks/board/posted.json.",
    "display_name": "Spectrum Knocks board — post if due",
    "source_type": "local",
    "data_sources": [],
@@ -2175,7 +2175,8 @@
    ],
    "base_args": [
     "--tick",
-    "--send"
+    "--send",
+    "--text"
    ],
    "cadence": {
     "weekdays": []
@@ -2184,6 +2185,29 @@
    "freshness_target": null,
    "depends_on": [],
    "timeout_minutes": 10,
+   "verify": null
+  },
+  "spectrum_knocks_board_check_text": {
+   "on_scheduler": true,
+   "hand_run_only": true,
+   "machine": "Lucy 4",
+   "_note": "Read-only: checks Lucy 4 can see the iMessage room 'Knocking Chat A-Players' (the Spectrum board texts it). Sends nothing. If it fails, Lucy 4 isn't in that chat and someone in it has to add Lucy 4.",
+   "display_name": "Spectrum Knocks board — check iMessage group",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.spectrum_knocks.board"
+   ],
+   "base_args": [
+    "--check-text"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 5,
    "verify": null
   },
   "install_spectrum_knocks_board_agent": {
