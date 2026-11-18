@@ -5700,6 +5700,16 @@ _CRED_FILES = {
     "contacts-rw-token-alphaletereception":
         lambda: Path.home() / ".config" / "recruiting-report"
                 / "contacts-rw-token-alphaletereception.json",
+    # RingCentral send-creds for the cancel/disconnect feedback outreach
+    # (automations/cancel_feedback). A dedicated JWT minted as the "Dylan
+    # Twaddle" RC user (ext 108) that OWNS 214-845-6450, so sends go out
+    # same-extension; the wrap-up auto-read JWT is the HR Department user and
+    # cannot send from Dylan's number. Seeded on the laptop, pushed to the Lucy
+    # that runs the feedback send. An OAuth-style JWT, so NOT in
+    # _CRED_FILES_MERGE -- it has to land whole.
+    "cancel-feedback-rc-creds":
+        lambda: Path.home() / ".config" / "recruiting-report"
+                / "cancel-feedback-rc-creds.json",
 }
 
 # Of those, the file-keys that are a BAG OF INDEPENDENT CREDENTIALS: one flat
