@@ -1096,8 +1096,10 @@ def render_team_html(data: dict, today: dt.date) -> str:
         "0–30, 90 Day = 91–120; a 90 Day disconnect is one that dropped within 90 days of activating (Smart Circle's "
         "count). Colours follow the Captain's Bonus quality lines (" + _e(CAPTAIN_SOURCE) + "): green = at or under "
         "the bonus line (0-30 ≤ 3.00%, 90 Day ≤ 8.00%), red = at or over the DNQ line (0-30 ≥ 5.00%, 90 Day ≥ 13.00%). "
-        "Activation rate = activated ÷ sold by sale date. Where an ICD's Order Log number sits far from its SC view "
-        "number, the view is counting reps whose lines never reach the Order Log export (Zaid: 18 such reps on 11/17).")
+        "Activation rate = activated ÷ sold by sale date. The Order Log export only carries orders placed since "
+        "7/1/2026, so its 90 Day bases run smaller than Smart Circle's (lines ordered before 7/1 that activated 91–120 "
+        "days ago are not in it); the view also counts reps whose lines never reach the export at all (Zaid: 18 such "
+        "reps on 11/17). The SC view columns are the figures the Captain's Bonus is read from.")
     body = (f'<div class="board"><div class="title">{_e(title)}</div><div class="sub">{_e(sub)}</div>'
             f'<div class="src">{_e(src)}</div>'
             + _team_box_html(team)
