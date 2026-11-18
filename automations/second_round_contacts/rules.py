@@ -25,17 +25,21 @@ def in_evening_window(sr: dt.date, today: dt.date) -> bool:
 
 def evening_removal(entry: dict, facts: dict,
                     today: dt.date) -> Optional[str]:
-    """Why the 7pm pass takes somebody out, or None. Their second round has
-    been and gone and nobody marked them showed up or offered, so they are not
-    coming. Kept as its own function because `run` needs the same answer to
-    stamp `removed_by`, and two copies of this test would drift."""
+    """Why the 7pm pass takes somebody out, or None.
+
+    THE KEEPER IS THE BOB MARK, nothing else (Megan, 2026-11-17: "anyone that
+    isn't marked BOB should be removed"). Showed up is not enough and neither
+    is an offer -- plenty of people are marked both and never start, and those
+    are exactly the names that fill reception's group with nobody.
+
+    Kept as its own function because `run` needs the same answer to stamp
+    `removed_by`, and two copies of this test would drift."""
     sr = dt.date.fromisoformat(entry["second_round"])
     if not in_evening_window(sr, today):
         return None
-    if facts.get("showed") or facts.get("offered"):
+    if facts.get("bob"):
         return None
-    return ("second round %s: neither showed up nor offered by the end of "
-            "the day" % sr)
+    return "second round %s: not marked BOB by the end of the day" % sr
 
 
 def restorable(entry: dict, today: dt.date) -> bool:
@@ -57,11 +61,9 @@ def restore(entry: dict, facts: dict, today: dt.date) -> Tuple[bool, str]:
     the box was still blank."""
     if not restorable(entry, today):
         return False, ""
-    for field, said in (("showed", "showed up"),
-                        ("offered", "offered the position")):
-        if facts.get(field):
-            return True, ("marked %s on %s, after the 7pm pass had taken them "
-                          "out" % (said, facts[field]))
+    if facts.get("bob"):
+        return True, ("marked BOB on %s, after the 7pm pass had taken them "
+                      "out" % facts["bob"])
     return False, ""
 
 
@@ -83,6 +85,7 @@ def decide(entry: dict, facts: dict, today: dt.date,
     # the evening run -- earlier in the day a blank means "nobody has said
     # yet" (Raf, 2026-11-17). The window is today AND yesterday, because
     # recruiters mark late; `restore` is the same window read the other way.
+    # The keeper is the BOB mark alone (Megan, 2026-11-17).
     if evening:
         why = evening_removal(entry, facts, today)
         if why:

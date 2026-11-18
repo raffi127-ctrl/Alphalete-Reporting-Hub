@@ -53,20 +53,24 @@ class Rules(unittest.TestCase):
         e = ent("2026-10-31")
         self.assertEqual(rules.decide(e, {}, T)[0], rules.WAIT)
 
-    def test_evening_removes_neither_showed_nor_offered(self):
+    def test_evening_removes_anyone_not_marked_bob(self):
         v, why = rules.decide(ent("2026-10-31"), {}, T, evening=True)
         self.assertEqual(v, rules.DELETE)
-        self.assertIn("neither showed up nor offered", why)
+        self.assertIn("not marked BOB", why)
 
-    def test_evening_keeps_someone_marked_showed_up(self):
-        f = {"showed": dt.date(2026, 10, 31)}
+    def test_evening_keeps_someone_marked_bob(self):
+        f = {"bob": dt.date(2026, 10, 31)}
         self.assertEqual(rules.decide(ent("2026-10-31"), f, T, evening=True)[0],
                          rules.WAIT)
 
-    def test_evening_keeps_someone_offered_the_job(self):
-        f = {"offered": dt.date(2026, 10, 31)}
-        self.assertEqual(rules.decide(ent("2026-10-31"), f, T, evening=True)[0],
-                         rules.WAIT)
+    def test_showed_up_alone_does_not_save_them(self):
+        """Megan 2026-11-17: the keeper is BOB. Plenty are marked showed up,
+        or even offered, and never start."""
+        for f in ({"showed": dt.date(2026, 10, 31)},
+                  {"offered": dt.date(2026, 10, 31)},
+                  {"showed": dt.date(2026, 10, 31), "offered": dt.date(2026, 10, 31)}):
+            self.assertEqual(rules.decide(ent("2026-10-31"), f, T, evening=True)[0],
+                             rules.DELETE, f)
 
     def test_evening_also_looks_at_the_day_before(self):
         """Recruiters mark late, so the 7pm pass is the FIRST one to see
@@ -74,7 +78,7 @@ class Rules(unittest.TestCase):
         (Megan, 2026-11-17)."""
         v, why = rules.decide(ent("2026-10-30"), {}, T, evening=True)
         self.assertEqual(v, rules.DELETE)
-        self.assertIn("neither showed up nor offered", why)
+        self.assertIn("not marked BOB", why)
 
     def test_evening_stops_at_one_day_back(self):
         """Two days back is the standing rules' business, not a same-day cut."""
@@ -86,7 +90,7 @@ class Rules(unittest.TestCase):
                          rules.WAIT)
 
     def test_evening_keeps_yesterdays_marked_person(self):
-        f = {"showed": dt.date(2026, 10, 30)}
+        f = {"bob": dt.date(2026, 10, 30)}
         self.assertEqual(rules.decide(ent("2026-10-30"), f, T, evening=True)[0],
                          rules.WAIT)
 
@@ -96,6 +100,40 @@ class Rules(unittest.TestCase):
 
     def test_hired_is_kept_forever(self):
         self.assertEqual(rules.decide(ent(status=S.HIRED), {}, dt.date(2027, 6, 1))[0], rules.KEEP)
+
+
+class KeeperMustHaveBeenRead(unittest.TestCase):
+    """The evening rule removes everybody NOT marked BOB, so a read that
+    returned no BOB rows at all cannot be treated as 'nobody was BOB'd' -- it
+    would empty the whole group in one pass."""
+
+    def _audit(self, seen):
+        o = mock.Mock(owner="Raf", label="Raf", active=True, account="raf",
+                      offices=["11280"], ov_campaign="RES-AT&T")
+        a = {"first_name": "Ana", "last_name": "Lopez",
+             "phone": "5125550147", "email": "ana@example.test"}
+        k = S.key_for(a)
+        e = dict(ent("2026-10-31"), **{x: a[x] for x in ("phone", "email")})
+        e["resourceName"] = "people/1"
+        sess = mock.MagicMock(); sess.__enter__.return_value = mock.Mock()
+        with mock.patch("automations.applicant_tracker.applicantstream.session",
+                        return_value=sess), \
+                mock.patch.object(RUN.S, "load", return_value={"raf": {k: e}}), \
+                mock.patch.object(RUN.S, "save"), \
+                mock.patch.object(RUN, "gather_facts", return_value=({k: {}}, seen)), \
+                mock.patch.object(RUN.K, "service", return_value=mock.Mock()), \
+                mock.patch.object(RUN.K, "ensure_group", return_value={"resourceName": "g/1"}), \
+                mock.patch.object(RUN.K, "still_exists", return_value=True), \
+                mock.patch.object(RUN.K, "delete") as delete:
+            RUN.run_audit([o], write=True, ownerville=False, evening=True,
+                          today=T)
+        return delete
+
+    def test_an_empty_bob_read_removes_nobody(self):
+        self.assertEqual(self._audit({C.LABEL_SHOWED}).call_count, 0)
+
+    def test_a_real_bob_read_still_removes(self):
+        self.assertEqual(self._audit({C.LABEL_BOB}).call_count, 1)
 
 
 class AddsPassHonoursARemoval(unittest.TestCase):
@@ -151,18 +189,19 @@ class EveningLookBack(unittest.TestCase):
             e["removed_by"] = by
         return e
 
-    def test_a_late_showed_up_mark_puts_them_back(self):
-        back, why = rules.restore(self.gone(), {"showed": dt.date(2026, 10, 31)}, T)
+    def test_a_late_bob_mark_puts_them_back(self):
+        back, why = rules.restore(self.gone(), {"bob": dt.date(2026, 10, 31)}, T)
         self.assertTrue(back)
-        self.assertIn("showed up", why)
+        self.assertIn("marked BOB", why)
 
-    def test_a_late_offer_puts_them_back(self):
-        back, _ = rules.restore(self.gone(), {"offered": dt.date(2026, 10, 31)}, T)
-        self.assertTrue(back)
+    def test_a_late_showed_up_mark_is_not_enough(self):
+        self.assertFalse(rules.restore(
+            self.gone(), {"showed": dt.date(2026, 10, 31),
+                          "offered": dt.date(2026, 10, 31)}, T)[0])
 
     def test_yesterdays_removal_is_still_in_the_window(self):
         back, _ = rules.restore(self.gone("2026-10-30"),
-                                {"showed": dt.date(2026, 10, 30)}, T)
+                                {"bob": dt.date(2026, 10, 30)}, T)
         self.assertTrue(back)
 
     def test_still_blank_stays_out(self):
@@ -173,12 +212,12 @@ class EveningLookBack(unittest.TestCase):
         7pm pass has no business reversing them."""
         e = self.gone("2026-10-31", by=None)
         self.assertFalse(rules.restorable(e, T))
-        self.assertFalse(rules.restore(e, {"showed": dt.date(2026, 10, 31)}, T)[0])
+        self.assertFalse(rules.restore(e, {"bob": dt.date(2026, 10, 31)}, T)[0])
 
     def test_outside_the_window_stays_out(self):
         e = self.gone("2026-10-20")
         self.assertFalse(rules.restorable(e, T))
-        self.assertFalse(rules.restore(e, {"showed": dt.date(2026, 10, 20)}, T)[0])
+        self.assertFalse(rules.restore(e, {"bob": dt.date(2026, 10, 20)}, T)[0])
 
     def test_a_tracked_contact_is_not_a_restore_candidate(self):
         self.assertFalse(rules.restorable(ent(), T))
@@ -265,8 +304,9 @@ class TwoOffices(unittest.TestCase):
         by_office = {"24232": [(C.LABEL_OFFERED, dt.date(2026, 11, 4), self.A)],
                      "24153": [(C.LABEL_OFFERED, dt.date(2026, 11, 2), self.A)]}
         with mock.patch.object(RUN, "read_lists", lambda _a, office, _l, _d: by_office[office]):
-            facts = RUN.gather_facts(None, ["24232", "24153"], {key}, T)
+            facts, seen = RUN.gather_facts(None, ["24232", "24153"], {key}, T)
         self.assertEqual(facts[key]["offered"], dt.date(2026, 11, 2))
+        self.assertEqual(seen, {C.LABEL_OFFERED})
 
     def test_audit_refuses_to_decide_on_an_unread_office(self):
         def fake(_a, office, _l, _d):

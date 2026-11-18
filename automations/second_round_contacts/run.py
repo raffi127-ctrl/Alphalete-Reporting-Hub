@@ -205,6 +205,12 @@ def gather_facts(app, offices: List[str], keys: set, today: dt.date) -> Dict[str
     facts: Dict[str, dict] = {k: {} for k in keys}
     slot = {C.LABEL_OFFERED: "offered", C.LABEL_BOB: "bob", C.LABEL_NS_SCHED: "ns_sched",
             C.LABEL_NS_SHOWED: "ns_showed", C.LABEL_SHOWED: "showed"}
+    # Which labels came back with ANYBODY on them, across every office and day
+    # of this read -- whether or not the person is one we track. An empty
+    # keeper list is the difference between "nobody was BOB'd" and "we did not
+    # manage to read who was", and those must never look the same: the second
+    # one would take every contact out at once.
+    seen = {label for label, _d, _a in found}
     for label, d, a in found:
         k = S.key_for(a)
         if k not in facts:
@@ -212,7 +218,7 @@ def gather_facts(app, offices: List[str], keys: set, today: dt.date) -> Dict[str
         f = slot.get(label)
         if f and (facts[k].get(f) is None or d < facts[k][f]):
             facts[k][f] = d
-    return facts
+    return facts, seen
 
 
 def run_audit(owners: List[R.Owner], *, write: bool, ownerville: bool = True,
@@ -225,6 +231,7 @@ def run_audit(owners: List[R.Owner], *, write: bool, ownerville: bool = True,
     failed = 0
     # 1. ApplicantStream facts, one session for every office
     facts_all: Dict[str, Dict[str, dict]] = {}
+    seen_all: Dict[str, set] = {}
     with session() as app:
         for account, entries in st.items():
             o = by_account.get(account)
@@ -251,7 +258,8 @@ def run_audit(owners: List[R.Owner], *, write: bool, ownerville: bool = True,
             if not keys:
                 continue
             try:
-                facts_all[account] = gather_facts(app, o.offices, keys, today)
+                facts_all[account], seen_all[account] = gather_facts(
+                    app, o.offices, keys, today)
             except Exception as e:  # noqa: BLE001
                 _log("  %s: ApplicantStream read failed (%s) -- audit skipped for this owner" % (o.owner, type(e).__name__))
                 failed += 1
@@ -275,6 +283,17 @@ def run_audit(owners: List[R.Owner], *, write: bool, ownerville: bool = True,
         o = by_account[account]
         svc = K.service(o.account) if write else None
         group = K.ensure_group(svc, C.GROUP) if (write and evening) else None
+        # THE KEEPER HAS TO HAVE BEEN READ. The evening rule removes everybody
+        # who is not marked BOB, so a read that returned no BOB rows at all
+        # does not mean "nobody was brought on board" -- it means we could not
+        # tell, and acting on it would empty the whole group in one pass. A
+        # blank is only an answer when the data proves it is one.
+        keeper_read = C.EVENING_KEEPER in seen_all.get(account, set())
+        if evening and not keeper_read:
+            _log("  %s: NOT REMOVING ANYONE -- '%s' came back empty for every "
+                 "office and day read, so a missing mark cannot be told apart "
+                 "from a missing read" % (o.owner, C.EVENING_KEEPER))
+            failed += 1
         deleted = hired = waiting = restored = 0
         for k, f in facts.items():
             e = st[account][k]
@@ -311,7 +330,8 @@ def run_audit(owners: List[R.Owner], *, write: bool, ownerville: bool = True,
                         _log("    FAILED putting %s back: %s" % (name, str(ex)[:160]))
                         failed += 1
                 continue
-            verdict, why = rules.decide(e, f, today, evening=evening)
+            verdict, why = rules.decide(e, f, today,
+                                        evening=evening and keeper_read)
             if verdict == rules.DELETE:
                 deleted += 1
                 _log("    %s %s: %s" % ("remove" if write else "would remove", e.get("display", name), why))
@@ -324,7 +344,7 @@ def run_audit(owners: List[R.Owner], *, write: bool, ownerville: bool = True,
                         e["reason"] = why
                         # Which rule did it, so the 7pm pass knows what it may
                         # undo. Only ever the evening one.
-                        if evening and rules.evening_removal(e, f, today):
+                        if evening and keeper_read and rules.evening_removal(e, f, today):
                             e["removed_by"] = rules.EVENING
                         else:
                             e.pop("removed_by", None)

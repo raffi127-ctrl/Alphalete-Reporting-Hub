@@ -81,6 +81,15 @@ AUDIT_LABELS = (LABEL_SHOWED, LABEL_OFFERED, LABEL_BOB, LABEL_NS_SCHED,
 # removals the standing rules already made.
 EVENING_HOUR = 19
 EVENING_LOOKBACK_DAYS = 1
+
+# WHAT KEEPS SOMEBODY IN (Megan, 2026-11-17, over the Second Interviews page):
+# "anyone that isn't marked BOB should be removed". The keeper is the BOB mark
+# -- Follow Up Status "BOB - Booked" on that page, which the Retention report
+# counts as "Brought on Board Booked". NOT "showed up" and NOT "offered": a
+# second round can be marked showed up, or even offered the position, and still
+# never turn into a start, and those names are what fill reception's group with
+# people who mean nothing.
+EVENING_KEEPER = LABEL_BOB
 NOT_HIRED_DAYS = 7
 NO_SHOW_DAYS = 21
 BADGE_DAYS = 21
