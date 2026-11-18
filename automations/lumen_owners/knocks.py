@@ -66,6 +66,14 @@ PROGRAMS = (QUANTUM, ATT)
 # Raf is the OwnerVille master row (no impersonation, owner_cfgs).
 ATT_ONLY = ("Chan Park", "Rafael Hidalgo")
 
+# Lumen owners who moved to AT&T and stopped knocking Quantum: AT&T set only.
+# Their office still offers the Quantum campaign, so keep_quantum_offices
+# keeps them, and every day the mail said "Knocks for <owner> (Quantum Fiber)
+# could not be pulled" — Isaiah read that as his AT&T knocks missing (11/17
+# mail: "I am on AT&T fiber now. Our ATT Knocks aren't showing up"). The
+# AT&T PDFs were attached all along.
+QUANTUM_OFF = ("Isaiah Kellum",)
+
 
 def owner_boards(aliases_raw, logfn=print, program=QUANTUM
                  ) -> List[Tuple[str, dict]]:
@@ -82,6 +90,8 @@ def owner_boards(aliases_raw, logfn=print, program=QUANTUM
                                     if s[0] not in seen]
     if program == ATT:
         names += [n for n in ATT_ONLY if n not in names]
+    else:
+        names = [n for n in names if n not in QUANTUM_OFF]
     specs = tuple((n, campaign, tag) for n in names)
     return extra_campaign_pairs(CAPTAIN_KEY, aliases_raw, logfn=logfn,
                                 specs=specs)

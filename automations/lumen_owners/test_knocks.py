@@ -5,6 +5,10 @@ from unittest import mock
 from automations.lumen_owners import knocks as KN
 
 
+def owner(label):
+    return label.rsplit(" (", 1)[0]
+
+
 class KnocksTest(unittest.TestCase):
     def test_new_owner_means_a_new_weekly_file(self):
         sat = dt.date(2026, 10, 24)
@@ -36,12 +40,22 @@ class KnocksTest(unittest.TestCase):
         # Isaiah, 2026-10-31: Chan + Raf knocks too — AT&T only, at the end.
         self.assertEqual([l.replace("(Quantum Fiber)", "(AT&T)") for l, _c in q]
                          + ["Chan Park (AT&T)", "Rafael Hidalgo (AT&T)"],
-                         [l for l, _c in a])
+                         [l for l, _c in a if owner(l) not in KN.QUANTUM_OFF])
         self.assertTrue(all(c["campaign_id"] == "3" for _l, c in a))
         cfg = dict(a)
         self.assertEqual(cfg["Rafael Hidalgo (AT&T)"]["ov"], "master")
         self.assertEqual(cfg["Chan Park (AT&T)"]["ov"], "impersonate")
         self.assertEqual(KN.PROGRAMS, (KN.QUANTUM, KN.ATT))
+
+    def test_isaiah_is_att_only(self):
+        # Isaiah, 11/17 mail: "I am on AT&T fiber now" — his daily orange
+        # "Quantum Fiber could not be pulled" note read as AT&T missing.
+        with mock.patch("automations.shared.terminated_icds.terminated_lookup",
+                        return_value=lambda n: False):
+            q = KN.owner_boards({}, logfn=lambda *a: None, program=KN.QUANTUM)
+            a = KN.owner_boards({}, logfn=lambda *a: None, program=KN.ATT)
+        self.assertNotIn("Isaiah Kellum (Quantum Fiber)", [l for l, _c in q])
+        self.assertIn("Isaiah Kellum (AT&T)", [l for l, _c in a])
 
     def test_att_files_dont_collide_with_quantum(self):
         sat = dt.date(2026, 10, 24)
