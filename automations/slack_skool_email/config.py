@@ -28,6 +28,59 @@ FROM_NAME = "Alphalete Marketing"
 
 MACHINE = "Lucy 1"
 
+# --- WHEN IT GOES OUT, PER PERSON -------------------------------------------
+# Megan, 2026-11-18: "2 days before their start -- Blue Ink, Slack and the
+# Skool email, one send, per person, off their own start date rather than one
+# time for everybody."
+#
+# THIS IS WIRED BUT NOT TURNED ON, AND THE REASON IS THE COPY, NOT THE CODE.
+# Two sentences below are true only on the morning of the day itself:
+#
+#     "Good morning, and welcome to Alphalete Marketing!"
+#     "We're excited to have you at orientation today."
+#
+# Both are Megan's own words, picked from three options on 2026-08-26, and the
+# second one is simply FALSE two days early -- the worst kind of wrong, because
+# it tells somebody to turn up on a day that is not their day. Rewording it is
+# hers to do, not this file's ([[feedback_approved_copy_is_not_a_license_to_reword]]),
+# so the lead stays 0 and `early_send_blocked_by_copy()` refuses anything else
+# until the sentence changes. The plumbing is done: change these words, set
+# SEND_LEAD_DAYS = 2, and it runs.
+#
+# Blue Ink needed no such pause -- its copy already says "before your first
+# day", which is true at any lead.
+SEND_LEAD_DAYS = 0
+
+# Phrases that are only true on the day itself. Checked against BODY whenever
+# a lead is set, so the copy and the clock cannot drift apart silently.
+DAY_OF_PHRASES = ("orientation today", "Good morning")
+
+
+def early_send_blocked_by_copy(lead_days: int = None) -> str:
+    """Why an early send is refused, or "" when the copy allows one.
+
+    A guard and not a comment: a comment would be read by whoever edits this
+    file, and the person who turns the lead up in six months is exactly the
+    person who will not.
+    """
+    lead = SEND_LEAD_DAYS if lead_days is None else lead_days
+    try:
+        lead = int(lead)
+    except (TypeError, ValueError):
+        return "SEND_LEAD_DAYS is not a number."
+    if lead <= 0:
+        return ""
+    found = [ph for ph in DAY_OF_PHRASES if ph.lower() in BODY.lower()]
+    if not found:
+        return ""
+    return (
+        "Refusing to send %d day(s) early: the email still says %s, which is "
+        "only true on the morning they start. Reword that line first -- it is "
+        "BODY in automations/slack_skool_email/config.py -- or set "
+        "SEND_LEAD_DAYS back to 0."
+        % (lead, " and ".join(repr(f) for f in found)))
+
+
 SUBJECT = "Welcome to Alphalete \u2014 3 apps to set up before orientation"
 
 # What the re-send guard searches reception's Sent mail for. NOT the full

@@ -50,6 +50,12 @@ class NewStart:
     blueink_col: int = 0          # 1-indexed "Blue Ink" column
     blueink_val: str = ""         # what's in it now ("TRUE"/"FALSE"/"")
     skip_reason: str = ""         # "" means eligible
+    # The date written above THEIR chart -- the day they start. A tab holds
+    # several charts and they can carry different dates (Monday's second chart
+    # is the late adds), so this is per person and not per tab. Filled by
+    # `attach_chart_dates`; None until then, and None when the chart carries no
+    # date anybody can read.
+    chart_date: object = None
 
     @property
     def name(self) -> str:
@@ -337,6 +343,24 @@ def unparsed_email_rows(values: List[List[str]],
                 out.append((i, cell, label[:60]))
                 break
     return out
+
+
+def attach_chart_dates(values: List[List[str]], people: List[NewStart],
+                       tab_name: str = "") -> List[NewStart]:
+    """Set `chart_date` on each person from the chart they actually sit in.
+
+    Separate from `parse_tab` on purpose: parsing answers "who is on this tab",
+    and every caller wants that. Only the steps that send on a per-person clock
+    need the date, and they pay the chart walk.
+
+    Mutates and returns the same list, so it reads as one step in a pipeline.
+    """
+    from automations.shared import obcl_charts as _oc
+    charts = _oc.find_charts(values)
+    for p in people:
+        ch = _oc.chart_for_row(charts, p.row)
+        p.chart_date = _oc.chart_date(ch, tab_name or p.tab) if ch else None
+    return people
 
 
 def collapse_duplicates(people: List[NewStart]) -> List[NewStart]:

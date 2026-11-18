@@ -112,6 +112,12 @@ def _wrong_week(tab_title: str, *, explicit: bool = False, today=None):
         return ("Refusing to send: can't read a date out of the tab name {!r}, "
                 "so there's no way to tell whether it's this week's lineup."
                 .format(tab_title))
+    # With a per-person lead (Megan 2026-11-18) the tab we want is no longer
+    # only today's: two days before a Monday start, the people who are due sit
+    # on NEXT week's tab. A lead of 0 leaves this exactly as it was.
+    lead = getattr(config, "SEND_LEAD_DAYS", 0) or 0
+    if lead and today <= dated <= today + _dt.timedelta(days=lead):
+        return None
     if dated != today:
         return (
             "Refusing to send: the newest tab is {!r} (dated {}), but today is "
@@ -257,6 +263,14 @@ def _guarded_recipients(tab_name: str):
 
 def send(tab_name: str = "", *, force: bool = False, slack: bool = False) -> int:
     from automations.slack_skool_email import gmail_reception as gm
+
+    # The copy and the clock have to agree. Checked HERE, at the send, and not
+    # only at import: whoever turns the lead up will be editing config.py, and
+    # this is the line that stops the first run after they do.
+    blocked = config.early_send_blocked_by_copy()
+    if blocked:
+        print(blocked)
+        return 1
 
     ws, send_to, slack, skool = _guarded_recipients(tab_name)
     if not send_to:

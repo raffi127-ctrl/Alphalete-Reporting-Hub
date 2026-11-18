@@ -33,12 +33,14 @@ from automations.blueink_docs import (blueink, completed, config, ledger,
                                       recent_ui)
 from automations.blueink_docs import session as bi_session
 from automations.blueink_docs import ui_send
-from automations.blueink_docs.roster import (NewStart, current_tab,
+from automations.blueink_docs.roster import (NewStart, attach_chart_dates,
+                                             current_tab,
                                              final_status_is_unrecognised,
                                              collapse_duplicates, parse_tab,
                                              describe_other_week_charts,
                                              unparsed_email_rows)
 from automations.recruiting_report import fill
+from automations.shared import new_start_timing as timing
 from automations.shared import obcl_tabs
 
 
@@ -649,6 +651,10 @@ def _main(argv=None) -> int:
     ap.add_argument("--slack", action="store_true",
                     help="actually post the summary to Slack. Without it the "
                          "message is printed and nothing is posted.")
+    ap.add_argument("--no-lead-gate", action="store_true",
+                    help="Send to everyone on the tab, ignoring how far off "
+                         "their start date is. The old whole-tab behaviour; "
+                         "for a backfill, not for the daily run.")
     ap.add_argument("--no-dedupe", action="store_true",
                     help="skip the check against Blue Ink's own send history. "
                          "Only if you're certain nobody was hand-sent -- this "
@@ -712,6 +718,9 @@ def _main(argv=None) -> int:
         ws = current_tab(workbook, args.tab)
         raw_values = ws.get_all_values()
         people = parse_tab(raw_values, ws.title)
+        # Their own start date, off the chart each of them sits in. Needed
+        # before the lead gate below can say whose paperwork is due.
+        attach_chart_dates(raw_values, people, ws.title)
         for line in describe_other_week_charts(raw_values, ws.title):
             print(line)
         source = ws.title
@@ -804,6 +813,43 @@ def _main(argv=None) -> int:
         for rownum, email, label in stray[:12]:
             print(f"     row {rownum}: {email}  |  {label}")
         print()
+
+    # WHOSE PAPERWORK IS DUE TODAY (Megan, 2026-11-18). Theirs goes out
+    # SEND_LEAD_DAYS before their own start date, not on one clock for the
+    # whole tab. The lead is a floor, so a late BOB and a day the machine was
+    # down both still send -- see automations/shared/new_start_timing.py.
+    #
+    # Only on the tab path: the --office board read has no chart dates to key
+    # on, and --only/--test-to are somebody asking for one person by name,
+    # which is an instruction and not a schedule.
+    if ws is not None and not args.no_lead_gate and not args.only:
+        ready, waiting, undated = timing.split(
+            people, start_of=lambda pp: pp.chart_date,
+            lead_days=config.SEND_LEAD_DAYS)
+        if waiting:
+            print("\nNot due yet -- %d person/people start later, and theirs "
+                  "goes out %d day(s) before:" % (len(waiting),
+                                                  config.SEND_LEAD_DAYS))
+            for pp in waiting[:12]:
+                print("     %-28s %s" % (pp.name,
+                                         timing.why_not_yet(
+                                             pp.chart_date,
+                                             lead_days=config.SEND_LEAD_DAYS)))
+            if len(waiting) > 12:
+                print("     ... and %d more" % (len(waiting) - 12))
+        if undated:
+            # Loud, and separate from "not due yet": a chart with no date
+            # sends NOBODY on it, so this is the one that needs a person.
+            print("\n⚠️  %d person/people have no start date on their chart, "
+                  "so there is no way to know when their paperwork is due. "
+                  "They are NOT being sent -- add the date above their chart:"
+                  % len(undated))
+            for pp in undated[:12]:
+                print("     %-28s row %s of %r" % (pp.name, pp.row, pp.tab))
+        people = ready
+        if not people:
+            print("\nNobody is due today. Nothing sent.")
+            return 0
 
     # One read of the ledger tab answers both questions asked of it below:
     # who has already been sent, and which address the canary should ask about.

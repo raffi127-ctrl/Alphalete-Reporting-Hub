@@ -67,6 +67,27 @@ from automations.shared.new_start_eligibility import (  # noqa: E402
     FRIDAY_BLOCK,
 )
 
+# --- WHEN IT GOES OUT, PER PERSON -------------------------------------------
+# Megan, 2026-11-18: "2 days before their start -- Blue Ink, Slack and the
+# Skool email, one send, per person, off their own start date rather than one
+# time for everybody."
+#
+# This was a 7:30am daily batch over the whole newest tab (and Mondays only
+# before 2026-11-16), so somebody starting Thursday got their contract on
+# Monday. The clock is still daily; what changed is WHO is due on it.
+#
+# The lead is a FLOOR, not an appointment -- see
+# automations/shared/new_start_timing.py for why, and for why de-duplication
+# stays with the "Blue Ink" column rather than moving into the date maths.
+from automations.shared import new_start_timing as _timing  # noqa: E402
+
+SEND_LEAD_DAYS = _timing.DEFAULT_LEAD_DAYS
+
+# How far back to keep looking for somebody who started and still hasn't
+# signed. A week: their paperwork does not stop mattering because the day
+# passed, but the book is not worth walking forever either.
+SEND_LOOK_BACK_DAYS = 7
+
 # --- Blue Ink ---------------------------------------------------------------
 # Account: alphaletemarketing@gmail.com. The private API key is read from a
 # gitignored file at the repo root (the repo is PUBLIC -- never inline it):
