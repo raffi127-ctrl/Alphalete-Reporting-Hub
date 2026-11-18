@@ -102,7 +102,7 @@ def _looks_like_csv(b: bytes) -> bool:
 
 
 def pull_long(today: dt.date, log=print, days: int = LOOKBACK_DAYS,
-              url_extra: str = "", search_range: str = "") -> Path:
+              url_extra: str = "", search_range: str = "", fresh: bool = False) -> Path:
     """The NDS-SN ORDERLOG over `days` of Order Date, cached per day beside
     the daily 60-day file (its own name, so nds_metrics never reuses it).
     `url_extra` = extra query parameters appended as given (a Tableau URL
@@ -114,7 +114,7 @@ def pull_long(today: dt.date, log=print, days: int = LOOKBACK_DAYS,
     tag = f"_{hashlib.md5(key.encode()).hexdigest()[:6]}" if key != "|" else ""
     out = OUT_DIR / f"nds_orderlog_{days}d{tag}_{today.isoformat()}.csv"
     out.parent.mkdir(parents=True, exist_ok=True)
-    if out.exists() and out.stat().st_size > 500 and _looks_like_csv(out.read_bytes()):
+    if not fresh and out.exists() and out.stat().st_size > 500 and _looks_like_csv(out.read_bytes()):
         log(f"[captain] reusing today's {days}-day pull ({out.stat().st_size:,} bytes)")
         return out
     if out.exists():
@@ -434,7 +434,7 @@ def view_counts(owner_name: str, today: dt.date, log=print, fresh: bool = False
     return res
 
 
-def reconcile(owner_name: str, rep: dict, today: dt.date, log=print
+def reconcile(owner_name: str, rep: dict, today: dt.date, log=print, fresh: bool = False
               ) -> Tuple[Optional[bool], str, Optional[dict]]:
     """Gate on 0-30, all port lines (the view's universe): disconnects
     exact, base within BASE_TOLERANCE; a mismatch against the cached view
@@ -442,7 +442,7 @@ def reconcile(owner_name: str, rep: dict, today: dt.date, log=print
     in the text. -> (ok | None when unverifiable, detail, view)."""
     from automations.nds_churn.run import BASE_TOLERANCE
     view = None
-    for fresh in (False, True):
+    for fresh in ((True,) if fresh else (False, True)):
         try:
             view = view_counts(owner_name, today, log, fresh=fresh)
         except Exception as e:  # noqa: BLE001
@@ -799,18 +799,18 @@ def shot_to_tab(png: Path, log=print, tab: str = SHOT_TAB) -> None:
 def run(owner_key: str, today: dt.date, *, dry_run: bool = False,
         from_file: Optional[str] = None, dm: Optional[str] = None,
         skip_reconcile: bool = False, url_extra: str = "", search_range: str = "",
-        log=print) -> int:
+        fresh: bool = False, log=print) -> int:
     from automations.nds_churn.run import write_diag
     key = (owner_key or "").strip().lower()
     if key == TEAM_KEY:
-        return run_team(today, dry_run=dry_run, from_file=from_file, dm=dm, log=log)
+        return run_team(today, dry_run=dry_run, from_file=from_file, dm=dm, fresh=fresh, log=log)
     if key not in OWNERS:
         log(f"unknown captainship owner {owner_key!r}; one of {', '.join(OWNERS)}")
         return 2
     owner = OWNERS[key]
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     path = Path(from_file) if from_file else pull_long(today, log, url_extra=url_extra,
-                                                       search_range=search_range)
+                                                       search_range=search_range, fresh=fresh)
     header, ix, lines = C.load_owner_lines(path, log=log, owner_tokens=owner["tokens"])
     field_counts = {f: export_field_values(path, ix, f) for f in ("if_oof", "measure", "product")}
     log("[captain] export field values: " + "; ".join(
@@ -821,7 +821,7 @@ def run(owner_key: str, today: dt.date, *, dry_run: bool = False,
         log("[captain] NO lines on the owner -- the export's Owner & Office cells: "
             + "; ".join(f"{k} x{v}" for k, v in owner_cells))
     rep = build(lines, today)
-    ok, recon, view = reconcile(owner["name"], rep, today, log)
+    ok, recon, view = reconcile(owner["name"], rep, today, log, fresh=fresh)
     log("RECONCILE: " + ("OK" if ok else "UNVERIFIED" if ok is None else "MISMATCH") + " -- " + recon)
     extra = missing_reps(path, ix, view, rep)
     rep["view"] = view
@@ -1135,10 +1135,13 @@ def team_diag(data: dict, today: dt.date) -> List[str]:
 
 
 def run_team(today: dt.date, *, dry_run: bool = False, from_file: Optional[str] = None,
-             dm: Optional[str] = None, log=print) -> int:
+             dm: Optional[str] = None, fresh: bool = False, log=print) -> int:
     from automations.nds_churn.run import write_diag
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    path = Path(from_file) if from_file else pull_long(today, log)
+    path = Path(from_file) if from_file else pull_long(today, log, fresh=fresh)
+    if fresh:                             # the view too, once, before the per-owner slices
+        from automations.office_metrics import nds_churn as NC
+        NC._fetch(OUT_DIR / f"nds_churn_view_{today.isoformat()}.csv", verbose=False)
     data = build_team(path, today, log)
     diag = team_diag(data, today)
     for ln in diag:
