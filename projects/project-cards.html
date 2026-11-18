@@ -51,6 +51,10 @@ button{font:inherit;color:inherit}
 .goal-row{display:flex;gap:10px;align-items:flex-start;margin-top:6px}
 .k{flex:none;font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;background:var(--sunken);color:var(--muted);border-radius:5px;padding:2px 7px;margin-top:5px}
 .goal{resize:none;color:var(--muted);line-height:1.45;min-width:0}
+.runs-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;margin-top:10px}
+.runs-row .k{margin-top:0}
+.runs-note{flex:1 1 220px;width:auto}
+.runs-row.unset .seg{border-color:var(--input-line)}
 
 .summary{display:grid;gap:10px;margin:20px 0 18px}
 .counts{display:flex;flex-wrap:wrap;gap:8px}
@@ -92,6 +96,24 @@ button{font:inherit;color:inherit}
 .node.now .badge{background:var(--ink);border-color:var(--ink);color:var(--surface)}
 .node.now .chip{color:var(--ink)}
 .node.later button{background:var(--sunken);border-style:dashed}
+
+.platforms{margin:0 0 24px}
+.sec-head{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px}
+.sec-head h2{font-size:17px}
+.sec-head .need{margin:0}
+.sec-sub{margin:2px 0 10px;color:var(--muted);font-size:14px}
+.plats{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.plat{display:grid;grid-template-columns:minmax(110px,170px) auto minmax(0,1fr) auto;grid-template-areas:"name seg note rm";
+  align-items:center;gap:8px 12px;border:1px solid var(--line);border-radius:10px;padding:7px 10px;background:var(--surface)}
+.plat.p-needed{border-color:var(--input-line)}
+.plat-name{grid-area:name;font-weight:650;overflow-wrap:anywhere}
+.plat .seg{grid-area:seg}
+.plat-note{grid-area:note;font:inherit;font-size:14px;color:var(--ink);background:transparent;border:1px solid transparent;border-radius:7px;padding:4px 7px;min-width:0;width:100%}
+.plat-note:hover{border-color:var(--line)}
+.plat-note:focus{border-color:var(--focus);background:var(--surface);outline:none}
+.plat-rm{grid-area:rm;justify-self:end}
+.plat-empty{color:var(--muted);font-size:14px;padding:4px 0}
+.seg-b[aria-pressed="true"].plain{background:var(--sunken);color:var(--ink)}
 
 .phase{margin-top:26px}
 .phase-head{display:flex;align-items:center;gap:10px;padding-bottom:8px;border-bottom:1px solid var(--line);margin-bottom:12px}
@@ -154,6 +176,9 @@ button{font:inherit;color:inherit}
   .ptitle{font-size:22px}
   .flow{flex-direction:column;gap:24px}
   .node+.node::before{content:"\2193";left:50%;top:-22px;transform:translateX(-50%)}
+  .plat{grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"name rm" "seg seg" "note note"}
+  .seg{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;width:100%}
+  .seg-b{padding:6px 4px;text-align:center;line-height:1.25}
 }
 @media (prefers-reduced-motion:no-preference){html{scroll-behavior:smooth}}
 </style>
@@ -167,12 +192,25 @@ button{font:inherit;color:inherit}
 (() => {
   const app = document.getElementById("app");
   const saveEl = document.getElementById("save-state");
-  const NAMES = ["projects", "steps", "ideas"];
+  const NAMES = ["projects", "steps", "ideas", "platforms"];
   const S = { db: null, nodb: false, fail: null, slow: false, cur: null, confirm: null,
-              projects: [], steps: [], ideas: [], got: {}, live: {} };
+              projects: [], steps: [], ideas: [], platforms: [], got: {}, live: {} };
   const LABEL = { input: "Needs your input", ready: "Ready to build", built: "Built" };
   const SHORT = { input: "Needs input", ready: "Ready to build", built: "Built" };
   const ORDER = ["input", "ready", "built"];
+  const ACCESS = { check: "Not checked", needed: "Needs access", ready: "Access works" };
+  const ACCESS_LOOK = { check: "plain", needed: "input", ready: "built" };
+  const access = (x) => (ACCESS[x.status] ? x.status : "check");
+  // Where the finished automation runs. It changes how it gets built.
+  const RUNS = { eco: "ECO machine", lucy: "A Lucy", other: "Somewhere else", undecided: "Not decided" };
+  const RUNS_LOOK = { eco: "ready", lucy: "ready", other: "ready", undecided: "input" };
+  const RUNS_HINT = { eco: "Which office?", lucy: "Which Lucy? Blank = least busy one", other: "Where? (Streamlit, claude.ai…)",
+    undecided: "Anything that decides it?" };
+  const runsOn = (p) => (RUNS[p.runs_on] && p.runs_on !== "undecided" ? p.runs_on : "undecided");
+  // Spelled the way the rest of the Hub spells them. Free text still works.
+  const KNOWN_PLATFORMS = ["ApplicantStream", "OwnerVille", "Tableau", "SaraPlus", "Sterling", "Apex", "BlueInk",
+    "Service Cloud", "TeleMapper", "Ringover", "Indeed", "Wrike", "Aptel", "Slack", "Google Sheets", "Google Drive",
+    "Gmail", "iMessage", "Zoom"];
 
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const now = () => new Date().toISOString();
@@ -255,7 +293,12 @@ button{font:inherit;color:inherit}
     }));
 
     let start;
-    if (first) {
+    if (runsOn(p) === "undecided") {
+      start = `<div class="start"><div class="start-text"><div class="start-k">Start here</div>
+        <div class="start-title">Where will this run: an office's ECO machine or one of our Lucys?</div>
+        <div class="start-ask">It changes how it gets built, so it comes first.</div></div>
+        <button type="button" class="btn" data-act="goto-runs">Pick it</button></div>`;
+    } else if (first) {
       start = `<div class="start"><div class="start-text"><div class="start-k">Start here</div>
         <div class="start-title">Step ${first.n} · ${esc(first.s.title)}</div>
         ${first.s.question ? `<div class="start-ask">Claude asks: ${esc(first.s.question)}</div>` : ""}</div>
@@ -306,15 +349,40 @@ button{font:inherit;color:inherit}
       return `<li><span>${esc(x.text)}</span>${ctl}</li>`;
     }).join("");
 
+    const plats = S.platforms.filter((x) => x.project === p.id)
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || String(a.name || "").localeCompare(String(b.name || "")));
+    const needAccess = plats.filter((x) => access(x) === "needed").length;
+    const platRows = plats.map((x) => {
+      const id = esc(x.id);
+      const a = access(x);
+      const seg = Object.keys(ACCESS).map((v) => `<button type="button" class="seg-b ${ACCESS_LOOK[v]}" data-act="pstatus" data-plat="${id}" data-val="${v}" aria-pressed="${v === a}">${ACCESS[v]}</button>`).join("");
+      const rm = S.confirm === "plat:" + x.id
+        ? `<span class="confirm plat-rm">Remove? <button type="button" class="link danger" data-act="plat-yes" data-plat="${id}">Remove</button> <button type="button" class="link" data-act="cancel">Keep</button></span>`
+        : `<button type="button" class="link quiet plat-rm" data-act="plat-remove" data-plat="${id}">Remove</button>`;
+      return `<li class="plat p-${a}"><span class="plat-name">${esc(x.name)}</span>
+        <div class="seg" role="group" aria-label="Access to ${esc(x.name)}">${seg}</div>
+        <input id="pl-${id}" class="plat-note" data-act="pnote" data-plat="${id}" value="${esc(x.note)}" placeholder="Which login, which Lucy? (optional)" aria-label="Note for ${esc(x.name)}" autocomplete="off">${rm}</li>`;
+    }).join("");
+    const platforms = `<section class="platforms" aria-label="Platforms">
+      <div class="sec-head"><h2>Platforms it needs</h2>${needAccess ? `<span class="need">${needAccess} need${needAccess === 1 ? "s" : ""} access</span>` : ""}</div>
+      <p class="sec-sub">Every site or app this build reads from or writes to.</p>
+      <ul class="plats">${platRows || `<li class="plat-empty">None listed yet.</li>`}</ul>
+      <form class="add" data-form="add-platform"><input id="apl-${esc(p.id)}" name="t" list="platform-list" placeholder="Add a platform: ApplicantStream, OwnerVille, Tableau…" aria-label="New platform" autocomplete="off"><button class="btn" type="submit">Add</button></form>
+      <datalist id="platform-list">${KNOWN_PLATFORMS.map((n) => `<option value="${esc(n)}"></option>`).join("")}</datalist>
+    </section>`;
+
     return `<article class="card">
       <textarea id="pt-${esc(p.id)}" class="edit ptitle" rows="1" data-act="ptitle" aria-label="Project name">${esc(p.title)}</textarea>
       <div class="goal-row"><span class="k">Goal</span><textarea id="pg-${esc(p.id)}" class="edit goal" rows="1" data-act="goal" aria-label="Goal" placeholder="What will be true when this is done?">${esc(p.goal)}</textarea></div>
+      <div class="runs-row${runsOn(p) === "undecided" ? " unset" : ""}" id="runs-${esc(p.id)}"><span class="k">Runs on</span>
+        <div class="seg" role="group" aria-label="Where this runs">${Object.keys(RUNS).map((v) => `<button type="button" class="seg-b ${RUNS_LOOK[v]}" data-act="runs" data-val="${v}" aria-pressed="${v === runsOn(p)}">${RUNS[v]}</button>`).join("")}</div>
+        <input id="rn-${esc(p.id)}" class="plat-note runs-note" data-act="runsnote" value="${esc(p.runs_on_note)}" placeholder="${RUNS_HINT[runsOn(p)]}" aria-label="Where it runs, details" autocomplete="off"></div>
       <div class="summary">
         <div class="counts">${ORDER.map((v) => `<span class="count ${v}"><b>${c[v]}</b>${LABEL[v]}</span>`).join("")}</div>
         <div class="bar" role="img" aria-label="${c.built} built, ${c.ready} ready to build, ${c.input} need your input">
           ${["built", "ready", "input"].map((v) => `<span class="${v}" style="width:${(100 * c[v]) / total}%"></span>`).join("")}</div>
       </div>
-      ${start}${flow}${phases}
+      ${start}${platforms}${flow}${phases}
       <form class="add add-phase" data-form="add-phase">
         <input id="ap-${esc(p.id)}" name="t" placeholder="Add a big step at the end" aria-label="New big step" autocomplete="off">
         <button class="btn" type="submit">Add</button></form>
@@ -398,6 +466,15 @@ button{font:inherit;color:inherit}
       if (field === "title" && !val) { el.value = p.title || ""; return; }
       if ((p[field] || "") === val) return;
       write("projects/" + p.id, { [field]: val, updated: now() });
+    } else if (act === "runsnote") {
+      const val = el.value.trim();
+      if ((p.runs_on_note || "") === val) return;
+      write("projects/" + p.id, { runs_on_note: val, updated: now() });
+    } else if (act === "pnote") {
+      const x = S.platforms.find((y) => y.id === el.dataset.plat);
+      const val = el.value.trim();
+      if (!x || (x.note || "") === val) return;
+      write("platforms/" + x.id, { note: val, updated: now() });
     } else if (act === "phase-name") {
       const name = el.value.trim();
       const ph = phasesOf(p);
@@ -417,7 +494,7 @@ button{font:inherit;color:inherit}
   app.addEventListener("keydown", (e) => {
     const el = e.target;
     // Names are one line: Enter saves. Details and the goal keep Enter for new lines.
-    if (e.key === "Enter" && /^(title|ptitle|phase-name)$/.test(el.dataset.act || "")) { e.preventDefault(); el.blur(); }
+    if (e.key === "Enter" && /^(title|ptitle|phase-name|pnote|runsnote)$/.test(el.dataset.act || "")) { e.preventDefault(); el.blur(); }
   });
 
   app.addEventListener("click", (e) => {
@@ -431,8 +508,15 @@ button{font:inherit;color:inherit}
     }
     if (act === "goto") { const t = document.getElementById("d-" + b.dataset.step); if (t) { t.scrollIntoView({ block: "center" }); t.focus({ preventScroll: true }); } return; }
     if (act === "goto-phase") { const sec = document.getElementById("phase-" + b.dataset.phase); if (sec) sec.scrollIntoView({ block: "start" }); return; }
+    if (act === "goto-runs") { const r = app.querySelector(".runs-row"); if (r) { r.scrollIntoView({ block: "center" }); const btn = r.querySelector("button"); if (btn) btn.focus({ preventScroll: true }); } return; }
     if (act === "cancel") { S.confirm = null; render(); return; }
     if (!S.db) return;
+    if (act === "runs") {
+      const p = current();
+      if (!p || runsOn(p) === b.dataset.val) return;
+      write("projects/" + p.id, { runs_on: b.dataset.val, updated: now() });
+      return;
+    }
     if (act === "status") {
       const s = S.steps.find((x) => x.id === b.dataset.step);
       if (!s || status(s) === b.dataset.val) return;
@@ -441,6 +525,13 @@ button{font:inherit;color:inherit}
     else if (act === "remove-yes") { S.confirm = null; write("steps/" + b.dataset.step, null, "delete"); }
     else if (act === "idea-remove") { S.confirm = "idea:" + b.dataset.idea; render(); }
     else if (act === "idea-yes") { S.confirm = null; write("ideas/" + b.dataset.idea, null, "delete"); }
+    else if (act === "pstatus") {
+      const x = S.platforms.find((y) => y.id === b.dataset.plat);
+      if (!x || access(x) === b.dataset.val) return;
+      write("platforms/" + x.id, { status: b.dataset.val, updated: now() });
+    }
+    else if (act === "plat-remove") { S.confirm = "plat:" + b.dataset.plat; render(); }
+    else if (act === "plat-yes") { S.confirm = null; write("platforms/" + b.dataset.plat, null, "delete"); }
   });
 
   app.addEventListener("submit", (e) => {
@@ -459,6 +550,11 @@ button{font:inherit;color:inherit}
         details: "", built_note: "", added_by: "you", created: t, updated: t }, "set");
     } else if (f.dataset.form === "add-phase") {
       write("projects/" + p.id, { phases: [...phasesOf(p).map((x) => ({ ...x })), { id: newId("p"), name: text }], updated: t });
+    } else if (f.dataset.form === "add-platform") {
+      const mine = S.platforms.filter((x) => x.project === p.id);
+      if (mine.some((x) => String(x.name || "").toLowerCase() === text.toLowerCase())) return;
+      const max = Math.max(0, ...mine.map((x) => Number(x.order) || 0));
+      write("platforms/" + newId("pl"), { project: p.id, name: text, status: "check", note: "", order: max + 1, created: t, updated: t }, "set");
     } else if (f.dataset.form === "add-idea") {
       write("ideas/" + newId("i"), { project: p.id, text, created: t }, "set");
     }

@@ -14,11 +14,33 @@ what still needs her input.
 
 ## The loop
 
-1. **Goal.** If she hasn't already said what the project is, ask one
-   question: "What's the goal? What will be true when this is done?" Ask
-   nothing else up front.
+1. **Goal and where it runs.** Ask both in one message, skipping whatever
+   she already said: "What's the goal? What will be true when this is
+   done?" and "Where will it run: an office's ECO machine, one of our
+   Lucys, or somewhere else (like a Streamlit page)?" Ask nothing else up
+   front. Where it runs changes the build, so settle it before drafting:
+   - **ECO machine** (an office's own computer): runs in the background
+     with nothing the owner can see (the ECO rule in CLAUDE.md; exceptions
+     live in `automations/icd_alerts/visible_windows.py`). It uses that
+     office's own logins and facts, works on Mac AND Windows, never leans on
+     another machine, and reaches offices through the office package
+     (`automations/icd_alerts/agent_files.txt`).
+   - **A Lucy**: test runs go to the least-busy Lucy
+     (`automations/day_orchestrator/routing.py`). A scheduled run gets its
+     own `deploy/` timer and stays clear of the 4am run. The box needs the
+     logins (`resources/lucy-login-standard.md`), and a scheduled report
+     publishes to the Hub with a card.
+   - **Somewhere else**: write where in `runs_on_note`.
 2. **Lay out the card.** Draft the whole thing yourself: 3 to 7 big steps in
-   order, and the small steps under each one. Mark every small step:
+   order, and the small steps under each one. Also list **every platform**
+   it reads from or writes to (ApplicantStream, OwnerVille, Tableau,
+   SaraPlus, Sterling, Apex, BlueInk, Slack, Google Sheets, iMessage...),
+   spelled the way the Hub spells them. Each platform starts as **Not
+   checked**. Mark it **Access works** only after a real login or read
+   worked on the machine it will run on. Mark it **Needs access** when it
+   doesn't, and add a step to get that access (needing her if it takes her
+   login or a new account). Put which login and which Lucy in its `note`.
+   Mark every small step:
    - **Ready to build**: you know enough to build it now.
    - **Needs your input**: you can't build it without her. Put the ONE
      question that unblocks it in `question`, in plain words she can answer
@@ -69,7 +91,8 @@ Never drop them. Put each one on the card and say in one line where it went
 
 "Where am I on X", "show my projects", "keep going on X": read the card and
 give a one-line status with the link, like "Big step 2 of 4. 3 ready to
-build, 2 need you. Top one: step 2.2, which city should Kalkan use?" Then
+build, 2 need you, 1 platform needs access. Top one: step 2.2, which city
+should Kalkan use?" If "Runs on" is still Not decided, ask that first. Then
 carry on at step 4 or 5 of the loop.
 
 ## End of a session
@@ -84,8 +107,13 @@ deferred, load it with ToolSearch `select:ArtifactData`.
 
 Collections:
 - `projects/<project-id>`: `title`, `goal`, `status` (`active` or
-  `finished`), `created`, `updated` (ISO times), and `phases`, the ordered
-  list of big steps as `{id, name}` (ids like `p1`, `p2`).
+  `finished`), `runs_on` (`eco`, `lucy`, `other`; missing or `undecided`
+  shows as Not decided), `runs_on_note` (which office, which Lucy, or
+  where), `created`, `updated` (ISO times), and `phases`, the ordered list
+  of big steps as `{id, name}` (ids like `p1`, `p2`).
+- `platforms/<platform-id>`: `project`, `name`, `status` (`check` = Not
+  checked, `needed` = Needs access, `ready` = Access works), `note`,
+  `order`, `created`, `updated`. Ids `<project-id>-pl-<n>`.
 - `steps/<step-id>`: `project`, `phase` (a phase id), `order` (a number that
   sorts steps inside their big step), `title`, `status` (`input` = Needs
   your input, `ready` = Ready to build, `built`), `question` (yours),
@@ -98,8 +126,8 @@ Rules:
   the page link: `<card link>#<project-id>`. Step ids `<project-id>-<n>`,
   idea ids `<project-id>-idea-<n>`. Steps she adds on the page get random
   ids, and that's fine.
-- Read a project: `get` `projects/<id>`, then `query` `steps` and `ideas`
-  where `project == <id>`.
+- Read a project: `get` `projects/<id>`, then `query` `steps`, `ideas` and
+  `platforms` where `project == <id>`.
 - Read right before every write, and pass that read's `version` as
   `if_version`. If the write is refused because she changed it, re-read and
   redo it. Never overwrite her text. Several changes go in one `batch`.
