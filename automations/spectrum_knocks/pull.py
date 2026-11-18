@@ -99,15 +99,40 @@ def login() -> requests.Session:
     return s
 
 
-def reps(s: requests.Session) -> Dict[str, str]:
-    """{rep id: 'Last, First'} for every rep in the office."""
+def _drivers_html(s: requests.Session) -> str:
     r = s.get(BASE + "/ibis/ctl", params={
         "vo": "dsp", "command": "getDrivers", "template": "dispatch/drivers.vm",
         **_COMMON}, timeout=120)
-    found = re.findall(r'id="(\d+)_DRIVER_NAME"[^>]*>([^<]+)<', r.text)
+    return r.text
+
+
+def _parse_reps(page: str) -> Dict[str, str]:
+    found = re.findall(r'id="(\d+)_DRIVER_NAME"[^>]*>([^<]+)<', page)
     if not found:
         raise SpectrumError("Spectrum rep list came back empty (session or page changed)")
     return {rid: html.unescape(name).strip() for rid, name in found}
+
+
+def _parse_assigned(page: str, names: Dict[str, str]) -> Dict[str, int]:
+    """{'Last, First': houses assigned right now}. It's the 'Total' column of
+    the rep list (cell id <rep>_WORK_ORDER_COUNT) = that rep's work orders in
+    status ASG — NOT doors knocked (Aric 11/17: 273 assigned, 184 knocked)."""
+    out = {}
+    for rid, n in re.findall(r'id="(\d+)_WORK_ORDER_COUNT"[^>]*>(?:<a[^>]*>)?\s*(\d+)', page):
+        if rid in names:
+            out[names[rid]] = int(n)
+    return out
+
+
+def reps(s: requests.Session) -> Dict[str, str]:
+    """{rep id: 'Last, First'} for every rep in the office."""
+    return _parse_reps(_drivers_html(s))
+
+
+def reps_and_assigned(s: requests.Session):
+    page = _drivers_html(s)
+    names = _parse_reps(page)
+    return names, _parse_assigned(page, names)
 
 
 def _cells(row_html: str) -> List[str]:
@@ -153,15 +178,20 @@ def _t(stamp: str) -> dt.datetime:
     return dt.datetime.strptime(stamp, "%m/%d/%Y %I:%M %p")
 
 
-def summarize(rows: List[dict], all_reps: Dict[str, str]) -> List[dict]:
-    """One line per rep (reps with 0 doors included, at the bottom)."""
+def summarize(rows: List[dict], all_reps: Dict[str, str],
+              assigned: Optional[Dict[str, int]] = None) -> List[dict]:
+    """One line per rep (reps with 0 doors included, at the bottom).
+    `assigned` = houses assigned to each rep at pull time (a snapshot, so a
+    past day shows today's number)."""
+    assigned = assigned or {}
     by_rep: Dict[str, List[dict]] = {}
     for d in rows:
         by_rep.setdefault(d["rep"], []).append(d)
     out = []
     for name in sorted(set(all_reps.values()) | set(by_rep)):
         mine = sorted(by_rep.get(name, []), key=lambda d: _t(d["time"]))
-        line = {"Rep": name, "Doors": len(mine)}
+        line = {"Rep": name, "Doors": len(mine),
+                "Assigned Houses": assigned.get(name, "")}
         for col in COLUMNS:
             line[col] = 0
         for d in mine:
@@ -189,9 +219,9 @@ def _write_csv(path: Path, rows: List[dict]) -> None:
 
 def run(day: dt.date) -> List[dict]:
     s = login()
-    all_reps = reps(s)
+    all_reps, assigned = reps_and_assigned(s)
     rows = doors(s, day, list(all_reps))
-    summary = summarize(rows, all_reps)
+    summary = summarize(rows, all_reps, assigned)
     stamp = day.isoformat()
     if rows:
         _write_csv(OUTPUT_DIR / f"spectrum_knocks_{stamp}_doors.csv", rows)

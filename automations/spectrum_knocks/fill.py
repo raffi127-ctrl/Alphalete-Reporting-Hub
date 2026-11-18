@@ -41,7 +41,7 @@ TZ = "America/Chicago"
 LIVE_FROM_HOUR = 9
 
 BREAK_COL = f"Breaks ({pull.BREAK_MINUTES}+ min)"
-HEADER = (["Date", "Rep", "Doors"] + pull.COLUMNS
+HEADER = (["Date", "Rep", "Doors", "Assigned Houses"] + pull.COLUMNS
           + ["First Door", "Last Door", "Hours Knocking", BREAK_COL,
              "Longest Break (min)"])
 
@@ -97,16 +97,29 @@ def fill(day: dt.date, summary: List[dict], *, sheet_id: str = SHEET_ID,
     sh = open_by_key(sheet_id)
     ws = _worksheet(sh, tab)
     values = ws.get_all_values()
-    header = values[0] if values and any(values[0]) else []
-    if not header:
-        header = list(HEADER)
-    missing = [h for h in HEADER if _norm(h) not in {_norm(x) for x in header}]
-    if missing:
-        raise RuntimeError(f"Tab '{tab}' header is missing {missing}")
-    date_i = [_norm(h) for h in header].index("date")
+    old = values[0] if values and any(values[0]) else []
+    # The tab is ours, so its header is always HEADER. Rows from other days are
+    # carried over by LABEL, so adding a column (Assigned Houses, 11/18) moves
+    # the old data into place instead of shifting it.
+    header = list(HEADER)
+    if old:
+        if "date" not in [_norm(h) for h in old]:
+            raise RuntimeError(f"Tab '{tab}' has no Date column — not ours?")
+        new_pos = {_norm(h): i for i, h in enumerate(header)}
+        moves = [(j, new_pos[_norm(h)]) for j, h in enumerate(old)
+                 if _norm(h) in new_pos]
+    date_i = header.index("Date")
     stamp = day.strftime("%m/%d/%Y")
-    kept = [r + [""] * (len(header) - len(r)) for r in values[1:]
-            if any(c.strip() for c in r) and _date_key(r[date_i]) != day]
+    kept = []
+    for r in values[1:]:
+        if not any(c.strip() for c in r):
+            continue
+        row = [""] * len(header)
+        for j, i in moves:
+            if j < len(r):
+                row[i] = r[j]
+        if _date_key(row[date_i]) != day:
+            kept.append(row)
     new = build_rows(day, summary, header)
     body = new + kept
     body.sort(key=lambda r: _date_key(r[date_i]), reverse=True)  # stable: day's order kept
