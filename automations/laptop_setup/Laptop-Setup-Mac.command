@@ -70,10 +70,18 @@ bold()  { printf "\n\033[1m%s\033[0m\n" "$1"; }
 # loop at the bottom re-opens the previous step with FORCE=1, so its windows
 # show again even if they were done.
 GO=next; FORCE=0; STEP_I=0
-ok()    { [ "$GO" = back ] && return 0; printf "  \033[32m✅ %s\033[0m\n" "$1"; DONE+=("$1"); }
-fail()  { [ "$GO" = back ] && return 0; printf "  \033[31m❌ %s\033[0m\n" "$1"; FAILED+=("$1"); }
-todo()  { [ "$GO" = back ] && return 0; printf "  ☐ %s\n" "$1"; YOURS+=("$1"); }
-run()   { [ "$GO" = back ] && return 0; if [ $DRY_RUN = 1 ]; then echo "  (dry run) would run: $*"; else "$@"; fi; }
+# MORE BACK BUTTONS (Maud, 2026-11-17: "so when a mistake was made we can go
+# back"). Every question box from step 2 on gets Back -- yes/no questions, the
+# type-an-email box, "Lucy checked. Not done yet". Those run inside $(...), so
+# Back leaves a flag file; from then until the step ends NOTHING is saved,
+# shown or run (so a Back on "Can you sign in...?" is never taken as "No"),
+# and the loop at the bottom re-opens the previous step.
+BACK_FLAG="${TMPDIR:-/tmp}/laptop-setup-back.$$"; rm -f "$BACK_FLAG"
+_backing() { [ "$GO" = back ] || [ -f "$BACK_FLAG" ]; }
+ok()    { _backing && return 0; printf "  \033[32m✅ %s\033[0m\n" "$1"; DONE+=("$1"); }
+fail()  { _backing && return 0; printf "  \033[31m❌ %s\033[0m\n" "$1"; FAILED+=("$1"); }
+todo()  { _backing && return 0; printf "  ☐ %s\n" "$1"; YOURS+=("$1"); }
+run()   { _backing && return 0; if [ $DRY_RUN = 1 ]; then echo "  (dry run) would run: $*"; else "$@"; fi; }
 
 # Sections number themselves: TOTAL is however many `section` lines this file has.
 TOTAL="$(grep -c '^section "' "$0")"
@@ -82,10 +90,24 @@ section() { N=$((STEP_I+1)); TITLE="$1"; bold "Step $N of $TOTAL — $TITLE"; }
 
 # Progress memory: a step marked Done is never asked again.
 is_done()   { [ $DRY_RUN = 0 ] && grep -qxF "$1" "$PROGRESS" 2>/dev/null; }
-mark_done() { [ $DRY_RUN = 0 ] && echo "$1" >> "$PROGRESS"; }
+mark_done() { _backing && return 0; [ $DRY_RUN = 0 ] && echo "$1" >> "$PROGRESS"; }
 
 # --- pop-ups (args go in as argv, so quotes/apostrophes in text are safe) ---
 _dialog() {   # title message buttons-csv default  -> prints the button clicked
+  _backing && return 0
+  local btns="$3" r
+  # A step question (title "Step N of ...", from step 2 on) with room for one
+  # more button gets Back. Mac boxes hold at most 3 buttons.
+  case "$1" in "Step "*)
+    if [ "${N:-1}" -gt 1 ] && ! echo ",$btns," | grep -q ",Back,"; then
+      [ "$(echo "$btns" | tr -cd ',' | wc -c | tr -d ' ')" -lt 2 ] && btns="Back,$btns"
+    fi;;
+  esac
+  r="$(_dialog_raw "$1" "$2" "$btns" "$4")"
+  [ "$r" = Back ] && [ "$btns" != "$3" ] && touch "$BACK_FLAG"
+  echo "$r"
+}
+_dialog_raw() {
   osascript - "$1" "$2" "$3" "$4" <<'APPLESCRIPT' 2>/dev/null
 on run argv
   set AppleScript's text item delimiters to ","
@@ -123,7 +145,7 @@ human() {
   # steps say "They confirmed it done" (Megan, 2026-11-11).
   # 5th arg "required": no Skip button (the step everything else depends on).
   local key="$1" msg="$2" label="${3:-$TITLE}" done="${4:-I did it}" req="${5:-}"
-  [ "$GO" = back ] && return 1
+  _backing && return 1
   LAST_MSG="$msg"; LAST_SHOWN=0
   if [ "$FORCE" = 0 ] && is_done "$key"; then ok "$label (done earlier)"; return 0; fi
   LAST_SHOWN=1
@@ -141,24 +163,35 @@ ask_yes() {   # question -> 0 = Yes
   [ "$(_dialog "Step $N of $TOTAL — $TITLE" "$1" "No,Yes" "Yes")" = "Yes" ]
 }
 
-ask_text() {   # question default -> prints answer
+ask_text() {   # question default -> prints answer ("" + back flag when Back is clicked)
   if [ $DRY_RUN = 1 ]; then echo "${2:-example}"; return; fi
-  osascript - "Step $N of $TOTAL — $TITLE" "$1" "$2" <<'APPLESCRIPT' 2>/dev/null
+  _backing && return 0
+  local a
+  a="$(osascript - "Step $N of $TOTAL — $TITLE" "$1" "$2" "$( [ "${N:-1}" -gt 1 ] && echo yes )" <<'APPLESCRIPT' 2>/dev/null
 on run argv
   try
-    set r to display dialog (item 2 of argv) with title (item 1 of argv) default answer (item 3 of argv) buttons {"OK"} default button "OK" with icon note
+    if (item 4 of argv) is "yes" then
+      set r to display dialog (item 2 of argv) with title (item 1 of argv) default answer (item 3 of argv) buttons {"Back", "OK"} default button "OK" with icon note
+      if button returned of r is "Back" then return "__BACK__"
+    else
+      set r to display dialog (item 2 of argv) with title (item 1 of argv) default answer (item 3 of argv) buttons {"OK"} default button "OK" with icon note
+    end if
     return text returned of r
   on error
     return ""
   end try
 end run
 APPLESCRIPT
+)"
+  if [ "$a" = "__BACK__" ]; then touch "$BACK_FLAG"; return 0; fi
+  echo "$a"
 }
 
 ask_email() {   # question default -> prints a lower-cased email, asks until it looks like one
   local v
   while :; do
     v="$(one_email "$(ask_text "$1" "$2")")"
+    _backing && return 0
     case "$v" in *@*.*) echo "$v"; return;; esac
     [ $DRY_RUN = 1 ] && { echo "example@gmail.com"; return; }
     _dialog "Oops" "That's not an email. Try again." "OK" "OK" >/dev/null
@@ -166,7 +199,7 @@ ask_email() {   # question default -> prints a lower-cased email, asks until it 
 }
 
 # Remember answers between runs (so a re-run doesn't ask again).
-remember() { [ $DRY_RUN = 0 ] && { grep -v "^$1=" "$PROGRESS" 2>/dev/null > "$PROGRESS.tmp"; echo "$1=$2" >> "$PROGRESS.tmp"; mv "$PROGRESS.tmp" "$PROGRESS"; }; }
+remember() { _backing && return 0; [ $DRY_RUN = 0 ] && { grep -v "^$1=" "$PROGRESS" 2>/dev/null > "$PROGRESS.tmp"; echo "$1=$2" >> "$PROGRESS.tmp"; mv "$PROGRESS.tmp" "$PROGRESS"; }; }
 recall()   { [ $DRY_RUN = 0 ] && sed -n "s/^$1=//p" "$PROGRESS" 2>/dev/null | tail -1; }
 # ONE address, one line (Maud's run 2026-11-17: the reception email came out as
 # the same address on 3 lines, so the window repeated it and the Chrome check
@@ -230,7 +263,7 @@ unmark() { [ $DRY_RUN = 0 ] && { grep -vxF "$1" "$PROGRESS" 2>/dev/null > "$PROG
 verify() {   # step-key  "what was checked"  check-function  args...
   local key="$1" what="$2" fn="$3"; shift 3
   use_reception_profile
-  [ "$GO" = back ] && return 0
+  _backing && return 0
   [ $DRY_RUN = 1 ] && { echo "  (dry run) Lucy would check: $what"; return 0; }
   grep -qxF "$key" "$PROGRESS" 2>/dev/null || return 0   # they skipped: nothing to check
   local problem b
@@ -248,6 +281,7 @@ verify() {   # step-key  "what was checked"  check-function  args...
     b="$(_dialog "Step $N of $TOTAL — $TITLE" "Lucy checked. Not done yet:
 
 $problem" "Skip,Check again" "Check again")"
+    _backing && return 0
     if [ "$b" != "Check again" ]; then
       unmark "$key"; todo "$what (Lucy checked: not done)"; return 1
     fi
@@ -373,7 +407,7 @@ APPLESCRIPT
 pin_tabs() {   # step-key  "Name|text-in-the-address" ...
   local key="$1"; shift
   use_reception_profile
-  [ "$GO" = back ] && return 0
+  _backing && return 0
   [ $DRY_RUN = 1 ] && { echo "  (dry run) Lucy would pin: ${*%%|*}"; return 0; }
   if [ "$FORCE" = 0 ] && is_done "$key"; then ok "Pinned: ${*%%|*} (done earlier)"; return 0; fi
   local e r left="" denied=0 try
@@ -531,7 +565,7 @@ _saved_username() {   # text-in-the-address -> the username Chrome saved for tha
 allin_login() {   # step-key  "Label|other label|..."  username  [pw-note]
   local key="$1" labels="$2" user="$3" note="$4" name="${2%%|*}"
   use_reception_profile
-  [ "$GO" = back ] && return 0
+  _backing && return 0
   if [ $DRY_RUN = 1 ]; then
     if [ -n "$note" ]; then echo "  (dry run) All in One: $name -> username + “$note”"; else echo "  (dry run) All in One: $name -> username + green PW box"; fi
     return 0
@@ -1186,6 +1220,7 @@ else
   # whole name is used.
   COMPANY=""
   while [ -z "$COMPANY" ]; do
+    _backing && break
     COMPANY_NAME="$(ask_text "Type your full company name.
 
 Example: Alphalete Marketing" "")"
@@ -1834,8 +1869,9 @@ STEPS=($(declare -F | awk '{print $3}' | grep -E '^step_[0-9.]+$' | sort -t_ -k2
 run_all() {
   local i=0
   while [ $i -lt ${#STEPS[@]} ]; do
-    STEP_I=$i; GO=next
+    STEP_I=$i; GO=next; rm -f "$BACK_FLAG"
     "${STEPS[$i]}"
+    [ -f "$BACK_FLAG" ] && { rm -f "$BACK_FLAG"; GO=back; }
     if [ "$GO" = back ] && [ $i -gt 0 ]; then i=$((i-1)); FORCE=1; else i=$((i+1)); FORCE=0; fi
   done
   GO=next
