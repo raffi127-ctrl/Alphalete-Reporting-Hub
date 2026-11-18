@@ -227,7 +227,27 @@ def _action_reassign(args: str) -> tuple[bool, str]:
                   f"(old files in {backup.name}/)")
 
 
+def _action_ovreps(args: str) -> tuple[bool, str]:
+    """READ-ONLY: an office's ACTIVE reps straight from OwnerVille (name +
+    email), to work out which Slack account a rep is before `reassign`.
+    Uses owner_rep_audit's roster reader; nothing is sent to anyone.
+
+      audit_bot_tool ovreps 23751"""
+    from automations.owner_rep_audit import roster
+    offices = [a for a in (args or "").split() if a.isdigit()]
+    if not offices:
+        return False, "usage: audit_bot_tool ovreps <office number> [...]"
+    lines = []
+    for ro in roster.read_all(only=offices):
+        lines.append(f"{ro.office} {ro.owner} ({ro.company}) — {ro.access}"
+                     + (f": {ro.note}" if ro.note else ""))
+        lines += [f"  {r.get('name', '')} | {r.get('email', '')}" for r in ro.reps]
+    stem = mc._audit_bot_dump("ov", "reps-" + "-".join(offices), "\n".join(lines) + "\n")
+    return bool(lines), f"{len(lines)} line(s) -> `logdump {stem}.log`"
+
+
 _ACTIONS = {
+    "ovreps": _action_ovreps,
     "reassign": _action_reassign,
     "regrade": _action_regrade,
     "grep": _action_grep,
