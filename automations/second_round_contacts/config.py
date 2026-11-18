@@ -54,7 +54,15 @@ LABEL_BOOKED = "Second Interviews Booked"
 LABEL_HELD = "Total Second Interviews"
 LABEL_SHOWED = "Second Interviews Showed Up"
 LABEL_OFFERED = "Offered Job From Second Round"
-LABEL_BOB = "Brought on Board Booked"
+# WHAT THE PAGE ACTUALLY CALLS IT (probed 2026-11-18, office 11280). It is
+# "Total Daily Bob", under "Administrative Booking Data: -> Retention Call
+# List". We asked for "Brought on Board Booked" for a day and a half; no such
+# row exists, so the read came back empty for every owner and the keeper guard
+# removed nobody. Every other label on this list probed OK, which is why the
+# empty read looked like a real zero rather than a miss. Do not reword this
+# from a screenshot of the Second Interviews page -- that page and this report
+# word things differently, and that assumption is what cost the day and a half.
+LABEL_BOB = "Total Daily Bob"
 LABEL_NS_SCHED = "Total New Starts Scheduled"
 LABEL_NS_SHOWED = "New Starts Showed Up"
 ADD_LABELS = (LABEL_BOOKED, LABEL_HELD)
@@ -85,7 +93,7 @@ EVENING_LOOKBACK_DAYS = 1
 # WHAT KEEPS SOMEBODY IN (Megan, 2026-11-17, over the Second Interviews page):
 # "anyone that isn't marked BOB should be removed". The keeper is the BOB mark
 # -- Follow Up Status "BOB - Booked" on that page, which the Retention report
-# counts as "Brought on Board Booked". NOT "showed up" and NOT "offered": a
+# counts in its "Total Daily Bob" row. NOT "showed up" and NOT "offered": a
 # second round can be marked showed up, or even offered the position, and still
 # never turn into a start, and those names are what fill reception's group with
 # people who mean nothing.
@@ -95,13 +103,22 @@ NO_SHOW_DAYS = 21
 BADGE_DAYS = 21
 AUDIT_LOOKBACK_DAYS = 35        # how far back the audit re-reads the report
 
-# HOW FAR FORWARD THE BOB MARK IS READ (2026-11-17). Every other metric here is
-# an event that already happened, so looking backwards finds it. A BOB is not:
-# the Second Interviews page files it as "Brought on Board (Nov 30)" -- the day
-# they are due to START, which is in the future. A backward-only window
-# therefore returns NOTHING for exactly the people who ARE marked, which is how
-# the first live preview came back with the keeper empty for all five owners
-# while the page plainly showed three people marked BOB - Booked that morning.
+# HOW FAR FORWARD THE BOB MARK IS READ (2026-11-17).
+#
+# WHY THIS WAS ADDED, AND WHY THAT REASON IS NOW IN DOUBT. It was added to
+# explain an empty keeper read: the Second Interviews page files a BOB as
+# "Brought on Board (Nov 30)", so the mark looked like it was dated by the day
+# somebody STARTS, and a backward-only window would miss exactly the people who
+# ARE marked. That read is now explained by something simpler and proven -- the
+# row label was wrong (see LABEL_BOB above), so no window of any shape could
+# have found it.
+#
+# This report's row is called "Total Daily Bob" and breaks down by RECRUITER,
+# which reads much more like a count of BOBs MADE that day than of starts due
+# that day. If that is right, the forward window finds nothing and the backward
+# one is what matters. Costs nothing to leave on: the report shows one week at a
+# time, so a date column outside it simply is not found. Settle it by looking at
+# WHICH dates come back non-zero on the next dry pass, not by re-reasoning.
 # 60 days is comfortably past the furthest start anyone books.
 BOB_FORWARD_DAYS = 60
 
