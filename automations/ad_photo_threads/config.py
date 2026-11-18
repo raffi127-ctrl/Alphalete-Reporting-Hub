@@ -161,6 +161,12 @@ NO_AD_ANSWERS = {
     # and 11/8: "Amara Simpson", ad "AT&T Management Associate, Pembroke
     # Pines, FL".
     "2026-11-09|amara": "AT&T Management Associate ? Pembroke Pines FL",
+    # Isaiah, 11/18: the sheet's "Hemi Kumar-" (11/12, Francesca, tab `Isaiah
+    # Revelle` row 2178) has a blank Ad Title, and AppStream 19717 has nobody
+    # named Hemi or Kumar -- not on the call list (45 days back) nor in Total
+    # First Interviews 11/12 +-1. No clue -> the catch-all thread, like
+    # Tranice Gordon. The key keeps the sheet's trailing dash.
+    "2026-11-12|hemi kumar-": "Other (no ad)",
 }
 # Eve 11/5: a person said this row is someone already on an ad thread under
 # another name: it only comes off the no-ad list, never posted twice.
