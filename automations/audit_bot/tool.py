@@ -10,6 +10,7 @@ disk. A rerun spawns its own python, so it always runs the code that's on disk.
     lucy rerun audit_bot_tool ls [colten] inbox
     lucy rerun audit_bot_tool channels [colten]
     lucy rerun audit_bot_tool grep [colten] "<regex>"   (search saved reports)
+    lucy rerun audit_bot_tool reassign [colten] <owner> = <rep>, <rep> [--apply]
 """
 import shlex
 import sys
@@ -117,7 +118,106 @@ def _action_regrade(args: str) -> tuple[bool, str]:
                   f"results `logdump regrade-{label}-{rest[0]}.tsv`")
 
 
+def _norm_name(s: str) -> str:
+    import re
+    return re.sub(r"\s+", " ", re.sub(r"[^\w\s]", " ", (s or "").lower())).strip()
+
+
+def _action_reassign(args: str) -> tuple[bool, str]:
+    """Move reps to another owner in the bot's reps.json (a rep who answered the
+    owner question wrong — Colten 2026-11-18: three of Samuel Acay's reps sent
+    Colten's / Raf's name). The scorecards read each rep's CURRENT owner, so
+    their past audits move too. Dry run unless --apply; reps.json is backed up
+    to .runtime/backup-<stamp>/ first. The full roster goes to the log.
+
+      audit_bot_tool reassign colten Samuel Acay = Oswaldo, Katherine Gomez, Valentina
+      audit_bot_tool reassign colten Samuel Acay = Oswaldo, Katherine Gomez, Valentina --apply
+
+    A rep name matches on full name, or on first name alone when only ONE rep
+    has it. An owner not on the bot's list yet is added (with --apply)."""
+    import json
+    import re
+    import shutil
+    from datetime import datetime
+    parts = (args or "").split()
+    apply = "--apply" in parts
+    parts = [p for p in parts if p != "--apply"]
+    root, rest, label = mc._audit_bot_root(parts)
+    text = " ".join(rest)
+    if "=" not in text:
+        return False, "usage: audit_bot_tool reassign [colten] <owner> = <rep>, <rep> [--apply]"
+    owner_q, reps_q = (s.strip() for s in text.split("=", 1))
+    rep_qs = [r.strip() for r in reps_q.split(",") if r.strip()]
+    rt = root / ".runtime"
+    of, rf = rt / "owners.json", rt / "reps.json"
+    if not of.is_file() or not rf.is_file():
+        return False, f"[{label}] no owners.json / reps.json in {rt}"
+    owners_doc = json.loads(of.read_text(encoding="utf-8"))
+    reps_doc = json.loads(rf.read_text(encoding="utf-8"))
+    owners, reps = owners_doc.get("owners", []), reps_doc.get("reps", {})
+    oname = {o.get("id"): o.get("name", o.get("id")) for o in owners}
+
+    # Owner: exact name or alias only — no fuzzy guess on who gets the reps.
+    want = _norm_name(owner_q)
+    owner = next((o for o in owners if _norm_name(o.get("name", "")) == want
+                  or want in [_norm_name(a) for a in o.get("aliases") or []]), None)
+    log = [f"owner wanted: {owner_q} -> "
+           + (f"{owner['name']} ({owner['id']})" if owner else "NOT on the bot's list")]
+
+    picks, problems = [], []
+    for q in rep_qs:
+        nq = _norm_name(q)
+        full = [(u, r) for u, r in reps.items()
+                if _norm_name(f"{r.get('first_name', '')} {r.get('last_name', '')}") == nq]
+        first = [(u, r) for u, r in reps.items() if _norm_name(r.get("first_name", "")) == nq]
+        hits = full or first
+        if len(hits) == 1:
+            picks.append((q, *hits[0]))
+        else:
+            problems.append(f"{q}: {'no rep by that name' if not hits else f'{len(hits)} reps match'}")
+
+    roster = sorted(f"{r.get('first_name', '')} {r.get('last_name', '')}".strip() + f" [{u}]"
+                    f" -> {oname.get(r.get('owner_id'), r.get('owner_id') or '-')}"
+                    for u, r in reps.items())
+    for q, u, r in picks:
+        log.append(f"{q}: {r.get('first_name', '')} {r.get('last_name', '')} [{u}] "
+                   f"now under {oname.get(r.get('owner_id'), r.get('owner_id') or '-')}")
+    log += problems + ["", "ALL REPS:"] + roster
+    stem = mc._audit_bot_dump(label, "reassign", "\n".join(log) + "\n")
+    summary = "; ".join(log[1:1 + len(picks)] + problems)
+    if problems or not picks:
+        return False, f"[{label}] nothing changed — {summary} (roster: `lucy logtail {stem} . 80`)"
+    if not apply:
+        return True, (f"[{label}] DRY RUN -> {owner['name'] if owner else owner_q + ' (would be added)'}: "
+                      f"{summary}. Add --apply to save. (`lucy logtail {stem} . 80`)")
+
+    backup = rt / f"backup-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    backup.mkdir()
+    shutil.copy2(of, backup / of.name)
+    shutil.copy2(rf, backup / rf.name)
+    if not owner:
+        oid = base = re.sub(r"[^a-z0-9]+", "_", owner_q.lower()).strip("_")
+        i = 2
+        while oid in oname:
+            oid, i = f"{base}_{i}", i + 1
+        owner = {"id": oid, "name": owner_q.strip(), "aliases": [owner_q.split()[0].lower()],
+                 "added_at": datetime.now().isoformat(), "source": "reassign"}
+        owners.append(owner)
+        owners_doc["owners"] = owners
+        of.write_text(json.dumps(owners_doc, indent=2, ensure_ascii=False), encoding="utf-8")
+    now = datetime.now().isoformat()
+    for _q, u, r in picks:
+        r["reassigned_from"] = r.get("owner_id")
+        r["owner_id"] = owner["id"]
+        r["set_at"] = now
+        r["source"] = "reassign"
+    rf.write_text(json.dumps(reps_doc, indent=2, ensure_ascii=False), encoding="utf-8")
+    return True, (f"[{label}] moved {len(picks)} rep(s) to {owner['name']}: {summary} "
+                  f"(old files in {backup.name}/)")
+
+
 _ACTIONS = {
+    "reassign": _action_reassign,
     "regrade": _action_regrade,
     "grep": _action_grep,
     "channels": _action_channels,
