@@ -597,6 +597,86 @@ Type the ${name} username and password in the GREEN boxes (${uncell}, ${pwcell})
   _paint $((unrow+1)) $vcol clear
 }
 
+# The OWNER's own Gmail is pinned too (Maud, 2026-11-17). Both Gmail tabs share
+# one address, so Lucy pins the Gmail tab that ISN'T pinned yet (reception's
+# was pinned earlier) and checks for TWO pinned Gmail tabs.
+_auto_pin_next() {   # text-in-the-address -> pinned | none | denied
+  osascript - "$1" "$(_reception_urls)" <<'APPLESCRIPT' 2>/dev/null
+on run argv
+  set needle to item 1 of argv
+  set blob to item 2 of argv
+  set bestW to 0
+  set bestScore to -1
+  tell application "Google Chrome"
+    repeat with wi from 1 to count of windows
+      set score to 0
+      repeat with t in tabs of window wi
+        if blob is not "" and blob contains (URL of t) then set score to score + 1
+      end repeat
+      if score > bestScore then
+        set bestScore to score
+        set bestW to wi
+      end if
+    end repeat
+    if bestW = 0 then return "none"
+    set w to window bestW
+    set n to count of tabs of w
+  end tell
+  repeat with i from 1 to n
+    tell application "Google Chrome"
+      set w to window bestW
+      if URL of tab i of w contains needle then
+        set active tab index of w to i
+        set index of w to 1
+        activate
+        set hit to true
+      else
+        set hit to false
+      end if
+    end tell
+    if hit then
+      delay 0.6
+      try
+        tell application "System Events" to tell process "Google Chrome"
+          if exists menu item "Pin Tab" of menu "Tab" of menu bar 1 then
+            click menu item "Pin Tab" of menu "Tab" of menu bar 1
+            return "pinned"
+          end if
+        end tell
+      on error
+        return "denied"
+      end try
+      -- re-find the window: pinning moved tabs, so start over next call
+    end if
+  end repeat
+  return "none"
+end run
+APPLESCRIPT
+}
+chk_two_gmail_pins() {
+  command -v perl >/dev/null 2>&1 || return 0
+  local sess r n
+  sess="$(ls -t "$CHROME_DIR/Sessions/" 2>/dev/null | grep '^Session_' | head -1)"
+  [ -n "$sess" ] || return 0
+  r="$(_pin_reader)"; n="$(perl "$r" "$CHROME_DIR/Sessions/$sess" 2>/dev/null | grep -cE '^1	.*mail\.google\.com')"; rm -f "$r"
+  [ "${n:-0}" -ge 2 ] && return
+  printf "Your own Gmail isn't pinned yet.\\n\\nRight-click its tab at the top of Chrome.\\nClick “Pin”."
+}
+pin_owner_gmail() {
+  [ "$GO" = back ] && return 0
+  [ $DRY_RUN = 1 ] && { echo "  (dry run) Lucy would pin the owner's own Gmail"; return 0; }
+  if [ "$FORCE" = 0 ] && is_done pin_owner_gmail; then ok "Owner's Gmail pinned (done earlier)"; return 0; fi
+  use_reception_profile
+  sleep 2
+  if [ "$(_auto_pin_next mail.google.com)" = pinned ]; then
+    mark_done pin_owner_gmail; ok "Lucy pinned your own Gmail"
+  else
+    human pin_owner_gmail "Pin your own Gmail:
+Right-click its tab at the top of Chrome. Click “Pin”." "Owner's Gmail pinned"
+  fi
+  verify pin_owner_gmail "your own Gmail pinned" chk_two_gmail_pins
+}
+
 # Each check prints nothing when it's done, or what's wrong + how to fix it.
 chk_stars() {   # "Name|text-in-the-address" ...
   local urls e miss=""
@@ -1241,14 +1321,10 @@ section "Apple account (iCloud)"
 # ROLE: owners and admins are already signed in to their OWN Apple account on
 # their Mac -- nothing to do or check (Megan, 2026-11-12). Only RECEPTION
 # creates an iCloud account, with the reception email.
-# Saved: the OWNER's Apple login (on the owner's laptop) and RECEPTION's.
-# An admin's personal Apple account is never saved (Megan, 2026-11-12).
-if [ "$ROLE" = admin ]; then ok "Apple account: the admin's own (not saved)"; return 0; fi
-if [ "$ROLE" = owner ]; then
-  ok "Apple account: the owner's own, already signed in"
-  save_password pw_apple "Apple account" "apple.com" "$(defaults read MobileMeAccounts Accounts 2>/dev/null | sed -n 's/.*AccountID = "\{0,1\}\([^";]*\).*/\1/p' | head -1)" "Apple Accounts|Apple Account|Apple"
-  return 0
-fi
+# Only RECEPTION's Apple login is saved. The owner's and an admin's are their
+# personal accounts (Maud, 2026-11-17: "no need to save the apple account as
+# it's their personal account").
+if [ "$ROLE" != reception ]; then ok "Apple account: their own, already signed in (not saved)"; return 0; fi
 if [ "$COMPUTER" = owner ] && [ $DRY_RUN = 0 ] && [ -z "$(chk_apple_any)" ]; then
   # A new Mac signs in to Apple during its own first-time setup, before the
   # call (Megan, 2026-11-11) -- so usually there's nothing to do here.
@@ -1409,6 +1485,15 @@ if [ -z "$OWNER_EMAIL" ]; then
 What email address is ${WHOSE} Sara+ account set up with?" "")"
   remember OWNER_EMAIL "$OWNER_EMAIL"
 fi
+# Step 10 used to open "?authuser=<owner>", but Chrome shows the first
+# signed-in account -- the reception one (Maud, 2026-11-17). Google's account
+# picker with the owner's email selects that account if it's signed in, or asks
+# them to sign in to it, then goes on to the Gmail page.
+owner_gmail() {   # gmail #fragment (e.g. settings/fwdandpop) -> URL
+  local cont="https://mail.google.com/mail/?authuser=${OWNER_EMAIL}#$1"
+  cont="$(printf '%s' "$cont" | sed 's/%/%25/g; s/:/%3A/g; s#/#%2F#g; s/?/%3F/g; s/=/%3D/g; s/#/%23/g; s/@/%40/g; s/&/%26/g')"
+  printf 'https://accounts.google.com/AccountChooser?Email=%s&continue=%s' "$OWNER_EMAIL" "$cont"
+}
 OWNER_GMAIL="https://mail.google.com/mail/?authuser=$OWNER_EMAIL"
 # ROLE: an admin/reception person often can't get into the ICD's Gmail
 # (Megan, 2026-11-12). Ask once; "No" skips both forwarding steps (and the
@@ -1441,11 +1526,12 @@ fi
 if is_done filters_reception; then
   ok "Owner's Gmail forwards login codes to reception (done earlier)"
 else
-  open_chrome "$OWNER_GMAIL#settings/fwdandpop"
+  open_chrome "$(owner_gmail settings/fwdandpop)"
   human fwd_reception_added "Gmail is open for:
 ${OWNER_EMAIL}
 (the email ${WHOSE} Sara+ account uses)
-Sign in to it if it asks.
+Sign in to it if it asks. The picture at the top right
+must be that email, not reception.
 
 1. Click “Add a forwarding address”.
 2. Type:
@@ -1454,6 +1540,7 @@ ${RECEPTION_EMAIL}
 
 Don't change anything else." "Owner's Gmail: reception added as a forwarding address"
   verify fwd_reception_added "reception added as a forwarding address" chk_fwd_added "$RECEPTION_EMAIL"
+  [ "$ROLE" = owner ] && pin_owner_gmail
   # The person is already signed in to the RECEPTION Gmail, so they approve
   # this forward themselves (Megan, 2026-11-12) -- no launch team needed.
   open_chrome "https://mail.google.com/mail/?authuser=$RECEPTION_EMAIL#search/forwarding+confirmation"
@@ -1472,7 +1559,7 @@ Approve the forwarding:
          "noreply@ownerville.com|Your Account Verification Code|OwnerVille codes"; then
       mark_done filters_reception
     else
-      open_chrome "$OWNER_GMAIL#settings/filters"
+      open_chrome "$(owner_gmail settings/filters)"
       human filters_reception "Gmail is open.
 
 1. Scroll to the bottom. Click “Import filters”.
@@ -1505,11 +1592,12 @@ if is_done filters_lucy; then
   ok "Owner's Gmail forwards background checks to Lucy (done earlier)"
 else
   echo "  For the launch team: $REGISTER_CMD"
-  open_chrome "$OWNER_GMAIL#settings/fwdandpop"
+  open_chrome "$(owner_gmail settings/fwdandpop)"
   human fwd_lucy_added "Gmail is open for:
 ${OWNER_EMAIL}
 (the email ${WHOSE} Sara+ account uses)
-Sign in to it if it asks.
+Sign in to it if it asks. The picture at the top right
+must be that email, not reception.
 
 1. Click “Add a forwarding address”.
 2. Type:
@@ -1523,7 +1611,7 @@ Don't change anything else." "Owner's Gmail: Lucy added as a forwarding address"
     if make_filters "$LUCY_BG_INBOX" "$STERLING||Sterling background checks"; then
       mark_done filters_lucy
     else
-      open_chrome "$OWNER_GMAIL#settings/filters"
+      open_chrome "$(owner_gmail settings/filters)"
       human filters_lucy "Gmail is open.
 
 1. Scroll to the bottom. Click “Import filters”.
@@ -1646,7 +1734,7 @@ human excel "Excel is open.
 3. Microsoft sends a code. The launch team will tell you the code.
 4. Type the code." "Excel: signed in"
 verify excel "Excel signed in" chk_excel
-allin_login allin_excel "Microsoft Office|Miscrosoft Office|Excel" "alphaletereception@gmail.com" "code sent to email"
+# Not saved in the All in One: it's Alphalete's login (Maud, 2026-11-17).
 
 # ------------------------------------------------------------------------
 }
