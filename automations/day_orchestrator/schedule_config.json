@@ -14086,6 +14086,25 @@
     "type": "not_configured"
    }
   },
+  "second_round_label_probe": {
+   "on_scheduler": false,
+   "_off_scheduler_note": "READ-ONLY, off-scheduler. `lucy rerun second_round_label_probe` prints the row labels the Retention Report actually uses, so a read that came back EMPTY can be told apart from a label we spelled wrong. Built 2026-11-18: config.LABEL_BOB ('Brought on Board Booked') returned nothing for all five owners on 11/17 and 11/18, the safety stop fired, and Megan's screenshot of the Second Interviews page says 'BOB - Booked' -- a DIFFERENT page, so the screenshot is a hint and not evidence. Needs an AppStream session, which the laptop does not have and a Lucy does. No machine pin: any Lucy with the login can answer it. Writes nothing and touches no contacts.",
+   "display_name": "2nd round label probe (read-only)",
+   "source_type": "browser",
+   "data_sources": [],
+   "command": [
+    "automations.second_round_contacts.label_probe"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 10,
+   "verify": null
+  },
   "slack_skool_email_probe": {
    "on_scheduler": false,
    "_off_scheduler_note": "READ-ONLY probe for the Slack/Skool email build (Megan 2026-08-26): `lucy --machine 'Lucy 1' rerun slack_skool_email_probe` reads this week's D2D OBCL tab, opens Slack to fetch the current invite link, and prints the finished email. base_args is EMPTY, which is the dry run -- run.py only sends on --send. Appending --send to a rerun would mail the cohort, so don't; the wrong-week gate is the backstop, not the plan. This exists because the three credentials it needs (Slack session, Skool link, reception Gmail token) were all seeded on the laptop and pushed here, and a pushed credential is not a working one until something uses it. weekdays [] so the batch never auto-runs it.",
