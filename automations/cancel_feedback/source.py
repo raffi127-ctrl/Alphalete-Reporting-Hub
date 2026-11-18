@@ -80,31 +80,36 @@ def unify(cancel_rows: List[dict], disconnect_rows: List[dict]) -> List[dict]:
 
 
 def gather(day: Optional[dt.date] = None, *, owners: Optional[set] = None,
+           window: Optional[tuple] = None,
            cancel_csv=None, disconnect_csv=None, log=print) -> List[dict]:
-    """Yesterday's (or `day`'s) cancels + disconnects as one deduped list,
-    restricted to `owners` (default: Rafael's whole captainship). Pass
-    cancel_csv/disconnect_csv to parse existing crosstabs instead of pulling
-    (offline/testing)."""
+    """Cancels + disconnects as one deduped list, restricted to `owners`
+    (default: Rafael's whole captainship). Status Date is filtered to `window`
+    (inclusive); when omitted it defaults to the single day `day` (yesterday),
+    which is the daily automation's behavior. Pass a wider window to sweep a
+    range of days in one pull (e.g. a whole month). Pass cancel_csv/
+    disconnect_csv to parse existing crosstabs instead of pulling."""
     from automations.canceled_orders import pull as cxpull
     from automations.disconnects import pull as dxpull
 
     day = day or C.yesterday()
     owners = owners if owners is not None else C.captainship_owners()
-    order_start = day - dt.timedelta(days=C.ORDER_WINDOW_DAYS)
-    window = (day, day)
+    win_start, win_end = window if window else (day, day)
+    order_start = win_start - dt.timedelta(days=C.ORDER_WINDOW_DAYS)
+    window = (win_start, win_end)
 
     if cancel_csv is None:
-        log("cancels: Order Log pull (%s..%s)…" % (order_start, day))
-        cancel_csv = cxpull.fetch_crosstab(order_start, day)
+        log("cancels: Order Log pull (%s..%s)…" % (order_start, win_end))
+        cancel_csv = cxpull.fetch_crosstab(order_start, win_end)
     cancel_rows = cxpull.parse_and_filter(cancel_csv, owners, window)
 
     if disconnect_csv is None:
-        log("disconnects: Order Log pull (%s..%s)…" % (order_start, day))
-        disconnect_csv = dxpull.fetch_crosstab(order_start, day)
+        log("disconnects: Order Log pull (%s..%s)…" % (order_start, win_end))
+        disconnect_csv = dxpull.fetch_crosstab(order_start, win_end)
     disconnect_rows = dxpull.parse_and_filter(disconnect_csv, owners, window)
 
-    log("cancels: %d  disconnects: %d  (status date == %s)"
-        % (len(cancel_rows), len(disconnect_rows), day))
+    span = ("== %s" % win_start) if win_start == win_end else ("in %s..%s" % (win_start, win_end))
+    log("cancels: %d  disconnects: %d  (status date %s)"
+        % (len(cancel_rows), len(disconnect_rows), span))
     customers = unify(cancel_rows, disconnect_rows)
     log("unique customers to reach out to: %d" % len(customers))
     return customers

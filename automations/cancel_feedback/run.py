@@ -4,8 +4,14 @@
   python -m automations.cancel_feedback.run --scope full    # DRY RUN, whole captainship
   python -m automations.cancel_feedback.run --live          # SEND (Rafael's office)
   python -m automations.cancel_feedback.run --scope full --live
+  python -m automations.cancel_feedback.run --scope full --from-date 2026-11-01   # DRY RUN, whole month
+  python -m automations.cancel_feedback.run --scope full --from-date 2026-11-01 --live   # SEND the month
   python -m automations.cancel_feedback.run --collect-responses        # read + log replies
   python -m automations.cancel_feedback.run --cancel-csv c.csv --disconnect-csv d.csv  # offline
+
+A date RANGE (--from-date [--to-date]) sweeps every status date in the window in
+ONE pull; the once-per-customer ledger + opt-out list still apply, so a range
+re-run never re-texts anyone already contacted. --to-date defaults to today.
 
 DRY RUN is the default — it prints exactly who would be texted and the rendered
 message, and sends nothing. Preview Rafael Hidalgo's office, then --scope full.
@@ -52,15 +58,17 @@ def select_recipients(customers: List[dict], texted: set, opted: set
     return to_text, skipped
 
 
-def run(scope: str = "test", day: Optional[dt.date] = None, *, dry_run: bool = True,
+def run(scope: str = "test", day: Optional[dt.date] = None, *,
+        window: Optional[Tuple[dt.date, dt.date]] = None, dry_run: bool = True,
         cancel_csv=None, disconnect_csv=None, log=print) -> int:
     day = day or C.yesterday()
     owners = C.owners_for_scope(scope)
-    log("Cancel feedback — scope=%s (%d office%s), day=%s%s"
-        % (scope, len(owners), "" if len(owners) == 1 else "s", day,
+    when = ("day=%s" % day) if not window else ("range=%s..%s" % window)
+    log("Cancel feedback — scope=%s (%d office%s), %s%s"
+        % (scope, len(owners), "" if len(owners) == 1 else "s", when,
            "  (DRY RUN)" if dry_run else ""))
 
-    customers = source.gather(day, owners=owners, cancel_csv=cancel_csv,
+    customers = source.gather(day, owners=owners, window=window, cancel_csv=cancel_csv,
                               disconnect_csv=disconnect_csv, log=log)
     if not customers:
         log("no cancels/disconnects for %s in scope — nothing to do" % day)
@@ -156,6 +164,10 @@ def main(argv=None) -> int:
     ap.add_argument("--collect-responses", action="store_true",
                     help="read + log inbound replies instead of sending")
     ap.add_argument("--since", default=None, help="responses: look back from this YYYY-MM-DD")
+    ap.add_argument("--from-date", default=None,
+                    help="send a date RANGE: sweep status dates from this YYYY-MM-DD")
+    ap.add_argument("--to-date", default=None,
+                    help="send a date RANGE: ...through this YYYY-MM-DD (default: today)")
     ap.add_argument("--cancel-csv", default=None, help="offline: use this cancels crosstab")
     ap.add_argument("--disconnect-csv", default=None, help="offline: use this disconnects crosstab")
     args = ap.parse_args(argv)
@@ -166,7 +178,19 @@ def main(argv=None) -> int:
     if args.collect_responses:
         since = dt.datetime.strptime(args.since, "%Y-%m-%d").date() if args.since else None
         return collect_responses(since, dry_run=not args.live)
-    return run(args.scope, day, dry_run=not args.live,
+    window = None
+    if args.from_date or args.to_date:
+        if not args.from_date:
+            print("✗ --to-date needs --from-date (the range start).")
+            return 2
+        start = dt.datetime.strptime(args.from_date, "%Y-%m-%d").date()
+        end = (dt.datetime.strptime(args.to_date, "%Y-%m-%d").date()
+               if args.to_date else dt.date.today())
+        if end < start:
+            print("✗ --to-date is before --from-date.")
+            return 2
+        window = (start, end)
+    return run(args.scope, day, window=window, dry_run=not args.live,
                cancel_csv=args.cancel_csv, disconnect_csv=args.disconnect_csv)
 
 
