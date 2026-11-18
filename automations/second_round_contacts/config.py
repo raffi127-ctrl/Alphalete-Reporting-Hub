@@ -95,6 +95,16 @@ NO_SHOW_DAYS = 21
 BADGE_DAYS = 21
 AUDIT_LOOKBACK_DAYS = 35        # how far back the audit re-reads the report
 
+# HOW FAR FORWARD THE BOB MARK IS READ (2026-11-17). Every other metric here is
+# an event that already happened, so looking backwards finds it. A BOB is not:
+# the Second Interviews page files it as "Brought on Board (Nov 30)" -- the day
+# they are due to START, which is in the future. A backward-only window
+# therefore returns NOTHING for exactly the people who ARE marked, which is how
+# the first live preview came back with the keeper empty for all five owners
+# while the page plainly showed three people marked BOB - Booked that morning.
+# 60 days is comfortably past the furthest start anyone books.
+BOB_FORWARD_DAYS = 60
+
 
 def today() -> dt.date:
     return dt.date.today()

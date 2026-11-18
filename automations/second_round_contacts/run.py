@@ -49,7 +49,12 @@ def read_lists(app, office: str, labels, days: List[dt.date]) -> List[Tuple[str,
     owner = app.select_office(office)
     _log("  [%s] %s" % (office, owner))
     app.open_retention_details()
-    hrefs = [(label, d, app.detail_href(label, date_header(d))) for label in labels for d in days]
+    # `days` may be ONE list for every label, or {label: days} when a label
+    # needs its own window -- the BOB mark is filed under the START date, so it
+    # is the one metric that has to be read into the future.
+    per_label = days if isinstance(days, dict) else {lab: days for lab in labels}
+    hrefs = [(label, d, app.detail_href(label, date_header(d)))
+             for label in labels for d in per_label.get(label, [])]
     out: List[Tuple[str, dt.date, dict]] = []
     for label, d, href in hrefs:
         if not _count(href):
@@ -198,7 +203,12 @@ def gather_facts(app, offices: List[str], keys: set, today: dt.date) -> Dict[str
     every office. A read that fails RAISES: the audit then skips this owner,
     because a person whose office went unread would look not hired and get
     deleted."""
-    days = [today - dt.timedelta(days=i) for i in range(C.AUDIT_LOOKBACK_DAYS, -1, -1)]
+    back = [today - dt.timedelta(days=i) for i in range(C.AUDIT_LOOKBACK_DAYS, -1, -1)]
+    # The BOB mark alone is read forward too: it is filed under the day they
+    # are due to START, which has not happened yet.
+    days = {label: back for label in C.AUDIT_LABELS}
+    days[C.LABEL_BOB] = back + [today + dt.timedelta(days=i)
+                                for i in range(1, C.BOB_FORWARD_DAYS + 1)]
     found: List[Tuple[str, dt.date, dict]] = []
     for office in offices:
         found.extend(read_lists(app, office, C.AUDIT_LABELS, days))

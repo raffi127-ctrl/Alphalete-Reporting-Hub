@@ -102,6 +102,44 @@ class Rules(unittest.TestCase):
         self.assertEqual(rules.decide(ent(status=S.HIRED), {}, dt.date(2027, 6, 1))[0], rules.KEEP)
 
 
+class BobIsReadIntoTheFuture(unittest.TestCase):
+    """A BOB is filed under the day they START, not the day it was marked, so
+    a backward-only window returns nothing for exactly the people who ARE
+    marked (2026-11-17: the keeper came back empty for all five owners while
+    the page showed three people marked BOB - Booked that morning)."""
+
+    def _windows(self):
+        seen = {}
+        def fake(_a, _office, labels, days):
+            seen.update(days if isinstance(days, dict)
+                        else {lab: days for lab in labels})
+            return []
+        with mock.patch.object(RUN, "read_lists", fake):
+            RUN.gather_facts(None, ["11280"], set(), T)
+        return seen
+
+    def test_bob_reaches_past_today(self):
+        w = self._windows()
+        self.assertGreater(max(w[C.LABEL_BOB]), T,
+                           "a BOB dated after today would never be seen")
+        self.assertGreaterEqual((max(w[C.LABEL_BOB]) - T).days,
+                                C.BOB_FORWARD_DAYS)
+
+    def test_bob_still_reaches_back(self):
+        w = self._windows()
+        self.assertEqual(min(w[C.LABEL_BOB]),
+                         T - dt.timedelta(days=C.AUDIT_LOOKBACK_DAYS))
+
+    def test_the_other_labels_stay_backward_only(self):
+        """They are events that already happened; reading 60 future days of
+        each would be 60 pointless lookups per label per office."""
+        w = self._windows()
+        for label in C.AUDIT_LABELS:
+            if label == C.LABEL_BOB:
+                continue
+            self.assertEqual(max(w[label]), T, label)
+
+
 class KeeperMustHaveBeenRead(unittest.TestCase):
     """The evening rule removes everybody NOT marked BOB, so a read that
     returned no BOB rows at all cannot be treated as 'nobody was BOB'd' -- it
