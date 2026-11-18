@@ -73,11 +73,13 @@ def send_sms(creds: Dict[str, str], to: str, text: str,
 
 
 def replies_since(creds: Dict[str, str], since: dt.date,
-                  *, log=print) -> List[dict]:
+                  *, token: Optional[str] = None, log=print) -> List[dict]:
     """All inbound SMS on the line since `since` (date, inclusive), newest
-    last. Each: {phone (+1...), text, time, id}. phone is normalized so it
-    matches the stored outreach keys."""
-    tok = get_access_token(creds, log=log)
+    last. Each: {phone (+1...), text, time, id, read}. `read` is True/False so
+    the caller can skip re-marking already-read messages. phone is normalized so
+    it matches the stored outreach keys. Pass `token` to reuse a run's one token
+    (else it fetches its own)."""
+    tok = token or get_access_token(creds, log=log)
     hdr = {"Authorization": "Bearer %s" % tok}
     url = C.RC_BASE_URL + "/restapi/v1.0/account/~/extension/~/message-store"
     params = {"messageType": "SMS", "direction": "Inbound",
@@ -95,11 +97,36 @@ def replies_since(creds: Dict[str, str], since: dt.date,
             if not phone:
                 continue
             out.append({"phone": phone, "text": (m.get("subject") or "").strip(),
-                        "time": m.get("creationTime", ""), "id": str(m.get("id") or "")})
+                        "time": m.get("creationTime", ""), "id": str(m.get("id") or ""),
+                        "read": str(m.get("readStatus", "")).strip() == "Read"})
         nxt = (j.get("navigation", {}).get("nextPage", {}) or {}).get("uri")
         url, params = (nxt, None) if nxt else (None, None)
     out.sort(key=lambda x: x["time"])
     return out
+
+
+def mark_read(token: str, msg_id: str, *, log=print) -> bool:
+    """Mark one inbound message Read (same endpoint the wrap-up auto-read uses),
+    429-aware. Returns True on success. Extension `~` = the feedback JWT's own
+    extension, which owns the line."""
+    if not msg_id:
+        return False
+    hdr = {"Authorization": "Bearer %s" % token, "Content-Type": "application/json"}
+    url = C.RC_BASE_URL + "/restapi/v1.0/account/~/extension/~/message-store/%s" % msg_id
+    for attempt in range(5):
+        r = requests.put(url, headers=hdr, json={"readStatus": "Read"}, timeout=15)
+        if r.status_code == 429:
+            wait = int(r.headers.get("Retry-After", 10))
+            log("  rate limited marking read, waiting %ds…" % wait)
+            time.sleep(wait)
+            continue
+        if r.status_code in (200, 201):
+            time.sleep(0.3)      # gentle spacing, like the auto-read
+            return True
+        log("  ✗ mark-read %s failed: HTTP %s %s" % (msg_id, r.status_code, r.text[:120]))
+        return False
+    log("  ✗ mark-read %s gave up after retries" % msg_id)
+    return False
 
 
 def is_opt_out(text: str) -> bool:

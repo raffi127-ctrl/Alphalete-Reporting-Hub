@@ -134,9 +134,10 @@ def collect_responses(since: Optional[dt.date] = None, *, dry_run: bool = True,
         return 0
     since = since or (dt.date.today() - dt.timedelta(days=14))
     creds = C.rc_creds()
+    token = rc.get_access_token(creds, log=log)            # ONE token for the run
     our = flog.outreach_map(log=log)                       # phone -> customer
     already = flog.logged_reply_ids(log=log)
-    replies = rc.replies_since(creds, since, log=log)
+    replies = rc.replies_since(creds, since, token=token, log=log)
     new: List[Dict] = []
     for r in replies:
         if r["phone"] not in our or r["id"] in already:
@@ -150,6 +151,20 @@ def collect_responses(since: Optional[dt.date] = None, *, dry_run: bool = True,
         log("  <- %s  %s%s: %r" % (e["phone"], e["customer"], tag, e["feedback"][:120]))
     if not dry_run:
         flog.record_responses(new, log=log)
+
+    # Mark read every reply we've LOGGED (new + previously-logged) that is still
+    # unread — keeps Dylan's inbox clean once the feedback is captured. Only
+    # messages we logged as feedback are touched, never a personal text. A reply
+    # not yet logged stays Unread, so a later run logs it before clearing it.
+    logged_ids = set(already) | {e["message_id"] for e in new}
+    to_mark = [r for r in replies
+               if r["id"] in logged_ids and not r.get("read")]
+    if to_mark:
+        log("marking %d logged repl%s read…"
+            % (len(to_mark), "y" if len(to_mark) == 1 else "ies"))
+        if not dry_run:
+            done = sum(rc.mark_read(token, r["id"], log=log) for r in to_mark)
+            log("marked read: %d/%d" % (done, len(to_mark)))
     print("=== done ===", flush=True)
     return 0
 
