@@ -1,0 +1,490 @@
+<title>Project Cards</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap">
+<style>
+/* Layout: one column. Project tabs on top, then the card: goal, where-you-are summary,
+   a flow chart of the big steps, then every step as an editable row. Color only ever means status. */
+:root{
+  --bg:#f3f4f6; --surface:#ffffff; --sunken:#ebedf1; --ink:#161920; --muted:#5d6472; --line:#d9dce3;
+  --input:#9a5806; --input-bg:#fdf1d8; --input-line:#e9b863;
+  --ready:#1f4fd8; --ready-bg:#e3eafd;
+  --built:#16793a; --built-bg:#ddf2e4;
+  --btn:#161920; --btn-ink:#ffffff; --danger:#b42318; --focus:#1f4fd8;
+  --display:"Space Grotesk",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  --body:"Inter",ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#111318; --surface:#1a1d23; --sunken:#22262e; --ink:#eef0f4; --muted:#9aa1ae; --line:#313643;
+  --input:#f3b648; --input-bg:#36290f; --input-line:#7a5a1c;
+  --ready:#93b2ff; --ready-bg:#1a2547; --built:#71d396; --built-bg:#112e1d;
+  --btn:#eef0f4; --btn-ink:#111318; --danger:#ff8f85; --focus:#93b2ff; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#111318; --surface:#1a1d23; --sunken:#22262e; --ink:#eef0f4; --muted:#9aa1ae; --line:#313643;
+  --input:#f3b648; --input-bg:#36290f; --input-line:#7a5a1c;
+  --ready:#93b2ff; --ready-bg:#1a2547; --built:#71d396; --built-bg:#112e1d;
+  --btn:#eef0f4; --btn-ink:#111318; --danger:#ff8f85; --focus:#93b2ff; color-scheme:dark}
+
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font:15px/1.5 var(--body)}
+.wrap{max-width:1040px;margin:0 auto;padding-block:22px 72px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+h1,h2,h3{font-family:var(--display);text-wrap:balance;margin:0}
+button{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+
+.topbar{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:14px}
+.topbar h1{font-size:15px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.save{font-size:13px;color:var(--muted)}
+.save.err{color:var(--danger);font-weight:600}
+
+.tabs{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
+.tab{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:6px 14px;font-weight:600;font-size:14px;cursor:pointer}
+.tab[aria-current="true"]{background:var(--btn);color:var(--btn-ink);border-color:var(--btn)}
+.tab.finished{color:var(--muted)}
+.tab.finished[aria-current="true"]{color:var(--btn-ink)}
+
+.card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:22px 22px 18px}
+.edit{display:block;font:inherit;color:var(--ink);background:transparent;border:1px solid transparent;border-radius:8px;width:100%;padding:3px 6px;margin-left:-7px;resize:none;overflow:hidden}
+.edit:hover{border-color:var(--line)}
+.edit:focus{border-color:var(--focus);background:var(--surface);outline:none}
+.ptitle{font:700 26px/1.2 var(--display)}
+.goal-row{display:flex;gap:10px;align-items:flex-start;margin-top:6px}
+.k{flex:none;font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;background:var(--sunken);color:var(--muted);border-radius:5px;padding:2px 7px;margin-top:5px}
+.goal{resize:none;color:var(--muted);line-height:1.45;min-width:0}
+
+.summary{display:grid;gap:10px;margin:20px 0 18px}
+.counts{display:flex;flex-wrap:wrap;gap:8px}
+.count{display:inline-flex;align-items:center;gap:8px;border-radius:999px;padding:4px 12px 4px 6px;font-size:14px;font-weight:600}
+.count b{font-variant-numeric:tabular-nums;min-width:24px;height:24px;border-radius:999px;display:grid;place-items:center;font-size:13px;color:var(--surface)}
+.count.input{background:var(--input-bg);color:var(--input)} .count.input b{background:var(--input)}
+.count.ready{background:var(--ready-bg);color:var(--ready)} .count.ready b{background:var(--ready)}
+.count.built{background:var(--built-bg);color:var(--built)} .count.built b{background:var(--built)}
+.bar{display:flex;height:10px;border-radius:999px;overflow:hidden;background:var(--sunken)}
+.bar span{display:block;height:100%}
+.bar .built{background:var(--built)} .bar .ready{background:var(--ready)} .bar .input{background:var(--input)}
+
+.start{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;
+  background:var(--input-bg);border:1px solid var(--input-line);border-radius:12px;padding:14px 16px;margin-bottom:22px}
+.start.calm{background:var(--sunken);border-color:var(--line)}
+.start-text{min-width:0;flex:1 1 300px}
+.start-k{font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--input)}
+.start.calm .start-k{color:var(--muted)}
+.start-title{font-weight:650;margin-top:2px}
+.start-ask{color:var(--muted);margin-top:2px}
+.btn{border:0;border-radius:9px;background:var(--btn);color:var(--btn-ink);font-weight:600;padding:8px 14px;cursor:pointer}
+
+.flow{list-style:none;display:flex;gap:30px;margin:0 0 26px;padding:0}
+.node{position:relative;flex:1 1 0;min-width:0}
+.node+.node::before{content:"\2192";position:absolute;left:-23px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:18px}
+.node button{all:unset;box-sizing:border-box;display:block;width:100%;height:100%;cursor:pointer;border-radius:12px;padding:10px 12px;
+  border:1px solid var(--line);background:var(--surface)}
+.node button:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.node-top{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.badge{flex:none;width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font-size:12px;font-weight:700;border:2px solid var(--line);color:var(--muted)}
+.chip{font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;line-height:1.2;color:var(--muted)}
+.node-name{display:block;font-weight:650;overflow-wrap:anywhere}
+.node-sub{display:block;font-size:12.5px;color:var(--muted);margin-top:3px;font-variant-numeric:tabular-nums}
+.need{display:inline-block;margin-top:6px;font-size:12px;font-weight:700;color:var(--input);background:var(--input-bg);border-radius:6px;padding:1px 7px}
+.node.done button{background:var(--built-bg);border-color:transparent}
+.node.done .badge{background:var(--built);border-color:var(--built);color:var(--surface)}
+.node.done .chip{color:var(--built)}
+.node.now button{border:2px solid var(--ink);padding:9px 11px}
+.node.now .badge{background:var(--ink);border-color:var(--ink);color:var(--surface)}
+.node.now .chip{color:var(--ink)}
+.node.later button{background:var(--sunken);border-style:dashed}
+
+.phase{margin-top:26px}
+.phase-head{display:flex;align-items:center;gap:10px;padding-bottom:8px;border-bottom:1px solid var(--line);margin-bottom:12px}
+.phase-num{flex:none;width:28px;height:28px;border-radius:8px;background:var(--sunken);display:grid;place-items:center;font:700 14px var(--display)}
+.phase-name{font:600 18px/1.25 var(--display);min-width:0;flex:1}
+.phase-count{flex:none;font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
+.steps{display:grid;gap:10px}
+.step{border:1px solid var(--line);border-radius:12px;padding:12px 14px;background:var(--surface);display:grid;gap:8px}
+.step.s-input{border-color:var(--input-line)}
+.step.s-built{background:var(--sunken);border-color:transparent}
+.step-top{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px}
+.num{flex:none;font:600 13px var(--display);color:var(--muted);font-variant-numeric:tabular-nums;min-width:28px}
+.step-title{font-weight:600;flex:1 1 240px;min-width:0;width:auto}
+.s-built .step-title{color:var(--muted)}
+.pill{flex:none;font-size:12px;font-weight:700;border-radius:999px;padding:2px 10px}
+.pill.input{background:var(--input-bg);color:var(--input)}
+.pill.ready{background:var(--ready-bg);color:var(--ready)}
+.pill.built{background:var(--built-bg);color:var(--built)}
+.ask{margin:0;background:var(--input-bg);border-radius:8px;padding:8px 10px}
+.ask-k,.built-k{display:block;font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--input)}
+.asked{margin:0;font-size:13px;color:var(--muted)}
+.built-note{margin:0;background:var(--built-bg);border-radius:8px;padding:8px 10px}
+.built-k{color:var(--built)}
+.lbl{font-size:12px;font-weight:600;color:var(--muted)}
+.details{font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:8px 10px;width:100%;resize:vertical;min-height:44px}
+.details:focus{border-color:var(--focus);outline:none}
+.step-actions{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px}
+.seg{display:inline-flex;flex-wrap:wrap;border:1px solid var(--line);border-radius:9px;overflow:hidden;background:var(--surface)}
+.seg-b{border:0;background:transparent;padding:5px 11px;font-size:13px;font-weight:600;color:var(--muted);cursor:pointer}
+.seg-b+.seg-b{border-left:1px solid var(--line)}
+.seg-b[aria-pressed="true"].input{background:var(--input-bg);color:var(--input)}
+.seg-b[aria-pressed="true"].ready{background:var(--ready-bg);color:var(--ready)}
+.seg-b[aria-pressed="true"].built{background:var(--built-bg);color:var(--built)}
+.link{border:0;background:transparent;padding:4px 2px;font-size:13px;font-weight:600;cursor:pointer;color:var(--ready)}
+.link.quiet{color:var(--muted)}
+.link.danger{color:var(--danger)}
+.confirm{font-size:13px;color:var(--muted)}
+
+.add{display:flex;gap:8px;margin-top:10px}
+.add input{flex:1;min-width:0;font:inherit;color:var(--ink);background:var(--surface);border:1px dashed var(--line);border-radius:9px;padding:7px 10px}
+.add input:focus{border-style:solid;border-color:var(--focus);outline:none}
+.add .btn{flex:none}
+.add-phase{margin-top:26px}
+
+.parking{margin-top:30px;border-top:1px solid var(--line);padding-top:16px}
+.parking h2{font-size:17px}
+.parking p{margin:2px 0 10px;color:var(--muted);font-size:14px}
+.ideas{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.ideas li{display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--sunken);border-radius:9px;padding:7px 10px}
+.ideas li span{min-width:0;overflow-wrap:anywhere}
+
+.hint{margin-top:26px;font-size:14px;color:var(--muted);background:var(--sunken);border-radius:10px;padding:10px 14px}
+.hint b{color:var(--ink)}
+.note{color:var(--muted);text-align:center;padding:40px 16px}
+.note h2{font-size:20px;color:var(--ink);margin-bottom:6px}
+.stale{font-size:13px;color:var(--input);margin-bottom:10px}
+
+@media (max-width:720px){
+  .card{padding:18px 14px 14px;border-radius:14px}
+  .ptitle{font-size:22px}
+  .flow{flex-direction:column;gap:24px}
+  .node+.node::before{content:"\2193";left:50%;top:-22px;transform:translateX(-50%)}
+}
+@media (prefers-reduced-motion:no-preference){html{scroll-behavior:smooth}}
+</style>
+
+<main class="wrap">
+  <div class="topbar"><h1>Project Cards</h1><span id="save-state" class="save" aria-live="polite"></span></div>
+  <div id="app"><div class="note"><h2>Loading your project cards…</h2></div></div>
+</main>
+
+<script>
+(() => {
+  const app = document.getElementById("app");
+  const saveEl = document.getElementById("save-state");
+  const NAMES = ["projects", "steps", "ideas"];
+  const S = { db: null, nodb: false, fail: null, slow: false, cur: null, confirm: null,
+              projects: [], steps: [], ideas: [], got: {}, live: {} };
+  const LABEL = { input: "Needs your input", ready: "Ready to build", built: "Built" };
+  const SHORT = { input: "Needs input", ready: "Ready to build", built: "Built" };
+  const ORDER = ["input", "ready", "built"];
+
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const now = () => new Date().toISOString();
+  const status = (s) => (LABEL[s.status] ? s.status : "input");
+  const store = { get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+                  set(k, v) { try { localStorage.setItem(k, v); } catch {} } };
+
+  // ------------------------------------------------------------ data helpers
+  const phasesOf = (p) => (Array.isArray(p.phases) ? p.phases.filter((x) => x && x.id) : []);
+  function groups(p) {
+    const ph = phasesOf(p);
+    const idx = new Map(ph.map((x, i) => [x.id, i]));
+    const mine = S.steps.filter((s) => s.project === p.id)
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || String(a.id).localeCompare(String(b.id)));
+    const out = ph.map((x) => ({ phase: x, steps: mine.filter((s) => s.phase === x.id) }));
+    const stray = mine.filter((s) => !idx.has(s.phase));
+    if (stray.length) out.push({ phase: { id: "_other", name: "Not in a big step yet" }, steps: stray, stray: true });
+    return out;
+  }
+  const counts = (steps) => steps.reduce((c, s) => (c[status(s)]++, c), { input: 0, ready: 0, built: 0 });
+  const isDone = (g) => g.steps.length > 0 && g.steps.every((s) => status(s) === "built");
+  const projectsSorted = () => {
+    const act = S.projects.filter((p) => p.status !== "finished");
+    const fin = S.projects.filter((p) => p.status === "finished");
+    const by = (a, b) => String(b.updated || b.created || "").localeCompare(String(a.updated || a.created || ""));
+    return [...act.sort(by), ...fin.sort(by)];
+  };
+  function current() {
+    const list = projectsSorted();
+    const want = [S.cur, location.hash.slice(1), store.get("pc-last")];
+    for (const id of want) { const p = id && list.find((x) => x.id === id); if (p) return p; }
+    return list[0] || null;
+  }
+
+  // ------------------------------------------------------------ rendering
+  function render() {
+    const a = document.activeElement;
+    let keep = null;
+    if (a && a.id && app.contains(a) && /^(INPUT|TEXTAREA)$/.test(a.tagName)) {
+      keep = { id: a.id, value: a.value, s: a.selectionStart, e: a.selectionEnd };
+    }
+    app.innerHTML = view();
+    if (keep) {
+      const el = document.getElementById(keep.id);
+      if (el) { el.value = keep.value; el.focus({ preventScroll: true }); try { el.setSelectionRange(keep.s, keep.e); } catch {} }
+    }
+    app.querySelectorAll("textarea").forEach(fit);
+  }
+  function fit(t) { t.style.height = "auto"; t.style.height = t.scrollHeight + 2 + "px"; }
+
+  function view() {
+    if (S.nodb) return `<div class="note"><h2>Open this page on claude.ai</h2>Your project cards load there. This copy can't reach them.</div>`;
+    if (S.fail) return `<div class="note"><h2>Your cards didn't load</h2>Reload the page to try again.</div>`;
+    if (!NAMES.every((n) => S.got[n])) {
+      return S.slow ? `<div class="note"><h2>Can't reach your cards yet</h2>Check your connection. The page keeps trying.</div>`
+                    : `<div class="note"><h2>Loading your project cards…</h2></div>`;
+    }
+    const list = projectsSorted();
+    if (!list.length) return `<div class="note"><h2>No project cards yet</h2>Tell Claude <b>"starting a new project"</b> and it lays out the first card here.</div>`;
+    const p = current();
+    const tabs = list.map((x) => `<button type="button" class="tab${x.status === "finished" ? " finished" : ""}" data-act="tab" data-pid="${esc(x.id)}" aria-current="${x.id === p.id}">${x.status === "finished" ? "&#10003; " : ""}${esc(x.title || "Untitled")}</button>`).join("");
+    const stale = S.slow ? `<p class="stale">Showing your last saved copy. It may be out of date until the connection comes back.</p>` : "";
+    return `${stale}<nav class="tabs" aria-label="Projects">${tabs}</nav>${card(p)}`;
+  }
+
+  function card(p) {
+    const gs = groups(p);
+    const all = gs.flatMap((g) => g.steps);
+    const c = counts(all);
+    const total = all.length || 1;
+    const nowIdx = gs.findIndex((g) => !g.stray && !isDone(g));
+
+    // numbering + first step that needs Megan
+    const nums = new Map();
+    let first = null;
+    gs.forEach((g, gi) => g.steps.forEach((s, si) => {
+      const n = g.stray ? "–" : `${gi + 1}.${si + 1}`;
+      nums.set(s.id, n);
+      if (!first && status(s) === "input") first = { s, n };
+    }));
+
+    let start;
+    if (first) {
+      start = `<div class="start"><div class="start-text"><div class="start-k">Start here</div>
+        <div class="start-title">Step ${first.n} · ${esc(first.s.title)}</div>
+        ${first.s.question ? `<div class="start-ask">Claude asks: ${esc(first.s.question)}</div>` : ""}</div>
+        <button type="button" class="btn" data-act="goto" data-step="${esc(first.s.id)}">Answer it</button></div>`;
+    } else if (c.ready) {
+      start = `<div class="start calm"><div class="start-text"><div class="start-k">Nothing needs you right now</div>
+        <div class="start-title">${c.ready} step${c.ready === 1 ? " is" : "s are"} ready to build.</div>
+        <div class="start-ask">Tell Claude: "build what you can on ${esc(p.title)}".</div></div></div>`;
+    } else if (all.length && c.built === all.length) {
+      start = `<div class="start calm"><div class="start-text"><div class="start-k">All built</div>
+        <div class="start-title">Every step on this card is built.</div></div></div>`;
+    } else {
+      start = `<div class="start calm"><div class="start-text"><div class="start-k">No steps yet</div>
+        <div class="start-title">Add a step under a big step, or ask Claude to lay them out.</div></div></div>`;
+    }
+
+    const flow = `<ol class="flow" aria-label="Big steps">${gs.filter((g) => !g.stray).map((g, i) => {
+      const k = counts(g.steps);
+      const st = isDone(g) ? "done" : i === nowIdx ? "now" : "later";
+      const lab = st === "done" ? "Done" : st === "now" ? "You are here" : "Later";
+      const sub = g.steps.length ? `${k.built} of ${g.steps.length} built` : "No steps yet";
+      return `<li class="node ${st}"><button type="button" data-act="goto-phase" data-phase="${esc(g.phase.id)}">
+        <span class="node-top"><span class="badge">${st === "done" ? "&#10003;" : i + 1}</span><span class="chip">${lab}</span></span>
+        <span class="node-name">${esc(g.phase.name)}</span><span class="node-sub">${sub}</span>
+        ${k.input ? `<span class="need">${k.input} need${k.input === 1 ? "s" : ""} you</span>` : ""}</button></li>`;
+    }).join("")}</ol>`;
+
+    const phases = gs.map((g, gi) => {
+      const k = counts(g.steps);
+      const head = g.stray
+        ? `<span class="phase-num">?</span><h2 class="phase-name">${esc(g.phase.name)}</h2>`
+        : `<span class="phase-num">${gi + 1}</span><textarea id="pn-${esc(g.phase.id)}" class="edit phase-name" rows="1" data-act="phase-name" data-phase="${esc(g.phase.id)}" aria-label="Big step ${gi + 1} name">${esc(g.phase.name)}</textarea>`;
+      const add = g.stray ? "" : `<form class="add" data-form="add-step" data-phase="${esc(g.phase.id)}">
+          <input id="as-${esc(g.phase.id)}" name="t" placeholder="Add a step to this big step" aria-label="New step for big step ${gi + 1}" autocomplete="off">
+          <button class="btn" type="submit">Add</button></form>`;
+      return `<section class="phase" id="phase-${esc(g.phase.id)}"><div class="phase-head">${head}
+        <span class="phase-count">${g.steps.length ? `${k.built} of ${g.steps.length} built` : "no steps yet"}</span></div>
+        <div class="steps">${g.steps.map((s) => stepCard(s, nums.get(s.id))).join("")}</div>${add}</section>`;
+    }).join("");
+
+    const ideas = S.ideas.filter((x) => x.project === p.id)
+      .sort((a, b) => String(a.created || "").localeCompare(String(b.created || "")));
+    const ideaRows = ideas.map((x) => {
+      const asking = S.confirm === "idea:" + x.id;
+      const ctl = asking
+        ? `<span class="confirm">Remove? <button type="button" class="link danger" data-act="idea-yes" data-idea="${esc(x.id)}">Remove</button> <button type="button" class="link" data-act="cancel">Keep</button></span>`
+        : `<button type="button" class="link quiet" data-act="idea-remove" data-idea="${esc(x.id)}">Remove</button>`;
+      return `<li><span>${esc(x.text)}</span>${ctl}</li>`;
+    }).join("");
+
+    return `<article class="card">
+      <textarea id="pt-${esc(p.id)}" class="edit ptitle" rows="1" data-act="ptitle" aria-label="Project name">${esc(p.title)}</textarea>
+      <div class="goal-row"><span class="k">Goal</span><textarea id="pg-${esc(p.id)}" class="edit goal" rows="1" data-act="goal" aria-label="Goal" placeholder="What will be true when this is done?">${esc(p.goal)}</textarea></div>
+      <div class="summary">
+        <div class="counts">${ORDER.map((v) => `<span class="count ${v}"><b>${c[v]}</b>${LABEL[v]}</span>`).join("")}</div>
+        <div class="bar" role="img" aria-label="${c.built} built, ${c.ready} ready to build, ${c.input} need your input">
+          ${["built", "ready", "input"].map((v) => `<span class="${v}" style="width:${(100 * c[v]) / total}%"></span>`).join("")}</div>
+      </div>
+      ${start}${flow}${phases}
+      <form class="add add-phase" data-form="add-phase">
+        <input id="ap-${esc(p.id)}" name="t" placeholder="Add a big step at the end" aria-label="New big step" autocomplete="off">
+        <button class="btn" type="submit">Add</button></form>
+      <section class="parking"><h2>Parking lot</h2><p>Ideas that came up along the way. Not in the plan yet.</p>
+        <ul class="ideas">${ideaRows}</ul>
+        <form class="add" data-form="add-idea"><input id="ai-${esc(p.id)}" name="t" placeholder="Park an idea" aria-label="New idea" autocomplete="off"><button class="btn" type="submit">Park it</button></form>
+      </section>
+      <p class="hint">Done adding details? Tell Claude <b>"build what you can on ${esc(p.title)}"</b>. It builds every step marked Ready, then comes back to the top of what needs you.</p>
+    </article>`;
+  }
+
+  function stepCard(s, num) {
+    const st = status(s);
+    const id = esc(s.id);
+    const ask = s.question
+      ? (st === "input" ? `<p class="ask"><span class="ask-k">Claude asks</span>${esc(s.question)}</p>` : `<p class="asked">Claude asked: ${esc(s.question)}</p>`)
+      : "";
+    const showDetails = st !== "built" || String(s.details || "").trim();
+    const details = showDetails
+      ? `<label class="lbl" for="d-${id}">${st === "input" ? "Your answer" : "Details"}</label>
+         <textarea id="d-${id}" class="details" rows="2" data-act="details" data-step="${id}" placeholder="${st === "input" ? "Type your answer. Anything helps: names, numbers, where it lives, what it should look like." : "Anything Claude should know before building this."}">${esc(s.details)}</textarea>`
+      : "";
+    const built = s.built_note ? `<p class="built-note"><span class="built-k">What got built</span>${esc(s.built_note)}</p>` : "";
+    const seg = ORDER.map((v) => `<button type="button" class="seg-b ${v}" data-act="status" data-step="${id}" data-val="${v}" aria-pressed="${v === st}">${SHORT[v]}</button>`).join("");
+    const rm = S.confirm === "step:" + s.id
+      ? `<span class="confirm">Remove this step? <button type="button" class="link danger" data-act="remove-yes" data-step="${id}">Remove</button> <button type="button" class="link" data-act="cancel">Keep</button></span>`
+      : `<button type="button" class="link quiet" data-act="remove" data-step="${id}">Remove</button>`;
+    return `<article class="step s-${st}" id="step-${id}">
+      <div class="step-top"><span class="num">${num}</span>
+        <textarea id="t-${id}" class="edit step-title" rows="1" data-act="title" data-step="${id}" aria-label="Step ${num} name">${esc(s.title)}</textarea>
+        <span class="pill ${st}">${LABEL[st]}</span></div>
+      ${ask}${details}${built}
+      <div class="step-actions"><div class="seg" role="group" aria-label="Status of step ${num}">${seg}</div>${rm}</div>
+    </article>`;
+  }
+
+  // ------------------------------------------------------------ writes
+  const chains = {};
+  let pending = 0;
+  function showSave(err) {
+    if (err) {
+      saveEl.textContent = err.code === "invalid_argument" ? "You can view this card but not change it."
+        : err.code === "quota_exceeded" ? "The card is full. Remove some steps or ideas, then try again."
+        : "Couldn't save. Check your connection and try again.";
+      saveEl.className = "save err";
+      return;
+    }
+    saveEl.textContent = pending ? "Saving…" : "Saved";
+    saveEl.className = "save";
+  }
+  function write(path, data, mode) {
+    pending++; showSave();
+    const ref = S.db.doc(path);
+    const once = () => (mode === "set" ? ref.set(data) : mode === "delete" ? ref.delete() : ref.update(data));
+    const run = () => once().catch((e) => {
+      if (e && e.code === "unavailable") return new Promise((r) => setTimeout(r, 400 + Math.random() * 800)).then(once);
+      throw e;
+    });
+    const p = (chains[path] || Promise.resolve()).then(run).then(() => { pending--; showSave(); }, (e) => { pending--; showSave(e); });
+    chains[path] = p;
+    return p;
+  }
+  function newId(prefix) { return prefix + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+
+  const timers = {};
+  function commit(el) {
+    clearTimeout(timers[el.id]);
+    const act = el.dataset.act;
+    const p = current();
+    if (!p || !S.db) return;
+    if (act === "details" || act === "title") {
+      const s = S.steps.find((x) => x.id === el.dataset.step);
+      if (!s) return;
+      const val = act === "title" ? el.value.trim() : el.value;
+      if (act === "title" && !val) { el.value = s.title || ""; return; }
+      if ((s[act] || "") === val) return;
+      write("steps/" + s.id, { [act]: val, updated: now() });
+    } else if (act === "ptitle" || act === "goal") {
+      const field = act === "ptitle" ? "title" : "goal";
+      const val = el.value.trim();
+      if (field === "title" && !val) { el.value = p.title || ""; return; }
+      if ((p[field] || "") === val) return;
+      write("projects/" + p.id, { [field]: val, updated: now() });
+    } else if (act === "phase-name") {
+      const name = el.value.trim();
+      const ph = phasesOf(p);
+      const old = ph.find((x) => x.id === el.dataset.phase);
+      if (!old || !name || old.name === name) { if (old && !name) el.value = old.name; return; }
+      write("projects/" + p.id, { phases: ph.map((x) => (x.id === old.id ? { ...x, name } : { ...x })), updated: now() });
+    }
+  }
+
+  // ------------------------------------------------------------ events
+  app.addEventListener("input", (e) => {
+    const el = e.target;
+    if (el.tagName === "TEXTAREA") fit(el);
+    if (el.dataset && el.dataset.act) { clearTimeout(timers[el.id]); timers[el.id] = setTimeout(() => commit(el), 1200); }
+  });
+  app.addEventListener("focusout", (e) => { if (e.target.dataset && e.target.dataset.act) commit(e.target); });
+  app.addEventListener("keydown", (e) => {
+    const el = e.target;
+    // Names are one line: Enter saves. Details and the goal keep Enter for new lines.
+    if (e.key === "Enter" && /^(title|ptitle|phase-name)$/.test(el.dataset.act || "")) { e.preventDefault(); el.blur(); }
+  });
+
+  app.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-act]");
+    if (!b || b.tagName === "INPUT" || b.tagName === "TEXTAREA") return;
+    const act = b.dataset.act;
+    if (act === "tab") {
+      S.cur = b.dataset.pid; S.confirm = null; store.set("pc-last", S.cur);
+      try { history.replaceState(null, "", "#" + S.cur); } catch {}
+      render(); window.scrollTo(0, 0); return;
+    }
+    if (act === "goto") { const t = document.getElementById("d-" + b.dataset.step); if (t) { t.scrollIntoView({ block: "center" }); t.focus({ preventScroll: true }); } return; }
+    if (act === "goto-phase") { const sec = document.getElementById("phase-" + b.dataset.phase); if (sec) sec.scrollIntoView({ block: "start" }); return; }
+    if (act === "cancel") { S.confirm = null; render(); return; }
+    if (!S.db) return;
+    if (act === "status") {
+      const s = S.steps.find((x) => x.id === b.dataset.step);
+      if (!s || status(s) === b.dataset.val) return;
+      write("steps/" + s.id, { status: b.dataset.val, updated: now() });
+    } else if (act === "remove") { S.confirm = "step:" + b.dataset.step; render(); }
+    else if (act === "remove-yes") { S.confirm = null; write("steps/" + b.dataset.step, null, "delete"); }
+    else if (act === "idea-remove") { S.confirm = "idea:" + b.dataset.idea; render(); }
+    else if (act === "idea-yes") { S.confirm = null; write("ideas/" + b.dataset.idea, null, "delete"); }
+  });
+
+  app.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const f = e.target;
+    const input = f.querySelector("input");
+    const text = input.value.trim();
+    const p = current();
+    if (!text || !p || !S.db) return;
+    input.value = "";
+    const t = now();
+    if (f.dataset.form === "add-step") {
+      const ph = f.dataset.phase;
+      const max = Math.max(0, ...S.steps.filter((s) => s.project === p.id && s.phase === ph).map((s) => Number(s.order) || 0));
+      write("steps/" + newId("s"), { project: p.id, phase: ph, order: max + 1, title: text, status: "ready", question: "",
+        details: "", built_note: "", added_by: "you", created: t, updated: t }, "set");
+    } else if (f.dataset.form === "add-phase") {
+      write("projects/" + p.id, { phases: [...phasesOf(p).map((x) => ({ ...x })), { id: newId("p"), name: text }], updated: t });
+    } else if (f.dataset.form === "add-idea") {
+      write("ideas/" + newId("i"), { project: p.id, text, created: t }, "set");
+    }
+  });
+
+  window.addEventListener("hashchange", () => {
+    const id = location.hash.slice(1);
+    if (S.projects.some((x) => x.id === id)) { S.cur = id; store.set("pc-last", id); render(); }
+  });
+
+  // ------------------------------------------------------------ boot
+  const slowTimer = setTimeout(() => { if (!NAMES.every((n) => S.live[n])) { S.slow = true; render(); } }, 10000);
+  function subscribe(name) {
+    S.db.collection(name).onSnapshot((snap) => {
+      S[name] = snap.docs.map((d) => ({ ...d.data(), id: d.id }));
+      S.got[name] = true;
+      if (!snap.metadata.fromCache) S.live[name] = true;
+      if (NAMES.every((n) => S.live[n])) { clearTimeout(slowTimer); S.slow = false; }
+      render();
+    }, (err) => { clearTimeout(slowTimer); S.fail = err; render(); });
+  }
+  const use = window.claude && window.claude.use ? window.claude.use("db") : Promise.resolve(null);
+  use.then((db) => {
+    if (!db) { clearTimeout(slowTimer); S.nodb = true; render(); return; }
+    S.db = db;
+    NAMES.forEach(subscribe);
+  }, () => { clearTimeout(slowTimer); S.nodb = true; render(); });
+})();
+</script>

@@ -185,4 +185,8 @@ fluff. I need clear visuals and concise communications.
 - `workflows/` — plain-English recipes the agent follows.
 - `output/` — finished deliverables, scratch CSVs, downloaded
   crosstabs.
+- `projects/` — big multi-session builds. Each one is a card on Megan's
+  Project Cards page (https://claude.ai/artifact/UP4JrLoKyHLDN3H2RtRHfg),
+  run by the `project` skill ("starting a new project"). Working on one?
+  Keep its card current. Page source: `projects/project-cards.html`.
 - `Later thoughts/` — deferred Hub ideas parked for "circle back later".
