@@ -47,10 +47,10 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 # The relay workbook ('Lucy Access App').
 SOURCE_ID = "1_5YGHhZ0gCYVZzHl7TPnP-6_75xaI0kcjPinQdVTlKg"
-# 'Lucy Access App — Archive'. Created once with --create-archive on the
-# machine that runs this nightly (its Google account must own or edit it),
-# then pasted here. Until then --archive-id is required to write anything.
-ARCHIVE_ID = ""
+# 'Lucy Access App — Archive'. Created 2026-11-18 with --create-archive on
+# Lucy 1, the machine that runs this nightly -- its Google account owns it.
+# A run anywhere else needs that account's access to this workbook.
+ARCHIVE_ID = "14EcdcWQnjP0CsusPvduxgt-2jbEFDwVyc_zFFk17fcw"
 ARCHIVE_TITLE = "Lucy Access App — Archive"
 
 # keep_days: days kept in full (today counts as day 0).

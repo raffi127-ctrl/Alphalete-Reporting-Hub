@@ -2806,7 +2806,7 @@
   "relay_archive": {
    "on_scheduler": false,
    "machine": "Lucy 1",
-   "_note": "Relay Archive (Megan 2026-11-18). on_scheduler:false = the 4am orchestrator NEVER runs it -- its real schedule is the nightly 2:00 AM launchd job (com.alphalete.relay-archive, wrapper deploy/relay_archive_nightly.sh) on Lucy 1, NOT INSTALLED until Megan's 'use the real Sheet'. Keeps the 'Lucy Access App' relay workbook small: ICD Faults rows older than 7 days and ICD Knocks rows older than 14 days are copied whole to 'Lucy Access App — Archive', then only their bulky cells (Detail / Rows JSON + Tracker JSON) are emptied. Never deletes or moves a row (8 writers use row numbers; ~10 readers ask 'ever relayed?'), never touches ICD Relay (the ICD sales board site's permanent sales history). DRY RUN BY DEFAULT: `lucy rerun relay_archive` previews and writes nothing; the wrapper passes --apply. Put a day back for a hand rerun: --restore YYYY-MM-DD --tab \"ICD Knocks\" --apply. Lucy 1 because its Google account already writes this workbook; the archive must belong to the same account (--create-archive, once). Pure Sheets API.",
+   "_note": "Relay Archive (Megan 2026-11-18). on_scheduler:false = the 4am orchestrator NEVER runs it -- its real schedule is the nightly 2:00 AM launchd job (com.alphalete.relay-archive, wrapper deploy/relay_archive_nightly.sh) on Lucy 1. LIVE since 2026-11-18 (Megan: 'use the real Sheet'); archive workbook 14EcdcWQnjP0CsusPvduxgt-2jbEFDwVyc_zFFk17fcw, owned by Lucy 1's Google account. Keeps the 'Lucy Access App' relay workbook small: ICD Faults rows older than 7 days and ICD Knocks rows older than 14 days are copied whole to 'Lucy Access App — Archive', then only their bulky cells (Detail / Rows JSON + Tracker JSON) are emptied. Never deletes or moves a row (8 writers use row numbers; ~10 readers ask 'ever relayed?'), never touches ICD Relay (the ICD sales board site's permanent sales history). DRY RUN BY DEFAULT: `lucy rerun relay_archive` previews and writes nothing; the wrapper passes --apply. Put a day back for a hand rerun: --restore YYYY-MM-DD --tab \"ICD Knocks\" --apply. Lucy 1 because its Google account already writes this workbook; the archive must belong to the same account (--create-archive, once). Pure Sheets API.",
    "display_name": "Relay Archive (trim old relay rows)",
    "source_type": "api",
    "data_sources": [],
@@ -2823,12 +2823,13 @@
    "depends_on": [],
    "timeout_minutes": 30,
    "verify": null,
-   "close_on": "exit_zero"
+   "close_on": "exit_zero",
+   "delivers_only_with": "--apply"
   },
   "install_relay_archive_agent": {
    "on_scheduler": false,
    "machine": "Lucy 1",
-   "_note": "One-shot: install/refresh the nightly relay-archive launchd agent (com.alphalete.relay-archive, 2:00 AM) on Lucy 1 via `lucy rerun install_relay_archive_agent`. Mirrors the other install_* handles. Run it only after Megan's 'use the real Sheet'.",
+   "_note": "One-shot: install/refresh the nightly relay-archive launchd agent (com.alphalete.relay-archive, 2:00 AM) on Lucy 1 via `lucy rerun install_relay_archive_agent`. Mirrors the other install_* handles. Approved 2026-11-18 (Megan: 'use the real Sheet').",
    "display_name": "Install relay-archive LaunchAgent",
    "source_type": "api",
    "data_sources": [],
