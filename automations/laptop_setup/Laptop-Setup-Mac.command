@@ -158,7 +158,7 @@ APPLESCRIPT
 ask_email() {   # question default -> prints a lower-cased email, asks until it looks like one
   local v
   while :; do
-    v="$(ask_text "$1" "$2" | tr -d ' ' | tr 'A-Z' 'a-z')"
+    v="$(one_email "$(ask_text "$1" "$2")")"
     case "$v" in *@*.*) echo "$v"; return;; esac
     [ $DRY_RUN = 1 ] && { echo "example@gmail.com"; return; }
     _dialog "Oops" "That's not an email. Try again." "OK" "OK" >/dev/null
@@ -168,6 +168,10 @@ ask_email() {   # question default -> prints a lower-cased email, asks until it 
 # Remember answers between runs (so a re-run doesn't ask again).
 remember() { [ $DRY_RUN = 0 ] && { grep -v "^$1=" "$PROGRESS" 2>/dev/null > "$PROGRESS.tmp"; echo "$1=$2" >> "$PROGRESS.tmp"; mv "$PROGRESS.tmp" "$PROGRESS"; }; }
 recall()   { [ $DRY_RUN = 0 ] && sed -n "s/^$1=//p" "$PROGRESS" 2>/dev/null | tail -1; }
+# ONE address, one line (Maud's run 2026-11-17: the reception email came out as
+# the same address on 3 lines, so the window repeated it and the Chrome check
+# could never match). Every email Lucy keeps goes through this.
+one_email() { printf '%s\n' "$1" | tr 'A-Z' 'a-z' | tr -d ' \r\t' | grep -m1 -oE '[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]+'; }
 
 # Every page opens in Chrome's OWN "Reception" profile, never whatever
 # profile is already open. Megan's test 2026-11-11: on a Mac whose Chrome was
@@ -1092,7 +1096,7 @@ verify zoom "Zoom signed in" chk_zoom
 step_1() {
 section "$( [ "$ROLE" = reception ] && echo "Sign in to the reception email" || echo "Make the reception email" )"
 # <companyname>reception@gmail.com — the first step on every laptop (Megan, 2026-11-11).
-RECEPTION_EMAIL="$(recall RECEPTION_EMAIL)"
+RECEPTION_EMAIL="$(one_email "$(recall RECEPTION_EMAIL)")"
 if [ "$FORCE" = 0 ] && [ -n "$RECEPTION_EMAIL" ] && is_done reception_email; then
   ok "Reception email: $RECEPTION_EMAIL (done earlier)"
 else
@@ -1174,6 +1178,7 @@ ${RECEPTION_EMAIL}
       RECEPTION_EMAIL="$(ask_email "Type your new email:" "")"
     fi
   fi
+  RECEPTION_EMAIL="$(one_email "$RECEPTION_EMAIL")"
   remember RECEPTION_EMAIL "$RECEPTION_EMAIL"
 fi
 # Sync goes on NOW, not at "Sign in to Google": every password from here on
@@ -1397,7 +1402,7 @@ if [ "$ROLE" = reception ]; then ok "Code forwarding: set up on the ICD's laptop
 # ROLE: on an admin/reception laptop these are the ICD's logins, not theirs
 # (Megan, 2026-11-12: "this needs to say ICD login not your").
 if [ "$ROLE" = owner ]; then WHOSE="your"; else WHOSE="${ICD_NAME:-the ICD}'s"; fi
-OWNER_EMAIL="$(recall OWNER_EMAIL)"
+OWNER_EMAIL="$(one_email "$(recall OWNER_EMAIL)")"
 if [ -z "$OWNER_EMAIL" ]; then
   OWNER_EMAIL="$(ask_email "Next: ${WHOSE} Sara+, Sterling and OwnerVille login codes will go to reception.
 
