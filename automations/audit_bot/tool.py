@@ -133,8 +133,10 @@ def _action_reassign(args: str) -> tuple[bool, str]:
       audit_bot_tool reassign colten Samuel Acay = Oswaldo, Katherine Gomez, Valentina
       audit_bot_tool reassign colten Samuel Acay = Oswaldo, Katherine Gomez, Valentina --apply
 
-    A rep name matches on full name, or on first name alone when only ONE rep
-    has it. An owner not on the bot's list yet is added (with --apply)."""
+    A rep is a Slack ID (U0…; most reps have no name saved), a full name, or a
+    first name only ONE rep has. The owner matches its exact name/alias, or a
+    longer saved name ("Samuel Acay" -> "Samuel Acay Escobar") when only one
+    fits; an owner not on the bot's list yet is added (with --apply)."""
     import json
     import re
     import shutil
@@ -161,13 +163,22 @@ def _action_reassign(args: str) -> tuple[bool, str]:
     want = _norm_name(owner_q)
     owner = next((o for o in owners if _norm_name(o.get("name", "")) == want
                   or want in [_norm_name(a) for a in o.get("aliases") or []]), None)
+    if not owner:  # "Samuel Acay" when the rep confirmed "Samuel Acay Escobar"
+        longer = [o for o in owners if _norm_name(o.get("name", "")).startswith(want + " ")]
+        owner = longer[0] if len(longer) == 1 else None
     log = [f"owner wanted: {owner_q} -> "
            + (f"{owner['name']} ({owner['id']})" if owner else "NOT on the bot's list")]
 
     picks, problems = [], []
     for q in rep_qs:
+        if re.fullmatch(r"U[A-Z0-9]{6,}", q):  # Slack ID — most reps have no name saved
+            if q in reps:
+                picks.append((q, q, reps[q]))
+            else:
+                problems.append(f"{q}: no rep with that Slack ID")
+            continue
         nq = _norm_name(q)
-        full = [(u, r) for u, r in reps.items()
+        full =[(u, r) for u, r in reps.items()
                 if _norm_name(f"{r.get('first_name', '')} {r.get('last_name', '')}") == nq]
         first = [(u, r) for u, r in reps.items() if _norm_name(r.get("first_name", "")) == nq]
         hits = full or first
