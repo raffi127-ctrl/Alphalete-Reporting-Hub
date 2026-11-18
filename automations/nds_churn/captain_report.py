@@ -802,6 +802,8 @@ def run(owner_key: str, today: dt.date, *, dry_run: bool = False,
         log=print) -> int:
     from automations.nds_churn.run import write_diag
     key = (owner_key or "").strip().lower()
+    if key == TEAM_KEY:
+        return run_team(today, dry_run=dry_run, from_file=from_file, dm=dm, log=log)
     if key not in OWNERS:
         log(f"unknown captainship owner {owner_key!r}; one of {', '.join(OWNERS)}")
         return 2
@@ -875,6 +877,298 @@ def run(owner_key: str, today: dt.date, *, dry_run: bool = False,
                                          as_bot=False)
         log(f"[captain] sent ({res.get('mode')}) to {users}: ok={res.get('ok')}")
     try:                                  # the picture as sent, readable from the mini
+        shot_to_tab(png, log=log)
+    except Exception as e:  # noqa: BLE001
+        log(f"[captain] shot tab failed: {type(e).__name__}: {e}")
+    print("=== done ===", flush=True)
+    return 0
+
+
+# ================================================================ team ====
+# The whole captainship on one board (Carlos 2026-11-17: "a similar board
+# that just has all of the owners ... an all-in number ... instead of having
+# the customers, just have each ICD and the amount of disconnects that they
+# have and when they're falling off"). Same math per owner, summed; the
+# rolloff tables become one row per ICD with its fall-off schedule.
+
+TEAM_KEY = "team"
+TEAM_NAME = "Khalil's Captainship"
+
+
+def load_team_lines(path: Path, log=print) -> Tuple[dict, Dict[str, List[dict]]]:
+    """One parse of the export, split per captainship owner (the same rules
+    as compute.load_owner_lines, which parses the whole file per call)."""
+    rows = C.read_rows(path)
+    hdr_i = next((i for i, r in enumerate(rows)
+                  if any(C._norm(c) == "rep" for c in r)), None)
+    if hdr_i is None:
+        raise RuntimeError("no header row with a 'Rep' column in the export")
+    header = [str(h or "").strip() for h in rows[hdr_i]]
+    data = rows[hdr_i + 1:]
+    ix = {k: C.find_col(header, cands) for k, cands in C.FIELDS.items()}
+    missing = [k for k in C.REQUIRED if ix[k] is None]
+    if missing:
+        raise RuntimeError(f"export is missing {missing}; header = {header}")
+    i_mn = ix["measure"]
+    if i_mn is not None:
+        measures = sorted({str(r[i_mn]).strip() for r in data if len(r) > i_mn})
+        keep = next((m for m in measures if "unit count" in m.lower()),
+                    measures[0] if measures else "")
+        data = [r for r in data if len(r) > i_mn and str(r[i_mn]).strip() == keep]
+    i_owner = ix["owner"]
+    out: Dict[str, List[dict]] = {k: [] for k in OWNERS}
+    for r in data:
+        if len(r) <= i_owner:
+            continue
+        owner = str(r[i_owner]).upper()
+        key = next((k for k, o in OWNERS.items() if all(t in owner for t in o["tokens"])), None)
+        if key is None:
+            continue
+        rec = {k: ("" if i is None or i >= len(r) else str(r[i]).strip()) for k, i in ix.items()}
+        rec["order_date"] = C.parse_date(rec["order_date"])
+        rec["posted"] = C.parse_date(rec["posted"])
+        rec["status_date_d"] = C.parse_date(rec["status_date"])
+        rec["prod"] = C.product_of(rec["product"])
+        rec["byod"] = C.is_byod(rec)
+        out[key].append(rec)
+    log("[captain] team lines: " + ", ".join(f"{OWNERS[k]['name']} {len(v)}" for k, v in out.items()))
+    return ix, out
+
+
+def _sum_counts(parts: List[dict]) -> Dict[str, dict]:
+    out = {}
+    for b, _, _ in BUCKETS:
+        act = sum(p[b]["act"] for p in parts)
+        disc = sum(p[b]["disc"] for p in parts)
+        out[b] = {"act": act, "disc": disc, "pct": (100.0 * disc / act) if act else None}
+    return out
+
+
+def _sum_rates(parts: List[dict]) -> dict:
+    out = {}
+    for b in C.BUCKETS:
+        sold = sum(p[b]["sold"] for p in parts)
+        act = sum(p[b]["activated"] for p in parts)
+        out[b] = {"sold": sold, "activated": act, "rate": (act / sold) if sold else None}
+    return out
+
+
+def _sum_view(views: List[Optional[dict]]) -> Optional[dict]:
+    out: dict = {}
+    for b in ("0-30", "90"):
+        parts = [v[b] for v in views if v and v.get(b)]
+        out[b] = ({"disc": sum(p["disc"] for p in parts), "base": sum(p["base"] for p in parts)}
+                  if parts else None)
+    return out if any(out.values()) else None
+
+
+def falloff_schedule(groups: List[dict]) -> List[Tuple[dt.date, int]]:
+    """[(leave date, lines)] soonest first, from a bucket's rolloff rows."""
+    sched: Dict[dt.date, int] = collections.Counter()
+    for g in groups:
+        sched[g["leaves"]] += g["lines"]
+    return sorted(sched.items())
+
+
+def build_team(path: Path, today: dt.date, log=print) -> dict:
+    """Per owner: build() + the view; captainship: the sums."""
+    ix, per_lines = load_team_lines(path, log)
+    owners = {}
+    for key, lines in per_lines.items():
+        rep = build(lines, today)
+        try:
+            view = view_counts(OWNERS[key]["name"], today, log)
+        except Exception as e:  # noqa: BLE001
+            log(f"[captain] view for {OWNERS[key]['name']} failed: {type(e).__name__}: {e}")
+            view = None
+        rep["view"] = view
+        rep["n_lines"] = len(lines)
+        rep["schedule"] = {b: falloff_schedule(rep["tables"][b]) for b in SHOWN}
+        owners[key] = rep
+    parts = list(owners.values())
+    team = {
+        "box": _sum_counts([p["box"] for p in parts]),
+        "all_port": _sum_counts([p["all_port"] for p in parts]),
+        "office_rate": _sum_rates([p["office_rate"] for p in parts]),
+        "pending": sum(p["pending"] for p in parts),
+        "view": _sum_view([p["view"] for p in parts]),
+    }
+    return {"owners": owners, "team": team, "ix": ix}
+
+
+def owner_order(owners: Dict[str, dict]) -> List[str]:
+    """Worst 0-30 churn first, ties by disconnects then 90 Day; nothing
+    activated in 0-30 last."""
+    def _k(key):
+        b = owners[key]["box"]
+        p30, p90 = b["0-30"]["pct"], b["90"]["pct"]
+        return (0 if p30 is not None else 1, -(p30 or 0), -b["0-30"]["disc"], -(p90 or 0), key)
+    return sorted(owners, key=_k)
+
+
+def _view_cell(bucket: str, view: Optional[dict]) -> str:
+    v = (view or {}).get(bucket)
+    if not v:
+        return "<td>—</td>"
+    pct = (100.0 * v["disc"] / v["base"]) if v["base"] else None
+    return _pct_cell(bucket, {"act": v["base"], "disc": v["disc"], "pct": pct})
+
+
+def _team_box_html(team: dict) -> str:
+    rows = []
+    for b in SHOWN:
+        c = team["box"][b]
+        lo, hi = BUCKET_SPAN[b]
+        rows.append(
+            f'<tr><td class="lbl"><b>{BUCKET_LABEL[b]} churn</b>'
+            f'<div class="small">activated {lo}–{hi} days ago</div></td>'
+            f"<td>{c['act']}</td><td>{c['disc']}</td>{_pct_cell(b, c)}"
+            f"{_view_cell(b, team['view'])}"
+            f"<td>{_e(_captain_text(b, c['pct']))}</td></tr>")
+    box_t = ('<table><tr><th class="wh">CAPTAINSHIP — all 7 ICDs</th><th class="wh">Activated</th>'
+             '<th class="wh">Disconnected</th><th class="wh">Churn %<div class="small">non-BYOD, Order Log</div></th>'
+             '<th class="wh">Smart Circle view<div class="small">all port lines, BYOD incl.</div></th>'
+             '<th class="wh">Captain\'s Bonus line<div class="small">on the non-BYOD rate</div></th></tr>'
+             + "".join(rows) + "</table>")
+    r = team["office_rate"]
+    rate_t = ('<table><tr><th class="wh"></th><th class="wh">0-30</th><th class="wh">31-60</th></tr>'
+              f'<tr><td class="lbl"><b>Activation rate</b><div class="small">activated ÷ sold, by sale date</div></td>'
+              f'{_rate_cell(r["0-30"])}{_rate_cell(r["31-60"])}</tr>'
+              f'<tr><td class="lbl"><b>Pending orders</b><div class="small">sold last 30 days, not activated, not canceled</div></td>'
+              f'<td>{team["pending"]}</td><td></td></tr></table>')
+    return f'<div class="two">{box_t}{rate_t}</div>'
+
+
+def _team_owners_html(owners: Dict[str, dict], team: dict) -> str:
+    head = ('<tr><th class="wh">ICD</th><th class="wh">0-30 Day churn</th><th class="wh">90 Day churn</th>'
+            '<th class="wh">Activation rate 0-30</th><th class="wh">Activation rate 31-60</th>'
+            '<th class="wh">Pending</th><th class="wh">SC view 0-30</th><th class="wh">SC view 90 Day</th></tr>')
+    trs = [f'<tr class="total"><td class="lbl">CAPTAINSHIP TOTAL</td>{_pct_cell("0-30", team["box"]["0-30"])}'
+           f'{_pct_cell("90", team["box"]["90"])}{_rate_cell(team["office_rate"]["0-30"])}'
+           f'{_rate_cell(team["office_rate"]["31-60"])}<td>{team["pending"]}</td>'
+           f'{_view_cell("0-30", team["view"])}{_view_cell("90", team["view"])}</tr>']
+    for key in owner_order(owners):
+        o = owners[key]
+        trs.append(f'<tr><td class="lbl">{_e(OWNERS[key]["name"])}</td>{_pct_cell("0-30", o["box"]["0-30"])}'
+                   f'{_pct_cell("90", o["box"]["90"])}{_rate_cell(o["office_rate"]["0-30"])}'
+                   f'{_rate_cell(o["office_rate"]["31-60"])}<td>{o["pending"]}</td>'
+                   f'{_view_cell("0-30", o["view"])}{_view_cell("90", o["view"])}</tr>')
+    return f"<table>{head}{''.join(trs)}</table>"
+
+
+def _team_table_html(bucket: str, owners: Dict[str, dict], team: dict, today: dt.date) -> str:
+    c = team["box"][bucket]
+    lo, hi = BUCKET_SPAN[bucket]
+    band = (f"{BUCKET_LABEL[bucket].upper()} DISCONNECTS BY ICD — {c['disc']} of {c['act']} "
+            f"non-BYOD lines activated {lo}–{hi} days ago = {_fmt_pct(c['pct'])}")
+    leave = "Falling off the report (date × lines)" if bucket == "0-30" else "Leaving the 90 Day bucket (date × lines)"
+    head = (f'<tr><th class="wh">ICD</th><th class="wh">Activated</th><th class="wh">Disconnected</th>'
+            f'<th class="wh">Churn %</th><th class="wh">Next to fall off</th><th class="wh">{leave}</th></tr>')
+    trs = []
+    order = sorted(owners, key=lambda k: (-owners[k]["box"][bucket]["disc"], k))
+    for key in order:
+        o = owners[key]
+        b = o["box"][bucket]
+        sched = o["schedule"][bucket]
+        nxt = f"{(sched[0][0] - today).days}d · {C.fmt_date(sched[0][0])}" if sched else "—"
+        txt = " · ".join(f"{C.fmt_date(d)} ×{n}" for d, n in sched) or "no disconnects"
+        trs.append(f'<tr><td class="lbl">{_e(OWNERS[key]["name"])}</td><td>{b["act"]}</td><td>{b["disc"]}</td>'
+                   f'{_pct_cell(bucket, b)}<td>{_e(nxt)}</td><td class="l" style="white-space:normal;max-width:430px">{_e(txt)}</td></tr>')
+    all_sched = falloff_schedule([g for o in owners.values() for g in o["tables"][bucket]])
+    trs.append(f'<tr class="total"><td class="lbl">CAPTAINSHIP</td><td>{c["act"]}</td><td>{c["disc"]}</td>'
+               f'{_pct_cell(bucket, c)}<td>{(f"{(all_sched[0][0] - today).days}d · {C.fmt_date(all_sched[0][0])}" if all_sched else "—")}</td>'
+               f'<td class="l" style="white-space:normal;max-width:430px">'
+               f'{_e(" · ".join(f"{C.fmt_date(d)} ×{n}" for d, n in all_sched) or "no disconnects")}</td></tr>')
+    return f'<div><div class="band">{_e(band)}</div><table>{head}{"".join(trs)}</table></div>'
+
+
+def render_team_html(data: dict, today: dt.date) -> str:
+    owners, team = data["owners"], data["team"]
+    title = f"🐺 NDS Customer Churn — {TEAM_NAME}"
+    sub = (f"All 7 ICDs · non-BYOD port phone lines only · as of {today.month}/{today.day}/{today.year}"
+           " · 0-30 Day and 90 Day buckets by activation date")
+    src = (f"Source: Tableau NDS-SN Order Log ({LOOKBACK_DAYS}-day window), counted the way Smart Circle's "
+           "Churn Rates view counts; 'SC view' columns = Smart Circle's own Churn Rates view per ICD (all port "
+           "lines, BYOD included) -- the figure the Captain's Bonus reads")
+    note = (
+        "What's counted: ported voice lines on a financed or new phone — no BYOD, no Air, no Internet, no tablets / "
+        "watches / upgrades / new-number lines. Buckets are Tableau's, by days since the line activated: 0-30 Day = "
+        "0–30, 90 Day = 91–120; a 90 Day disconnect is one that dropped within 90 days of activating (Smart Circle's "
+        "count). Colours follow the Captain's Bonus quality lines (" + _e(CAPTAIN_SOURCE) + "): green = at or under "
+        "the bonus line (0-30 ≤ 3.00%, 90 Day ≤ 8.00%), red = at or over the DNQ line (0-30 ≥ 5.00%, 90 Day ≥ 13.00%). "
+        "Activation rate = activated ÷ sold by sale date. Where an ICD's Order Log number sits far from its SC view "
+        "number, the view is counting reps whose lines never reach the Order Log export (Zaid: 18 such reps on 11/17).")
+    body = (f'<div class="board"><div class="title">{_e(title)}</div><div class="sub">{_e(sub)}</div>'
+            f'<div class="src">{_e(src)}</div>'
+            + _team_box_html(team)
+            + "<h3>By ICD — worst 0-30 Day churn first</h3>" + _team_owners_html(owners, team)
+            + '<div class="two">' + _team_table_html("0-30", owners, team, today)
+            + _team_table_html("90", owners, team, today) + '</div>'
+            + f'<div class="note">{note}</div></div>')
+    return f"<html><head><meta charset='utf-8'>{_CSS}</head><body>{body}</body></html>"
+
+
+def team_diag(data: dict, today: dt.date) -> List[str]:
+    out = [f"CAPTAINSHIP BOARD {today.isoformat()}"]
+    t = data["team"]
+    out.append("TEAM BOX: " + "; ".join(f"{BUCKET_LABEL[b]} {c['disc']}/{c['act']} = {_fmt_pct(c['pct'])}"
+                                        for b, c in t["box"].items()))
+    out.append("TEAM ALL PORT: " + "; ".join(f"{BUCKET_LABEL[b]} {c['disc']}/{c['act']}" for b, c in t["all_port"].items()))
+    v = t["view"] or {}
+    out.append("TEAM VIEW: " + "; ".join(f"{b} {v[b]['disc']}/{v[b]['base']}" for b in ("0-30", "90") if v.get(b)))
+    out.append(f"TEAM RATES: " + "   ".join(f"{b} {s['activated']}/{s['sold']}" for b, s in t["office_rate"].items())
+               + f"   pending {t['pending']}")
+    for key in owner_order(data["owners"]):
+        o = data["owners"][key]
+        vv = o["view"] or {}
+        out.append(f"  {OWNERS[key]['name']}: lines {o['n_lines']} | non-BYOD 0-30 {o['box']['0-30']['disc']}/{o['box']['0-30']['act']}"
+                   f" 90 {o['box']['90']['disc']}/{o['box']['90']['act']} | all-port 0-30 {o['all_port']['0-30']['disc']}/{o['all_port']['0-30']['act']}"
+                   f" 90 {o['all_port']['90']['disc']}/{o['all_port']['90']['act']} | view 0-30 "
+                   + (f"{vv['0-30']['disc']}/{vv['0-30']['base']}" if vv.get('0-30') else "—")
+                   + " 90 " + (f"{vv['90']['disc']}/{vv['90']['base']}" if vv.get('90') else "—")
+                   + f" | rate 0-30 {o['office_rate']['0-30']['activated']}/{o['office_rate']['0-30']['sold']} | pending {o['pending']}"
+                   + " | falloff 0-30 " + (", ".join(f"{C.fmt_date(d)}x{n}" for d, n in o['schedule']['0-30']) or "-")
+                   + " | 90 " + (", ".join(f"{C.fmt_date(d)}x{n}" for d, n in o['schedule']['90']) or "-"))
+    return out
+
+
+def run_team(today: dt.date, *, dry_run: bool = False, from_file: Optional[str] = None,
+             dm: Optional[str] = None, log=print) -> int:
+    from automations.nds_churn.run import write_diag
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    path = Path(from_file) if from_file else pull_long(today, log)
+    data = build_team(path, today, log)
+    diag = team_diag(data, today)
+    for ln in diag:
+        log("  " + ln)
+    from automations.b2b_metrics.rep_boards import _capture_board
+    png = _capture_board(render_team_html(data, today),
+                         OUT_DIR / f"nds_captain_team_{today.isoformat()}.png", width=2300)
+    log(f"[captain] picture {png} ({png.stat().st_size:,} bytes)")
+    write_diag(diag, log=log, tab=DIAG_TAB)
+    if dry_run:
+        try:
+            shot_to_tab(png, log=log)
+        except Exception as e:  # noqa: BLE001
+            log(f"[captain] shot tab failed: {type(e).__name__}: {e}")
+        log("[dry-run] nothing sent.")
+        print("=== done ===", flush=True)
+        return 0
+    if dm:
+        from automations.shared import slack_metrics_post as smp
+        users = [u.strip() for u in dm.replace(";", ",").split(",") if u.strip()]
+        t = data["team"]["box"]
+        comment = (f"🐺 *NDS Customer Churn — {TEAM_NAME}* (all 7 ICDs, non-BYOD port phone lines) · "
+                   f"0-30 Day {t['0-30']['disc']}/{t['0-30']['act']} = {_fmt_pct(t['0-30']['pct'])} · "
+                   f"90 Day {t['90']['disc']}/{t['90']['act']} = {_fmt_pct(t['90']['pct'])} · "
+                   f"as of {today.month}/{today.day}. Source: Tableau NDS-SN Order Log + Smart Circle's Churn Rates view.")
+        try:
+            res = smp.dm_users_with_file(png, users=users, comment=comment, file_name=png.name)
+        except smp.SlackPostError as e:
+            log(f"[captain] Lucy bot token unavailable ({str(e)[:80]}) -- sending with the metrics user token")
+            res = smp.dm_users_with_file(png, users=users, comment=comment, file_name=png.name, as_bot=False)
+        log(f"[captain] sent ({res.get('mode')}) to {users}: ok={res.get('ok')}")
+    try:
         shot_to_tab(png, log=log)
     except Exception as e:  # noqa: BLE001
         log(f"[captain] shot tab failed: {type(e).__name__}: {e}")

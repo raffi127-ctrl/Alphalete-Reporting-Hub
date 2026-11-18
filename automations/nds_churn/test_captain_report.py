@@ -151,3 +151,49 @@ class CaptainReportTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TeamBoardTest(unittest.TestCase):
+    """Two captainship owners in one export -> per-owner builds + the sums."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.path = Path(cls.tmp.name) / "export.csv"
+        rows = list(ROWS)
+        kh = "KHALIL MANSOUR [ALPHALETE MANAGEMENT GROUP, INC. DBA HAB]"
+        rows.append(_row("Rep K", "K1", _d(20), "DSK1", "BK1", "WIRELESS", "Posted", "", _d(12),
+                         "SPK1", "k1", "port", "iPhone 18 - 256GB - Black", owner=kh))
+        rows.append(_row("Rep K", "K2", _d(21), "DSK2", "BK2", "WIRELESS", "Disconnected", _d(1), _d(14),
+                         "SPK2", "k2", "port", "iPhone 18 - 256GB - Black", owner=kh))
+        with open(cls.path, "w", newline="", encoding="utf-8") as f:
+            w = csv.writer(f); w.writerow(HEADER); w.writerows(rows)
+        CR.view_counts = lambda *a, **k: None          # no Tableau in a unit test
+        cls.data = CR.build_team(cls.path, TODAY, log=lambda *a: None)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def test_split_and_sums(self):
+        o = self.data["owners"]
+        self.assertEqual((o["zaid"]["box"]["0-30"]["act"], o["zaid"]["box"]["0-30"]["disc"]), (3, 1))
+        # ROWS already carries one Khalil line (the 'stranger', disconnected)
+        self.assertEqual((o["khalil"]["box"]["0-30"]["act"], o["khalil"]["box"]["0-30"]["disc"]), (3, 2))
+        self.assertEqual(o["atef"]["box"]["0-30"]["act"], 0)
+        t = self.data["team"]
+        self.assertEqual((t["box"]["0-30"]["act"], t["box"]["0-30"]["disc"]), (6, 3))
+        self.assertEqual((t["box"]["90"]["act"], t["box"]["90"]["disc"]), (5, 1))
+        self.assertEqual(t["pending"], 1)
+        self.assertEqual(t["office_rate"]["0-30"]["sold"], 7)
+
+    def test_schedule_and_html(self):
+        o = self.data["owners"]
+        self.assertEqual(o["khalil"]["schedule"]["0-30"],
+                         [(TODAY - dt.timedelta(days=14) + dt.timedelta(days=31), 1),
+                          (TODAY - dt.timedelta(days=5) + dt.timedelta(days=31), 1)])
+        h = CR.render_team_html(self.data, TODAY)
+        self.assertIn("CAPTAINSHIP TOTAL", h)
+        self.assertIn("Khalil Mansour", h)
+        self.assertNotIn("CUST 2", h)                # no customer rows on the team board
+        self.assertEqual(CR.owner_order(o)[0], "khalil")   # 50% beats 33%
