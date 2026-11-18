@@ -2119,6 +2119,49 @@
     "report_id": "vantura-board-audit"
    }
   },
+  "spectrum_knocks": {
+   "on_scheduler": true,
+   "hand_run_only": true,
+   "machine": "Lucy 4",
+   "_note": "Spectrum Knocks (Maud/Raf 2026-11-18, Tiffani's Loom): per-rep doors from Charter OpenDoor (charter.opendoorsystem.com, Dispositions list, Raf's office login spectrum_* in ownerville-creds.json) into the 'Spectrum Knocks' tab of VAs' Data, one row per rep per day, newest on top. NOT a 4am-batch report: it fires from com.alphalete.spectrum-knocks on LUCY 4 every 15 min (today 9 AM-midnight CT, yesterday in the midnight hour). This entry is the manual push for YESTERDAY: `lucy rerun spectrum_knocks`. Pure HTTP, no browser.",
+   "display_name": "Spectrum Knocks — fill yesterday now",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.spectrum_knocks.fill"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 10,
+   "verify": null
+  },
+  "install_spectrum_knocks_agent": {
+   "on_scheduler": true,
+   "machine": "Lucy 4",
+   "_note": "NOT a report — one-shot LaunchAgent installer: `lucy rerun install_spectrum_knocks_agent` bootstraps com.alphalete.spectrum-knocks (StartInterval 900) on LUCY 4 from the committed plist.",
+   "display_name": "Install: Spectrum Knocks LaunchAgent (Lucy 4)",
+   "command": [
+    "automations.day_orchestrator.install_agent"
+   ],
+   "base_args": [
+    "spectrum-knocks"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "data_sources": [],
+   "depends_on": [],
+   "freshness_target": null,
+   "priority": "P3",
+   "source_type": "local",
+   "timeout_minutes": 5,
+   "verify": null
+  },
   "sales_board_fixer": {
    "on_scheduler": true,
    "machine": "Lucy 4",

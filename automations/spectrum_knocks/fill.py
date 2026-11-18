@@ -1,16 +1,24 @@
 """Spectrum knocks -> Google Sheet: one row per rep per day, newest day on top.
 
-Tab "Daily" in the sheet below. Each run writes ONE day: rows already on the
-tab for that same day are replaced (so a re-run never doubles a day), every
-other day is kept. Only reps who knocked at least one door get a row.
+Tab "Spectrum Knocks" in "VAs' Data" — the same workbook as the OwnerVille
+"Rep Total Knocks Template" (Eve 2026-11-18: "movelo a producción"). Each run
+writes ONE day: rows already on the tab for that same day are replaced (so a
+re-run never doubles a day), every other day is kept. Only reps who knocked at
+least one door get a row. The tab is ours (created by this code); no other tab
+in the workbook is touched.
 
 Columns are found by their header label, never by position. If the tab has no
 header yet, the default one is written.
 
-SANDBOX until Eve says "use the real Sheet":
     python -m automations.spectrum_knocks.fill              # yesterday
     python -m automations.spectrum_knocks.fill 2026-11-17   # a date
-    python -m automations.spectrum_knocks.fill 2026-11-17 --dry-run
+    python -m automations.spectrum_knocks.fill --tick       # the 15-min agent
+    python -m automations.spectrum_knocks.fill 2026-11-17 --sandbox --dry-run
+
+--tick (Lucy 4, com.alphalete.spectrum-knocks, every 15 min — like OwnerVille):
+  9 AM–11:59 PM Central  → refresh TODAY (reps are still knocking)
+  midnight hour          → refresh YESTERDAY one last time (closes the day)
+  any other hour         → nothing
 """
 from __future__ import annotations
 
@@ -21,9 +29,16 @@ from typing import List, Optional
 from automations.recruiting_report.fill import open_by_key
 from automations.spectrum_knocks import pull
 
+# Production: "VAs' Data" (home of the OwnerVille knocks tab too).
+SHEET_ID = "1qUiljtWXhcy3OGhQ_81LnNPIsUXjad3MJi-VzjEIDV8"
+TAB = "Spectrum Knocks"
 # Sandbox: "Spectrum Knocks - TEST" (Eve's Drive, shared with alphaletereporting).
-SHEET_ID = "1-7uiilLUBsxYXWdRyJ3ysS8IiSUphwvM-NpoBuh0wGE"
-TAB = "Daily"
+SANDBOX_SHEET_ID = "1-7uiilLUBsxYXWdRyJ3ysS8IiSUphwvM-NpoBuh0wGE"
+SANDBOX_TAB = "Daily"
+
+# --tick hours, Central time (the reps are in DFW).
+TZ = "America/Chicago"
+LIVE_FROM_HOUR = 9
 
 BREAK_COL = f"Breaks ({pull.BREAK_MINUTES}+ min)"
 HEADER = (["Date", "Rep", "Doors"] + pull.COLUMNS
@@ -49,15 +64,15 @@ def _date_key(s: str) -> dt.date:
         return dt.date.min
 
 
-def _worksheet(sh):
+def _worksheet(sh, tab: str):
     titles = [w.title for w in sh.worksheets()]
-    if TAB in titles:
-        return sh.worksheet(TAB)
+    if tab in titles:
+        return sh.worksheet(tab)
     if titles == ["Sheet1"]:  # brand-new sandbox: rename the blank first tab
         ws = sh.worksheet("Sheet1")
-        ws.update_title(TAB)
+        ws.update_title(tab)
         return ws
-    return sh.add_worksheet(TAB, rows=1000, cols=len(HEADER))
+    return sh.add_worksheet(tab, rows=1000, cols=len(HEADER))
 
 
 def build_rows(day: dt.date, summary: List[dict], header: List[str]) -> List[list]:
@@ -78,16 +93,16 @@ def build_rows(day: dt.date, summary: List[dict], header: List[str]) -> List[lis
 
 
 def fill(day: dt.date, summary: List[dict], *, sheet_id: str = SHEET_ID,
-         dry_run: bool = False) -> int:
+         tab: str = TAB, dry_run: bool = False) -> int:
     sh = open_by_key(sheet_id)
-    ws = _worksheet(sh)
+    ws = _worksheet(sh, tab)
     values = ws.get_all_values()
     header = values[0] if values and any(values[0]) else []
     if not header:
         header = list(HEADER)
     missing = [h for h in HEADER if _norm(h) not in {_norm(x) for x in header}]
     if missing:
-        raise RuntimeError(f"Tab '{TAB}' header is missing {missing}")
+        raise RuntimeError(f"Tab '{tab}' header is missing {missing}")
     date_i = [_norm(h) for h in header].index("date")
     stamp = day.strftime("%m/%d/%Y")
     kept = [r + [""] * (len(header) - len(r)) for r in values[1:]
@@ -97,7 +112,7 @@ def fill(day: dt.date, summary: List[dict], *, sheet_id: str = SHEET_ID,
     body.sort(key=lambda r: _date_key(r[date_i]), reverse=True)  # stable: day's order kept
     if dry_run:
         print(f"[dry-run] would write {len(new)} rows for {stamp} "
-              f"(+{len(kept)} rows from other days) to '{TAB}'")
+              f"(+{len(kept)} rows from other days) to '{tab}'")
         return len(new)
     end_row = max(len(values), len(body) + 1)
     blank = [[""] * len(header) for _ in range(end_row - 1 - len(body))]
@@ -234,17 +249,44 @@ def _style(sh, ws, header, body, date_i, end_row) -> None:
     sh.batch_update({"requests": reqs})
 
 
+def tick_day(now: dt.datetime) -> Optional[dt.date]:
+    """Which day a 15-min tick at `now` (Central) refreshes, or None."""
+    if now.hour >= LIVE_FROM_HOUR:
+        return now.date()
+    if now.hour == 0:
+        return now.date() - dt.timedelta(days=1)
+    return None
+
+
+def _now_central() -> dt.datetime:
+    from zoneinfo import ZoneInfo
+    return dt.datetime.now(ZoneInfo(TZ))
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("date", nargs="?")
+    ap.add_argument("--tick", action="store_true",
+                    help="15-min agent: today 9am-midnight CT, yesterday at midnight")
+    ap.add_argument("--sandbox", action="store_true",
+                    help="write the TEST sheet instead of VAs' Data")
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args(argv)
-    day = (dt.date.fromisoformat(a.date) if a.date
-           else dt.date.today() - dt.timedelta(days=1))
+    if a.tick:
+        now = _now_central()
+        day = tick_day(now)
+        if day is None:
+            print(f"[spectrum_knocks] {now:%H:%M} CT — outside hours, nothing to do")
+            return 0
+    else:
+        day = (dt.date.fromisoformat(a.date) if a.date
+               else _now_central().date() - dt.timedelta(days=1))
+    sheet_id, tab = ((SANDBOX_SHEET_ID, SANDBOX_TAB) if a.sandbox
+                     else (SHEET_ID, TAB))
     summary = pull.run(day)
-    n = fill(day, summary, dry_run=a.dry_run)
-    print(f"Spectrum knocks {day}: {n} rep rows -> "
-          f"https://docs.google.com/spreadsheets/d/{SHEET_ID}")
+    n = fill(day, summary, sheet_id=sheet_id, tab=tab, dry_run=a.dry_run)
+    print(f"[spectrum_knocks] {day}: {n} rep rows -> '{tab}' "
+          f"https://docs.google.com/spreadsheets/d/{sheet_id}")
     return 0
 
 

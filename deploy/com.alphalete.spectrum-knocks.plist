@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key><string>com.alphalete.spectrum-knocks</string>
+    <!-- PATHS ARE MEGAN'S LAPTOP and are rewritten at install time by
+         `lucy rerun install_spectrum_knocks_agent` (LUCY 4) to the machine's repo root. -->
+    <key>ProgramArguments</key>
+    <array><string>/bin/bash</string><string>/Users/megan/1st Claude Folder/deploy/spectrum_knocks.sh</string><string>--tick</string></array>
+    <key>WorkingDirectory</key><string>/Users/megan/1st Claude Folder</string>
+    <key>EnvironmentVariables</key><dict><key>PYTHONPATH</key><string>/Users/megan/1st Claude Folder</string></dict>
+    <!-- Every 15 min; fill.py --tick only works 9 AM-midnight CT (+ closes yesterday at midnight). -->
+    <key>StartInterval</key><integer>900</integer>
+    <key>StandardOutPath</key><string>/tmp/com.alphalete.spectrum-knocks.out</string>
+    <key>StandardErrorPath</key><string>/tmp/com.alphalete.spectrum-knocks.err</string>
+    <key>RunAtLoad</key><false/>
+</dict>
+</plist>
