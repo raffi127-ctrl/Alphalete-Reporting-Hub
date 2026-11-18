@@ -14130,6 +14130,25 @@
    "timeout_minutes": 5,
    "verify": null
   },
+  "second_round_calendar_probe": {
+   "on_scheduler": false,
+   "_off_scheduler_note": "READ-ONLY, off-scheduler. `lucy rerun second_round_calendar_probe` opens the SECOND INTERVIEWS table on the calendar (p=102, NOT the p=701 retention report) and prints three things the rebuild needs: whether the date picker can be driven at all (open_calendar_for is documented best-effort under patchright -- if it cannot move, a chase can only ever read the day the calendar happens to show, and the 7pm rule's look-back at yesterday is not available this way); every option the Follow Up Status dropdown offers, which is the vocabulary that splits 'resolved' from 'still owed a call'; and the Action column verbatim, which is the ONLY place the BOB date ('Brought on Board (Nov 30)') and the disqualify stamp live. Built 2026-11-18 after Megan: 'it has to be off the calendar so that you can see what was marked' -- the retention report counts rows per label per day and cannot say Alma was BOB'd for Nov 30 while Jesse was disqualified. Asking the page rather than a screenshot is the LABEL_BOB lesson. Writes nothing, clicks nothing, touches no contacts.",
+   "display_name": "2nd round calendar probe (read-only)",
+   "source_type": "browser",
+   "data_sources": [],
+   "command": [
+    "automations.second_round_contacts.calendar_probe"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 10,
+   "verify": null
+  },
   "second_round_label_probe": {
    "on_scheduler": false,
    "_off_scheduler_note": "READ-ONLY, off-scheduler. `lucy rerun second_round_label_probe` prints the row labels the Retention Report actually uses, so a read that came back EMPTY can be told apart from a label we spelled wrong. Built 2026-11-18: config.LABEL_BOB ('Brought on Board Booked') returned nothing for all five owners on 11/17 and 11/18, the safety stop fired, and Megan's screenshot of the Second Interviews page says 'BOB - Booked' -- a DIFFERENT page, so the screenshot is a hint and not evidence. Needs an AppStream session, which the laptop does not have and a Lucy does. No machine pin: any Lucy with the login can answer it. Writes nothing and touches no contacts.",
