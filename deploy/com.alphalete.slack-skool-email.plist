@@ -32,15 +32,28 @@
         <string>/Users/megan/1st Claude Folder</string>
     </dict>
 
-    <!-- Monday 8:00am machine LOCAL time (Lucy 1 is Central). Weekday 1 =
-         Monday: orientation day, and the dated tab is named for that Monday,
-         so the newest tab is always the week being emailed. It fires 30 min
-         after Blue Ink at 7:30, so the packet this email mentions is already
-         on its way when the email lands. -->
+    <!-- 8:00am machine LOCAL time (Lucy 1 is Central), EVERY DAY. It fires 30
+         min after Blue Ink at 7:30, so the packet this email mentions is
+         already on its way when the email lands.
+
+         It was Monday only, and that had to change with the send (Megan
+         2026-11-18: the email goes two days before somebody starts). A Monday
+         start's send day is the SATURDAY, and a Monday timer never reaches
+         it, so the lead would have quietly done nothing and everybody would
+         still have been mailed on the day itself.
+
+         Daily is safe because the decision moved into the run: it mails only
+         the people whose own day is within the lead, never somebody whose day
+         has passed, and never anybody Gmail says already has theirs. On a day
+         with nobody due it sends nothing and says so. No Weekday key at all,
+         deliberately, so nothing has to be kept in step with the office week.
+
+         Note: no double hyphens anywhere in these comments on purpose. XML
+         forbids them inside a comment, and plutil accepts what plistlib will
+         not, so an unreadable plist shows up as a phantom Hub card instead of
+         an error. See reference_plist_double_hyphen. -->
     <key>StartCalendarInterval</key>
     <dict>
-        <key>Weekday</key>
-        <integer>1</integer>
         <key>Hour</key>
         <integer>8</integer>
         <key>Minute</key>

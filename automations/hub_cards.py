@@ -6750,13 +6750,21 @@ AUTOMATED_REPORTS = [
             "out of Slack so nobody has to paste it."),
         "breakdown": (
             "WHAT IT DOES\n"
-            "Every **Monday 8:00am** on Lucy 1 it reads the newest dated "
+            "**8:00am daily** on Lucy 1 it reads the dated "
             "**`D2D OBCL <m.d>`** tab \u2014 every **chart** on it, and "
-            "Monday's has two \u2014 takes the **Email** column, and sends "
-            "ONE email from **alphaletereception@gmail.com** with everybody "
-            "in **BCC**. It tells them to install **Slack**, **Skool** and "
-            "**TeleMapper 3**, and that their **Blueink** packet is coming "
-            "separately.\n\n"
+            "Monday's has two \u2014 and emails the people whose first day "
+            "is **2 days off**, read from the date above their own chart.\n"
+            "**One email per start day**, from "
+            "**alphaletereception@gmail.com** with that group in "
+            "**BCC** \u2014 because the email names the day "
+            "(\u201cat orientation on Monday, November 23\u201d), and one "
+            "email can only name one. It tells them to install **Slack**, "
+            "**Skool** and **TeleMapper 3**, and that their **Blueink** "
+            "packet is coming separately.\n\n"
+            "Nobody is mailed twice (Gmail is asked, per person, 30 days "
+            "back), nobody is mailed about a day that has already passed, "
+            "and a chart with no readable date gets no email at all \u2014 "
+            "named in the run instead.\n\n"
             "This replaces what reception did by hand every Monday: open the "
             "checklist, copy the email column, paste it into BCC, paste last "
             "week's message, swap in a fresh Slack invite link, send.\n\n"
@@ -6816,10 +6824,18 @@ AUTOMATED_REPORTS = [
         # due-today tallies -- same shape as blueink-docs.
         "self_scheduled": True,
         "schedule": {
-            "frequency": "weekly",
-            "weekdays": [0],   # Monday
+            # DAILY SINCE 2026-11-18, weekly before that. The email goes
+            # two days before somebody's own start, and a Monday start's send
+            # day is the Saturday -- a Monday-only card would have shown
+            # nothing due on the day it actually sends, which is the same
+            # blind spot as a report nobody can see never running.
+            "frequency": "daily",
+            "weekdays": [0, 1, 2, 3, 4, 5, 6],
             "time": "8:00 AM",
-            "time_label": "Raf's Office \u00b7 8:00am CST",
+            # No weekday in the label: it fires off the date above each
+            # person's chart, so naming one would be wrong six days a week
+            # (same reason as the Digi Docs card above).
+            "time_label": "Raf's Office \u00b7 8:00am CST, 2 days before each start",
             "estimated_minutes": 3,
         },
         "checklist": [],

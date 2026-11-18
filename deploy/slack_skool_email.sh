@@ -1,12 +1,21 @@
 #!/bin/bash
-# Monday 8:00am machine-local (Lucy 1 is Central) — email this week's new
-# starts their Slack + Skool join links.
+# 8:00am machine-local (Lucy 1 is Central), EVERY DAY — email the new starts
+# whose first day is two days off their Slack + Skool join links.
+#
+# Daily since 2026-11-18, and Monday-only before that. The email now goes two
+# days before somebody starts, and a Monday start's send day is the SATURDAY,
+# which a Monday timer never reaches. Who is due is decided in run.py, per
+# person, off the date above their own chart; on a day with nobody due this
+# sends nothing and says so.
 # launchd: com.alphalete.slack-skool-email.
 #
 # THIS SENDS REAL EMAIL to real people and there is no unsend. Everything that
 # could go wrong quietly is refused inside run.py rather than here: a missing,
 # wrong-service or stale link, a token that isn't reception's, an empty cohort,
-# and a send that already went out today.
+# and a send that would name a day that has already passed. The double-send
+# guard is per PERSON now (Gmail, 30 days back), not per day: a per-day guard
+# would have mailed the first group due on a morning and silently dropped the
+# second, which really happens when somebody is BOB'd late.
 #
 # Manual: bash deploy/slack_skool_email.sh --dry-run
 #

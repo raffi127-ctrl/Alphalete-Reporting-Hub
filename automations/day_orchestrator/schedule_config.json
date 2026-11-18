@@ -14269,8 +14269,8 @@
   "install_slack_skool_email_agent": {
    "on_scheduler": false,
    "machine": "Lucy 1",
-   "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_slack_skool_email_agent --machine \"Lucy 1\"` can install/refresh the STANDALONE com.alphalete.slack-skool-email LaunchAgent on Lucy 1 (Monday 08:00 machine-local, deploy/slack_skool_email.sh). install_agent only loads the plist; it reads no Sheet data. The wrapper passes --send, so from the moment this runs the Monday timer mails real new starts. Safe to arm ahead of time because run.py refuses any tab that isn't dated for the day it runs -- but that gate is the backstop, not the reason. Verified on Lucy 1 first: dry run read 52 of 71, the Slack link came back '[Slack, just now]', and --check-mailbox confirmed the token sends as reception (2026-08-26).",
-   "display_name": "Install Slack / Skool email agent (Mon 8:00am)",
+   "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_slack_skool_email_agent --machine \"Lucy 1\"` can install/refresh the STANDALONE com.alphalete.slack-skool-email LaunchAgent on Lucy 1 (08:00 machine-local DAILY since 2026-11-18, deploy/slack_skool_email.sh). install_agent only loads the plist; it reads no Sheet data. The wrapper passes --send, so from the moment this runs the daily timer mails real new starts. It was Monday-only until 2026-11-18; the email now goes two days before somebody's own start, and a Monday start's send day is the Saturday, which a Monday timer never reaches. Safe to arm ahead of time because run.py sends only to people whose own day is within the lead, never to somebody whose day has passed, and never to anybody Gmail says already has theirs -- but that gate is the backstop, not the reason. Verified on Lucy 1 first: dry run read 52 of 71, the Slack link came back '[Slack, just now]', and --check-mailbox confirmed the token sends as reception (2026-08-26).",
+   "display_name": "Install Slack / Skool email agent (daily 8:00am)",
    "source_type": "local",
    "data_sources": [],
    "command": [
