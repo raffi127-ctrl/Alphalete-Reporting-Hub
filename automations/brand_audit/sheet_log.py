@@ -123,7 +123,7 @@ def write_log(sheet_id: str, company, card: dict, *, dry_run: bool = False) -> d
     sh = sheets.open_by_key(sheet_id)
     ws = _ensure_ws(sh, company)
     tab = ws.title
-    grid = ws.get_all_values()
+    grid = sheets._retry(ws.get_all_values)      # 429 at noon = wait, not die
     has_data = any(any((c or "").strip() for c in row) for row in grid)
 
     if not has_data:                   # fresh/blank tab — write the header
@@ -149,7 +149,8 @@ def write_log(sheet_id: str, company, card: dict, *, dry_run: bool = False) -> d
         to_append.append([row.get(h, "") for h in header])
 
     if to_append:
-        ws.append_rows(to_append, value_input_option="USER_ENTERED")
+        # a 429 is refused before anything is written, so retrying can't duplicate
+        sheets._retry(ws.append_rows, to_append, value_input_option="USER_ENTERED")
 
     return {"ok": True, "tab": tab, "appended": len(to_append),
             "skipped_existing": len(rows) - len(to_append)}

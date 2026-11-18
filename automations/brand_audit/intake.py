@@ -96,8 +96,11 @@ def read_companies(sheet_id: str = DEFAULT_INTAKE_SHEET_ID,
                    worksheet: Optional[str] = None) -> list[Company]:
     """Open the intake sheet and return all companies."""
     sh = sheets.open_by_key(sheet_id)
-    ws = sh.worksheet(worksheet) if worksheet else sh.sheet1
-    grid = ws.get_all_values()
+    # Retried: this is the first read of the noon run, when every Lucy's noon
+    # job hits the same per-minute quota. A bare 429 here killed the whole
+    # Brand Health Audit on 11/17 (12:00:05) and nothing runs it again.
+    ws = sheets._retry(sh.worksheet, worksheet) if worksheet else sh.sheet1
+    grid = sheets._retry(ws.get_all_values)
     if not grid:
         return []
     return parse_rows(grid[0], grid[1:])
