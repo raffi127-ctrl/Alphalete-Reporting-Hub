@@ -196,6 +196,73 @@ def _complete_service(page, modal, name: str, *, campaign: str = ""):
     return section_states(modal2), modal2
 
 
+def _shown(loc) -> bool:
+    try:
+        return bool(loc is not None and loc.is_visible())
+    except Exception:                                       # noqa: BLE001
+        return False
+
+
+def _section_toggle(modal):
+    """The OWNER SUBMIT heading link -- the one thing that opens the section.
+
+    OwnerVille's sections are a Bootstrap accordion: each heading is an
+    `<a data-toggle="collapse">`, and opening one closes the others. The link
+    is preferred; the innermost visible row is the fallback (what `_expand`
+    clicks first)."""
+    import re
+    try:
+        a = modal.locator("a[data-toggle='collapse']").filter(
+            has_text=re.compile(r"owner\s+submit", re.I)).first
+        if a.count() and _shown(a):
+            return a
+    except Exception:                                       # noqa: BLE001
+        pass
+    for row in ov._status_rows(modal, "OWNER SUBMIT"):
+        if _shown(row):
+            return row
+    return None
+
+
+def _open_owner_submit(modal, page) -> tuple:
+    """(label, box, on_screen) for the confirm control, opening its section.
+
+    NOT `ov._expand`. `_expand` proves a section opened by waiting for a text
+    marker, and the marker for this section was the old attestation sentence,
+    which OwnerVille deleted (2026-11-16). With no marker to find, `_expand`
+    runs every fallback it has: the chevron (which shuts the section it had
+    just opened), then `_force_expand`, which JS-clicks the buttons of the rows
+    around it -- out to the modal itself, where the buttons are the X, Save
+    Changes and Close. That is what happened to Emmanuel Holley (2026-11-17
+    18:06): the form was CLOSED under the run, the box was ticked inside a
+    closed form, and "Save Changes" was no longer on screen to press, so the
+    run said "Save Changes failed" and he went to a person by hand.
+
+    Here the proof is the control itself: the label on screen. One click on
+    the heading opens a shut section; a second click undoes a first that shut
+    an open one. Nothing else is ever clicked."""
+    lab, box = _confirm_box(modal)
+    if _shown(lab):
+        return lab, box, True
+    for _ in range(2):
+        toggle = _section_toggle(modal)
+        if toggle is None:
+            break
+        try:
+            toggle.click(timeout=6000)
+        except Exception:                                   # noqa: BLE001
+            pass
+        lab, box = _confirm_box(modal)
+        try:
+            if lab is not None:
+                lab.wait_for(state="visible", timeout=5000)
+        except Exception:                                   # noqa: BLE001
+            pass
+        if _shown(lab):
+            return lab, box, True
+    return lab, box, False
+
+
 def _checked(box) -> bool:
     try:
         return bool(box is not None and box.is_checked())
@@ -293,38 +360,18 @@ def submit_one(page, name: str, *, dry_run: bool = True,
             "ticked it)" if service_caught_up else "")
     if st.get("BACKGROUND CHECK") != "COMPLETED":
         return "refused", f"{matched}: background check is not COMPLETED"
-    # OPEN THE SECTION, THEN LOOK FOR THE BOX -- not the other way round.
-    # `_expand` waits for a TEXT marker to prove it opened, and that marker was
-    # the old attestation sentence, which OwnerVille deleted (2026-11-16). It
-    # does not raise when the marker never shows; it prints and returns. So the
-    # run sailed past a section it had not confirmed open and then reported the
-    # thing it could not find, which read like a missing control rather than a
-    # changed one.
-    #
-    # The box itself is the only honest proof, so it is what we check. And if
-    # it is not there, the section is TOGGLED ONCE and checked again: a row
-    # that was already open is closed by the first click, and one click more is
-    # the difference between "no confirm box" and a submit.
-    try:
-        ov._expand(modal, "OWNER SUBMIT", page, reveals=CONFIRM_TEXT[:24],
-                   verbose=False)
-    except Exception:                                       # noqa: BLE001
-        pass
-    lab, box = _confirm_box(modal)
-    if lab is None:
-        try:
-            for row in ov._status_rows(modal, "OWNER SUBMIT"):
-                if row.is_visible():
-                    row.click(timeout=6000)
-                    break
-            page.wait_for_timeout(1200)
-        except Exception:                                   # noqa: BLE001
-            pass
-        lab, box = _confirm_box(modal)
+    # OPEN THE SECTION WITHOUT `_expand` -- see _open_owner_submit: with the old
+    # sentence gone, `_expand`'s fallbacks clicked the form shut under us.
+    lab, box, on_screen = _open_owner_submit(modal, page)
     if lab is None:
         return "refused", f"{matched}: no confirm box in Owner Submit " \
                           f"(looked for {CONFIRM_TEXT[:28]!r} and an exact " \
                           f"{SUBMIT_LABEL!r})"
+    if not on_screen or not _shown(modal):
+        # Never tick a box nobody could see: a hidden box can still be ticked
+        # by script, and that is how a closed form got an attestation in it.
+        return "refused", f"{matched}: the Submit box is there but its " \
+                          f"section never came on screen — nothing ticked"
     try:
         already_ticked = bool(box and box.is_checked())
     except Exception:                                       # noqa: BLE001
@@ -334,6 +381,12 @@ def submit_one(page, name: str, *, dry_run: bool = True,
                                f"box {'already ticked' if already_ticked else 'found'}"
     if not already_ticked and not _tick(lab, box):
         return "refused", f"{matched}: confirm box would not tick"
+    # The form must still be OPEN to save it. If it shut, nothing was saved and
+    # the tick goes with it; say exactly that rather than "Save failed".
+    if not _shown(modal) or not _shown(
+            modal.get_by_role("button", name="Save Changes").first):
+        return "refused", f"{matched}: the Set Status form closed before " \
+                          f"Save Changes — nothing was saved"
     try:
         ov._click_any(modal, "Save Changes", page=page)
         page.wait_for_timeout(3000)

@@ -125,11 +125,20 @@ class Campaign(unittest.TestCase):
 
     def test_the_confirming_reopen_uses_the_same_campaign(self):
         """Confirming on another campaign is reading another roster."""
-        for fn in (OS.submit_one,):
+        # Every open names the caller's campaign -- the SERVICE catch-up's
+        # re-open included (it is its own function since 2026-11-16).
+        import re
+        for fn in (OS.submit_one, OS._complete_service):
             src = inspect.getsource(fn)
-            opens = src.count("open_set_status(")
-            self.assertEqual(opens, 2, fn.__name__)
-            self.assertEqual(src.count("campaign=campaign"), 2, fn.__name__)
+            opens = re.findall(r"open_set_status\([^)]*\)", src)
+            self.assertTrue(opens, fn.__name__)
+            for call in opens:
+                self.assertIn("campaign=campaign", call, fn.__name__)
+        self.assertEqual(
+            inspect.getsource(OS.submit_one).count("open_set_status("), 2)
+        self.assertIn("campaign=campaign",
+                      re.search(r"_complete_service\([^)]*\)",
+                                inspect.getsource(OS.submit_one)).group(0))
 
 
 class UidReader(unittest.TestCase):

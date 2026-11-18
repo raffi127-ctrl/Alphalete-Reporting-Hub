@@ -63,11 +63,15 @@ class TheBoxIsTheProofNotTheSentence(unittest.TestCase):
 
     def test_a_missing_box_is_retried_after_toggling_the_section(self):
         """A row that was already open is CLOSED by the first click, so one
-        click more is the difference between 'no confirm box' and a submit."""
+        click more is the difference between 'no confirm box' and a submit.
+        Since 2026-11-17 that lives in _open_owner_submit (pinned with fakes in
+        test_owner_submit_open.py); submit_one must go through it."""
         src = code()
         body = src[src.index("def submit_one"):]
-        self.assertEqual(body.count("_confirm_box(modal)"), 2,
-                         "the box should be looked for again after a toggle")
+        self.assertIn("_open_owner_submit(modal, page)", body)
+        fn = src[src.index("def _open_owner_submit"):src.index("def _checked")]
+        self.assertIn("range(2)", fn)
+        self.assertGreaterEqual(fn.count("_confirm_box(modal)"), 2)
 
     def test_the_refusal_names_what_it_looked_for(self):
         """Two days were spent on 'no confirm box' meaning three different
