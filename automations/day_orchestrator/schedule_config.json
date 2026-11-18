@@ -14086,6 +14086,50 @@
     "type": "not_configured"
    }
   },
+  "bob_nudge_dry": {
+   "on_scheduler": false,
+   "_off_scheduler_note": "DRY RUN for the 6pm BOB-call nudge (Megan 2026-11-18: 'a daily nudge / alert if BOB calls aren't made by 6pm local time'). `lucy rerun bob_nudge_dry` prints who it would DM and the exact message, and sends nothing -- bob_nudge.py only DMs on --send. Read this before installing the agent: the nudge names real people to real owners. No machine pin: any Lucy with the AppStream login can read it. weekdays [] so the batch never auto-runs it.",
+   "display_name": "BOB call nudge (dry run)",
+   "source_type": "browser",
+   "data_sources": [],
+   "command": [
+    "automations.second_round_contacts.bob_nudge"
+   ],
+   "base_args": [
+    "--hour",
+    "0"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 20,
+   "verify": null
+  },
+  "install_bob_call_nudge_agent": {
+   "on_scheduler": false,
+   "machine": "Lucy 1",
+   "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_bob_call_nudge_agent --machine \"Lucy 1\"` can install/refresh the STANDALONE com.alphalete.bob-call-nudge LaunchAgent (hourly 16:05-21:05 machine-local, deploy/bob_call_nudge.sh). HOURLY and not one 6pm fire because 6pm in Los Angeles is 8pm in Chicago: one fire on Lucy 1's clock is 6pm in a single zone, so the hour is decided per office off its own `timezone` and each owner is DM'd once a day. The wrapper passes --send, so from the moment this runs it DMs office owners for real -- read `lucy rerun bob_nudge_dry` first. install_agent only loads the plist; it reads no Sheet data.",
+   "display_name": "Install BOB call nudge agent (hourly 4-9pm)",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.day_orchestrator.install_agent"
+   ],
+   "base_args": [
+    "bob-call-nudge"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 5,
+   "verify": null
+  },
   "second_round_label_probe": {
    "on_scheduler": false,
    "_off_scheduler_note": "READ-ONLY, off-scheduler. `lucy rerun second_round_label_probe` prints the row labels the Retention Report actually uses, so a read that came back EMPTY can be told apart from a label we spelled wrong. Built 2026-11-18: config.LABEL_BOB ('Brought on Board Booked') returned nothing for all five owners on 11/17 and 11/18, the safety stop fired, and Megan's screenshot of the Second Interviews page says 'BOB - Booked' -- a DIFFERENT page, so the screenshot is a hint and not evidence. Needs an AppStream session, which the laptop does not have and a Lucy does. No machine pin: any Lucy with the login can answer it. Writes nothing and touches no contacts.",

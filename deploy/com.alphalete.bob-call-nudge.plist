@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alphalete.bob-call-nudge</string>
+
+    <!-- NOT INSTALLED YET. It sends real Slack DMs to office owners, so arm it
+         only once a dry run has been read:
+             lucy rerun bob_nudge_dry
+         then
+             lucy rerun install_bob_call_nudge_agent  (machine "Lucy 1")
+         Note: no double hyphens anywhere in these comments on purpose. XML
+         forbids them inside a comment, and plutil accepts what plistlib will
+         not, so an unreadable plist shows up as a phantom Hub card instead of
+         an error. See reference_plist_double_hyphen. -->
+
+    <!-- Path is the laptop placeholder; on Lucy 1, install_agent.py rewrites
+         it to that machine's repo path. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/megan/1st Claude Folder/deploy/bob_call_nudge.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/megan/1st Claude Folder</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/megan/1st Claude Folder</string>
+    </dict>
+
+    <!-- HOURLY, 4pm to 9pm machine local (Lucy 1 is Central), and the run
+         decides per office whether it is 6pm THERE.
+
+         Not one fire at 18:00, because that is 6pm in ONE timezone. 6pm in
+         Los Angeles is 8pm in Chicago, so a single Central fire would never
+         nudge a Pacific office at all. The hour is read off each office's own
+         `timezone` and the owner is nudged once a day, so the extra ticks
+         cost a page read and nothing else.
+
+         Starts at 16:00 so an office an hour or two EAST of Central is
+         reached at its own 6pm too, and stops at 21:00: past that the 7pm
+         pass has already removed them and a nudge is only noise. -->
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Hour</key><integer>16</integer><key>Minute</key><integer>5</integer></dict>
+        <dict><key>Hour</key><integer>17</integer><key>Minute</key><integer>5</integer></dict>
+        <dict><key>Hour</key><integer>18</integer><key>Minute</key><integer>5</integer></dict>
+        <dict><key>Hour</key><integer>19</integer><key>Minute</key><integer>5</integer></dict>
+        <dict><key>Hour</key><integer>20</integer><key>Minute</key><integer>5</integer></dict>
+        <dict><key>Hour</key><integer>21</integer><key>Minute</key><integer>5</integer></dict>
+    </array>
+
+    <key>StandardOutPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/bob-call-nudge.launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/bob-call-nudge.launchd.err.log</string>
+</dict>
+</plist>
