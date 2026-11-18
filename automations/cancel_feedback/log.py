@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Dict, List, Set
 
 from automations.cancel_feedback import config as C
+from automations.cancel_feedback.source import normalize_phone
 
 
 def configured() -> bool:
@@ -48,7 +49,7 @@ def already_texted_phones(log=print) -> Set[str]:
         out = set()
         for r in rows:
             if str(r.get("Status", "")).lower() != "failed":
-                p = str(r.get("Phone", "")).strip()
+                p = normalize_phone(str(r.get("Phone", "")))
                 if p:
                     out.add(p)
         return out
@@ -65,7 +66,7 @@ def opted_out_phones(log=print) -> Set[str]:
         out = set()
         for r in ws.get_all_records():
             if str(r.get("Opted Out", "")).strip().lower() in ("yes", "true", "1"):
-                p = str(r.get("Phone", "")).strip()
+                p = normalize_phone(str(r.get("Phone", "")))
                 if p:
                     out.add(p)
         return out
@@ -82,7 +83,7 @@ def outreach_map(log=print) -> Dict[str, str]:
         ws = _ws(C.OUTREACH_TAB, C.OUTREACH_HEADERS)
         out: Dict[str, str] = {}
         for r in ws.get_all_records():
-            p = str(r.get("Phone", "")).strip()
+            p = normalize_phone(str(r.get("Phone", "")))
             if p:
                 out[p] = str(r.get("Customer", "")).strip()
         return out

@@ -54,9 +54,12 @@ STOP_WORDS = {"stop", "stopall", "unsubscribe", "cancel", "end", "quit",
 # --- Log (dedicated Google Sheet; Outreach + Responses tabs) -----------------
 # Filled in once the sandbox sheet is created. Empty => no sheet wired yet, so
 # live sends are refused and dry-run just prints what it WOULD log.
-LOG_SHEET_ID = ""
-OUTREACH_TAB = "Outreach"
-RESPONSES_TAB = "Responses"
+# Two tabs on Raf's all-in-one captainship sheet (same book the cancels +
+# disconnects reports write to), so the automation already has write access and
+# Dylan already views it — no new file, no scope/sharing problem (Dylan 2026-11-18).
+LOG_SHEET_ID = "1Xddk29xvB3LYp24KndVbijgTngUVSAuQ-r5tjh7uqO8"
+OUTREACH_TAB = "Cancel Feedback - Outreach"
+RESPONSES_TAB = "Cancel Feedback - Responses"
 OUTREACH_HEADERS = ["Texted At", "Customer", "Phone", "Kind", "Reason", "Rep",
                     "Owner", "Status", "Message ID"]
 RESPONSES_HEADERS = ["Received At", "Phone", "Customer", "Feedback", "Opted Out",
