@@ -39,6 +39,22 @@ class EcoError(RuntimeError):
     pass
 
 
+# The relay is ONE Apps Script shared by every Lucy (headshots, office jobs,
+# LucyECO Social). When two ask at once, Apps Script's lock makes one wait and
+# can give up on it ("Lock timeout: another process was holding the lock for
+# too long"). Nothing is wrong with the office: the next tick asks again.
+_BUSY_SIGNS = ("lock timeout", "didn't answer in")
+
+
+def is_busy(e: BaseException) -> bool:
+    """True when `e` only means the relay was busy this time (the shared
+    lock, or our own wall-clock deadline) -- a "try again next tick", not a
+    failure. LucyECO Social's card went red twice a night on 11/16 and 11/17
+    for exactly this on raf's office."""
+    msg = str(e).lower()
+    return isinstance(e, EcoError) and any(s in msg for s in _BUSY_SIGNS)
+
+
 def _admin_key() -> str:
     k = os.environ.get("HEADSHOTS_RELAY_ADMIN_KEY", "").strip()
     if not k and ADMIN_KEY_PATH.exists():

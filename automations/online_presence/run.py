@@ -253,7 +253,14 @@ def main(argv=None) -> int:
             res = run_office(p, live=a.live, answers=mine)
             if not res["dry_run"]:
                 read += [r["job_id"] for r in mine]
-        except Exception:
+        except Exception as e:
+            from automations.headshots import eco as _eco
+            if _eco.is_busy(e):
+                # the shared relay was busy -- not this office's fault, and the
+                # next pass (10 min) asks again. Its answers stay unread.
+                print(f"[{p.key}] relay busy, waits for the next pass ({str(e)[:90]})")
+                lap(f"office {p.key}")
+                continue
             failed += 1
             print(f"[{p.key}] FAILED\n{traceback.format_exc()}")
             lap(f"office {p.key}")
@@ -267,7 +274,13 @@ def main(argv=None) -> int:
         lap(f"office {p.key}")
     if read:
         from automations.online_presence import relay
-        relay.mark_read(read)
+        from automations.headshots import eco as _eco
+        try:
+            relay.mark_read(read)
+        except Exception as e:
+            if not _eco.is_busy(e):
+                raise
+            print(f"relay busy at mark-read ({str(e)[:90]}) -- next pass marks them")
         lap("relay mark-read")
     # How long the whole pass took (timing.py): logged every time, and a
     # once-a-day heads-up past 5 minutes -- the "does LucyECO Social need its
