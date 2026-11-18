@@ -30,6 +30,10 @@ CHANGES NOTHING. One office, one page, no writes, nothing clicked.
 
     PYTHONPATH=. .venv/bin/python -m automations.second_round_contacts.calendar_probe \\
         --office 11280 --date 2026-11-17
+
+Office and date are positional too, which is the form the mini can pass:
+
+    lucy rerun second_round_calendar_probe 24232 2026-11-18
 """
 from __future__ import annotations
 
@@ -49,21 +53,31 @@ from automations.second_round_contacts.second_interviews import (  # noqa: E402
 
 
 def main(argv=None) -> int:
+    # Office and date are POSITIONAL as well as flags. The mini's `lucy rerun`
+    # passes extra arguments through as positionals and its own argparse eats
+    # anything starting with "-", so `lucy rerun second_round_calendar_probe
+    # 24232 2026-11-18` has to work -- `-- --office 24232` does not reach here.
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--office", default="11280", help="AppStream office id")
+    ap.add_argument("office_pos", nargs="?", default=None,
+                    help="AppStream office id (positional form)")
+    ap.add_argument("date_pos", nargs="?", default=None,
+                    help="YYYY-MM-DD (positional form)")
+    ap.add_argument("--office", default=None, help="AppStream office id")
     ap.add_argument("--date", default=None,
                     help="YYYY-MM-DD to try to move the calendar to "
                          "(default: yesterday, the day the 7pm rule looks at)")
     args = ap.parse_args(argv)
 
-    want = (dt.date.fromisoformat(args.date) if args.date
+    office = args.office or args.office_pos or "11280"
+    when = args.date or args.date_pos
+    want = (dt.date.fromisoformat(when) if when
             else dt.date.today() - dt.timedelta(days=1))
 
     from automations.applicant_tracker.applicantstream import session
 
     with session() as app:
-        owner = app.select_office(args.office)
-        print("office %s -> %s" % (args.office, owner))
+        owner = app.select_office(office)
+        print("office %s -> %s" % (office, owner))
 
         app.open_calendar()
         print("calendar opens on: %s" % shown_date(app))
@@ -103,7 +117,7 @@ def main(argv=None) -> int:
         uniq = sorted({a for a in actions if a})
         print("   %-28r x%-3d  %s" % (status, len(actions), uniq[:3]))
 
-    out = "output/second_interviews_probe.json"
+    out = "output/second_interviews_probe_%s.json" % office
     try:
         with open(out, "w") as fh:
             json.dump(data, fh, indent=2)
