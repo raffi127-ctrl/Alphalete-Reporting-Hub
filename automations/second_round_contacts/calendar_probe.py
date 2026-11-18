@@ -41,92 +41,11 @@ import sys
 # Every cell is found by its HEADER text, never by position: this table has ~19
 # columns and an unlabelled icon column, and a new column would silently shift
 # every index (house rule, and the reason the fills survive template changes).
-ROW_JS = """() => {
-    const norm = s => (s || '').replace(/\\s+/g, ' ').trim();
+# The reader lives in second_interviews so the probe and the nudge can
+# never drift into reading the table two different ways.
+from automations.second_round_contacts.second_interviews import (  # noqa: E402
+    ROW_JS, shown_date)
 
-    // The SECOND INTERVIEWS table is the one with a "Follow Up Status" header.
-    let table = null, headers = [];
-    for (const t of document.querySelectorAll('table')) {
-        for (const tr of t.querySelectorAll('tr')) {
-            const cells = [...tr.children].map(c => norm(c.innerText));
-            if (cells.some(c => /^follow up status$/i.test(c))) {
-                table = t; headers = cells; break;
-            }
-        }
-        if (table) break;
-    }
-    if (!table) return {error: 'no table with a Follow Up Status header'};
-
-    const idx = name => headers.findIndex(h => h.toLowerCase().startsWith(name));
-    const want = {first: idx('first name'), last: idx('last name'),
-                  email: idx('email'), show: idx('show up'),
-                  status: idx('follow up status'), by: idx('follow up by'),
-                  time: idx('follow up time'), action: idx('action')};
-
-    const rows = [], options = new Set();
-    for (const tr of table.querySelectorAll('tr')) {
-        const cells = [...tr.children];
-        if (cells.length < 5) continue;
-        const text = i => (i >= 0 && cells[i]) ? norm(cells[i].innerText) : '';
-        const first = text(want.first), last = text(want.last);
-        if (!first || /^first name$/i.test(first)) continue;
-
-        // Follow Up Status is a <select>: the chosen one AND every option it
-        // offers, which is the vocabulary we have to classify.
-        let status = '', picked = '';
-        const sel = cells[want.status] && cells[want.status].querySelector('select');
-        if (sel) {
-            [...sel.options].forEach(o => options.add(norm(o.text)));
-            picked = norm(sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text : '');
-            status = picked;
-        } else {
-            status = text(want.status);
-        }
-
-        // "Show Up" is two different controls: radio Yes/No for a no-show, and
-        // an "Offer Position? [Yes/No]" <select> once somebody has turned up.
-        // Which control is present is itself the answer to "did they show".
-        let showed = '', offered = '';
-        const cell = cells[want.show];
-        if (cell) {
-            const osel = cell.querySelector('select');
-            if (osel) {
-                showed = 'yes';
-                offered = norm(osel.options[osel.selectedIndex] ? osel.options[osel.selectedIndex].text : '');
-            } else {
-                const checked = [...cell.querySelectorAll('input[type=radio]')]
-                    .filter(r => r.checked);
-                const lbl = norm(cell.innerText).toLowerCase();
-                showed = checked.length
-                    ? (/\\byes\\b/.test(lbl) && checked[0].value &&
-                       /yes/i.test(checked[0].value) ? 'yes' : 'no')
-                    : '';
-                if (!showed && checked.length === 0) showed = 'unmarked';
-            }
-        }
-
-        rows.push({first, last, email: text(want.email),
-                   showed, offered, status,
-                   follow_up_by: text(want.by), follow_up_time: text(want.time),
-                   action: text(want.action)});
-    }
-    return {headers, rows, options: [...options]};
-}"""
-
-
-def shown_date(app) -> str:
-    """Whatever day the calendar is actually displaying, as it writes it."""
-    try:
-        return app.page.evaluate(
-            """() => {
-                const p = document.querySelector('#topLevelDatePicker');
-                if (p && p.value) return p.value;
-                const h = document.body.innerText.match(
-                    /\\b\\w+day,?\\s+\\w+\\s+\\d{1,2},?\\s+\\d{4}\\b/);
-                return h ? h[0] : '(could not tell)';
-            }""")
-    except Exception as exc:                                  # noqa: BLE001
-        return "(error: %s)" % type(exc).__name__
 
 
 def main(argv=None) -> int:

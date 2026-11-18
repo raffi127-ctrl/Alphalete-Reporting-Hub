@@ -9,20 +9,25 @@ This is the hour before that: the same list, named while there is still time to
 do something about it. Without it the 7pm removal is a thing that happens TO an
 office; with it, it is a thing they were told about and chose not to act on.
 
-So this asks EXACTLY the question the 7pm pass asks, through the same read --
-`run.gather_facts`, the same labels, the same windows, including the forward
-window the BOB mark needs because it is filed under the day somebody STARTS.
-That is deliberate and is the main design decision here: if the BOB label is
-ever wrong, this nudge and that removal are wrong together and one string fixes
-both. A second, cleverer way of asking "were the calls made" would drift, and
-the day it drifted an office would be nudged about calls it had made.
+WHAT IT READS, AND WHY NOT THE SAME THING AS THE 7PM PASS. The calendar's
+SECOND INTERVIEWS table, because the question is "what was this person
+marked" and only the calendar answers it (Megan, 2026-11-18: "it has to be
+off the calendar so that you can see what was marked"). On the Retention
+Report a disqualified person, somebody who declined, and somebody nobody has
+rung are the same absence of a tick -- and an office nudged about people who
+already have an answer stops reading the nudge.
 
-THE SAFETY STOP COMES WITH IT. If the BOB label comes back empty for every
-office and every day read, that is indistinguishable from "we could not read
-it" -- and the consequence here is DMing every office every night about calls
-they did make, which is how a nudge becomes noise nobody reads. So an
-unreadable keeper means NOBODY is nudged, loudly, same as it means nobody is
-removed.
+The 7pm removal keeps reading the report, deliberately (Megan: "keep them
+split"). It also looks at YESTERDAY, and this read cannot: the calendar's
+date picker runs through window.cal, which patchright's isolated world cannot
+see, so it only ever shows today (probed 2026-11-18 -- asked for 11/17, got
+11/18). Two reads answering two questions, not one read doing both badly. Do
+not merge them without solving the date picker first.
+
+THE SAFETY STOP COMES WITH IT. If the table comes back with NO ROWS, that is
+indistinguishable from an office with nothing on today -- and acting on it
+would DM every office every night about calls they did make. So an empty read
+nudges NOBODY, loudly.
 
 WHAT "POPS UP ON APP STREAM" MEANS. Not a banner inside ApplicantStream --
 their own escalations are the Aptel team's AI/SMS triage and there is no
@@ -49,6 +54,7 @@ from typing import Dict, List, Optional, Tuple
 from automations.second_round_contacts import config as C
 from automations.second_round_contacts import roster as R
 from automations.second_round_contacts import rules
+from automations.second_round_contacts import second_interviews as SI
 from automations.second_round_contacts import state as S
 
 # The hour, office-local. One short of the 7pm pass on purpose -- see above.
@@ -56,33 +62,46 @@ NUDGE_HOUR = 18
 
 # ApplicantStream's own Second Interviews page: where the call is logged, and
 # so where somebody who has just been nudged needs to end up.
-APPSTREAM_SECOND_ROUNDS = "https://www.applicantstream.com/main.html?p=701"
+# p=102 is the CALENDAR, which is where the SECOND INTERVIEWS table and its
+# Follow Up Status dropdown live. p=701 is the Retention Details REPORT -- a
+# read-only weekly grid with nothing to mark on it, which is what this pointed
+# at until 2026-11-18. Somebody nudged at 6pm and sent to a report they cannot
+# act in would reasonably conclude the nudge is broken.
+APPSTREAM_SECOND_ROUNDS = "https://www.applicantstream.com/main.html?p=102"
 
 
 def _log(msg: str) -> None:
     print(msg, flush=True)
 
 
-def outstanding(entries: Dict[str, dict], facts: Dict[str, dict],
-                today: dt.date) -> List[dict]:
-    """The people whose BOB call has not been logged, and who the 7pm pass
-    would therefore remove tonight.
+def outstanding(rows: List[dict]) -> List[dict]:
+    """Who showed up today and has no BOB-call mark yet.
 
-    Asks `rules.evening_removal`, which IS the 7pm rule -- not a copy of it.
-    A person is on this list exactly when they would be taken out in an hour.
+    READ OFF THE CALENDAR, because the question is "what was this person
+    marked" and only the calendar answers it (Megan, 2026-11-18: "it has to be
+    off the calendar so that you can see what was marked"). The Retention
+    Report counts rows per label per day, so on it a disqualified person, a
+    person who declined, and a person nobody has rung look identical -- and
+    nudging an office about the first two is how a nudge gets muted.
+
+    `second_interviews.owed` holds the rule: turned up, and not marked with
+    any of the four (BOB / Declined / Disqualified / LM). Anything else counts
+    as not marked, which is deliberate -- see that module.
+
+    THIS IS NOT the 7pm removal's question any more, and that is the point.
+    The removal reads the Retention Report because it also looks at YESTERDAY,
+    which this read cannot do: the calendar's date picker runs through
+    window.cal and patchright cannot drive it (probed 2026-11-18 -- asked for
+    11/17, got 11/18). Megan chose to keep them split rather than lose the
+    look-back. So: the nudge answers "who still owes a call TODAY", the
+    removal answers "who was never marked BOB". Do not merge them back without
+    solving the date picker first.
     """
-    out = []
-    for key, entry in sorted(entries.items()):
-        if entry.get("status") != S.TRACKED:
-            continue
-        why = rules.evening_removal(entry, facts.get(key) or {}, today)
-        if not why:
-            continue
-        out.append({"key": key,
-                    "name": entry.get("display") or key,
-                    "second_round": entry.get("second_round", ""),
-                    "why": why})
-    return out
+    return [{"name": SI.name_of(r),
+             "line": SI.describe(r),
+             "status": str(r.get("status") or "").strip(),
+             "mark": SI.mark_of(r)}
+            for r in SI.owed(rows)]
 
 
 # One line per owner per day. NOT in state.json: that file is the contact
@@ -230,12 +249,21 @@ def message(owner_name: str, people: List[dict], today: dt.date) -> str:
     """
     n = len(people)
     head = ("*%d BOB call%s still to make* - %s\n"
-            "At 7pm tonight anyone still unmarked comes out of your reception "
-            "contacts, so if a call has been made, mark it on "
-            "ApplicantStream and this sorts itself out."
+            "Everyone below turned up today and has no mark yet. At 7pm "
+            "anyone still unmarked comes out of your reception contacts, so "
+            "marking the call on ApplicantStream sorts this out.\n"
+            "Each one gets one of four: *BOB* (with the start date), "
+            "*Declined*, *Disqualified* or *LM*."
             % (n, "" if n == 1 else "s", owner_name))
-    lines = ["  - %s  (second round %s)" % (p["name"], p["second_round"])
-             for p in people]
+    # The status they ARE sitting at is worth showing: "Confirmed by Text"
+    # looks done to a person skimming the page, and is the most common thing
+    # these people are parked on.
+    lines = []
+    for p in people:
+        at = p.get("status") or ""
+        lines.append("  - %s%s" % (p["name"],
+                                   "   (currently: %s)" % at if at and
+                                   at.lower() != SI.UNSET else ""))
     return head + "\n\n" + "\n".join(lines)
 
 
@@ -317,46 +345,51 @@ def run(owners: List[R.Owner], *, send: bool, show_window: bool = True,
     from automations.applicant_tracker.applicantstream import session
 
     from automations.icd_alerts import post
-    from automations.second_round_contacts.run import gather_facts
 
     today = today or dt.date.today()
-    st = S.load()
-    by_account = {o.account: o for o in owners}
     already = _sent_today(today)
     nudged = 0
 
     with session() as app:
-        for account, entries in st.items():
-            o = by_account.get(account)
-            if not o:
-                continue
-            keys = {k for k, e in entries.items()
-                    if e.get("status") == S.TRACKED}
-            if not keys:
-                continue
+        for o in owners:
+            # The calendar belongs to an OFFICE, so it is selected per owner
+            # and read once. `offices[0]` is the current funnel; an owner who
+            # moved has older ones too, but today's second rounds are only
+            # ever on the current one.
             try:
-                facts, seen = gather_facts(app, o.offices, keys, today)
+                app.select_office(o.offices[0])
+                rows = SI.read_day(app)
+                shown = SI.shown_date(app)
             except Exception as exc:                        # noqa: BLE001
                 # A failed read is NOT "nobody made their calls".
-                _log("  %s: SKIPPED, ApplicantStream could not be read (%s)"
-                     % (o.owner, type(exc).__name__))
+                _log("  %s: SKIPPED, the calendar could not be read (%s: %s)"
+                     % (o.owner, type(exc).__name__, str(exc)[:90]))
                 continue
 
-            if C.EVENING_KEEPER not in seen:
-                _log("  %s: NUDGING NOBODY -- %r came back empty for every "
-                     "office and day read, so a missing mark cannot be told "
-                     "apart from a missing read"
-                     % (o.owner, C.EVENING_KEEPER))
+            if not rows:
+                # NUDGING NOBODY. An office with no second rounds today and an
+                # office whose table did not load look exactly the same from
+                # here, and acting on the second would DM every office every
+                # night about calls they did make -- which is how a nudge
+                # becomes noise nobody reads.
+                _log("  %s: NUDGING NOBODY -- the second interviews table came "
+                     "back with no rows at all (calendar showing %s), so an "
+                     "empty day cannot be told apart from a read that failed"
+                     % (o.owner, shown))
                 continue
 
-            people = outstanding(entries, facts, today)
+            up, no_show, unticked = SI.counts(rows)
+            _log("  %s: calendar %s - %d row(s): %d showed, %d no-show, "
+                 "%d not ticked" % (o.owner, shown, len(rows), up, no_show,
+                                    unticked))
+
+            people = outstanding(rows)
             if not people:
-                _log("  %s: all BOB calls accounted for." % o.owner)
+                _log("    all BOB calls marked." )
                 continue
 
             if send and o.owner in already:
-                _log("  %s: %d outstanding, already nudged today."
-                     % (o.owner, len(people)))
+                _log("    %d outstanding, already nudged today." % len(people))
                 continue
 
             office = target_for(o)

@@ -38,56 +38,83 @@ class _Office:
         self.active = active
 
 
+def crow(first="Alma", last="Hernandez", showed="yes",
+         status="Confirmed by Text", action=""):
+    """A row as the calendar's SECOND INTERVIEWS table gives it."""
+    return {"first": first, "last": last, "showed": showed,
+            "offered": "Yes", "status": status, "action": action}
+
+
 class WhoNeedsACall(unittest.TestCase):
-    def test_somebody_unmarked_is_outstanding(self):
-        got = N.outstanding({"k": _entry()}, {}, TODAY)
+    def test_showed_up_with_no_mark_is_outstanding(self):
+        got = N.outstanding([crow()])
         self.assertEqual([p["name"] for p in got], ["Alma Hernandez"])
 
-    def test_somebody_marked_bob_is_not(self):
-        facts = {"k": {"bob": TODAY}}
-        self.assertEqual(N.outstanding({"k": _entry()}, facts, TODAY), [])
+    def test_each_of_the_four_marks_is_done(self):
+        for status in ("BOB - Booked", "Declined Next Round",
+                       "Rejected or Not qualified", "Left Message"):
+            self.assertEqual(N.outstanding([crow(status=status)]), [],
+                             "%r should not be chased" % status)
 
-    def test_only_tracked_people_count(self):
-        for status in (S.REMOVED, S.KEPT):
-            self.assertEqual(
-                N.outstanding({"k": _entry(status=status)}, {}, TODAY), [])
+    def test_confirmed_by_text_is_still_outstanding(self):
+        # Megan: "that's not a status of the BOB call" -- it confirms the
+        # second interview. It is also the MOST COMMON status on people who
+        # showed up, so reading it as done drops most of the list.
+        self.assertEqual(len(N.outstanding([crow(status="Confirmed by Text")])), 1)
 
-    def test_a_second_round_outside_the_window_is_not_chased(self):
-        old = TODAY - dt.timedelta(days=9)
-        self.assertEqual(N.outstanding({"k": _entry(sr=old)}, {}, TODAY), [])
+    def test_a_no_show_is_never_chased_for_a_bob_call(self):
+        self.assertEqual(N.outstanding([crow(showed="no", status="Called")]), [])
 
-    def test_yesterdays_second_round_IS_chased(self):
-        # The evening rule looks a day back, because recruiters mark late.
-        y = TODAY - dt.timedelta(days=1)
-        self.assertEqual(len(N.outstanding({"k": _entry(sr=y)}, {}, TODAY)), 1)
+    def test_an_unticked_show_up_is_not_chased_either(self):
+        self.assertEqual(N.outstanding([crow(showed="", status="")]), [])
 
-    def test_it_asks_the_7pm_rule_and_does_not_reimplement_it(self):
-        # The design decision worth protecting: one rule, two uses. A second
-        # way of asking "were the calls made" would drift from the removal.
+    def test_it_asks_the_calendar_module_and_does_not_reimplement_it(self):
+        # One rule, one place. A second way of deciding "was this call made"
+        # would drift from the daily update, which reads the same four marks.
         import inspect
-        src = inspect.getsource(N.outstanding)
-        self.assertIn("rules.evening_removal", src)
+        self.assertIn("SI.owed", inspect.getsource(N.outstanding))
+
+    def test_the_read_is_the_calendar_not_the_retention_report(self):
+        import inspect
+        src = inspect.getsource(N.run)
+        self.assertIn("SI.read_day", src)
+        self.assertNotIn("gather_facts", src)
 
 
 class TheMessage(unittest.TestCase):
     def test_it_leads_with_the_count_and_names_everybody(self):
-        people = N.outstanding({"a": _entry(name="Alma Hernandez"),
-                                "b": _entry(name="Daniel Frie")}, {}, TODAY)
+        people = N.outstanding([crow(first="Alma", last="Hernandez"),
+                                crow(first="Daniel", last="Frie")])
         text = N.message("Rafael Hidalgo", people, TODAY)
         self.assertIn("2 BOB calls", text)
         self.assertIn("Alma Hernandez", text)
         self.assertIn("Daniel Frie", text)
 
     def test_one_call_is_not_called_1_calls(self):
-        people = N.outstanding({"a": _entry()}, {}, TODAY)
+        people = N.outstanding([crow()])
         self.assertIn("1 BOB call ", N.message("R", people, TODAY))
 
     def test_it_says_what_happens_if_nothing_is_done(self):
-        people = N.outstanding({"a": _entry()}, {}, TODAY)
-        text = N.message("R", people, TODAY)
+        text = N.message("R", N.outstanding([crow()]), TODAY)
         self.assertIn("7pm", text)
-        # And the way out, so it is actionable and not just a threat.
         self.assertIn("ApplicantStream", text)
+
+    def test_it_names_the_four_marks_so_the_fix_is_obvious(self):
+        text = N.message("R", N.outstanding([crow()]), TODAY)
+        for word in ("BOB", "Declined", "Disqualified", "LM"):
+            self.assertIn(word, text)
+
+    def test_it_shows_what_they_are_currently_parked_on(self):
+        # "Confirmed by Text" looks done to somebody skimming the page, so
+        # saying where they actually are saves an argument.
+        text = N.message("R", N.outstanding([crow(status="Confirmed by Text")]),
+                         TODAY)
+        self.assertIn("Confirmed by Text", text)
+
+    def test_an_unset_status_is_not_printed_as_the_placeholder(self):
+        text = N.message("R", N.outstanding([crow(status="-Select Follow Up-")]),
+                         TODAY)
+        self.assertNotIn("-Select Follow Up-", text)
 
 
 class TheClockIsTheOfficesOwn(unittest.TestCase):
@@ -151,23 +178,31 @@ class TheWindowOnlyOpensIfSomebodyIsThere(unittest.TestCase):
         self.assertIn("Never raises", src)
 
 
-class AnUnreadableMarkNudgesNobody(unittest.TestCase):
+class AnUnreadableDayNudgesNobody(unittest.TestCase):
+    """The important one, carried over to the new read.
+
+    An office with nothing on today and an office whose table did not load
+    both come back as zero rows. Acting on the second would DM every office
+    every night about calls they did make.
+    """
+
     def test_the_guard_is_in_the_run(self):
-        # The important one. If the BOB label comes back empty for every
-        # office and day, "nobody made their calls" and "we could not read
-        # it" look identical -- and acting on the first would DM everybody.
         import inspect
         src = inspect.getsource(N.run)
         self.assertIn("NUDGING NOBODY", src)
-        self.assertIn("EVENING_KEEPER", src)
+        self.assertIn("no rows", src)
 
-    def test_it_uses_the_same_keeper_as_the_removal(self):
-        self.assertEqual(C.EVENING_KEEPER, C.LABEL_BOB)
-
-    def test_a_failed_read_is_not_treated_as_nobody_called(self):
+    def test_a_failed_read_is_skipped_not_treated_as_nobody_called(self):
         import inspect
         src = inspect.getsource(N.run)
         self.assertIn("could not be read", src)
+        self.assertIn("SKIPPED", src)
+
+    def test_the_day_the_calendar_showed_is_logged(self):
+        # It can only ever read today, so a stuck calendar has to be visible
+        # rather than silently answering for the wrong day.
+        import inspect
+        self.assertIn("shown", inspect.getsource(N.run))
 
 
 class AnOwnerWithNoOfficeIsReported(unittest.TestCase):

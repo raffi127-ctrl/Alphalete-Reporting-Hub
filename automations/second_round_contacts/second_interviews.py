@@ -201,3 +201,111 @@ def counts(rows: List[Dict]) -> Tuple[int, int, int]:
     return (sum(1 for u in ups if u is True),
             sum(1 for u in ups if u is False),
             sum(1 for u in ups if u is None))
+
+ROW_JS = """() => {
+    const norm = s => (s || '').replace(/\\s+/g, ' ').trim();
+
+    // The SECOND INTERVIEWS table is the one with a "Follow Up Status" header.
+    let table = null, headers = [];
+    for (const t of document.querySelectorAll('table')) {
+        for (const tr of t.querySelectorAll('tr')) {
+            const cells = [...tr.children].map(c => norm(c.innerText));
+            if (cells.some(c => /^follow up status$/i.test(c))) {
+                table = t; headers = cells; break;
+            }
+        }
+        if (table) break;
+    }
+    if (!table) return {error: 'no table with a Follow Up Status header'};
+
+    const idx = name => headers.findIndex(h => h.toLowerCase().startsWith(name));
+    const want = {first: idx('first name'), last: idx('last name'),
+                  email: idx('email'), show: idx('show up'),
+                  status: idx('follow up status'), by: idx('follow up by'),
+                  time: idx('follow up time'), action: idx('action')};
+
+    const rows = [], options = new Set();
+    for (const tr of table.querySelectorAll('tr')) {
+        const cells = [...tr.children];
+        if (cells.length < 5) continue;
+        const text = i => (i >= 0 && cells[i]) ? norm(cells[i].innerText) : '';
+        const first = text(want.first), last = text(want.last);
+        if (!first || /^first name$/i.test(first)) continue;
+
+        // Follow Up Status is a <select>: the chosen one AND every option it
+        // offers, which is the vocabulary we have to classify.
+        let status = '', picked = '';
+        const sel = cells[want.status] && cells[want.status].querySelector('select');
+        if (sel) {
+            [...sel.options].forEach(o => options.add(norm(o.text)));
+            picked = norm(sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text : '');
+            status = picked;
+        } else {
+            status = text(want.status);
+        }
+
+        // "Show Up" is two different controls: radio Yes/No for a no-show, and
+        // an "Offer Position? [Yes/No]" <select> once somebody has turned up.
+        // Which control is present is itself the answer to "did they show".
+        let showed = '', offered = '';
+        const cell = cells[want.show];
+        if (cell) {
+            const osel = cell.querySelector('select');
+            if (osel) {
+                showed = 'yes';
+                offered = norm(osel.options[osel.selectedIndex] ? osel.options[osel.selectedIndex].text : '');
+            } else {
+                const checked = [...cell.querySelectorAll('input[type=radio]')]
+                    .filter(r => r.checked);
+                const lbl = norm(cell.innerText).toLowerCase();
+                showed = checked.length
+                    ? (/\\byes\\b/.test(lbl) && checked[0].value &&
+                       /yes/i.test(checked[0].value) ? 'yes' : 'no')
+                    : '';
+                if (!showed && checked.length === 0) showed = 'unmarked';
+            }
+        }
+
+        rows.push({first, last, email: text(want.email),
+                   showed, offered, status,
+                   follow_up_by: text(want.by), follow_up_time: text(want.time),
+                   action: text(want.action)});
+    }
+    return {headers, rows, options: [...options]};
+}"""
+
+
+def read_day(app) -> List[Dict]:
+    """Every person row on the SECOND INTERVIEWS table as it stands.
+
+    ONLY EVER THE DAY THE CALENDAR IS SHOWING, which is today. The date picker
+    is driven through jQuery/window.cal, invisible to patchright's isolated
+    world: `open_calendar_for` is best-effort and came back False on a live
+    probe (2026-11-18, office 11280 -- asked for 11/17, got 11/18). That is
+    why the 7pm removal still reads the Retention Report: it needs yesterday
+    as well, and this read cannot give it. The two are deliberately NOT
+    sharing a source (Megan, 2026-11-18: "keep them split") -- they answer
+    different questions, and the report cannot say what somebody was marked
+    while the calendar cannot look back.
+    """
+    app.open_calendar()
+    data = app.page.evaluate(ROW_JS)
+    if not isinstance(data, dict) or data.get("error"):
+        return []
+    return list(data.get("rows") or [])
+
+
+def shown_date(app) -> str:
+    """Whatever day the calendar is displaying, as the page writes it. Logged
+    with every read so a stuck calendar is visible rather than silent."""
+    try:
+        return app.page.evaluate(
+            """() => {
+                const p = document.querySelector('#topLevelDatePicker');
+                if (p && p.value) return p.value;
+                const h = document.body.innerText.match(
+                    /\\b\\w+day,?\\s+\\w+\\s+\\d{1,2},?\\s+\\d{4}\\b/);
+                return h ? h[0] : '(could not tell)';
+            }""")
+    except Exception:                                      # noqa: BLE001
+        return "(could not tell)"
