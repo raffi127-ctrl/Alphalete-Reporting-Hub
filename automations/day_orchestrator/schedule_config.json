@@ -242,6 +242,29 @@
    "timeout_minutes": 30,
    "verify": null
   },
+  "install_cancel_feedback_collect_agent": {
+   "on_scheduler": false,
+   "_off_scheduler_note": "Install/refresh com.alphalete.cancel-feedback-collect on LUCY 4 — the reply COLLECTOR for cancel_feedback, every 10 min on the :00/:10/.../:50 (same cadence as the wrap-up auto-read), 7am-midnight CST active window. The daily cancel_feedback entry does the SENDING (13:00); this reads inbound SMS back and logs written feedback + STOP opt-outs to the 'Cancel Feedback - Responses' tab. install_agent only rewrites + reloads the plist; it touches no Sheet and no report data. Needs cancel-feedback-rc-creds.json on this box (already there for the send).",
+   "machine": "Lucy 4",
+   "display_name": "Install Cancel-Feedback reply collector (every 10 min)",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.day_orchestrator.install_agent"
+   ],
+   "base_args": [
+    "cancel-feedback-collect"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": {
+    "type": "not_configured"
+   }
+  },
   "rc_bank_totals_security": {
    "on_scheduler": false,
    "machine": "Lucy 2",
