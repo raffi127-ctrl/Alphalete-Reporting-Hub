@@ -1,6 +1,6 @@
 ---
 name: project
-description: The team's SOP for large, multi-session builds (Megan, Eve and anyone on the Hub), run on the shared Project Cards page. Use when someone says "project card starter", "use our project card starter", "starting another project", "new project", "large project build", "big build", or starts something that will clearly take several sessions; also for "build what you can on <project>", "where am I on <project>", "show my projects", "project card(s)", or keeping going on any project that has a card.
+description: The team's SOP for large, multi-session builds (Megan, Eve and anyone on the Hub), run on the shared Project Cards page (a claude.ai page, NOT the project-request cards inside the Hub's dashboard.py). Use when someone says "project card starter", "use our project card starter", "starting another project", "new project", "large project build", "big build", or starts something that will clearly take several sessions; also for "build what you can on <project>", "where am I on <project>", "show my projects", "project card(s)", or keeping going on any project that has a card.
 ---
 
 # Project cards
