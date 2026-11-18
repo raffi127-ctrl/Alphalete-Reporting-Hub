@@ -17440,8 +17440,8 @@
   "omar_metrics": {
    "order": 26.8,
    "machine": "Lucy 4",
-   "on_scheduler": false,
-   "display_name": "Omar's Daily Metrics (channel from ECO sign-up)",
+   "on_scheduler": true,
+   "display_name": "Omar's Daily Metrics (kalkan-marketing)",
    "source_type": "tableau",
    "data_sources": [
     "tableau:order_log"
