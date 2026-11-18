@@ -351,13 +351,14 @@ def run(owners: List[R.Owner], *, send: bool, show_window: bool = True,
     nudged = 0
 
     with session() as app:
+        seen_before = {}          # row fingerprint -> the owner it was read for
         for o in owners:
             # The calendar belongs to an OFFICE, so it is selected per owner
             # and read once. `offices[0]` is the current funnel; an owner who
             # moved has older ones too, but today's second rounds are only
             # ever on the current one.
             try:
-                app.select_office(o.offices[0])
+                label = app.select_office(o.offices[0])
                 rows = SI.read_day(app)
                 shown = SI.shown_date(app)
             except Exception as exc:                        # noqa: BLE001
@@ -365,6 +366,30 @@ def run(owners: List[R.Owner], *, send: bool, show_window: bool = True,
                 _log("  %s: SKIPPED, the calendar could not be read (%s: %s)"
                      % (o.owner, type(exc).__name__, str(exc)[:90]))
                 continue
+
+            # WHOSE OFFICE DID WE ACTUALLY LAND ON. AppStream's owner-of-record
+            # is NOT the roster owner for a renamed funnel -- office 24290 is
+            # Vincent Dodson's and AppStream answers "Rafael Hidalgo" (probed
+            # 2026-11-18; 23965 is the same story). So the label is logged, not
+            # trusted, and the DM always goes to the roster owner.
+            _log("  %s: office %s -> AppStream says %r"
+                 % (o.owner, o.offices[0], label or "(nothing)"))
+
+            # THE WRONG-RECIPIENT GUARD. If select_office quietly does not
+            # switch, this read is the PREVIOUS office's rows, and nudging on it
+            # would DM this owner a list of somebody else's applicants by name.
+            # Identical rows for two owners is the signature of that, and it is
+            # not something two real offices do.
+            fp = tuple(sorted(
+                (SI.name_of(r), str(r.get("status") or "")) for r in rows))
+            if rows and fp in seen_before:
+                _log("  %s: NUDGING NOBODY -- the calendar came back with the "
+                     "SAME %d row(s) already read for %s, so the office did not "
+                     "switch and these are not %s's people"
+                     % (o.owner, len(rows), seen_before[fp], o.owner))
+                continue
+            if rows:
+                seen_before[fp] = o.owner
 
             if not rows:
                 # NUDGING NOBODY. An office with no second rounds today and an

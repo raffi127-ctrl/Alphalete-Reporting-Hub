@@ -54,6 +54,22 @@ class TheFourMarks(unittest.TestCase):
             self.assertEqual(SI.mark_of(row(status=status)), "",
                              "%r must not count as marked" % status)
 
+    def test_the_statuses_a_live_read_actually_returned(self):
+        # Every status the 11/18 dry run saw across the five offices, none of
+        # which is one of the four. Confirmed/Confirmed by Text confirm the
+        # SECOND INTERVIEW, not the call. "Invite to Next" means a BOB call is
+        # coming (Megan, 2026-11-18: "invite to next would just mean that they
+        # are going to give them a BOB call") -- so it is still owed, not done.
+        # "Delay Disqualification" is a REAL option and Omar's office used it on
+        # three people on 11/18, all with Offer Position = No. It still counts
+        # as owed: Megan, 2026-11-18, "Omar should be marking them Rejected or
+        # Not qualified". So the chase is what converts a holding status into a
+        # real mark -- do not add it as a fifth resolved mark.
+        for status in ("Confirmed", "Confirmed by Text", "Called",
+                       "Invite to Next", "Delay Disqualification"):
+            self.assertEqual(SI.mark_of(row(status=status)), "",
+                             "%r must still count as owed a call" % status)
+
     def test_an_unknown_status_is_not_marked_rather_than_ignored(self):
         # An allow-list, so a new ApplicantStream option shows up as needing a
         # call instead of silently counting as one that was made.

@@ -15,6 +15,7 @@ What these pin, in the order that matters:
 from __future__ import annotations
 
 import datetime as dt
+import inspect
 import unittest
 
 from automations.second_round_contacts import bob_nudge as N
@@ -417,3 +418,40 @@ class TheRosterCarriesTheTwoNewColumns(unittest.TestCase):
             ["Rafael Hidalgo", "11280", "a@b.com", "Yes"]])
         self.assertEqual(got[0].slack_user_id, "")
         self.assertEqual(got[0].timezone, "")
+
+
+class TheOfficeDidNotSwitchGuard(unittest.TestCase):
+    """Two owners, identical rows -> the second one is NOT nudged.
+
+    `select_office` can fail quietly. When it does, the next owner's "read" is
+    the previous office's rows, and the nudge would DM them a list of somebody
+    else's applicants BY NAME. That is the worst failure this report has, so it
+    is pinned here rather than left to the live run.
+    """
+
+    def test_identical_rows_for_two_owners_is_refused(self):
+        src = inspect.getsource(N.run)
+        self.assertIn("seen_before", src,
+                      "the wrong-recipient guard is gone from run()")
+        self.assertIn("did not", src)
+
+    def test_the_fingerprint_separates_real_offices(self):
+        from automations.second_round_contacts import second_interviews as SI
+
+        def fp(rows):
+            return tuple(sorted((SI.name_of(r), str(r.get("status") or ""))
+                                for r in rows))
+
+        omar = [{"first": "Aniya", "last": "Molden", "status": "BOB - Booked"}]
+        vincent = [{"first": "Davon", "last": "Burnett",
+                    "status": "-Select Follow Up-"}]
+        self.assertNotEqual(fp(omar), fp(vincent))
+        self.assertEqual(fp(omar), fp(list(omar)))      # a repeat IS caught
+
+    def test_the_appstream_label_is_not_used_to_address_the_dm(self):
+        # Office 24290 is Vincent Dodson's and AppStream answers "Rafael
+        # Hidalgo" (probed 2026-11-18). Addressing off the label would DM Raf.
+        src = inspect.getsource(N.run)
+        self.assertNotIn("message(label", src)
+        self.assertNotIn("target_for(label", src)
+        self.assertIn("message(o.owner", src)
