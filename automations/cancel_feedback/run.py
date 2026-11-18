@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import sys
+import time
 from typing import Dict, List, Optional, Tuple
 
 try:
@@ -78,30 +79,36 @@ def run(scope: str = "test", day: Optional[dt.date] = None, *, dry_run: bool = T
         return 0
 
     creds = C.rc_creds() if not dry_run else None
+    token = None
+    if not dry_run:
+        from automations.cancel_feedback import ringcentral as rc
+        token = rc.get_access_token(creds, log=log)   # ONE token for the whole run
     sent = 0
     failed = 0
     entries: List[Dict] = []
     now_iso = dt.datetime.now().isoformat(timespec="seconds")
-    for c in to_text:
-        msg = C.render(c["first"])
-        if dry_run:
-            log("  [dry-run] -> %s  %s  [%s%s]\n      %s"
-                % (c["phone"], c["customer_name"], c["kind"],
-                   (" · " + c["reason"]) if c["reason"] else "", msg))
-            continue
-        from automations.cancel_feedback import ringcentral as rc
-        ok, mid, _ = rc.send_sms(creds, c["phone"], msg, log=log)
-        sent += 1 if ok else 0
-        failed += 0 if ok else 1
-        entries.append({"texted_at": now_iso, "customer": c["customer_name"],
-                        "phone": c["phone"], "kind": c["kind"], "reason": c["reason"],
-                        "rep": c["rep"], "owner": c["owner"],
-                        "status": "sent" if ok else "failed", "message_id": mid or ""})
-        log("  %s -> %s  %s" % ("sent" if ok else "FAILED", c["phone"], c["customer_name"]))
-
-    if not dry_run:
-        flog.record_outreach(entries, log=log)
-        log("sent %d, failed %d, logged %d row(s)" % (sent, failed, len(entries)))
+    try:
+        for c in to_text:
+            msg = C.render(c["first"])
+            if dry_run:
+                log("  [dry-run] -> %s  %s  [%s%s]\n      %s"
+                    % (c["phone"], c["customer_name"], c["kind"],
+                       (" · " + c["reason"]) if c["reason"] else "", msg))
+                continue
+            ok, mid, _ = rc.send(token, creds["send_from"], c["phone"], msg, log=log)
+            sent += 1 if ok else 0
+            failed += 0 if ok else 1
+            entries.append({"texted_at": now_iso, "customer": c["customer_name"],
+                            "phone": c["phone"], "kind": c["kind"], "reason": c["reason"],
+                            "rep": c["rep"], "owner": c["owner"],
+                            "status": "sent" if ok else "failed", "message_id": mid or ""})
+            log("  %s -> %s  %s" % ("sent" if ok else "FAILED", c["phone"], c["customer_name"]))
+            time.sleep(1.2)   # gentle spacing: stay under the SMS send rate limit
+    finally:
+        # Log whatever actually went out, even if the loop raised partway.
+        if not dry_run and entries:
+            flog.record_outreach(entries, log=log)
+            log("sent %d, failed %d, logged %d row(s)" % (sent, failed, len(entries)))
 
     print("[%s] %s Finished%s" % (REPORT_ID, "⚠" if failed else "✅",
           (" — %d failed" % failed) if failed else ""), flush=True)
