@@ -175,6 +175,10 @@ def run(office_keys: Optional[List[str]] = None, day: Optional[dt.date] = None,
         csv_path = olpull.fetch_crosstab(since, day)
     rows = cust.read_crosstab(csv_path)
     log("order log: %d row(s)" % len(rows))
+    # Every Product Type value in the pull, so a dry run shows what the upgrade
+    # filter (customers._is_upgrade) is matching against.
+    ptypes = sorted({(r.get("product") or "").strip() for r in rows} - {""})
+    log("product types seen: %s" % ", ".join(ptypes))
     if not rows:
         log("empty crosstab — nothing to do (is the view behind?)")
         _manifest(["empty order log"], dry_run=dry_run, note="empty crosstab")

@@ -90,6 +90,33 @@ class TestForOffice(unittest.TestCase):
         self.assertEqual(len(out), 1)
         self.assertEqual(out[0]["products"], ["Internet"])
 
+    def test_internet_upgrade_excluded(self):
+        # Upgrades don't owe a wrap-up (Dylan 2026-11-18).
+        rows = [_row("R", "10/20/2026", "Upg", "INTERNET UPGRADE", "214-555-2001",
+                     "", "Aya Al-Khafaji")]
+        self.assertEqual(self._run(rows), [])
+
+    def test_upgrade_plus_new_wireless_keeps_wireless(self):
+        rows = [_row("R", "10/20/2026", "Mix", "Upgrade Internet", "214-555-2002",
+                     "", "Aya Al-Khafaji"),
+                _row("R", "10/20/2026", "Mix", "WIRELESS", "214-555-2002",
+                     "", "Aya Al-Khafaji")]
+        out = self._run(rows)
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0]["products"], ["Wireless"])
+
+    def test_order_type_column_upgrade_excluded(self):
+        global HDR
+        old = HDR
+        HDR = old + ["Order Type"]
+        try:
+            r = _row("R", "10/20/2026", "OT", "NEW INTERNET", "214-555-2003",
+                     "", "Aya Al-Khafaji")
+            r[-1] = "Upgrade"
+            self.assertEqual(self._run([r]), [])
+        finally:
+            HDR = old
+
     def test_date_window(self):
         rows = [_row("R", "10/18/2026", "Old", "NEW INTERNET", "214-555-0008",
                      "", "Aya Al-Khafaji"),

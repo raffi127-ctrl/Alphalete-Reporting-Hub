@@ -19,6 +19,22 @@ from automations.rc_contact_sync import ringcentral as RC
 # DTR statuses that mean the sale is dead — don't chase a wrap-up for it.
 EXCLUDE_DTR = {"cancelled", "canceled", "disconnected"}
 
+# Internet upgrades don't owe a wrap-up — an existing customer upgrading isn't a
+# fresh sale (Dylan 2026-11-18, same rule as rc_contact_sync_raf since
+# 2026-10-20). The Tableau Order Log has no "Order Type" column like the
+# SaraPlus export does, so an upgrade line is caught by its Product Type
+# containing "upgrade"; an "Order Type" column, if the view ever carries one,
+# is honoured too. Row-level: an upgrade line is dropped, but the same
+# customer's NEW lines (e.g. new wireless) still count.
+EXCLUDE_ORDER_TYPES = {"upgrade"}
+UPGRADE_WORD = "upgrade"
+
+
+def _is_upgrade(r: Dict[str, str]) -> bool:
+    if (r.get("order_type") or "").strip().lower() in EXCLUDE_ORDER_TYPES:
+        return True
+    return UPGRADE_WORD in (r.get("product") or "").lower()
+
 
 def _find(idx: Dict[str, int], *cands) -> Optional[int]:
     for c in cands:
@@ -49,6 +65,7 @@ def read_crosstab(csv_path) -> List[Dict[str, str]]:
         "phone": _find(idx, "sp.Customer Phone", "Customer Phone"),
         "product": _find(idx, "Product Type (Broken Out)", "Product Type"),
         "dtr": _find(idx, "DTR Status"),
+        "order_type": _find(idx, "Order Type", "sp.Order Type"),
     }
     out: List[Dict[str, str]] = []
     for r in rows[1:]:
@@ -89,6 +106,7 @@ def for_office(rows: List[Dict[str, str]], profile: Dict[str, str],
                if a and a.strip()}
     by_key: Dict[str, Dict] = {}
     skipped_dead = 0
+    skipped_upgrade = 0
     for r in rows:
         if r["owner"].strip().lower() not in aliases:
             continue
@@ -97,6 +115,9 @@ def for_office(rows: List[Dict[str, str]], profile: Dict[str, str],
             continue
         if r["dtr"].strip().lower() in EXCLUDE_DTR:
             skipped_dead += 1
+            continue
+        if _is_upgrade(r):
+            skipped_upgrade += 1
             continue
         ph = RC.norm_phone(r["phone"])
         key = ph or ("name:" + r["customer_name"].strip().lower())
@@ -125,7 +146,8 @@ def for_office(rows: List[Dict[str, str]], profile: Dict[str, str],
             skipped_air += 1
             continue
         out.append(c)
-    log("  %s (%s): %d customer(s) %s..%s (%d dead-order, %d air/no-product "
-        "skipped)" % (profile.get("key"), profile.get("owner"), len(out),
-                      since, until, skipped_dead, skipped_air))
+    log("  %s (%s): %d customer(s) %s..%s (%d dead-order, %d upgrade-line, "
+        "%d air/no-product skipped)" % (profile.get("key"), profile.get("owner"),
+                                         len(out), since, until, skipped_dead,
+                                         skipped_upgrade, skipped_air))
     return out
