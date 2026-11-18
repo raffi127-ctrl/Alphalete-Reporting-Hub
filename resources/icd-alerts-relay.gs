@@ -90,6 +90,22 @@ function _dayKey(v) {
   return String(v || '').trim();
 }
 
+/**
+ * Only the first `nCols` columns of every row -- what an upsert MATCHES on.
+ *
+ * THE RELAY WAS READING EVERYTHING TO FIND ONE ROW. Each upsert did
+ * getDataRange().getValues() under the one script lock every office shares,
+ * so every knocks hand-over read the whole of 'ICD Knocks' (13.9 MB of JSON
+ * by 2026-11-18, nothing ever pruned since 9/12) and every fault read the
+ * whole of 'ICD Faults' (12.4 MB of tracebacks). Calls queued behind the lock
+ * past the laptop's 30-second wait: 4 relay timeouts a day in late October,
+ * 931 on 2026-11-17, across 42 offices at once -- posted as "the laptop timed
+ * out (slow internet)" when it was this. The office and the day are a few KB.
+ */
+function _keyRows(sh, nCols) {
+  return sh.getRange(1, 1, Math.max(sh.getLastRow(), 1), nCols).getValues();
+}
+
 function doPost(e) {
   try {
     var body = JSON.parse(e.postData.contents);
@@ -306,7 +322,7 @@ function _upsert(office, day, recordsJson, localTime, agent, salesJson,
                     'Local Time', 'Agent', 'Last Posted JSON', 'Posted At',
                     'Sales JSON', 'Last Posted Sales JSON', 'Machines']);
     }
-    var rows = sh.getDataRange().getValues();
+    var rows = _keyRows(sh, 2);    // office, day -- never the records JSON
     var now = new Date();
     for (var i = 1; i < rows.length; i++) {
       if (String(rows[i][0]).trim().toLowerCase() === office &&
@@ -585,7 +601,7 @@ function _upsertKnocks(office, day, rowsJson, trackerJson, count, localTime,
                     'Received At', 'Local Time', 'Last Posted At',
                     'Agent', 'Machines']);
     }
-    var rows = sh.getDataRange().getValues();
+    var rows = _keyRows(sh, 2);    // office, day -- never the rows JSON
     var now = new Date();
     for (var i = 1; i < rows.length; i++) {
       if (String(rows[i][0]).trim().toLowerCase() === office &&
@@ -628,14 +644,17 @@ function _upsertFault(office, day, stage, summary, detail, localTime,
                     'First At', 'Last At', 'Local Time', 'Agent', 'Platform',
                     'Last Posted At']);
     }
-    var rows = sh.getDataRange().getValues();
+    // office, day, stage, summary. NOT the Detail column next to them: that
+    // is a full traceback per row, and it is what made this tab 12 MB.
+    var rows = _keyRows(sh, 4);
     var now = new Date();
     for (var i = 1; i < rows.length; i++) {
       if (String(rows[i][0]).trim().toLowerCase() === office &&
           _dayKey(rows[i][1]) === day &&
           String(rows[i][2]) === stage &&
           String(rows[i][3]) === summary) {
-        var n = Number(rows[i][5] || 0) + 1;
+        // The count sits past the columns read above -- one cell, this row.
+        var n = Number(sh.getRange(i + 1, 6).getValue() || 0) + 1;
         // Detail and Count and Last At move; First At stays. 'Last Posted At'
         // is OURS and is deliberately left alone -- except that a fault which
         // is still happening should be re-announced, and our side decides

@@ -2895,6 +2895,13 @@ def short_reason(stage: str, summary: str) -> str:
         return "%s was slow (it still finished)" % (system or "a read")
     if kind == "timeout":
         return "%s got stuck and was restarted" % (system or "a read")
+    # A socket read that timed out in a CRASH is the laptop waiting on OUR
+    # relay, not on its own internet (2026-11-16/17: 42 offices in the same
+    # minutes, every one inside relay._post). Calling it "slow internet" sent
+    # people looking at office Wi-Fi.
+    if base == "crash" and "read operation timed out" in s:
+        return ("our reporting server was slow to answer (our side, not "
+                "their internet)")
     if "timeout" in s or "timed out" in s:
         return "%s timed out (slow internet or a slow site)" % (
             system or "the laptop")

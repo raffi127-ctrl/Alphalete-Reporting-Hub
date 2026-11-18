@@ -26,6 +26,7 @@ import datetime as dt
 import json
 import platform
 import re
+import socket
 import subprocess
 import ssl
 import urllib.error
@@ -541,6 +542,10 @@ def _is_result_url(url: str) -> bool:
     return host.endswith("googleusercontent.com")
 
 
+_SLOW_RELAY = ("The reporting server took over %ds to answer. Nothing is "
+               "lost -- the next run sends today's totals again.")
+
+
 def _post(url: str, data: bytes) -> str:
     """POST, then follow Apps Script's redirect to the result BY HAND.
 
@@ -560,6 +565,14 @@ def _post(url: str, data: bytes) -> str:
         try:
             with opener.open(req, timeout=TIMEOUT_SECONDS) as resp:
                 return resp.read().decode("utf-8", "replace")
+        except (socket.timeout, TimeoutError) as e:
+            # A SLOW RELAY IS A RelayError, NOT A CRASH (2026-11-18). It used
+            # to escape as a bare timeout, so run.main filed it as "crash" --
+            # with a SECOND call to the same slow relay -- and the channel
+            # read "the laptop timed out (slow internet)" for 42 offices at
+            # once. Every caller already treats RelayError as "send again next
+            # run", and _report deliberately files nothing for one.
+            raise RelayError(_SLOW_RELAY % TIMEOUT_SECONDS) from e
         except urllib.error.HTTPError as e:
             location = e.headers.get("Location") if e.headers else None
             if e.code not in (301, 302, 303, 307, 308) or not location:
@@ -578,6 +591,12 @@ def _post(url: str, data: bytes) -> str:
                 req = urllib.request.Request(
                     nxt, data=data, method="POST",
                     headers={"Content-Type": "application/json"})
+        except urllib.error.URLError as e:
+            # The same slow relay caught while CONNECTING, which urllib wraps
+            # instead of raising bare. Anything else is not ours to soften.
+            if isinstance(e.reason, (socket.timeout, TimeoutError)):
+                raise RelayError(_SLOW_RELAY % TIMEOUT_SECONDS) from e
+            raise
     raise RelayError(
         "The reporting server kept redirecting and never answered. Nothing is "
         "lost -- the next run sends today's totals again.")
