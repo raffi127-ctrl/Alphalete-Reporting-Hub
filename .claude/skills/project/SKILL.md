@@ -1,6 +1,6 @@
 ---
 name: project
-description: Megan's SOP for large, multi-session builds, run on her Project Cards page. Use when she says "starting another project", "new project", "large project build", "big build", or starts something that will clearly take several sessions; also for "build what you can on <project>", "where am I on <project>", "show my projects", "project card(s)", or keeping going on any project that has a card.
+description: The team's SOP for large, multi-session builds (Megan, Eve and anyone on the Hub), run on the shared Project Cards page. Use when someone says "project card starter", "use our project card starter", "starting another project", "new project", "large project build", "big build", or starts something that will clearly take several sessions; also for "build what you can on <project>", "where am I on <project>", "show my projects", "project card(s)", or keeping going on any project that has a card.
 ---
 
 # Project cards
@@ -8,7 +8,8 @@ description: Megan's SOP for large, multi-session builds, run on her Project Car
 Every big build is one card on Megan's **Project Cards** page:
 https://claude.ai/artifact/UP4JrLoKyHLDN3H2RtRHfg
 
-Claude lays the card out. Megan combs through it and adds details. Claude
+Claude lays the card out. Whoever started the project (Megan, Eve, anyone
+on the team; "she" below) combs through it and adds details. Claude
 builds every step that's ready. Then the two of you work down from the top of
 what still needs her input.
 
