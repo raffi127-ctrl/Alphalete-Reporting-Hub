@@ -401,7 +401,7 @@ def send_reviewed(board: B.Board, run_day: dt.date, verbose: bool = True) -> int
 
 def _auto(board: B.Board, run_day: dt.date, args) -> bool:
     """Does the auto-check own this board today? Only the boards auto_send
-    knows (Country — Headcount still waits for its ✅)."""
+    knows (Org, Country, and Headcount since 2026-11-18)."""
     return (board.key in A.TARGETS
             and A.is_on(run_day, enabled=not args.no_auto))
 

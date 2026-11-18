@@ -1,4 +1,4 @@
-"""Org Sales Board + Country Sales Board emails send THEMSELVES — after the
+"""Org Sales Board + Country Sales Board + Org Active Headcount emails send THEMSELVES — after the
 same battery of checks the Captainship Reports pass (captainship_drafts.auto_send).
 
 Eve 2026-10-07: "quiero levantar el gate para org sales board y country sales
@@ -43,6 +43,13 @@ WHAT EVE SEES:
   * new owner (weekend) -> mailed; link + who is new, as a heads-up.
   * held                -> link + the reasons, tagging her, + ONE thread per
                            board per day in #claudecorrections. ✅ sends as is.
+
+Org Active Headcount joined 2026-11-18 (Eve: "removerle el gate al org active
+headcount ... aplica las mismas reglas ... si algo falla o se ve sospechoso no
+sale solo"; "o se intenta arreglar y enviar solo"). Same four checks; its
+totals check is the tab's own three-way week total (totals_mismatch), the new
+owners are read off its daily block, and the visual check is told it is a
+HEADCOUNT board (a '-' day, the stand-ins) — HEADCOUNT_NOTES.
 
 THE LOCK. A day that went out without a post has no thread to say "Sent" in,
 so it is recorded in output/state/board_autosend/<board>/<date>.json — the
@@ -185,6 +192,12 @@ class Target:
     # (view marker, board section) of sources that never delay this email. They
     # still reach the visual check as late, so their blank/zero days can't hold it.
     no_wait_sources: Tuple[Tuple[str, str], ...] = ()
+    # grid -> owner names. None = owner_names (ranked rows of a sales board).
+    owners: Optional[Callable[[Sequence[Sequence[str]]], Set[str]]] = None
+    # Extra lines for the visual check about THIS board ("" = none).
+    notes: str = ""
+    # Does the Org board's DAY_BEHIND list apply? Only to the sales boards.
+    day_behind: bool = True
 
 
 def _org_images(run_day: dt.date) -> List[Tuple[str, Path]]:
@@ -314,7 +327,45 @@ ORG = Target("org", "Org Sales Board", "org_sales_board_email",
 COUNTRY = Target("country", "Country Sales Board", "country-sales-board-email",
                  _country_images, _country_grid, _country_totals,
                  sections=())
-TARGETS = {t.key: t for t in (ORG, COUNTRY)}
+
+
+def _headcount_images(run_day: dt.date) -> List[Tuple[str, Path]]:
+    from automations.board_emails import boards as B
+    from automations.board_emails import email_send as es
+    return [(n, p) for n, p, *_ in es.reviewed_images(B.get("headcount"), run_day)]
+
+
+def _headcount_grid() -> List[List[str]]:
+    from automations.org_active_headcount import daily as d
+    return d.open_tab(False).get_all_values()
+
+
+def _headcount_totals(run_day: dt.date) -> List[str]:
+    """The tab's week total read from its three places (Ongoing, daily Totals,
+    delta box) must be one number — the same check the capture already runs,
+    re-read here so a tab edited after the capture can't slip through."""
+    from automations.org_active_headcount.email_send import totals_mismatch
+    return [f"totals disagree — {x}" for x in totals_mismatch(_headcount_grid())]
+
+
+def headcount_owners(grid: Sequence[Sequence[str]]) -> Set[str]:
+    """Owners = the names on the daily block (col B, header to 'Totals'). The
+    headcount tab has no rank column, so owner_names would read nobody."""
+    from automations.org_active_headcount import daily as d
+    return {_norm(name) for _r, name, _c in d.find_daily(grid)["rows"]}
+
+
+HEADCOUNT_NOTES = """THIS IS A HEADCOUNT BOARD, not sales: each number is how many active reps an owner had that day. Images: the board (summary, current vs prior weeks, the Ongoing WE block, the per-day block with its WE history rows), the delta box (This week / Last week / Delta per owner), App Avg week over week, then the same summary split per org. A '-' cell = that day could not be collected for that owner: one or two are a minor; a REPORT_DAY column that is '-' or blank for most owners is a blocker. Small day-to-day moves are normal; an owner dropping to 0 or a total moving more than ~30% from the day before with no owner behind it is suspicious — a blocker. The delta box crops after Delta (no per-day columns) on purpose."""
+
+HEADCOUNT = Target("headcount", "Org Active Headcount", "org_active_headcount_email",
+                   _headcount_images, _headcount_grid, _headcount_totals,
+                   sections=(),
+                   # JE publishes behind (same as the Org email) and the daily
+                   # fill already carries its last number: never wait for it.
+                   no_wait_sources=(("justenergyrtl", "Retail JE"),),
+                   owners=headcount_owners, notes=HEADCOUNT_NOTES,
+                   day_behind=False)
+TARGETS = {t.key: t for t in (ORG, COUNTRY, HEADCOUNT)}
 
 
 # --------------------------------------------------------------------------
@@ -606,7 +657,9 @@ def _visual_content(t: Target, day: dt.date, new: Sequence[str],
         f"Board: {t.name}\n"
         f"NEW_OWNERS: {', '.join(new) if new else '(none today)'}\n"
         f"LATE_SOURCES: {', '.join(secs) if secs else '(none today)'}\n"
-        f"DAY_BEHIND: {', '.join(day_behind_sections())}")}]
+        f"DAY_BEHIND: "
+        f"{', '.join(day_behind_sections()) if t.day_behind else '(none)'}"
+        + (f"\n\n{t.notes}" if t.notes else ""))}]
     for i, (name, p) in enumerate(t.images(day), 1):
         ctype, data = _shrink("image/png", p.read_bytes())
         content.append({"type": "text", "text": f"IMAGE {i} ({name}):"})
@@ -686,7 +739,7 @@ def judge(t: Target, day: dt.date, state: dict, *,
         [t.report_id], day,
         verify=lambda: (True, "its images are checked below")))
     tableau = tableau or (lambda: stale_sources(t, day))
-    names = names or (lambda: owner_names(t.grid()))
+    names = names or (lambda: (t.owners or owner_names)(t.grid()))
     late: List[str] = []    # filled below; the default visual reads it then
     visual = visual or (lambda new, prior: visual_review(t, day, new,
                                                          prior=prior,

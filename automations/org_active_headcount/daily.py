@@ -1371,11 +1371,28 @@ def refresh_review(logfn=print) -> None:
     board = B.get("headcount")
     run_day = rg.es.today_central()
     post = rg._find_post(board, run_day)
-    if post is None:
-        logfn("  review link not posted yet — the email job builds it with these numbers")
+    # Since 2026-11-18 the auto-check sends a clean day with NO link posted
+    # (board_emails.auto_send.HEADCOUNT). So "no post" no longer means "not
+    # built yet": the images may be captured and waiting for the next check, or
+    # already mailed.
+    target = rg.A.TARGETS.get("headcount")
+    auto_sent = target is not None and rg.A.local_sent(target, run_day)
+    if post is None and not auto_sent:
+        try:
+            rg.es.reviewed_images(board, run_day)
+        except Exception:                                          # noqa: BLE001
+            logfn("  review link not posted yet — the email job builds it with these numbers")
+            return
+        # Captured, not sent: re-capture so the next check judges (and mails)
+        # the corrected tab, not the morning's picture.
+        rg.build_pdf(board, run_day, rg.build_preview(board, run_day))
+        logfn("  re-captured — the auto-check sends the corrected tab")
         return
-    rg.main(["--board", "headcount", "--refresh"])
-    who = rg._approver_of(post)
+    if post is not None:
+        rg.main(["--board", "headcount", "--refresh"])
+    who = rg._approver_of(post) if post is not None else None
+    if who is None and auto_sent:
+        who = ("auto", "the auto-check")
     if who:
         try:
             from automations.day_orchestrator import notify
@@ -1383,8 +1400,8 @@ def refresh_review(logfn=print) -> None:
                 "*Org Active Headcount — corrected after it was approved*",
                 f"A tracker posted late, so the tab got numbers it was missing "
                 f"(they read 0, or the previous day's stand-in, before). {who[1]} had "
-                f"already approved today's PDF; the link now shows the corrected "
-                f"one. If the email already went out, it went with the old numbers.",
+                f"already approved today's email; the tab now has the corrected "
+                f"numbers. If the email already went out, it went with the old numbers.",
             ], tag="headcount-late-refill", dry_run=False,
                 incident="headcount-late-refill")
         except Exception as e:                                     # noqa: BLE001

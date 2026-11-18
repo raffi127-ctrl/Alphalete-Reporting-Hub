@@ -678,3 +678,44 @@ class OwnJobPendingTest(unittest.TestCase):
 
     def test_own_job_failed_still_holds(self):
         self.assertTrue(self.judge_clean("FAILED"))
+
+
+class HeadcountTargetTest(unittest.TestCase):
+    """Org Active Headcount joined the auto-send 2026-11-18 (Eve: no gate, same
+    rules — something wrong or suspicious does not go out on its own)."""
+
+    def test_headcount_is_owned_by_the_auto_check(self):
+        self.assertIs(A.TARGETS["headcount"], A.HEADCOUNT)
+        self.assertEqual(A.HEADCOUNT.report_id, "org_active_headcount_email")
+        # JE is behind every morning and the fill carries its last number.
+        self.assertIn("justenergyrtl", [m for m, _ in A.HEADCOUNT.no_wait_sources])
+        self.assertEqual(A.HEADCOUNT.sections, ())
+
+    def test_owners_come_off_the_daily_block(self):
+        g = [["Ongoing", "", "monday", "tuesday", "wednesday", "thursday",
+              "friday", "saturday", "sunday"],
+             ["", "", "11/16", "11/17"],
+             ["", "Chan Park", "5", "6"],
+             ["", "Wayne Rude", "3", "3"],
+             ["Totals", "", "8", "9"]]
+        self.assertEqual(A.headcount_owners(g), {"Chan Park", "Wayne Rude"})
+        # the sales-board reader needs a rank in col A — it would see nobody
+        self.assertEqual(A.owner_names(g), set())
+
+    def test_totals_mismatch_becomes_a_reason(self):
+        with mock.patch("automations.org_active_headcount.email_send."
+                        "totals_mismatch", return_value=["Monday: 457 vs 516"]), \
+                mock.patch.object(A, "_headcount_grid", return_value=[]):
+            self.assertEqual(A._headcount_totals(THU),
+                             ["totals disagree — Monday: 457 vs 516"])
+
+    def test_visual_check_is_told_it_is_a_headcount_board(self):
+        tmp = Path(tempfile.mkdtemp())
+        p = tmp / "b.png"
+        p.write_bytes(b"x" * 500)
+        t = A.Target("headcount", "Org Active Headcount", "x",
+                     lambda d: [("board", p)], lambda: [],
+                     notes=A.HEADCOUNT_NOTES, day_behind=False)
+        text = A._visual_content(t, THU, [])[0]["text"]
+        self.assertIn("HEADCOUNT BOARD", text)
+        self.assertIn("DAY_BEHIND: (none)", text)
