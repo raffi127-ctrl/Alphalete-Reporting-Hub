@@ -141,6 +141,20 @@ def seed(office_key: str, week_start: dt.date, *, dry_run: bool = True,
     # and so we would skip that part").
     from automations.icd_onboarding import office_steps as OS
     OS.mark_not_applicable(office_key, week_start, dry_run=dry_run, log=log)
+    # A GENDER SUGGESTION ON THE NEW ROWS, where the first name makes it clear
+    # (Megan, 2026-11-18). At seed time and not on a clock of its own: the
+    # admin should find the column already part-filled when the row appears,
+    # rather than meeting a blank column and then having it change under them.
+    #
+    # Guarded, because this is a convenience and the seed is not. A board that
+    # was seeded with no suggestions is a week somebody types by hand; a seed
+    # that died trying to suggest is a week with no rows at all.
+    try:
+        from automations.icd_onboarding import gender_suggest as GS
+        GS.fill(office_key, week_start, dry_run=dry_run, log=log)
+    except Exception as exc:                                # noqa: BLE001
+        log("  (no gender suggestions this time: %s: %s)"
+            % (type(exc).__name__, str(exc)[:120]))
     return len(got.get("add") or [])
 
 

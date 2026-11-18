@@ -48,11 +48,17 @@ IDENTITY: Sequence[str] = (WEEK, "Name", "Last Name", "Email", "Phone", "Start")
 # It also decides which printed sheet somebody lands on.
 CLASSROOM = "Classroom"
 
-# THE OTHER COLUMN ONLY A PERSON CAN FILL. Apex wants a gender and an ECO
+# THE OTHER COLUMN A PERSON OWNS. Apex wants a gender and an ECO
 # machine has nowhere to read one from: on Raf's office it comes off the sales
 # board, and an ICD does not have one (Megan, 2026-11-10: "we are going to have
 # to add gender to the OBCL as there won't be a sales board to read for ECO
-# machines"). Nothing guesses it -- a guess here goes onto a payroll record.
+# machines"). Pre-filled where it is clear, since
+# 2026-11-18 (Megan). It is still a column a person OWNS: `gender_suggest`
+# fills only the blanks whose first name is unambiguous, tints them SUGGESTED
+# so an admin can see what was guessed, and never touches a cell anybody has
+# typed in. Everything else stays blank on purpose -- a guess here goes onto a
+# payroll record, so "no idea" has to look different from an answer. The
+# ambiguous list is the load-bearing half.
 GENDER = "Gender"
 
 # AND A THIRD: WHERE THEY ARE (Megan, 2026-11-11: "this should also have a
@@ -101,9 +107,15 @@ STEPS: Sequence[str] = (
 COLUMNS: Sequence[str] = (tuple(IDENTITY) + (CLASSROOM, GENDER, LOCATION)
                           + (SHOWED_UP,) + tuple(STEPS))
 
-# The columns a PERSON fills and no automation may ever write. All three are
-# things no system we read holds, so a guess here is a made-up fact on a row
-# somebody acts on.
+# The columns a PERSON owns. No system we read holds any of them, so whatever
+# ends up here is somebody's own answer rather than a fact we fetched.
+#
+# "No automation may write them" was true until 2026-11-18 and is not quite
+# true now: `gender_suggest` pre-fills Gender where the first name is
+# unambiguous, leaves every other cell blank, tints what it filled, and never
+# overwrites a typed answer. Classroom and Location have no such source and
+# stay hand-only. Anything that writes one of these still goes through
+# `by_hand.write`, which is where the guards live.
 BY_HAND: Sequence[str] = (CLASSROOM, GENDER, LOCATION)
 
 # Which columns a machine may write. Classroom and Gender are the ICD's;
@@ -197,6 +209,17 @@ REMOVAL_REASONS: Sequence[str] = ("Terminated", "Failed BG", "No Show",
                                   "Left Classroom")
 
 GREEN = {"red": 0.71, "green": 0.87, "blue": 0.66}
+
+# A SUGGESTION, NOT AN ANSWER. Gender is pre-filled from the first name where
+# that is clear (Megan, 2026-11-18: "Lucy fills in a suggestion; the admin
+# accepts it or changes it"), and the tint is how an admin tells the two apart
+# at a glance: tinted means a machine put it there and nobody has looked,
+# plain means a person owns it. Same two-state idiom as Blue Ink's column.
+#
+# Deliberately NOT green: green on this board means a step is done, and a
+# guess waiting to be checked is the opposite of done. Amber reads as "look at
+# me" without reading as an error.
+SUGGESTED = {"red": 1.0, "green": 0.90, "blue": 0.70}
 
 
 def _fold(text) -> str:
