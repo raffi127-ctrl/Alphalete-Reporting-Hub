@@ -213,6 +213,17 @@ def doubleentry_password() -> str:
     return _resolve_de("doubleentry_password", "DOUBLEENTRY_PASSWORD")
 
 
+# --- Spectrum (Charter OpenDoor "Realtime Results") --------------------------
+# Raf's login to charter.opendoorsystem.com/external, where the Spectrum knocks
+# live (Eve added it 2026-11-18). Same file, two more keys.
+def spectrum_username() -> str:
+    return _resolve("spectrum_username", "SPECTRUM_USERNAME")
+
+
+def spectrum_password() -> str:
+    return _resolve("spectrum_password", "SPECTRUM_PASSWORD")
+
+
 # --- RETIRED: the alternate AppStream account -------------------------------
 # THIS SLOT IS CLOSED (Megan 2026-09-02: "We should NOT be using any other app
 # stream logins anymore other than the Lucy Reports & Lucy Resume Pushing ones —
