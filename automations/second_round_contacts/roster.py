@@ -21,6 +21,9 @@ class Owner:
     notes: str
     # Every office to read, current one first (`office` is always offices[0]).
     offices: List[str] = field(default_factory=list)
+    # Only for an owner with no ECO office record yet -- see ROSTER_HEADERS.
+    slack_user_id: str = ""
+    timezone: str = ""
 
     def __post_init__(self) -> None:
         self.offices = self.offices or [self.office]
@@ -68,7 +71,9 @@ def parse_rows(values: List[List[str]]) -> List[Owner]:
                          account=account.lower(),
                          active=at("Active").lower() in ("yes", "y", "true", "on"),
                          ov_campaign=at("OwnerVille Campaign") or C.DEFAULT_OV_CAMPAIGN,
-                         start=start, notes=at("Notes")))
+                         start=start, notes=at("Notes"),
+                         slack_user_id=at("Slack User ID"),
+                         timezone=at("Timezone")))
     return out
 
 

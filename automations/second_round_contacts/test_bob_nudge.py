@@ -271,3 +271,114 @@ class OnceADayNotOncePerTick(unittest.TestCase):
         import inspect
         src = inspect.getsource(N.run)
         self.assertLess(src.index("dm_office_people"), src.index("_mark_sent"))
+
+
+class APreEcoOwnerIsStillNudged(unittest.TestCase):
+    """Algemar and Vincent, 2026-11-18: central, mid-launch, no ECO office.
+
+    Without this the nudge reached 3 of 5 owners and the other two went to
+    the ops channel every night -- a gap that reads to everyone else as "all
+    their calls were made".
+    """
+
+    class _Row:
+        def __init__(self, owner="Algemar Kennel", uid="U09MXMU76MB",
+                     tz="America/Chicago"):
+            self.owner = owner
+            self.slack_user_id = uid
+            self.timezone = tz
+
+    def test_the_roster_row_is_used_when_there_is_no_office(self):
+        got = N.target_for(self._Row(), log=lambda *_a: None)
+        self.assertIsNotNone(got)
+        self.assertEqual(got.slack_user_id, "U09MXMU76MB")
+        self.assertEqual(got.timezone, "America/Chicago")
+
+    def test_an_eco_office_still_wins_over_the_roster_columns(self):
+        # Raf HAS an office. If the roster columns got filled in for him too,
+        # the office must still be the one source of truth.
+        row = self._Row(owner="Rafael Hidalgo", uid="UWRONG",
+                        tz="America/Denver")
+        got = N.target_for(row, log=lambda *_a: None)
+        self.assertEqual(got.key, "raf")
+        self.assertNotEqual(got.slack_user_id, "UWRONG")
+
+    def test_their_six_pm_is_central_not_the_machines(self):
+        at_utc = dt.datetime(2026, 11, 19, 0, 0, tzinfo=dt.timezone.utc)
+        self.assertTrue(N.is_nudge_time(
+            N.target_for(self._Row(), log=lambda *_a: None), at_utc))
+
+    def test_no_window_because_there_is_no_lucy_on_their_machine(self):
+        # The blank day_end is the mechanism: no ECO machine, nothing to open.
+        tgt = N.target_for(self._Row(), log=lambda *_a: None)
+        self.assertIsNone(tgt.key)
+        self.assertFalse(N.within_working_hours(
+            tgt, dt.datetime(2026, 11, 18, 18, 5)))
+
+    def test_half_a_row_is_reported_not_silently_half_working(self):
+        said = []
+        for row in (self._Row(uid=""), self._Row(tz="")):
+            self.assertIsNone(N.target_for(row, log=said.append))
+        self.assertEqual(len(said), 2)
+        self.assertTrue(any("timezone" in s for s in said))
+        self.assertTrue(any("Slack id" in s for s in said))
+
+    def test_an_empty_row_falls_through_to_ops_as_before(self):
+        self.assertIsNone(
+            N.target_for(self._Row(owner="Nobody Atall", uid="", tz=""),
+                         log=lambda *_a: None))
+
+    def test_the_dm_goes_to_the_owner_and_the_approvers(self):
+        import inspect
+        src = inspect.getsource(N.run)
+        self.assertIn("APPROVERS", src)
+        self.assertIn("_group_dm", src)
+
+
+class TheRosterIsReadTheWayTheAuditReadsIt(unittest.TestCase):
+    def test_there_is_no_roster_active_helper(self):
+        # The first live dry run died on `R.active()`. The module has read().
+        from automations.second_round_contacts import roster as _R
+        self.assertFalse(hasattr(_R, "active"))
+
+    def test_main_filters_active_itself(self):
+        import inspect
+        src = inspect.getsource(N.main)
+        self.assertIn("R.read()", src)
+        self.assertIn("o.active", src)
+
+
+class TheRosterCarriesTheTwoNewColumns(unittest.TestCase):
+    def test_the_headers_exist(self):
+        self.assertIn("Slack User ID", C.ROSTER_HEADERS)
+        self.assertIn("Timezone", C.ROSTER_HEADERS)
+
+    def test_active_is_still_the_fourth_column(self):
+        # open_tab puts the Yes/No dropdown on column index 3 by number, so
+        # the two new headers must not have pushed Active along.
+        self.assertEqual(C.ROSTER_HEADERS.index("Active"), 3)
+
+    def test_a_row_parses_them(self):
+        from automations.second_round_contacts import roster as _R
+        hdr = list(C.ROSTER_HEADERS)
+        row = [""] * len(hdr)
+        for name, val in (("Owner", "Algemar Kennel"),
+                          ("ApplicantStream Office ID", "24232"),
+                          ("Reception Email", "a@b.com"),
+                          ("Active", "Yes"),
+                          ("Slack User ID", "U09MXMU76MB"),
+                          ("Timezone", "America/Chicago")):
+            row[hdr.index(name)] = val
+        got = _R.parse_rows([hdr, row])
+        self.assertEqual(len(got), 1)
+        self.assertEqual(got[0].slack_user_id, "U09MXMU76MB")
+        self.assertEqual(got[0].timezone, "America/Chicago")
+
+    def test_an_old_tab_without_the_columns_still_parses(self):
+        # The live tab has no such columns until somebody adds them.
+        from automations.second_round_contacts import roster as _R
+        got = _R.parse_rows([
+            ["Owner", "ApplicantStream Office ID", "Reception Email", "Active"],
+            ["Rafael Hidalgo", "11280", "a@b.com", "Yes"]])
+        self.assertEqual(got[0].slack_user_id, "")
+        self.assertEqual(got[0].timezone, "")

@@ -38,9 +38,16 @@ STATE_PATH = OUT_DIR / "state.json"
 # The roster tab, on the Org workbook (org_sales_board.run.SHEET_ID), next to
 # Eve's "New Owners" bank. Created with headers on first use, never cleared.
 ROSTER_TAB = "2R Contacts"
+# "Slack User ID" and "Timezone" are for an owner who is NOT on ECO yet
+# (Megan, 2026-11-18: Algemar and Vincent are "mid launch so not on ECO yet").
+# An ECO office record already carries a Slack id, a timezone and a day_end, so
+# for those owners these two stay BLANK and the office stays the one source of
+# truth -- filling them in as well is how the two drift apart. They exist
+# because a pre-ECO owner still has second rounds to call and no office record
+# to look up, and the 6pm nudge would otherwise reach 3 of 5 owners.
 ROSTER_HEADERS = ["Owner", "ApplicantStream Office ID", "Reception Email",
                   "Active", "OwnerVille Campaign", "Start Date", "Notes",
-                  "Last Run", "Last Result"]
+                  "Slack User ID", "Timezone", "Last Run", "Last Result"]
 ACTIVE_YES = "Yes"
 DEFAULT_OV_CAMPAIGN = "RES-AT&T"
 

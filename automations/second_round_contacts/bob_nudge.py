@@ -167,6 +167,59 @@ def office_for(owner, log=_log):
     return None
 
 
+class PreEco:
+    """Where to nudge an owner who is mid-launch and not on ECO yet.
+
+    Megan, 2026-11-18, on Algemar and Vincent: "both in central - they are mid
+    launch so not on ECO yet". They have second rounds to call now, so waiting
+    for their ECO office to exist would mean 3 of 5 owners get the nudge.
+
+    It carries ONLY the two things the nudge needs: a timezone, so their 6pm is
+    their own, and a Slack id to DM. `day_end` is deliberately empty and `key`
+    is None, and that is the point rather than an omission -- a pre-ECO owner
+    has no Lucy on their machine, so there is no ApplicantStream window to
+    open and nothing to open it. `within_working_hours` reads the blank
+    day_end as "no window", which is the correct answer here and the same
+    answer it gives for an office that has already shut.
+    """
+
+    key = None
+    day_end = ""
+    active = True
+
+    def __init__(self, owner: str, slack_user_id: str, timezone: str):
+        self.owner = owner
+        self.slack_user_id = slack_user_id
+        self.timezone = timezone
+
+
+def target_for(owner, log=_log):
+    """Where this owner's nudge goes: their ECO office, else their roster row.
+
+    THE ECO OFFICE WINS when there is one. It already carries a Slack id, a
+    timezone AND a day_end, so filling the roster's two columns in as well for
+    those owners is how the two drift apart -- the roster columns are for
+    owners the office list does not have yet, and are meant to go blank again
+    once it does.
+    """
+    rec = office_for(owner, log=log)
+    if rec is not None:
+        return rec
+    uid = str(getattr(owner, "slack_user_id", "") or "").strip()
+    tz = str(getattr(owner, "timezone", "") or "").strip()
+    if uid and tz:
+        return PreEco(getattr(owner, "owner", ""), uid, tz)
+    if uid or tz:
+        # Half-filled is worth saying out loud: it looks configured on the tab
+        # and silently is not, which is worse than an empty row.
+        log("    (%r has a %s on the roster but no %s, so the nudge still "
+            "cannot reach them)"
+            % (getattr(owner, "owner", ""),
+               "Slack id" if uid else "timezone",
+               "timezone" if uid else "Slack id"))
+    return None
+
+
 def message(owner_name: str, people: List[dict], today: dt.date) -> str:
     """The DM. Short, names everybody, says what happens if nothing is done.
 
@@ -306,7 +359,7 @@ def run(owners: List[R.Owner], *, send: bool, show_window: bool = True,
                      % (o.owner, len(people)))
                 continue
 
-            office = office_for(o)
+            office = target_for(o)
 
             if office is not None and not is_nudge_time(office, utc_now,
                                                         hour):
@@ -328,12 +381,13 @@ def run(owners: List[R.Owner], *, send: bool, show_window: bool = True,
                 continue
 
             if office is None:
-                # No office record, so no owner Slack id and no timezone.
-                # The nudge goes to the ops channel instead of nowhere, and
-                # says why, so the gap gets closed rather than hidden.
-                _log("  !! no office record for %r -- posting to ops instead. "
-                     "Their nudge cannot reach them until they have one."
-                     % o.owner)
+                # Neither an ECO office nor a filled-in roster row, so there
+                # is no Slack id and no timezone. The nudge goes to the ops
+                # channel instead of nowhere, and says why, so the gap gets
+                # closed rather than hidden.
+                _log("  !! nowhere to send %r's nudge -- no ECO office, and no "
+                     "Slack User ID + Timezone on the 2R Contacts tab. "
+                     "Posting to ops instead." % o.owner)
                 try:
                     from automations.icd_alerts import offices as _O
                     post._slack(_O.OPS_CHANNEL,
@@ -342,6 +396,20 @@ def run(owners: List[R.Owner], *, send: bool, show_window: bool = True,
                 except Exception as exc:                    # noqa: BLE001
                     _log("  couldn't post to ops either (%s: %s)"
                          % (type(exc).__name__, str(exc)[:120]))
+            elif office.key is None:
+                # Pre-ECO: the owner plus the approvers, which is what
+                # dm_office_people would have built minus the office helpers
+                # (there is no office, so there are none).
+                try:
+                    from automations.icd_alerts import offices as _O
+                    people_ids = [office.slack_user_id] + [
+                        u for u in _O.APPROVERS if u != office.slack_user_id]
+                    post._group_dm(people_ids, text)
+                    _log("  DM'd %d person/people (pre-ECO: owner + "
+                         "approvers)." % len(people_ids))
+                except Exception as exc:                    # noqa: BLE001
+                    _log("  couldn't DM %s (%s: %s)"
+                         % (o.owner, type(exc).__name__, str(exc)[:120]))
             else:
                 try:
                     to = post.dm_office_people(office.key, text, log=_log)
@@ -352,7 +420,10 @@ def run(owners: List[R.Owner], *, send: bool, show_window: bool = True,
 
             _mark_sent(o.owner, today)
 
-            if show_window and office is not None:
+            if show_window and office is not None and office.key is None:
+                _log("    (no window: not on ECO yet, so there is no Lucy on "
+                     "their machine to open one. The DM is the whole nudge.)")
+            elif show_window and office is not None:
                 if within_working_hours(office, office_now(office, utc_now)):
                     open_second_rounds(app)
                 else:
@@ -380,7 +451,10 @@ def main(argv=None) -> int:
     # process, and a test run must never change the real nudge time.
     hour = int(args.hour)
 
-    owners = R.active()
+    # `roster.read()` returns every row; the Active column is filtered here,
+    # the same way run.py does it. There is no roster.active() -- the first
+    # dry run died on exactly that.
+    owners = [o for o in R.read() if o.active]
     if args.owner:
         want = args.owner.strip().lower()
         owners = [o for o in owners if want in o.owner.lower()]
