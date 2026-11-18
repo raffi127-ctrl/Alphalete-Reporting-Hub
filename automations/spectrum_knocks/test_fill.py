@@ -54,5 +54,30 @@ class Summarize(unittest.TestCase):
         self.assertEqual(rows[0][0], "11/17/2026")
 
 
+class BoardSlots(unittest.TestCase):
+    def setUp(self):
+        from automations.spectrum_knocks import board
+        self.b = board
+
+    def at(self, h, m, day=18):  # 11/18/2026 is a Wednesday
+        return dt.datetime(2026, 11, day, h, m)
+
+    def test_each_slot_posts_once_inside_its_hour(self):
+        self.assertEqual(self.b.due(self.at(14, 3), set()).key, "first")
+        self.assertEqual(self.b.due(self.at(17, 20), set()).key, "money")
+        self.assertIsNone(self.b.due(self.at(17, 20), {"2026-11-18|money"}))
+
+    def test_never_late_never_sunday(self):
+        self.assertIsNone(self.b.due(self.at(15, 30), set()))   # 2 PM missed
+        self.assertIsNone(self.b.due(self.at(21, 5, day=22), set()))  # Sunday
+
+    def test_board_rows_knocked_first_then_idle_with_houses(self):
+        summ = [{"Rep": "A", "Doors": 3, "Assigned Houses": 10},
+                {"Rep": "B", "Doors": 0, "Assigned Houses": 5},
+                {"Rep": "C", "Doors": 0, "Assigned Houses": 0},
+                {"Rep": "D", "Doors": 9, "Assigned Houses": ""}]
+        self.assertEqual([r["Rep"] for r in self.b.board_rows(summ)], ["D", "A", "B"])
+
+
 if __name__ == "__main__":
     unittest.main()

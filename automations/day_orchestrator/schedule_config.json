@@ -2162,6 +2162,52 @@
    "timeout_minutes": 10,
    "verify": null
   },
+  "spectrum_knocks_board": {
+   "on_scheduler": true,
+   "hand_run_only": true,
+   "machine": "Lucy 4",
+   "_note": "Spectrum Knocks board (Raf + Eve 2026-11-18): a picture of every Spectrum rep's day into #alphalete-sales-knocking-data (C0C8KBT065D) at 2:00 PM / 5:15 PM / 9:00 PM CT, Mon-Sat — same moments as the OwnerVille intraday boards. NOT a 4am-batch report: com.alphalete.spectrum-knocks-board on LUCY 4 ticks every 5 min and posts each slot once. This entry = the same tick by hand (posts only if a slot is due and not yet posted).",
+   "display_name": "Spectrum Knocks board — post if due",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.spectrum_knocks.board"
+   ],
+   "base_args": [
+    "--tick",
+    "--send"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 10,
+   "verify": null
+  },
+  "install_spectrum_knocks_board_agent": {
+   "on_scheduler": true,
+   "machine": "Lucy 4",
+   "_note": "NOT a report — one-shot LaunchAgent installer: `lucy rerun install_spectrum_knocks_board_agent` bootstraps com.alphalete.spectrum-knocks-board (StartInterval 300) on LUCY 4 from the committed plist.",
+   "display_name": "Install: Spectrum Knocks board LaunchAgent (Lucy 4)",
+   "command": [
+    "automations.day_orchestrator.install_agent"
+   ],
+   "base_args": [
+    "spectrum-knocks-board"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "data_sources": [],
+   "depends_on": [],
+   "freshness_target": null,
+   "priority": "P3",
+   "source_type": "local",
+   "timeout_minutes": 5,
+   "verify": null
+  },
   "install_spectrum_knocks_agent": {
    "on_scheduler": true,
    "machine": "Lucy 4",
