@@ -1547,6 +1547,53 @@ AUTOMATED_REPORTS = [
         "checklist": [],
     },
     {
+        # Card id == registry id, so hub_publish._HUB_CARD maps it to itself.
+        "id": "relay_archive",
+        "name": "Relay Archive (Nightly)",
+        "creator": "Megan & Claude",
+        "emoji": "🗄️",
+        # Amber = an ONGOING self-running job, like the other continuous Ops cards.
+        "color": "#F59E0B",
+        "category": "📲 Ops",
+        "assignees": ["Lucy 1"],
+        "run_machine": "Lucy 1",
+        # The registry entry runs the module WITHOUT --apply, so the Hub's Run
+        # button only previews -- it can never empty a cell.
+        "run_rerun_id": "relay_archive",
+        "description": "Keeps the workbook every office computer sends its numbers to small, so uploads stay fast. Every night it moves old error messages and old door-knock details to a backup workbook. Sales history is never touched.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "**•** **ICD Faults** rows older than **7 days**: the long error "
+            "text (Detail) moves to the archive.\n"
+            "**•** **ICD Knocks** rows older than **14 days**: the door-knock "
+            "detail (Rows JSON + Tracker JSON) moves to the archive.\n"
+            "**•** Each row is copied whole to **Lucy Access App — Archive** "
+            "first, checked, and only then emptied. No row is ever deleted or "
+            "moved, so every office still shows as having sent.\n"
+            "**•** **ICD Relay** (sales) is never touched — the ICD sales "
+            "board site reads every week of it.\n\n"
+            "WHY IT EXISTS\n"
+            "Nothing ever trimmed these tabs. By 11/18 they held 26 MB, every "
+            "upload read them, and 42 offices timed out at once (931 times on "
+            "11/17).\n\n"
+            "IF YOU NEED AN OLD DAY BACK\n"
+            "`--restore YYYY-MM-DD --tab \"ICD Knocks\" --apply` puts that day's "
+            "cells back (only into empty cells).\n\n"
+            "WHEN IT RUNS\n"
+            "**Every night, 2:00 AM**, on Lucy 1 (com.alphalete.relay-archive): "
+            "after the last office stops sending, before the 4 AM run."
+        ),
+        "assignee_note": "Runs unattended on Lucy 1 as a LaunchAgent. Run here = preview only.",
+        "self_scheduled": True,
+        "schedule": {
+            "frequency": "daily",
+            "time": "2:00 AM",
+            "time_label": "nightly 2 AM CST",
+            "estimated_minutes": 3,
+        },
+        "checklist": [],
+    },
+    {
         "id": "sara-plus-issues",
         # Cadence in the name, same as the RingCentral Auto-Read card. The
         #   are non-breaking spaces so "(Q 5 Min)" wraps as ONE clean unit

@@ -344,6 +344,8 @@ _HUB_CARD = {
     # Card id IS the library id, so map it to itself. Its wrapper publishes
     # each pass so the pill can climb 1/9 -> 9/9 (amber -> green).
     "car_rides": "car_rides",
+    # Relay Archive: nightly 2am launchd job on Lucy 1 (wrapper publishes).
+    "relay_archive": "relay_archive",
     # Weekly captainship reports: standalone LaunchAgents (Lucy 2 Mon/Tue, mini Tue)
     # that call publish_done from their wrapper. They ran fine for weeks but their
     # cards never went green — they were simply missing from this map, so Megan had

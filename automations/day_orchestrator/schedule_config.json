@@ -2756,6 +2756,51 @@
    "verify": null,
    "_verify_note": "2026-09-24 (Eve): the module now writes a run-manifest (run._file_manifest), which is what delivery_check reads — `_from_manifest`, under this same config key — so failure-car_rides closes itself on a clean pass instead of sitting open with \"ran clean, but nothing can confirm it DELIVERED\". DELIBERATELY STILL null, the same as vantura_board_audit and digi_docs, and it is NOT close_on: exit_zero either. This report can end a perfectly good pass with BOARD FINDINGS for Carlos (\"no territory found — needs new team\", \"ambiguous, skipped\"), which it files as kind 'finding', ok=false. delivery_check._from_manifest knows that shape means \"ran and delivered, with findings to review\" and closes the ticket; reconcile._verify_manifest does NOT — it reads ok=false as a failure — and _from_verifier is asked FIRST, so wiring a manifest verifier here would hold the ticket open on exactly the mornings the run worked, with no re-run able to clear it (a human fixes the board). captainship_cancel_rate has a manifest verifier AND writes kind 'unfilled_icd', so it carries that contradiction today; fix _verify_manifest there, not by re-wiring this one."
   },
+  "relay_archive": {
+   "on_scheduler": false,
+   "machine": "Lucy 1",
+   "_note": "Relay Archive (Megan 2026-11-18). on_scheduler:false = the 4am orchestrator NEVER runs it -- its real schedule is the nightly 2:00 AM launchd job (com.alphalete.relay-archive, wrapper deploy/relay_archive_nightly.sh) on Lucy 1, NOT INSTALLED until Megan's 'use the real Sheet'. Keeps the 'Lucy Access App' relay workbook small: ICD Faults rows older than 7 days and ICD Knocks rows older than 14 days are copied whole to 'Lucy Access App — Archive', then only their bulky cells (Detail / Rows JSON + Tracker JSON) are emptied. Never deletes or moves a row (8 writers use row numbers; ~10 readers ask 'ever relayed?'), never touches ICD Relay (the ICD sales board site's permanent sales history). DRY RUN BY DEFAULT: `lucy rerun relay_archive` previews and writes nothing; the wrapper passes --apply. Put a day back for a hand rerun: --restore YYYY-MM-DD --tab \"ICD Knocks\" --apply. Lucy 1 because its Google account already writes this workbook; the archive must belong to the same account (--create-archive, once). Pure Sheets API.",
+   "display_name": "Relay Archive (trim old relay rows)",
+   "source_type": "api",
+   "data_sources": [],
+   "command": [
+    "automations.relay_archive.run"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": [],
+    "not_before": null
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 30,
+   "verify": null,
+   "close_on": "exit_zero"
+  },
+  "install_relay_archive_agent": {
+   "on_scheduler": false,
+   "machine": "Lucy 1",
+   "_note": "One-shot: install/refresh the nightly relay-archive launchd agent (com.alphalete.relay-archive, 2:00 AM) on Lucy 1 via `lucy rerun install_relay_archive_agent`. Mirrors the other install_* handles. Run it only after Megan's 'use the real Sheet'.",
+   "display_name": "Install relay-archive LaunchAgent",
+   "source_type": "api",
+   "data_sources": [],
+   "command": [
+    "automations.day_orchestrator.install_agent"
+   ],
+   "base_args": [
+    "relay-archive"
+   ],
+   "cadence": {
+    "weekdays": [],
+    "not_before": null
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 10,
+   "verify": null
+  },
   "install_car_rides_agent": {
    "on_scheduler": false,
    "machine": "Lucy 2",
