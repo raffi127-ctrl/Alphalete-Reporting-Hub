@@ -14336,6 +14336,25 @@
    "timeout_minutes": 5,
    "verify": null
   },
+  "second_round_retention_vs_calendar": {
+   "on_scheduler": false,
+   "_off_scheduler_note": "READ-ONLY, off-scheduler. `lucy rerun second_round_retention_vs_calendar 11280 2026-11-18` asks the Retention Details report (p=701) and the Second Interviews calendar (p=102) the SAME question and prints them side by side. Built 2026-11-19: Megan read \"51 2nd interviews scheduled\" and \"32 showed\" off the retention report while the calendar read for 11/18 came back 50 rows / 23 showed with 0 rows skipped -- so the gap was not a parsing loss, and a story about which day each number came from is not evidence. This prints every day of the week's booked/showed counts (the count is in the cell's own link, count=<n>, so one report load answers all seven), then for the day the calendar is on it opens the 'Second Interviews Showed Up' detail page and diffs the NAMES both ways -- a count that matches can still be a different set of people. Anyone the report counts as showed up but the calendar does not gets their calendar row printed verbatim. Writes nothing, clicks nothing, touches no contacts. Office and date are POSITIONAL as well as flags, because the mini's own argparse eats anything starting with '-'.",
+   "display_name": "2nd round: retention report vs calendar (read-only)",
+   "source_type": "browser",
+   "data_sources": [],
+   "command": [
+    "automations.second_round_contacts.retention_vs_calendar"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 15,
+   "verify": null
+  },
   "second_round_calendar_probe": {
    "on_scheduler": false,
    "_off_scheduler_note": "READ-ONLY, off-scheduler. `lucy rerun second_round_calendar_probe` opens the SECOND INTERVIEWS table on the calendar (p=102, NOT the p=701 retention report) and prints three things the rebuild needs: whether the date picker can be driven at all (open_calendar_for is documented best-effort under patchright -- if it cannot move, a chase can only ever read the day the calendar happens to show, and the 7pm rule's look-back at yesterday is not available this way); every option the Follow Up Status dropdown offers, which is the vocabulary that splits 'resolved' from 'still owed a call'; and the Action column verbatim, which is the ONLY place the BOB date ('Brought on Board (Nov 30)') and the disqualify stamp live. Built 2026-11-18 after Megan: 'it has to be off the calendar so that you can see what was marked' -- the retention report counts rows per label per day and cannot say Alma was BOB'd for Nov 30 while Jesse was disqualified. Asking the page rather than a screenshot is the LABEL_BOB lesson. Writes nothing, clicks nothing, touches no contacts. Office and date are POSITIONAL as well as flags -- `lucy rerun second_round_calendar_probe 24232 2026-11-18` -- because the mini's own argparse eats anything starting with '-', so `-- --office 24232` never reaches the probe.",
