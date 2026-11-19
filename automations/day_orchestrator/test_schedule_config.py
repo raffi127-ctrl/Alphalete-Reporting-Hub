@@ -53,7 +53,9 @@ class ScheduleConfigInvariants(unittest.TestCase):
             if not isinstance(rep, dict) or rep.get("on_scheduler") is not True:
                 continue
             cad = rep.get("cadence") or {}
-            if cad.get("not_before") and not cad.get("weekdays"):
+            # days_of_month counts as run days (registry: weekday OR day of month)
+            if (cad.get("not_before") and not cad.get("weekdays")
+                    and not cad.get("days_of_month")):
                 broken.append(f"{rid} (not_before={cad['not_before']})")
         self.assertEqual(
             broken, [],

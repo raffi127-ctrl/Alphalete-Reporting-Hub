@@ -209,6 +209,48 @@
   }
  },
  "reports": {
+  "reception_contacts_cleanup": {
+   "on_scheduler": true,
+   "_note": "JD/Eve 2026-11-19: monthly cleanup of alphaletereception contacts. Rule A old applicants (>30d, never hired), rule B retired in OwnerVille + never on a Sales Board (start >= 2024-07-01). Lucy 1 = has the reception contacts token + OwnerVille. Stops itself above 1500 deletes. DMs Eve the count.",
+   "machine": "Lucy 1",
+   "display_name": "Reception contacts monthly cleanup",
+   "source_type": "ownerville",
+   "data_sources": [],
+   "command": [
+    "automations.reception_contacts_cleanup.run"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": [],
+    "days_of_month": [1],
+    "not_before": "10:00"
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 40,
+   "verify": null
+  },
+  "reception_contacts_cleanup_dry": {
+   "on_scheduler": false,
+   "_off_scheduler_note": "Build run: same as reception_contacts_cleanup with --dry-run (builds the list, DMs Eve the counts, deletes nothing). Runs only through `lucy rerun`.",
+   "machine": "Lucy 1",
+   "display_name": "Reception contacts cleanup (dry run)",
+   "source_type": "ownerville",
+   "data_sources": [],
+   "command": [
+    "automations.reception_contacts_cleanup.run"
+   ],
+   "base_args": ["--dry-run"],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 40,
+   "verify": null
+  },
   "ov_roster_dump": {
    "on_scheduler": false,
    "_off_scheduler_note": "Build run (Eve/JD 2026-11-19, reception contacts cleanup step 2): READ-ONLY dump of every OwnerVille rep incl. retired with email+phone to output/logs/ov-roster-dump.json. Runs only through `lucy rerun`.",
