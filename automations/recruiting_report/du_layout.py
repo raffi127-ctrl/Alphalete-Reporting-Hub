@@ -1,7 +1,10 @@
 """Daily Update column resolver (Carlos 2026-09-26).
 
 The 'Daily Update' tab is the VA's and its layout drifts: the Vantura master
-gained a 'Week Ending' column at M on 2026-09-26 (right of the 2nd-round date),
+gained a 'Week Ending' column at M on 2026-09-26, and on 2026-11-19 Carlos
+re-laid the master out (Job Ad right of Phone inside the Name group; Week
+Ending left of Classroom Retention; new ARRAY-FORMULA column 'Day Zero Date'
+at G = WORKDAY(Orientation Date, 1) that NOTHING may ever type into),
 while the 11 captainship owner boards still carry the classic layout, and the
 owners' header wording differs from Carlos's ('2nd rounder' vs '2nd round ',
 'job ad / source' vs 'Job Ad'). Every reader/writer of the tab must locate its
