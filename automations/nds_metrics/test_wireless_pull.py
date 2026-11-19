@@ -136,3 +136,53 @@ class FeedTrace(unittest.TestCase):
         self.assertIn("DUP 2145550101", text)                 # the same number under both orders
         self.assertIn("HIT #001 JOHN ROE", text)
         self.assertIn("near #000 CLAUDIA MURILLO", text)
+
+
+class ResolveOrderRows(unittest.TestCase):
+    """11/19: SaraPlus marks an order that needs fixing with a 'Resolve Order'
+    button cell in front of the customer. The row was read as a line with no
+    number and thrown away, so the order's lines were filed under the customer
+    above it (Danzell Vaughn showed Osman Justiniano's 'Porting Issue')."""
+    RESOLVE = ["", "Resolve Order", "OSMAN J", "817-555-0100", "DSI9", "11/14/2026", "99-9", "BAN9", "2",
+               "Stefany Z", "11633D2D", "CARLOS HIDALGO", "ALPHALETE SPECIALIZED", "Dealer", "D1",
+               "Approved", "x"]
+
+    def _parse(self, *rows):
+        html = "<table>" + "".join(_tr(r) for r in rows) + "</table>"
+        logs = []
+        orders, lines = WP.parse(html.encode(), log=logs.append)
+        return orders, lines, logs
+
+    def _line(self, no, number, status="Port Approved"):
+        r = list(LINE_ROW)
+        r[0], r[4], r[6] = no, number, status
+        return r
+
+    def test_resolve_order_row_starts_its_own_order(self):
+        orders, lines, _ = self._parse(
+            NEW_HDR, NEW_ROW, LINE_HDR, self._line("1", "2145550101", "Delivered"),
+            self.RESOLVE, LINE_HDR, self._line("1", "8175550101"), self._line("2", "8175550102", "Porting Issue"))
+        self.assertEqual([o["customer"] for o in orders], ["CLAUDIA MURILLO", "OSMAN J"])
+        self.assertTrue(orders[1]["resolve"])
+        self.assertEqual((orders[1]["dsi"], orders[1]["wireless_order"], orders[1]["rep"], orders[1]["line_count"]),
+                         ("DSI9", "99-9", "Stefany Z", "2"))
+        self.assertEqual([(l["customer"], l["line_no"], l["line_status"]) for l in lines],
+                         [("CLAUDIA MURILLO", "1", "Delivered"), ("OSMAN J", "1", "Port Approved"),
+                          ("OSMAN J", "2", "Porting Issue")])
+
+    def test_old_two_cell_grid_resolve_row_reads_by_header(self):
+        resolve = ["", "Resolve Order"] + OLD_ROW[2:]
+        orders, lines, _ = self._parse(OLD_HDR, resolve, LINE_HDR, LINE_ROW)
+        self.assertEqual(orders[0]["customer"], "JANE D")
+        self.assertEqual(lines[0]["customer"], "JANE D")
+
+    def test_a_repeated_line_number_is_never_filed_under_the_order_above(self):
+        # an order header in a shape nobody has seen yet: its lines must not land on Claudia
+        odd = ["?"] * 5
+        orders, lines, logs = self._parse(
+            NEW_HDR, NEW_ROW, LINE_HDR, self._line("1", "2145550101", "Delivered"),
+            odd, LINE_HDR, self._line("1", "8175550101"), self._line("2", "8175550102"),
+            self.RESOLVE, LINE_HDR, self._line("1", "8175550103"))
+        self.assertEqual([(l["customer"], l["line_no"]) for l in lines],
+                         [("CLAUDIA MURILLO", "1"), ("OSMAN J", "1")])
+        self.assertTrue(any("2 line row(s) left out" in x for x in logs))

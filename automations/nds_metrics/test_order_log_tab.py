@@ -655,3 +655,51 @@ class NobodyUsesLetters(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class StrayLines(unittest.TestCase):
+    """11/19: the feed read filed another order's lines under Danzell Vaughn
+    (a 1-line order) and the tab kept them for good -- 'Porting Issue' on a
+    customer whose phone was delivered. A row for a line its order does not
+    have goes; everything the feed has merely forgotten stays."""
+
+    def _tab(self, *lines):
+        return T.merge([], list(lines), today=TODAY)["rows"]
+
+    def test_line_the_order_does_not_have_is_removed(self):
+        vaughn = dict(customer="DANZELL VAUGHN", wireless_order="99-1", dsi="DSI1")
+        # the bad day: four lines filed under Vaughn's order
+        bad = self._tab(*[line(line_no=str(n), line_count="4", line_status="Porting Issue", **vaughn)
+                          for n in (1, 2, 3, 4)])
+        self.assertEqual(len(bad), 4)
+        # today the feed has the order whole: it says 1 line and shows 1
+        out = T.merge(bad, [line(line_no="1", line_count="1", line_status="Delivered", **vaughn)],
+                      today=TODAY + dt.timedelta(days=1))
+        self.assertEqual([(r[T._COL["Line"]], r[T._COL["Line Status"]]) for r in out["rows"]],
+                         [("1", "Delivered")])
+        self.assertEqual(len(out["strays_removed"]), 3)
+        self.assertIn("L3", out["strays_removed"][1])
+
+    def test_order_the_feed_forgot_is_kept(self):
+        old = self._tab(line(line_no="1", line_count="1", customer="OLD ORDER", wireless_order="99-8", dsi="DSI8"))
+        out = T.merge(old, [line(line_no="1", line_count="1", wireless_order="99-1", dsi="DSI1")],
+                      today=TODAY + dt.timedelta(days=1))
+        self.assertEqual(len(out["rows"]), 2)
+        self.assertEqual(out["strays_removed"], [])
+
+    def test_nothing_is_removed_when_the_feed_is_not_whole_for_the_order(self):
+        o = dict(customer="X", wireless_order="99-1", dsi="DSI1")
+        tab = self._tab(line(line_no="1", line_count="2", **o), line(line_no="2", line_count="2", **o))
+        # the order says 2 lines but only one row came through: leave line 2 alone
+        out = T.merge(tab, [line(line_no="1", line_count="2", **o)], today=TODAY + dt.timedelta(days=1))
+        self.assertEqual(len(out["rows"]), 2)
+        self.assertEqual(out["strays_removed"], [])
+
+    def test_stray_with_a_typed_note_is_held_and_reported(self):
+        o = dict(customer="X", wireless_order="99-1", dsi="DSI1")
+        tab = self._tab(line(line_no="1", line_count="2", **o), line(line_no="2", line_count="2", **o))
+        tab[1][T._COL["Notes"]] = "called 11/18"
+        out = T.merge(tab, [line(line_no="1", line_count="1", **o)], today=TODAY + dt.timedelta(days=1))
+        self.assertEqual(len(out["rows"]), 2)
+        self.assertEqual(out["strays_removed"], [])
+        self.assertEqual(len(out["strays_held"]), 1)

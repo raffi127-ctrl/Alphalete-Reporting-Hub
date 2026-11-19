@@ -115,6 +115,7 @@ _ORDER_FIELDS = (("customer", "customer name"), ("phone", "contact phone"),
                  ("ban", "wireless account number"), ("line_count", "lines"),
                  ("rep", "salesperson"), ("order_status", "order status"))
 _DATE_RE = re.compile(r"^\d{1,2}/\d{1,2}/\d{4}$")
+_DIGITS = re.compile(r"\D")
 
 
 def _order_by_header(c, hdr_idx):
@@ -168,11 +169,14 @@ def parse(data: bytes, log=print):
     LINE_HDR = ["", "Line", "Line Type", "Device Type", "Line Number",
                 "Phone", "Plan", "Line Status", "Est. Shipping Range",
                 "Ship Date", "Delieverd Date", "Port Status"]
-    LINE_TYPES = {"new", "port", "upgrade", "resolve order", "byod",
+    LINE_TYPES = {"new", "port", "upgrade", "byod",
                   "tablet", "wearable", "aia"}
     DATE_RE = re.compile(r"^\d{1,2}/\d{1,2}/\d{4}$")
     orders, lines = [], []
     cur = None
+    adrift = False          # True while the lines being read have no readable order above them
+    seen_nos = set()        # line numbers already read under `cur`
+    dropped = 0
     hdr_idx = None          # {header text: cell index} once the grid header has been seen
     skipped = []            # wide rows that were neither a line nor an order (diagnostic)
     wide = []               # first rows wide enough to be an order row (diagnostic)
@@ -199,8 +203,42 @@ def parse(data: bytes, log=print):
             skipped.append(c)
         if len(c) >= 13 and len(wide) < 3:        # the order-row candidates themselves
             wide.append(c)
+        # "RESOLVE ORDER" row: an ORDER header with one extra cell (the
+        # 'Resolve Order' button) after the expand cell, and no line number.
+        # Until 11/19 it was read as a line and thrown away for having no
+        # number, so the order never became `cur` and its lines were filed
+        # under the customer ABOVE it in the grid: Danzell Vaughn (1 line)
+        # showed 3 'Port Approved / Porting Issue' lines that were Osman
+        # Justiniano's, Ana Mereno Ruiz's six lines were overwritten by Nelson
+        # Martinez's (Carlos: "some orders will show porting issue and then we
+        # look them up and they don't").
+        if len(c) >= 8 and (c[1] or "").strip().lower() == "resolve order" and not (c[0] or "").strip():
+            order = (_order_by_header(c, hdr_idx) or _order_by_header(c[:1] + c[2:], hdr_idx)
+                     or _order_by_position(c))
+            if order is None:
+                # never file the next lines under the previous customer
+                adrift = True
+                log("[ndsw] a 'Resolve Order' row could not be read as an order (%d cells): %s"
+                    % (len(c), " | ".join((x or "")[:16] for x in c[:12])))
+                continue
+            order["resolve"] = True
+            cur, adrift, seen_nos = order, False, set()
+            orders.append(cur)
+            continue
         # LINE row: its second cell is a line type word
         if len(c) >= 8 and (c[1] or "").strip().lower() in LINE_TYPES:
+            no = (c[0] or "").strip()
+            if no and no in seen_nos and not adrift:
+                # line numbers restart at 1 for every order: a number coming
+                # round again means an order header went unread in between
+                adrift = True
+                log("[ndsw] line %s appears twice under %s -- an order header above it was not "
+                    "read; that line and the ones after it are left out"
+                    % (no, (cur or {}).get("customer", "?")))
+            if adrift:
+                dropped += 1
+                continue
+            seen_nos.add(no)
             lines.append({**(cur or {}),
                           "line_no": c[0], "line_type": c[1],
                           "device": c[3] if len(c) > 3 else "",
@@ -217,8 +255,10 @@ def parse(data: bytes, log=print):
             order = _order_by_header(c, hdr_idx) or _order_by_position(c)
             if order is None:
                 continue
-            cur = order
+            cur, adrift, seen_nos = order, False, set()
             orders.append(cur)
+    if dropped:
+        log(f"[ndsw] {dropped} line row(s) left out: no readable order header above them")
     import collections as _coll
     reps = _coll.Counter((l.get("rep") or "(none)") for l in lines)
     log("[ndsw] lines by rep: "
@@ -244,6 +284,18 @@ def parse(data: bytes, log=print):
         for i in range(0, min(len(raw), 3000), 150):
             log(f"[ndsw] raw {i // 150:02d}: {raw[i:i + 150]}")
     return orders, lines
+
+
+def line_number(l: dict) -> str:
+    """The line's phone number, digits only ('' when it has none yet). The
+    grid has carried it in either of two neighbouring cells, so take the one
+    that reads as a number rather than trusting the key's name."""
+    for k in ("device", "line_phone"):
+        v = str(l.get(k) or "")
+        d = _DIGITS.sub("", v)
+        if len(d) >= 10 and not re.search(r"[A-Za-z]", v):
+            return d[-10:]
+    return ""
 
 
 def trace(today: dt.date, needle: str = "", log=print) -> int:
@@ -275,7 +327,7 @@ def trace(today: dt.date, needle: str = "", log=print) -> int:
         log(f"[trace] {mark}#{orders.index(o):03d} {o.get('customer','')[:26]} | {o.get('rep','')[:22]} | {o.get('order_date','')} | "
             f"{o.get('wireless_order','')} | hdr lines={o.get('line_count','')} parsed={len(ls)} | {o.get('order_status','')[:30]}")
         for l in ls:
-            log(f"[trace]     L{l.get('line_no','')} {l.get('line_type','')[:8]} {l.get('line_phone','')} | {l.get('line_status','')} | "
+            log(f"[trace]     L{l.get('line_no','')} {l.get('line_type','')[:8]} {line_number(l) or '(no number)'} | {l.get('line_status','')} | "
                 f"ship {l.get('ship_date','') or '-'} dlv {l.get('delivered','') or '-'} port {l.get('port_status','') or '-'}")
 
     bad = [o for o in orders if str(o.get("line_count", "")).strip().isdigit()
@@ -286,8 +338,8 @@ def trace(today: dt.date, needle: str = "", log=print) -> int:
     phones = _coll.defaultdict(set)
     for o in orders:
         for l in by_order[id(o)]:
-            if (l.get("line_phone") or "").strip():
-                phones[l["line_phone"].strip()].add(orders.index(o))
+            if line_number(l):
+                phones[line_number(l)].add(orders.index(o))
     dup = {p_: ix for p_, ix in phones.items() if len(ix) > 1}
     log(f"[trace] phone numbers under more than one order: {len(dup)}")
     for p_, ix in list(dup.items())[:40]:
@@ -296,7 +348,7 @@ def trace(today: dt.date, needle: str = "", log=print) -> int:
     if n:
         hits = [i for i, o in enumerate(orders)
                 if n in " ".join(str(v) for v in o.values()).lower()
-                or any(n in (l.get("line_phone") or "").lower() for l in by_order[id(o)])]
+                or any(_DIGITS.sub("", n) and _DIGITS.sub("", n) in line_number(l) for l in by_order[id(o)])]
         log(f"[trace] orders matching {needle!r}: {len(hits)}")
         seen = set()
         for i in hits:

@@ -500,6 +500,7 @@ def merge(existing: Sequence[Sequence[str]], lines: Sequence[dict], *,
             merged[_key(row)] = row
     oldest = today - dt.timedelta(days=DAYS_KEPT) if DAYS_KEPT else None
     added = changed = 0
+    fresh_keys = set()
     for line in lines:
         fresh = line_row(line, stamp, zip_of, email_of, active_of, disc_of)
         od = _parse_date(fresh[_COL["Order Date"]])
@@ -526,6 +527,10 @@ def merge(existing: Sequence[Sequence[str]], lines: Sequence[dict], *,
             for c in CARRIED:
                 fresh[_COL[c]] = prior[_COL[c]]
         merged[_key(fresh)] = fresh
+        fresh_keys.add(_key(fresh))
+    removed, held = strays(merged, lines, fresh_keys)
+    for k in removed:
+        del merged[k]
     kept, aged = [], 0
     for row in merged.values():
         od = _parse_date(row[_COL["Order Date"]])
@@ -543,7 +548,61 @@ def merge(existing: Sequence[Sequence[str]], lines: Sequence[dict], *,
         -(_parse_date(r[_COL["Order Date"]]) or dt.date.min).toordinal(),
         _norm(r[_COL["Rep"]]), _norm(r[_COL["Customer"]]),
         r[_COL["Line"]].zfill(3) if r[_COL["Line"]].isdigit() else r[_COL["Line"]]))
-    return {"rows": kept, "added": added, "changed": changed, "aged_out": aged}
+    return {"rows": kept, "added": added, "changed": changed, "aged_out": aged,
+            "strays_removed": [removed[k] for k in removed], "strays_held": held}
+
+
+# Columns a person types in. A stray row holding any of these is never removed
+# by the code -- it is logged for a person to look at.
+_TYPED = ("Notes", "Taylor's Notes")
+
+
+def strays(merged, lines: Sequence[dict], fresh_keys) -> tuple:
+    """Rows the tab carries for a line its order does not have.
+
+    2026-11-19, Carlos: "some orders will show porting issue and then we look
+    them up and they don't show porting issue ... Danzell Vaughn". The feed
+    read had filed a 'Resolve Order' order's lines under the customer above it
+    (wireless_pull.parse), and because this tab keeps every row the feed no
+    longer mentions, those lines stayed under the wrong customer for good:
+    Vaughn (a 1-line order) kept lines 2-4, which were Osman Justiniano's.
+
+    A row is a stray when ALL of these hold:
+      * today's feed carries its order (same Wireless Order #),
+      * the feed's line rows for that order number exactly what the order's
+        own 'Lines' count says (the feed is whole for that order), and
+      * its line number is not one of them.
+    An order the feed has forgotten is untouched (kept-if-absent stands), and
+    so is an order whose rows and 'Lines' count disagree. A stray with a typed
+    note is held, not removed.
+
+    -> ({key: 'Customer L# number status'} to remove, ['...'] held)."""
+    have: Dict[str, set] = collections.defaultdict(set)
+    stated: Dict[str, str] = {}
+    for l in lines:
+        wo = _norm(l.get("wireless_order") or "")
+        if not wo:
+            continue
+        have[wo].add(str(l.get("line_no") or "").strip())
+        stated[wo] = str(l.get("line_count") or "").strip()
+    removed: "collections.OrderedDict[tuple, str]" = collections.OrderedDict()
+    held: List[str] = []
+    for key, row in merged.items():
+        if key in fresh_keys:
+            continue
+        wo = _norm(row[_COL["Wireless Order #"]])
+        nos = have.get(wo)
+        if not wo or not nos or str(row[_COL["Line"]]).strip() in nos:
+            continue
+        if not stated.get(wo, "").isdigit() or int(stated[wo]) != len(nos):
+            continue
+        what = "%s L%s %s %s" % (row[_COL["Customer"]], row[_COL["Line"]], row[_COL["Phone #"]],
+                                 row[_COL["Line Status"]] or "(no status)")
+        if any(str(row[_COL[c]]).strip() for c in _TYPED):
+            held.append(what)
+        else:
+            removed[key] = what
+    return removed, held
 
 
 def _ensure_tab(sh, title: str, cols: int):
@@ -731,6 +790,11 @@ def push(lines: Sequence[dict], *, today: Optional[dt.date] = None,
     _retry(lambda: sh.batch_update({"requests": _format_requests(ws.id, len(rows), n_rules, groups)}))
     log("[nds] NDS Order Log tab: %d line(s) on the tab (+%d new, %d changed, %d aged out)"
         % (len(rows), result["added"], result["changed"], result["aged_out"]))
+    for what in result.get("strays_removed") or ():
+        log("[nds] NDS Order Log tab: removed a line its order does not have -- %s" % what)
+    for what in result.get("strays_held") or ():
+        log("[nds] NDS Order Log tab: LOOK AT THIS ROW -- its order does not have this line, "
+            "but it has a typed note so it was left: %s" % what)
     return result
 
 
@@ -795,6 +859,39 @@ def refresh(today: Optional[dt.date] = None, log=print) -> Optional[Dict[str, ob
                 active_lookup=zips.active_date if zips else None,
                 disc_of=zips.disconnect_for_line if zips else None,
                 disc_lookup=zips.disconnect_date if zips else None)
+
+
+def dry_run(today: Optional[dt.date] = None, log=print) -> int:
+    """READ-ONLY: what today's refresh WOULD do to the live tab -- the rows it
+    would remove (strays), the ones it would hold for a person, and every row
+    whose Line Status or Phone # would change. Writes nothing."""
+    today = today or dt.date.today()
+    lines = today_lines(today, log=log)
+    if lines is None:
+        return 1
+    from automations.recruiting_report.fill import _retry, open_by_key
+    ws = open_by_key(VANTURA_SHEET_ID).worksheet(TAB)
+    prior = _retry(lambda: ws.get_all_values()) or []
+    if not prior:
+        log("[dry] the tab is empty")
+        return 1
+    before = {_key(r): r for r in (remap(x, prior[0]) for x in prior[1:])}
+    result = merge(prior[1:], lines, today=today, existing_header=prior[0])
+    log("[dry] rows now %d -> after %d (+%d new)" % (len(prior) - 1, len(result["rows"]), result["added"]))
+    for what in result["strays_removed"]:
+        log("[dry] REMOVE %s" % what)
+    for what in result["strays_held"]:
+        log("[dry] HOLD (typed note) %s" % what)
+    for r in result["rows"]:
+        b = before.get(_key(r))
+        if b is None:
+            log("[dry] NEW %s L%s %s %s | %s" % (r[_COL["Customer"]], r[_COL["Line"]], r[_COL["Phone #"]],
+                                               r[_COL["Line Status"]] or "(no status)", r[_COL["Rep"]]))
+        elif any(_norm(b[_COL[c]]) != _norm(r[_COL[c]]) for c in ("Line Status", "Phone #")):
+            log("[dry] CHANGE %s L%s: %s %s -> %s %s" % (
+                r[_COL["Customer"]], r[_COL["Line"]], b[_COL["Phone #"]], b[_COL["Line Status"]] or "(no status)",
+                r[_COL["Phone #"]], r[_COL["Line Status"]] or "(no status)"))
+    return 0
 
 
 def preview(today: Optional[dt.date] = None, log=print,

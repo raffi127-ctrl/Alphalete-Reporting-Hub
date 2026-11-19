@@ -2386,6 +2386,10 @@ def main(argv=None) -> int:
         # is always there): a look at the cache, nothing else
         from automations.nds_metrics import wireless_pull
         rc = wireless_pull.trace(today, a.feed_trace)
+        if today == dt.date.today():
+            # ... and what today's refresh would do to the tab, still without writing
+            from automations.nds_metrics import order_log_tab
+            order_log_tab.dry_run(today)
         print("=== done ===", flush=True)
         return rc
 
