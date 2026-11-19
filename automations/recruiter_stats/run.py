@@ -170,15 +170,30 @@ def pull(weeks, offices, verbose=True, base=None, misses=None):
         page.wait_for_timeout(3000)
         page.wait_for_selector("#searchMC", timeout=20000)
         for oid, owner in offices:
-            try:
-                reached = fo._switch_office(page, oid, owner,
-                                            confirm_denial=True)
-            except Exception as e:  # noqa: BLE001
-                # 10/14 rerun: the switcher's click timed out. Same rule as a
-                # page that won't load -- this office misses, the rest run.
-                print(f"⚠ {owner}: office switch failed "
-                      f"({type(e).__name__})", flush=True)
-                reached = False
+            reached = False
+            # TWO tries. 11/18 04:56: the switcher's dropdown row went stale
+            # before the click (fetch_office calls that "transient, retried by
+            # the caller") and nothing here retried it, so Carlos Hidalgo
+            # missed and the ticket sat open all day; the 08:41 rerun reached
+            # him first time. A second miss is real -- this office misses,
+            # the rest run (the 10/14 rule).
+            for attempt in (1, 2):
+                try:
+                    reached = fo._switch_office(page, oid, owner,
+                                                confirm_denial=True)
+                except Exception as e:  # noqa: BLE001
+                    print(f"⚠ {owner}: office switch failed "
+                          f"({type(e).__name__}: {str(e)[:160]})"
+                          + (" — reloading the console, one more try"
+                             if attempt == 1 else ""), flush=True)
+                    reached = False
+                    if attempt == 1:
+                        try:
+                            fo._reload_console(page)
+                        except Exception:  # noqa: BLE001 — the retry decides
+                            pass
+                        continue
+                break
             if not reached:
                 print(f"⚠ cannot reach office {oid} ({owner}) — skipped", flush=True)
                 if misses is not None:
@@ -235,6 +250,10 @@ def _open_dashboard():
     import gspread
     from automations.funnel_board import auth as _auth
     creds = _auth._service_account_creds() or _auth._oauth_creds()
+    # Our own client skips fill._client(), the one place the Google 429/5xx
+    # retry is switched on -- so one 500 on batch_update (11/18 08:41) crashed
+    # the run after every office had pulled.
+    _fill._install_global_retry()
     return _fill.open_by_key(DASHBOARD_ID, client=gspread.authorize(creds))
 
 
