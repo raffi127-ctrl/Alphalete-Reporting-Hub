@@ -39,6 +39,15 @@ from pathlib import Path
 # total_knocks/car_rides all document). find_rep builds the URL at runtime.
 VIEW_PROGRESS_P = 201
 
+# THE TABLE'S search box -- never `input[type='search']:visible` bare. By
+# 11/18 evening OwnerVille had added a "Search menu" box to the sidebar
+# (.ovui-navsearch-box), also type=search and FIRST in the page, so `.first`
+# typed every name into the menu: Lucy 3's 11/19 passes searched 19 people and
+# found none, and Raf's owner submit timed out. DataTables' own box is the one
+# inside .dataTables_filter, carrying aria-controls=<table id>.
+OV_TABLE_SEARCH = (".dataTables_filter input[type='search']:visible, "
+                   "input[type='search'][aria-controls]:visible")
+
 # Own profile — never the shared one (profile-lock wedge, 2026-08-19).
 PROFILE_DIR = (Path(__file__).resolve().parents[1] / "uploaded"
                / ".browser_profile_headshots")
@@ -76,7 +85,7 @@ def _search_box(page):
     # owner submit died here with "waiting for navigation to finish". Let the
     # reload land first, then give the box a real wait.
     _wait_loaded(page)
-    box = page.locator("input[type='search']:visible").first
+    box = page.locator(OV_TABLE_SEARCH).first
     box.wait_for(state="visible", timeout=60000)
     return box
 

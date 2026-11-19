@@ -364,12 +364,13 @@ def search_fill(page, heads: List[str], reps: Dict[str, list],
     (Lucy 3, 2026-09-21: 50 of 58 "not found" — the table never left page 1).
     Search filters client-side, so the person's row is on page 1 by
     construction; this is the same box headshots' find_rep has used daily."""
+    from automations.headshots.ov_upload import OV_TABLE_SEARCH
     _settle(page)
     found, failed = 0, 0
     for term in surnames:
         try:
             # Fresh locator each time: a stale one survives a reload silently.
-            box = page.locator("input[type='search']:visible").first
+            box = page.locator(OV_TABLE_SEARCH).first
             box.wait_for(state="visible", timeout=20000)
             box.fill("")
             box.press_sequentially(term, delay=20)
@@ -382,7 +383,7 @@ def search_fill(page, heads: List[str], reps: Dict[str, list],
             if verbose:
                 print(f"    search {term!r} failed: {type(e).__name__}")
     try:
-        page.locator("input[type='search']:visible").first.fill("")
+        page.locator(OV_TABLE_SEARCH).first.fill("")
     except Exception:                                       # noqa: BLE001
         pass
     if verbose:

@@ -1080,7 +1080,11 @@ def _pick_typeahead(tab, wanted: str, *, kind: str, control,
     if kind == "select":
         control.select_option(label=wanted)
         return
-    box = tab.locator("input[type='search']:visible, .select2-search__field, "
+    # Not a bare input[type='search']: OwnerVille's sidebar "Search menu" box
+    # (11/18) is one too and comes first in the page, so `.first` would type
+    # the bundle name into the menu. The dropdown's own search field only.
+    box = tab.locator(".select2-container--open input[type='search'], "
+                      ".select2-search__field:visible, "
                       "[role='combobox'] input:visible").first
     if box.count():
         box.press_sequentially(wanted[:12], delay=40)

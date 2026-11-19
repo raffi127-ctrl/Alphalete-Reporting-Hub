@@ -215,7 +215,8 @@ def _search_rows(page, term: str, *, retry: bool = True) -> list:
     twice is a refusal with the reason attached, never a rep quietly dropped
     from the run.
     """
-    box = page.locator("input[type='search']:visible").first
+    from automations.headshots.ov_upload import OV_TABLE_SEARCH
+    box = page.locator(OV_TABLE_SEARCH).first     # not OV's sidebar "Search menu"
     box.wait_for(state="visible", timeout=20000)
     box.fill("")
     box.press_sequentially(term, delay=25)
