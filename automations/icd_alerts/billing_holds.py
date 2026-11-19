@@ -158,11 +158,12 @@ def run(day: Optional[dt.date] = None, *, send: bool = False, book=None, dash=No
         from automations.icd_alerts import post as P
         from automations.recruiting_report.fill import open_by_key
         book = open_by_key(P.RELAY_SPREADSHEET_ID)
-    rows = [r for r in octo_rows(book, day) if r["key"] not in handled]
+    all_rows = octo_rows(book, day)
+    rows = [r for r in all_rows if r["key"] not in handled]
+    log("BILLING-HOLDS: %d check row(s) today (%s), %d not handled yet; %d hold(s) open"
+        % (len(all_rows), ", ".join(r["at"] for r in all_rows) or "none", len(rows), len(opens)))
     if not rows:
         return []
-    log("BILLING-HOLDS: %d new check row(s) today (%s); %d hold(s) open"
-        % (len(rows), ", ".join(r["at"] for r in rows), len(opens)))
     ws = None
     did: List[Dict] = []
     for r in rows:
@@ -238,8 +239,14 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Indeed billing holds -> Billing Holds tab + Slack")
     ap.add_argument("--send", action="store_true", help="write the tab, send the DM, remember")
     ap.add_argument("--day", help="YYYY-MM-DD (default: today)")
+    ap.add_argument("--state", action="store_true", help="print the state file and stop")
+    ap.add_argument("--reset", action="store_true", help="forget handled rows and open holds (the tab is untouched)")
     args = ap.parse_args(argv)
     day = dt.date.fromisoformat(args.day) if args.day else dt.date.today()
+    if args.state:
+        print(json.dumps(_load_state(), indent=1)[:3000]); return 0
+    if args.reset:
+        _save_state({}); print("state reset")
     did = run(day, send=args.send)
     print("%d event(s)%s" % (len(did), "" if args.send else " (preview, nothing written)"))
     return 0
