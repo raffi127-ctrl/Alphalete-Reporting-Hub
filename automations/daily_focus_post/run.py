@@ -158,71 +158,124 @@ def text_office(office: "roster.FocusOffice", png: Path, today: dt.date, *,
     return out
 
 
-def schedule_office(office: "roster.FocusOffice", today: dt.date,
-                    thread_ts: Optional[str], *, dry_run: bool = True,
-                    force: bool = False) -> dict:
-    """Reply in the thread with tomorrow's 1st/2nd rounds by time slot.
+def _booked_keys(office: "roster.FocusOffice") -> List[str]:
+    """State keys of every interviews-booked reply this office gets: one per
+    funnel ("<key>|booked|<office id>") plus the LinkedIn picture."""
+    keys = [f"{office.key}|booked|{oid}"
+            for oid, _ in (getattr(office, "booked_funnels", ()) or ())]
+    if getattr(office, "linkedin_office", ""):
+        keys.append(f"{office.key}|linkedin")
+    return keys
 
-    Own state entry ("<key>|schedule"), like the texts: an AppStream hiccup at
-    7:00 retries at 7:10 without a second screenshot, and never blocks it."""
-    offices = tuple(getattr(office, "schedule_offices", ()) or ())
-    if not offices:
-        return {}
-    k = f"{office.key}|schedule"
-    if _load_state().get(k) == today.isoformat() and not force:
-        return {"skipped": True}
-    day = schedule.next_day(today)
+
+def _booked_thread(office: "roster.FocusOffice", today: dt.date,
+                   focus_ts: Optional[str], *, dry_run: bool):
+    """(thread_ts, where) for the interviews-booked replies.
+
+    Raf, Loom 2026-11-18: "can we move mine ... under the daily update post".
+    So: today's "Daily Update M/D" parent in the office's channel -- Lucy's
+    5 PM post or a recruiter's, whichever is there (same finder the Daily
+    Update itself uses). No Daily Update today -> the Daily Focus thread, so
+    the numbers still go out instead of vanishing."""
+    if dry_run:
+        return None, "Daily Update thread (dry run: not looked up)"
     try:
-        data = schedule.read(day, offices)
-        text = schedule.format_text(day, data)
-        res = smp.post_reply_text_only(text, today=today, dry_run=dry_run,
-                                       channel_id=office.channel_id,
-                                       thread_ts=thread_ts)
-    except Exception as e:  # noqa: BLE001 — the screenshot already went out
-        print(f"[{office.key}] !! SCHEDULE reply FAILED: {type(e).__name__}: {e}")
-        return {"error": f"schedule: {type(e).__name__}: {e}"}
-    print(f"[{office.key}] {'WOULD POST' if dry_run else 'POSTED'} schedule "
-          f"for {day}:\n{text}")
-    if not dry_run:
-        state = _load_state()
-        state[k] = today.isoformat()
-        _save_state(state)
-    return {"text": text, "reply": res}
+        from automations.raf_daily_update.run import _existing_parent
+        ts = _existing_parent(smp._client(), office.channel_id, today)
+    except Exception as e:  # noqa: BLE001 -- fall back, never drop the post
+        print(f"[{office.key}] !! couldn't look for today's Daily Update "
+              f"thread: {type(e).__name__}: {e}")
+        ts = ""
+    if ts:
+        return ts, f"Daily Update thread {ts}"
+    if not focus_ts:
+        focus_ts = smp.ensure_named_thread(
+            roster.THREAD_TITLE, today, dry_run=False,
+            channel_id=office.channel_id).get("thread_ts")
+    print(f"[{office.key}] no Daily Update {today.month}/{today.day} in "
+          f"{office.channel_name} -- booked replies go in the Daily Focus thread")
+    return focus_ts, f"Daily Focus thread {focus_ts} (no Daily Update today)"
 
 
-def linkedin_office_shot(office: "roster.FocusOffice", today: dt.date,
-                         thread_ts: Optional[str], *, dry_run: bool = True,
-                         force: bool = False) -> dict:
-    """Reply in the thread with a picture of the LinkedIn office's calendar
-    (AppStream 24226) for the next day, both bands open.
+def booked_office(office: "roster.FocusOffice", today: dt.date,
+                  focus_ts: Optional[str] = None, *, dry_run: bool = True,
+                  force: bool = False) -> dict:
+    """Tomorrow's interviews booked: one reply per funnel, then the LinkedIn
+    calendar picture, in the day's Daily Update thread.
 
-    Own state entry ("<key>|linkedin"), like the schedule reply: a miss at
-    7:00 retries at 7:10 and never re-posts the main picture."""
+    Each reply has its own state entry, like the texts: a funnel whose
+    calendar didn't load at 7:00 is retried at 7:10 alone, and never re-posts
+    the funnels (or the Daily Focus picture) that already went out."""
+    funnels = tuple(getattr(office, "booked_funnels", ()) or ())
     li = getattr(office, "linkedin_office", "") or ""
-    if not li:
+    if not funnels and not li:
         return {}
-    k = f"{office.key}|linkedin"
-    if _load_state().get(k) == today.isoformat() and not force:
+    iso = today.isoformat()
+    state = _load_state()
+    todo = [(oid, label) for oid, label in funnels
+            if force or state.get(f"{office.key}|booked|{oid}") != iso]
+    li_owed = bool(li) and (force or state.get(f"{office.key}|linkedin") != iso)
+    if not todo and not li_owed:
         return {"skipped": True}
+
     day = schedule.next_day(today)
-    png = OUTPUT_DIR / f"daily-focus-{office.key}-linkedin-{today.isoformat()}.png"
-    try:
-        counts = schedule.screenshot(day, li, png)
-        caption = schedule.screenshot_caption(day, counts)
-        res = smp.post_reply_with_image(
-            png, comment=caption, today=today, dry_run=dry_run,
-            channel_id=office.channel_id, thread_ts=thread_ts,
-            file_name=f"LinkedIn booked {day.month}.{day.day}.png")
-    except Exception as e:  # noqa: BLE001 — the main picture already went out
-        print(f"[{office.key}] !! LINKEDIN reply FAILED: {type(e).__name__}: {e}")
-        return {"error": f"linkedin: {type(e).__name__}: {e}"}
-    print(f"[{office.key}] {'WOULD POST' if dry_run else 'POSTED'} LinkedIn "
-          f"calendar {li} for {day} ({png}): {caption}")
-    if not dry_run:
-        state = _load_state()
-        state[k] = today.isoformat()
-        _save_state(state)
-    return {"png": str(png), "counts": counts, "reply": res}
+    ts, where = _booked_thread(office, today, focus_ts, dry_run=dry_run)
+    errors, posted = [], []
+
+    if todo:
+        try:
+            data = schedule.read(day, [oid for oid, _ in todo])
+        except Exception as e:  # noqa: BLE001 -- AppStream down for all of them
+            data = {oid: {"error": f"{type(e).__name__}: {e}"} for oid, _ in todo}
+        for oid, label in todo:
+            d = data.get(oid) or {"error": "not read"}
+            if d.get("error"):
+                errors.append(f"booked {label} ({oid}): {d['error']}")
+                print(f"[{office.key}] !! BOOKED {label} ({oid}) FAILED: "
+                      f"{d['error']}")
+                continue
+            text = schedule.format_funnel(day, label, oid, d)
+            try:
+                smp.post_reply_text_only(text, today=today, dry_run=dry_run,
+                                         channel_id=office.channel_id,
+                                         thread_ts=ts)
+            except Exception as e:  # noqa: BLE001
+                errors.append(f"booked {label} ({oid}): {type(e).__name__}: {e}")
+                continue
+            print(f"[{office.key}] {'WOULD POST' if dry_run else 'POSTED'} "
+                  f"booked {label} ({oid}) for {day} -> {where}:\n{text}")
+            posted.append(oid)
+            if not dry_run:
+                st = _load_state()
+                st[f"{office.key}|booked|{oid}"] = iso
+                _save_state(st)
+
+    if li_owed:
+        png = OUTPUT_DIR / f"daily-focus-{office.key}-linkedin-{iso}.png"
+        try:
+            counts = schedule.screenshot(day, li, png)
+            caption = schedule.screenshot_caption(day, counts, li)
+            smp.post_reply_with_image(
+                png, comment=caption, today=today, dry_run=dry_run,
+                channel_id=office.channel_id, thread_ts=ts,
+                file_name=f"LinkedIn booked {day.month}.{day.day}.png")
+        except Exception as e:  # noqa: BLE001
+            errors.append(f"linkedin picture: {type(e).__name__}: {e}")
+            print(f"[{office.key}] !! LINKEDIN picture FAILED: "
+                  f"{type(e).__name__}: {e}")
+        else:
+            print(f"[{office.key}] {'WOULD POST' if dry_run else 'POSTED'} "
+                  f"LinkedIn calendar {li} for {day} ({png}) -> {where}")
+            posted.append("linkedin")
+            if not dry_run:
+                st = _load_state()
+                st[f"{office.key}|linkedin"] = iso
+                _save_state(st)
+
+    out = {"thread": where, "posted": posted}
+    if errors:
+        out["error"] = "; ".join(errors)
+    return out
 
 
 def post_office(office: "roster.FocusOffice", spreadsheet, *,
@@ -238,27 +291,17 @@ def post_office(office: "roster.FocusOffice", spreadsheet, *,
         groups = tuple(getattr(office, "text_groups", ()) or ())
         owed = [g for g in groups
                 if state.get(f"{office.key}|text|{g}") != today.isoformat()]
-        sched_owed = (bool(getattr(office, "schedule_offices", ()))
-                      and state.get(f"{office.key}|schedule") != today.isoformat())
-        li_owed = (bool(getattr(office, "linkedin_office", ""))
-                   and state.get(f"{office.key}|linkedin") != today.isoformat())
-        if sched_owed or li_owed:
-            # Slack screenshot went out, a follow-up reply didn't: retry only
-            # the missing one(s) into today's existing thread.
-            parent = smp.ensure_named_thread(
-                roster.THREAD_TITLE, today,
-                dry_run=dry_run, channel_id=office.channel_id)
-            ts = None if dry_run else parent.get("thread_ts")
-            sched = (schedule_office(office, today, ts, dry_run=dry_run)
-                     if sched_owed else {})
-            li = (linkedin_office_shot(office, today, ts, dry_run=dry_run)
-                  if li_owed else {})
+        booked_owed = [k for k in _booked_keys(office)
+                       if state.get(k) != today.isoformat()]
+        if booked_owed:
+            # Slack screenshot went out, a booked reply didn't: retry only the
+            # missing one(s).
+            booked = booked_office(office, today, None, dry_run=dry_run)
             if not owed:
-                if sched.get("error") or li.get("error"):
+                if booked.get("error"):
                     return {"office": office.key,
-                            "skipped": "schedule_retry_failed"}
-                return {"office": office.key, "schedule": sched,
-                        "linkedin": li}
+                            "skipped": "booked_retry_failed"}
+                return {"office": office.key, "booked": booked}
         if not owed:
             print(f"[{office.key}] already posted for {today} — skipping "
                   f"(use --force to repost)")
@@ -310,12 +353,9 @@ def post_office(office: "roster.FocusOffice", spreadsheet, *,
         state = _load_state()
         state[office.key] = today.isoformat()
         _save_state(state)
-    sched = schedule_office(office, today,
-                            None if dry_run else parent.get("thread_ts"),
-                            dry_run=dry_run, force=force)
-    li = linkedin_office_shot(office, today,
-                              None if dry_run else parent.get("thread_ts"),
-                              dry_run=dry_run, force=force)
+    booked = booked_office(office, today,
+                           None if dry_run else parent.get("thread_ts"),
+                           dry_run=dry_run, force=force)
     texts = text_office(office, png, today, dry_run=dry_run, force=force)
 
     if dry_run:
@@ -329,22 +369,20 @@ def post_office(office: "roster.FocusOffice", spreadsheet, *,
             print(f"[{office.key}]   PNG kept at {png}")
         return {"office": office.key, "dry_run": True, "png": str(png),
                 "parent": parent, "reply": reply, "texts": texts,
-                "schedule": sched, "linkedin": li}
+                "booked": booked}
 
     print(f"[{office.key}] POSTED to {office.channel_name} "
           f"thread={parent.get('thread_ts')} existed={parent.get('existed')}")
     errs = list(texts["errors"])
-    if sched.get("error"):
-        errs.append(sched["error"])
-    if li.get("error"):
-        errs.append(li["error"])
+    if booked.get("error"):
+        errs.append(booked["error"])
     if errs:
-        # Slack posted; a chat or the schedule reply didn't. Fail the office so
+        # Slack posted; a chat or a booked reply didn't. Fail the office so
         # the Hub shows it — the next tick retries only what missed.
         raise RuntimeError("Slack posted, but: " + "; ".join(errs))
     return {"office": office.key, "dry_run": False, "png": str(png),
             "parent": parent, "reply": reply, "texts": texts,
-            "schedule": sched, "linkedin": li}
+            "booked": booked}
 
 
 def main(argv: Optional[List[str]] = None) -> int:

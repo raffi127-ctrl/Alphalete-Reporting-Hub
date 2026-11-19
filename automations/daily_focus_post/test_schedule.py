@@ -1,4 +1,4 @@
-"""Tomorrow's 1st/2nd round slots reply on the 7 PM Daily Focus thread.
+"""Tomorrow's interviews booked, one reply per funnel, in the Daily Update thread.
 
 Run:  PYTHONPATH=. .venv/bin/python -m unittest \
           automations.daily_focus_post.test_schedule
@@ -25,21 +25,42 @@ class NextDay(unittest.TestCase):
 
 
 class Format(unittest.TestCase):
-    def test_slots_sorted_by_clock_with_totals(self):
-        txt = S.format_text(dt.date(2026, 11, 16), {
-            "first": {"1:00 PM": 4, "9:00 AM": 3, "10:30 AM": 2},
-            "second": {"10:30 AM": 1, "2:00 PM": 3},
-            "totals": {"first": 9, "second": 4}})
+    DATA = {"first": {"1:00 PM": 4, "9:00 AM": 3, "10:30 AM": 2},
+            "second": {"10:30 AM": 1, "2:00 PM": 3, "3:15 PM": 2},
+            "totals": {"first": 9, "second": 6}}
+
+    def test_second_rounds_on_top_with_morning_afternoon(self):
+        txt = S.format_funnel(dt.date(2026, 11, 16), "Main", "11280", self.DATA)
+        self.assertIn("Main (11280)", txt)
         self.assertIn("Mon 11/16", txt)
-        self.assertIn("1st rounds: *9*", txt)
-        self.assertIn("2nd rounds: *4*", txt)
-        order = [txt.index(t) for t in ("9:00 AM", "10:30 AM", "1:00 PM", "2:00 PM")]
-        self.assertEqual(order, sorted(order))      # 10:30 AM before 1:00 PM
+        self.assertLess(txt.index("2nd rounds: 6"), txt.index("1st rounds: 9"))
+        self.assertIn("2nd rounds: 6*   (morning 1 \u00b7 afternoon 5)", txt)
+        self.assertIn("1st rounds: 9*   (morning 5 \u00b7 afternoon 4)", txt)
+
+    def test_rounds_are_separate_tables_sorted_by_clock(self):
+        txt = S.format_funnel(dt.date(2026, 11, 16), "Main", "11280", self.DATA)
+        second, first = txt.split("1st rounds")
+        self.assertNotIn("9:00 AM", second)       # 1st-only slot stays out
+        order = [first.index(t) for t in ("9:00 AM", "10:30 AM", "1:00 PM")]
+        self.assertEqual(order, sorted(order))    # 10:30 AM before 1:00 PM
 
     def test_nothing_booked(self):
-        txt = S.format_text(dt.date(2026, 11, 16), {
+        txt = S.format_funnel(dt.date(2026, 11, 16), "El Paso", "23965", {
             "first": {}, "second": {}, "totals": {"first": 0, "second": 0}})
         self.assertIn("Nothing booked yet", txt)
+
+    def test_zero_second_rounds_still_says_so(self):
+        txt = S.format_funnel(dt.date(2026, 11, 16), "AI", "24065", {
+            "first": {"9:00 AM": 2}, "second": {},
+            "totals": {"first": 2, "second": 0}})
+        self.assertIn("2nd rounds: 0", txt)
+
+    def test_missing_time_counts_in_total_not_in_am_pm(self):
+        txt = S.format_funnel(dt.date(2026, 11, 16), "Main", "11280", {
+            "first": {}, "second": {"9:00 AM": 1, "?": 2},
+            "totals": {"first": 0, "second": 3}})
+        self.assertIn("2nd rounds: 3*   (morning 1 \u00b7 afternoon 0)", txt)
+        self.assertIn("no time", txt)
 
 
 class RosterTags(unittest.TestCase):
@@ -57,102 +78,132 @@ class RosterTags(unittest.TestCase):
             self.assertIn(f"<@{u}>", cap)
 
 
-class ScheduleReply(unittest.TestCase):
+def _ok(*oids):
+    return {o: {"first": {"9:00 AM": 1}, "second": {"2:00 PM": 1},
+                "totals": {"first": 1, "second": 1}} for o in oids}
+
+
+class BookedReplies(unittest.TestCase):
+    """Raf 2026-11-18: one post per funnel, in the Daily Update thread."""
     def setUp(self):
         self.state = {}
         p = [mock.patch.object(R, "_load_state", lambda: dict(self.state)),
-             mock.patch.object(R, "_save_state", self.state.update)]
+             mock.patch.object(R, "_save_state", self.state.update),
+             mock.patch.object(R, "_booked_thread",
+                               return_value=("DU.1", "Daily Update thread DU.1")),
+             mock.patch.object(S, "screenshot",
+                               return_value={"first": 1, "second": 0})]
         for x in p:
             x.start()
             self.addCleanup(x.stop)
+        self.funnels = [o for o, _ in roster.RAF.booked_funnels]
 
-    def test_posts_once_then_skips(self):
-        data = {"first": {"9:00 AM": 1}, "second": {}, "totals": {"first": 1, "second": 0}}
-        with mock.patch.object(S, "read", return_value=data) as rd, \
-                mock.patch.object(R.smp, "post_reply_text_only",
-                                  return_value={"ok": True}) as post:
-            out = R.schedule_office(roster.RAF, FRI, "123.4", dry_run=False)
-            self.assertIn("text", out)
-            rd.assert_called_once_with(dt.date(2026, 11, 16),
-                                       roster.RAF.schedule_offices)
-            self.assertEqual(post.call_args.kwargs["thread_ts"], "123.4")
-            again = R.schedule_office(roster.RAF, FRI, "123.4", dry_run=False)
-            self.assertEqual(again, {"skipped": True})
-            post.assert_called_once()
+    def test_raf_funnels_are_his_four_not_hasan_or_vincent(self):
+        self.assertEqual(self.funnels, ["11280", "23965", "24065", "24226"])
+        self.assertNotIn("24337", self.funnels)   # Hasan
+        self.assertNotIn("24332", self.funnels)   # Vincent
+        self.assertEqual(self.funnels[-1], roster.RAF.linkedin_office)
 
-    def test_appstream_failure_is_reported_not_raised_and_retried(self):
+    def test_one_reply_per_funnel_then_picture_into_daily_update(self):
+        with mock.patch.object(S, "read", return_value=_ok(*self.funnels)) as rd, \
+                mock.patch.object(R.smp, "post_reply_text_only") as txt, \
+                mock.patch.object(R.smp, "post_reply_with_image") as img:
+            out = R.booked_office(roster.RAF, FRI, "DF.1", dry_run=False)
+        rd.assert_called_once_with(dt.date(2026, 11, 16), self.funnels)
+        self.assertEqual(txt.call_count, 4)
+        heads = [c.args[0].split("\n")[0] for c in txt.call_args_list]
+        for (oid, label), head in zip(roster.RAF.booked_funnels, heads):
+            self.assertIn(f"{label} ({oid})", head)
+        for c in txt.call_args_list + img.call_args_list:
+            self.assertEqual(c.kwargs["thread_ts"], "DU.1")
+        img.assert_called_once()
+        self.assertNotIn("error", out)
+        again = R.booked_office(roster.RAF, FRI, "DF.1", dry_run=False)
+        self.assertEqual(again, {"skipped": True})
+
+    def test_one_bad_funnel_retries_alone(self):
+        data = _ok("11280", "24065", "24226")
+        data["23965"] = {"error": "TimeoutError: calendar"}
+        with mock.patch.object(S, "read", return_value=data), \
+                mock.patch.object(R.smp, "post_reply_text_only") as txt, \
+                mock.patch.object(R.smp, "post_reply_with_image"):
+            out = R.booked_office(roster.RAF, FRI, "DF.1", dry_run=False)
+        self.assertIn("El Paso (23965)", out["error"])
+        self.assertEqual(txt.call_count, 3)
+        self.assertNotIn("raf|booked|23965", self.state)
+        with mock.patch.object(S, "read", return_value=_ok("23965")) as rd, \
+                mock.patch.object(R.smp, "post_reply_text_only") as txt, \
+                mock.patch.object(R.smp, "post_reply_with_image") as img:
+            R.booked_office(roster.RAF, FRI, "DF.1", dry_run=False)
+        rd.assert_called_once_with(dt.date(2026, 11, 16), ["23965"])
+        txt.assert_called_once()
+        img.assert_not_called()
+
+    def test_appstream_down_is_reported_not_raised(self):
         with mock.patch.object(S, "read", side_effect=RuntimeError("login")), \
-                mock.patch.object(R.smp, "post_reply_text_only") as post:
-            out = R.schedule_office(roster.RAF, FRI, "1", dry_run=False)
-        self.assertIn("error", out)
-        post.assert_not_called()
-        self.assertNotIn("raf|schedule", self.state)   # next tick retries
+                mock.patch.object(R.smp, "post_reply_text_only") as txt, \
+                mock.patch.object(R.smp, "post_reply_with_image"):
+            out = R.booked_office(roster.RAF, FRI, "1", dry_run=False)
+        self.assertIn("login", out["error"])
+        txt.assert_not_called()
+        self.assertFalse([k for k in self.state if "|booked|" in k])
 
     def test_dry_run_records_nothing(self):
-        data = {"first": {}, "second": {}, "totals": {"first": 0, "second": 0}}
-        with mock.patch.object(S, "read", return_value=data), \
-                mock.patch.object(R.smp, "post_reply_text_only",
-                                  return_value={"dry_run": True}):
-            R.schedule_office(roster.RAF, FRI, None, dry_run=True)
+        with mock.patch.object(S, "read", return_value=_ok(*self.funnels)), \
+                mock.patch.object(R.smp, "post_reply_text_only"), \
+                mock.patch.object(R.smp, "post_reply_with_image"):
+            R.booked_office(roster.RAF, FRI, None, dry_run=True)
         self.assertEqual(self.state, {})
 
+    def test_retry_tick_posts_only_whats_missing(self):
+        today = R.local_now(roster.RAF).date().isoformat()
+        self.state.update({"raf": today,
+                           "raf|text|Admin Staff": today,
+                           "raf|text|Alphalete A-Team Chat": today})
+        with mock.patch.object(R, "booked_office",
+                               return_value={"posted": ["11280"]}) as bk, \
+                mock.patch.object(R, "text_office") as texts:
+            out = R.post_office(roster.RAF, None, dry_run=False)
+        texts.assert_not_called()
+        bk.assert_called_once()
+        self.assertEqual(out["booked"], {"posted": ["11280"]})
 
-class LinkedInReply(unittest.TestCase):
-    """2nd reply: picture of AppStream 24226's calendar for the next day."""
-    def setUp(self):
-        self.state = {}
-        p = [mock.patch.object(R, "_load_state", lambda: dict(self.state)),
-             mock.patch.object(R, "_save_state", self.state.update)]
-        for x in p:
-            x.start()
-            self.addCleanup(x.stop)
 
-    def test_raf_points_at_24226(self):
-        self.assertEqual(roster.RAF.linkedin_office, "24226")
+class BookedThread(unittest.TestCase):
+    def test_daily_update_thread_wins(self):
+        import automations.raf_daily_update.run as DU
+        with mock.patch.object(R.smp, "_client"), \
+                mock.patch.object(DU, "_existing_parent", return_value="DU.9"), \
+                mock.patch.object(R.smp, "ensure_named_thread") as df:
+            ts, _ = R._booked_thread(roster.RAF, FRI, "DF.1", dry_run=False)
+        self.assertEqual(ts, "DU.9")
+        df.assert_not_called()
 
+    def test_no_daily_update_falls_back_to_daily_focus(self):
+        import automations.raf_daily_update.run as DU
+        with mock.patch.object(R.smp, "_client"), \
+                mock.patch.object(DU, "_existing_parent", return_value=""):
+            ts, where = R._booked_thread(roster.RAF, FRI, "DF.1", dry_run=False)
+        self.assertEqual(ts, "DF.1")
+        self.assertIn("Daily Focus", where)
+
+    def test_slack_read_error_falls_back_too(self):
+        import automations.raf_daily_update.run as DU
+        with mock.patch.object(R.smp, "_client"), \
+                mock.patch.object(DU, "_existing_parent",
+                                  side_effect=RuntimeError("ratelimited")), \
+                mock.patch.object(R.smp, "ensure_named_thread",
+                                  return_value={"thread_ts": "DF.2"}):
+            ts, _ = R._booked_thread(roster.RAF, FRI, None, dry_run=False)
+        self.assertEqual(ts, "DF.2")
+
+
+class LinkedInCaption(unittest.TestCase):
     def test_caption(self):
         c = S.screenshot_caption(dt.date(2026, 11, 16), {"first": 3, "second": 2})
         self.assertIn("Mon 11/16", c)
         self.assertIn("24226", c)
-        self.assertIn("*3*", c)
-        self.assertIn("*2*", c)
-
-    def test_posts_picture_once_into_thread_then_skips(self):
-        with mock.patch.object(S, "screenshot",
-                               return_value={"first": 1, "second": 0}) as shot,                 mock.patch.object(R.smp, "post_reply_with_image",
-                                  return_value={"ok": True}) as post:
-            out = R.linkedin_office_shot(roster.RAF, FRI, "123.4", dry_run=False)
-            self.assertIn("png", out)
-            self.assertEqual(shot.call_args.args[:2],
-                             (dt.date(2026, 11, 16), "24226"))
-            self.assertEqual(post.call_args.kwargs["thread_ts"], "123.4")
-            self.assertEqual(post.call_args.kwargs["channel_id"],
-                             roster.RAF.channel_id)
-            again = R.linkedin_office_shot(roster.RAF, FRI, "123.4", dry_run=False)
-            self.assertEqual(again, {"skipped": True})
-            post.assert_called_once()
-
-    def test_failure_is_reported_not_raised_and_retried(self):
-        with mock.patch.object(S, "screenshot", side_effect=RuntimeError("login")),                 mock.patch.object(R.smp, "post_reply_with_image") as post:
-            out = R.linkedin_office_shot(roster.RAF, FRI, "1", dry_run=False)
-        self.assertIn("error", out)
-        post.assert_not_called()
-        self.assertNotIn("raf|linkedin", self.state)
-
-    def test_retry_tick_posts_only_the_missing_picture(self):
-        """Main picture + schedule already out; only the LinkedIn reply owed."""
-        today = R.local_now(roster.RAF).date().isoformat()
-        self.state.update({"raf": today, "raf|schedule": today,
-                           "raf|text|Admin Staff": today,
-                           "raf|text|Alphalete A-Team Chat": today})
-        with mock.patch.object(R.smp, "ensure_named_thread",
-                               return_value={"thread_ts": "9.9"}),                 mock.patch.object(R, "schedule_office") as sched,                 mock.patch.object(R, "text_office") as texts,                 mock.patch.object(R, "linkedin_office_shot",
-                                  return_value={"png": "x"}) as li:
-            out = R.post_office(roster.RAF, None, dry_run=False)
-        sched.assert_not_called()
-        texts.assert_not_called()
-        self.assertEqual(li.call_args.args[2], "9.9")
-        self.assertEqual(out["linkedin"], {"png": "x"})
+        self.assertLess(c.index("2nd rounds: *2*"), c.index("1st rounds: *3*"))
 
 
 if __name__ == "__main__":

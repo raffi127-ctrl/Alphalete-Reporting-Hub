@@ -1,4 +1,8 @@
-"""Tomorrow's 1st and 2nd round interviews, by time slot, for the 7 PM post.
+"""Tomorrow's 1st and 2nd round interviews, by time slot, one post per funnel.
+
+WHERE (Raf, Loom 2026-11-18): under the day's "Daily Update M/D" thread, one
+reply per AppStream funnel (Main / El Paso / AI / LinkedIn), 2nd rounds on
+top with a morning/afternoon split, 1st rounds below. Older ask below.
 
 THE ASK (Raf, Loom 2026-11-13, on the Daily Focus thread): "Can we also get a
 breakdown of what time slots we have for the next day scheduled for first and
@@ -65,28 +69,29 @@ def _band_rows(page, band: str, ds: str):
            }""", ds)
 
 
-def read(day: dt.date, offices: Iterable[str]) -> Dict:
-    """{'first': {time: n}, 'second': {...}, 'totals': {'first': n, 'second': n},
-    'problems': [str]} across every office calendar given.
+def read(day: dt.date, offices: Iterable[str]) -> Dict[str, Dict]:
+    """{office: {'first': {time: n}, 'second': {...}, 'totals': {...},
+    'problems': [str]}} -- or {office: {'error': str}} for a calendar that
+    couldn't be read. One AppStream session for all of them; each funnel is
+    its own post, so one bad calendar never holds the others.
 
     Totals come off the band header ("Applicants: N"), which AppStream counts
     itself; the per-slot split comes off the table. If the table showed fewer
-    rows than the header, the gap is listed as a problem (and lands as an
-    'unknown time' line) rather than silently shrinking the total."""
+    rows than the header, the gap lands as a 'no time' line rather than
+    silently shrinking the total."""
     from automations.shared.tableau_patchright import appstream_direct_session
     from automations.sms_thread_dump import run as dump
 
     ds = day.strftime("%m-%d-%Y")
-    slots = {k: Counter() for k, _ in BANDS}
-    totals = {k: 0 for k, _ in BANDS}
-    problems = []
-    read_ok = 0
-    offices = list(offices)
+    out: Dict[str, Dict] = {}
     with appstream_direct_session(verbose=False) as page:
         tok = dump._rqst(page)
         if not tok:
             raise RuntimeError("no rqst token on the AppStream console page")
         for office in offices:
+            slots = {k: Counter() for k, _ in BANDS}
+            totals = {k: 0 for k, _ in BANDS}
+            problems = []
             try:
                 page.goto("https://www.applicantstream.com/index.cfm?p=104"
                           f"&rqst={tok}&newOfficeId={office}")
@@ -105,18 +110,14 @@ def read(day: dt.date, offices: Iterable[str]) -> Dict:
                         slots[key]["?"] += n - len(rows)
                         problems.append(f"{office} {band}: table showed "
                                         f"{len(rows)} of {n}")
-                read_ok += 1
             except Exception as exc:  # noqa: BLE001 -- one office can't hold the rest
-                problems.append(f"{office}: {type(exc).__name__}: "
-                                f"{str(exc).splitlines()[0][:120]}")
-    if not read_ok:
-        raise RuntimeError("no AppStream calendar could be read: "
-                           + "; ".join(problems))
-    if read_ok < len(offices):
-        # a partial count posted as if complete is worse than a late one
-        raise RuntimeError("calendar read incomplete: " + "; ".join(problems))
-    return {"first": dict(slots["first"]), "second": dict(slots["second"]),
-            "totals": totals, "problems": problems}
+                out[office] = {"error": f"{type(exc).__name__}: "
+                                        f"{str(exc).splitlines()[0][:120]}"}
+                continue
+            out[office] = {"first": dict(slots["first"]),
+                           "second": dict(slots["second"]),
+                           "totals": totals, "problems": problems}
+    return out
 
 
 def _sort_key(t: str):
@@ -124,23 +125,37 @@ def _sort_key(t: str):
     return (c is None, c or dt.time(0), t)
 
 
-def format_text(day: dt.date, data: Dict) -> str:
-    """Slack reply: one line per time slot, 1st and 2nd side by side, totals
-    on top. Monospace block so the columns line up on a phone."""
-    first, second = data.get("first") or {}, data.get("second") or {}
+def _am_pm(slots: Dict[str, int]):
+    clocks = [(_clock(t), n) for t, n in slots.items()]
+    am = sum(n for c, n in clocks if c is not None and c.hour < 12)
+    pm = sum(n for c, n in clocks if c is not None and c.hour >= 12)
+    return am, pm
+
+
+def format_funnel(day: dt.date, label: str, office: str, data: Dict) -> str:
+    """One funnel's reply. 2nd rounds FIRST and on their own (Raf 2026-11-18:
+    "I want to separate the first and the second round ... just look at the
+    second round slots, clean cut"), each round with a morning / afternoon
+    count so "is the afternoon full?" is answered at a glance. Monospace
+    block so the columns line up on a phone."""
     tot = data.get("totals") or {}
-    head = (f"*Interviews booked for {day:%a} {day.month}/{day.day}*\n"
-            f"1st rounds: *{tot.get('first', 0)}*   ·   "
-            f"2nd rounds: *{tot.get('second', 0)}*")
-    times = sorted(set(first) | set(second), key=_sort_key)
-    if not times:
+    head = (f"*{label} ({office}) \u2014 interviews booked for "
+            f"{day:%a} {day.month}/{day.day}*")
+    if not (tot.get("first") or tot.get("second")):
         return head + "\nNothing booked yet."
-    lines = [f"{'Time':<10}{'1st':>5}{'2nd':>5}"]
-    for t in times:
-        label = "no time" if t == "?" else t
-        lines.append(f"{label:<10}{first.get(t, 0) or '-':>5}{second.get(t, 0) or '-':>5}")
-    lines.append(f"{'Total':<10}{tot.get('first', 0):>5}{tot.get('second', 0):>5}")
-    return head + "\n```" + "\n".join(lines) + "```"
+    parts = [head]
+    for key, name in (("second", "2nd rounds"), ("first", "1st rounds")):
+        slots = data.get(key) or {}
+        n = tot.get(key, 0)
+        if not n:
+            parts.append(f"*{name}: 0*")
+            continue
+        am, pm = _am_pm(slots)
+        parts.append(f"*{name}: {n}*   (morning {am} \u00b7 afternoon {pm})")
+        lines = [f"{'no time' if t == '?' else t:<10}{slots[t]:>4}"
+                 for t in sorted(slots, key=_sort_key)]
+        parts.append("```" + "\n".join(lines) + "```")
+    return "\n".join(parts)
 
 
 def screenshot(day: dt.date, office: str, out_png) -> Dict:
@@ -192,7 +207,7 @@ def screenshot(day: dt.date, office: str, out_png) -> Dict:
     return counts
 
 
-def screenshot_caption(day: dt.date, counts: Dict) -> str:
-    return (f"*LinkedIn (AppStream 24226) booked for {day:%a} "
-            f"{day.month}/{day.day}*\n1st rounds: *{counts.get('first', 0)}*   ·   "
-            f"2nd rounds: *{counts.get('second', 0)}*")
+def screenshot_caption(day: dt.date, counts: Dict, office: str = "24226") -> str:
+    return (f"*LinkedIn ({office}) calendar for {day:%a} "
+            f"{day.month}/{day.day}*\n2nd rounds: *{counts.get('second', 0)}*"
+            f"   \u00b7   1st rounds: *{counts.get('first', 0)}*")

@@ -68,11 +68,13 @@ class FocusOffice:
     # chat id -- same rule as every other Lucy text. Lucy 1 (the mini, where
     # the 7pm agent runs) must be a member of each.
     text_groups: tuple = ()
-    # AppStream office ids whose Weekly Calendar feeds the "tomorrow's 1st /
-    # 2nd rounds by time slot" reply (schedule.py). Empty = no schedule reply.
-    schedule_offices: tuple = ()
+    # The "interviews booked" replies (schedule.py): ONE reply per funnel,
+    # as (AppStream office id, label) pairs, posted in this order. They go in
+    # the day's "Daily Update M/D" thread (Raf, Loom 2026-11-18); the Daily
+    # Focus thread only if no Daily Update was posted. Empty = no replies.
+    booked_funnels: tuple = ()
     # One AppStream office whose Weekly Calendar for the next day is posted as
-    # a PICTURE, as its own reply right after the schedule. Empty = none.
+    # a PICTURE, right after the booked replies. Empty = none.
     linkedin_office: str = ""
 
 
@@ -102,8 +104,16 @@ RAF = FocusOffice(
         "U0BBG374GE9",   # Alisson Rodriguez
         "U0B9924FHCL",   # Tiffani Brown
     ),
-    # Raf's three 1st round funnels (same as first_round_scorecards.appstream).
-    schedule_offices=("11280", "23965", "24065"),
+    # Raf, Loom 2026-11-18: "let's separate all of them" -- one post per
+    # funnel. Hasan's (24337) and Vincent's (24332) funnels stay OUT: "they're
+    # not me. I'm not involved at all." LinkedIn goes last so its calendar
+    # picture (linkedin_office) lands right under its own numbers.
+    booked_funnels=(
+        ("11280", "Main"),
+        ("23965", "El Paso"),
+        ("24065", "AI"),
+        ("24226", "LinkedIn"),
+    ),
     # Raf, Daily Recruiting Message Post thread, 2026-11-13: "in the same
     # thread, can we do a 2nd post that grabs the LinkedIn Screenshot of whats
     # booked for the next day" -- Megan: "That would be account #24226".
