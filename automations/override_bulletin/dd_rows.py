@@ -53,6 +53,12 @@ COMPANY_TO_OWNER = {
     "high value acquisitions inc": "Nicolas Murrugarra",
     "high value": "Nicolas Murrugarra",
     "high value acquisitions": "Nicolas Murrugarra",
+    # Raf's own office, Spectrum (Charter D2D) DD — only visible from HIS ARC
+    # login (session.ACCOUNTS["raf"], office number:2556). Added ON TOP of his
+    # Tableau DD, same as Jahvid / Nicolas (Eve 2026-11-19). The name is the
+    # exact DD-tab row so dd_populate lands it there.
+    "alphalete marketing inc": "Rafael Hidalgo TX",
+    "alphalete marketing": "Rafael Hidalgo TX",
 }
 
 # Credico's own ids, so a selector can target by value instead of visible text.

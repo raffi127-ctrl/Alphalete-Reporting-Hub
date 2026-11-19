@@ -50,6 +50,14 @@ ACCOUNTS = {
     "murrugarra": {"label": "Nicolas Murrugarra's login",
                    "state": STATE.with_name(STATE.name + ".murrugarra"),
                    "profile": PROFILE_DIR.with_name(PROFILE_DIR.name + "_murrugarra")},
+    # Raf's own office, Spectrum DD on ARC (Maud, 2026-11-19: "Raf's office is
+    # starting a new Campaign - the DD will be on ARC"). Login R.Hidalgo.
+    # Office "Alphalete Marketing, Inc." (number:2556), Charter D2D.
+    # new_campaign: an empty Fee Reports list is "not published yet", not a
+    # failed run (report.fetch_all). A dead LOGIN still fails.
+    "raf": {"label": "Raf Hidalgo's login", "new_campaign": True,
+            "state": STATE.with_name(STATE.name + ".raf"),
+            "profile": PROFILE_DIR.with_name(PROFILE_DIR.name + "_raf")},
 }
 DEFAULT_ACCOUNT = "carlos"
 

@@ -384,6 +384,12 @@ def fetch_all(week_label, verbose=True):
             got += fetch_week(week_label, verbose=verbose, account=key,
                               results=results, manifest=False)
         except Exception as e:  # noqa: BLE001
+            if acct.get("new_campaign") and "not listed on Credico" in str(e):
+                # A login whose campaign just started has no Fee Reports yet
+                # ("No files found" — Raf, 2026-11-19). That is "nothing
+                # published", not a failure; it must not turn every Thursday red.
+                print(f"· {acct['label']}: nothing published yet ({e})", flush=True)
+                continue
             results[f"({acct['label']})"] = f"login failed ({type(e).__name__})"
             errors.append(f"{acct['label']}: {e}")
             print(f"✗ {acct['label']}: {e}", flush=True)

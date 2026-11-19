@@ -24,16 +24,17 @@ SAT = "2026-09-12"
 ABYL = "Abyl Acquisition Grp"
 PHX = "Phoenix Acquisition"
 HV = "High Value"            # Nicolas Murrugarra, from his own login (10/22)
+RAF = "Alphalete Marketing, Inc."  # Raf Hidalgo, Spectrum, his own login (11/19)
 
 
 class FetchManifestUnits(unittest.TestCase):
 
     def test_every_office_downloaded_is_a_clean_run(self):
         got, missed, note = R._fetch_manifest_units(
-            SAT, {ABYL: "ok", PHX: "ok", HV: "ok"})
-        self.assertEqual(got, sorted([ABYL, PHX, HV]))
+            SAT, {ABYL: "ok", PHX: "ok", HV: "ok", RAF: "ok"})
+        self.assertEqual(got, sorted([ABYL, PHX, HV, RAF]))
         self.assertEqual(missed, [])
-        self.assertIn("3/3", note)
+        self.assertIn("4/4", note)
         self.assertNotIn("not published yet", note)
 
     def test_one_office_published_is_still_clean(self):
