@@ -598,13 +598,21 @@ def find_rep(page, name: str, *, verbose: bool = True, campaigns=None,
                 # a typo'd tail still narrow the table. Key-by-key: old
                 # DataTables filters on keyup, which fill() never fires.
                 box.press_sequentially(probe, delay=40)
-                page.wait_for_timeout(900)      # filters client-side
-                row = _rep_row(page, name, debug=False)
-                if row is None:
-                    # One retry: DataTables sometimes re-renders under us
-                    # and the first read hits the old body (2026-08-24).
-                    page.wait_for_timeout(1500)
+                # POLL for up to 8s, the loop obcl_ov_sweep.ov_table
+                # .lookup_person uses (15 of 15 found, 2026-09-21). The table
+                # answers a second or more after the last key, and anything
+                # read sooner is the previous search's rows. A fixed 0.9s +
+                # one 1.5s retry (the 2026-08-24 re-render fix) called 12 of
+                # 14 of raf's new starts "not found in OwnerVille" on 11/18
+                # 17:30 -- Mariah Gaines among them, whom the OBCL sweep found
+                # at 18:00 -- and "not found" reads as "not ready", so
+                # nothing alerted.
+                row = None
+                for _ in range(16):
+                    page.wait_for_timeout(500)
                     row = _rep_row(page, name, debug=False)
+                    if row is not None:
+                        break
                 matched = name
                 if row is None:
                     # Exact text failed — allow a typo, but never a guess
