@@ -99,7 +99,59 @@ class Parse(unittest.TestCase):
         self.assertEqual(back.ns_hired_by, {"zandro diaz": "Nick Lee"})
         p = RD.to_payload(C.office("eveliz"), "showed", d)
         del p["ns_hired_by"]                       # a payload queued before this
-        self.assertEqual(RD.from_payload(p)[2].ns_hired_by, {})
+        self.assertIsNone(RD.from_payload(p)[2].ns_hired_by)
+        d.ns_hired_by = {}                         # looked, nobody found: stays {}
+        _, _, back, _ = RD.from_payload(RD.to_payload(C.office("raf"), "showed", d))
+        self.assertEqual(back.ns_hired_by, {})
+
+    def _walk(self, pages, names, contacts=None):
+        from unittest import mock
+        logs = []
+
+        class Page:
+            def evaluate(self, _js):
+                return {"header": self.H, "rows": pages[self.at]}
+
+        page = Page()
+        page.H = ['', 'first name', 'last name', 'email', 'phone', 'done by 2nd']
+
+        class App:
+            def __init__(self):
+                self.page = page
+            def detail_href(self, lbl, hdr):
+                return "x?count=%d&d=%s" % (len(pages.get(hdr, [])), hdr)
+            def _goto_detail(self, h):
+                page.at = h.split("&d=")[1]
+
+        with mock.patch("automations.ad_photo_threads.appstream_ads.open_week"):
+            got = RD.second_round_by(App(), names, dt.date(2026, 11, 18),
+                                     contacts=contacts, look_back=6, log=logs.append)
+        return got, "\n".join(logs)
+
+    def test_second_round_matches_past_punctuation_and_by_phone(self):
+        pages = {"Nov 12, 2026": [['1', 'Mason', "O'Donnell", '', '', 'JD Mascorro'],
+                                  ['2', 'Bobby', 'Kim', 'bk@x.com', '(214) 555-0199',
+                                   'Nick Lee']]}
+        got, _ = self._walk(pages, ["Mason Odonnell", "Robert Kim"],
+                            contacts={"robert kim": ["2145550199"]})
+        self.assertEqual(got, {"mason odonnell": "JD Mascorro",
+                               "robert kim": "Nick Lee"})
+
+    def test_a_miss_says_why(self):
+        pages = {"Nov 13, 2026": [['1', 'Mason', 'Odonnell', '', '', 'None']],
+                 "Nov 12, 2026": [['1', 'Mason', 'Hawkins', '', '', 'Ana']]}
+        got, log = self._walk(pages, ["Mason Odonnell", "Mason Reed"])
+        self.assertEqual(got, {})
+        self.assertIn("Mason Odonnell: had a 2nd round on 11/13, but nobody", log)
+        self.assertIn("Mason Reed: not on any 2nd-round page", log)
+        self.assertIn("Mason Hawkins (11/12)", log)
+
+    def test_contacts_of_new_start_page(self):
+        h = ['', 'First Name', 'Last Name', 'Email', 'Phone', 'rating']
+        self.assertEqual(RD.contacts_of(h, [['1', 'Mason', 'Odonnell', 'M@X.com',
+                                             '+1 214-555-0100', '5'],
+                                            ['2', 'No', 'Contact', '', '', '']]),
+                         {"mason odonnell": ["m@x.com", "2145550100"]})
 
 
 class Copy(unittest.TestCase):
@@ -117,6 +169,14 @@ class Copy(unittest.TestCase):
             self.assertTrue(R.showed_png(d, Path(t) / "s.png").exists())
             d.ns_hired_by = {"a": "Nick Lee"}
             self.assertTrue(R.showed_png(d, Path(t) / "h.png").exists())
+            # Raf 11/18: looked, nobody found -> the column still shows (dashes)
+            from PIL import Image
+            d.ns_hired_by = {}
+            wide = Image.open(R.showed_png(d, Path(t) / "e.png")).width
+            d.ns_hired_by = None                   # the lookup failed -> no column
+            narrow = Image.open(R.showed_png(d, Path(t) / "n.png")).width
+            self.assertEqual(wide, Image.open(Path(t) / "h.png").width)
+            self.assertLess(narrow, wide)
 
     def test_morning_counts(self):
         d = RD.Day(day=DAY, owner="x", first=[(dt.time(8), "a")] * 3)

@@ -28,8 +28,14 @@ class Day:
     # {'first last' lowercase: start time} from the calendar; {} = not read
     ns_times: Dict[str, dt.time] = field(default_factory=dict)
     # {'first last' lowercase: who did their 2nd round} (Eveliz/Megan
-    # 2026-11-17). {} = not read -- the picture drops the column.
-    ns_hired_by: Dict[str, str] = field(default_factory=dict)
+    # 2026-11-17). None = the lookup failed -- the picture drops the column.
+    # {} = looked, nobody found -- the column still shows, a dash each (Raf's
+    # 11/18 picture lost the whole column when his 1 new start wasn't found).
+    ns_hired_by: Optional[Dict[str, str]] = None
+    # {'first last' lowercase: [email, phone digits]} off the new-start pages,
+    # so a 2nd round filed under another spelling still matches. Read side
+    # only -- never in the hand-off payload.
+    ns_contacts: Dict[str, List[str]] = field(default_factory=dict)
 
     def ns_with_times(self) -> List[Tuple[Optional[dt.time], str]]:
         """New starts sorted by start time; anyone without one goes last."""
@@ -97,20 +103,74 @@ def _clean_who(v: str) -> str:
     return "" if v.lower() in _NOBODY else v
 
 
-def hired_by(header: List[str], rows: List[List[str]],
-             col: str = DONE_BY_2ND) -> Dict[str, str]:
-    """{'first last' lowercase: who did the 2nd round} off one 'Total Second
-    Interviews' detail page. Raises when the column is gone (a renamed column
-    must be seen, not read as 'nobody'); a blank / None cell is left out."""
+def _loose(name: str) -> str:
+    """Letters only: "Mason O'Donnell" == "Mason Odonnell" == "mason o donnell"."""
+    return re.sub(r"[^a-z]", "", (name or "").lower())
+
+
+def _opt_col(h: List[str], name: str) -> Optional[int]:
+    try:
+        return _col(h, name)
+    except RuntimeError:
+        return None
+
+
+def _ids(r: List[str], ei: Optional[int], pi: Optional[int]) -> List[str]:
+    """[email, last 10 phone digits] of one detail row, whichever are there."""
+    out = []
+    if ei is not None and ei < len(r) and "@" in (r[ei] or ""):
+        out.append(r[ei].strip().lower())
+    if pi is not None and pi < len(r):
+        p = re.sub(r"\D", "", r[pi] or "")[-10:]
+        if len(p) >= 7:
+            out.append(p)
+    return out
+
+
+def _name(r: List[str], fi: int, li: int) -> str:
+    return ("%s %s" % (r[fi] if fi < len(r) else "",
+                       r[li] if li < len(r) else "")).strip()
+
+
+def contacts_of(header: List[str], rows: List[List[str]]) -> Dict[str, List[str]]:
+    """{'first last' lowercase: [email, phone digits]} off a new-start page."""
+    h = [" ".join((x or "").lower().split()) for x in header]
+    fi, li = _col(h, "first name"), _col(h, "last name")
+    ei, pi = _opt_col(h, "email"), _opt_col(h, "phone")
+    out: Dict[str, List[str]] = {}
+    for r in rows:
+        name, ids = _name(r, fi, li), _ids(r, ei, pi)
+        if name and ids:
+            out.setdefault(_key(name), ids)
+    return out
+
+
+def second_rows(header: List[str], rows: List[List[str]],
+                col: str = DONE_BY_2ND) -> List[Tuple[str, List[str], str]]:
+    """[(name, [email, phone digits], who)] off one 'Total Second Interviews'
+    detail page, page order; who = '' when nobody is marked. Raises when the
+    Done By column is gone (a renamed column must be seen, not read as
+    'nobody')."""
     h = [" ".join((x or "").lower().split()) for x in header]
     ci = _col(h, col)
     fi, li = _col(h, "first name"), _col(h, "last name")
-    out = {}
+    ei, pi = _opt_col(h, "email"), _opt_col(h, "phone")
+    out = []
     for r in rows:
-        who = _clean_who(r[ci] if ci < len(r) else "")
-        name = ("%s %s" % (r[fi] if fi < len(r) else "",
-                           r[li] if li < len(r) else "")).strip()
-        if who and name:
+        name = _name(r, fi, li)
+        if name:
+            out.append((name, _ids(r, ei, pi),
+                        _clean_who(r[ci] if ci < len(r) else "")))
+    return out
+
+
+def hired_by(header: List[str], rows: List[List[str]],
+             col: str = DONE_BY_2ND) -> Dict[str, str]:
+    """{'first last' lowercase: who did the 2nd round} off one page; a blank /
+    None cell is left out."""
+    out: Dict[str, str] = {}
+    for name, _, who in second_rows(header, rows, col):
+        if who:
             out.setdefault(_key(name), who)
     return out
 
@@ -126,38 +186,76 @@ def days_back(day: dt.date, n: int) -> List[dt.date]:
 
 
 def second_round_by(app, names: List[str], day: dt.date,
+                    contacts: Optional[Dict[str, List[str]]] = None,
                     look_back: int = C.HIRED_BY_LOOK_BACK, log=print) -> Dict[str, str]:
     """{'first last' lowercase: who did the 2nd round} for `names`, walking
     Retention Details back from the day before `day`, one report week at a
     time, and stopping as soon as everyone is found. The NEWEST 2nd round wins
     (a redo replaces the first try). Anyone not found is left out -> a dash.
+    A row matches by name ignoring spaces / punctuation, or by the same email
+    or phone (`contacts`, off the new-start pages) -- AppStream can hold the
+    2nd round on another record of the same person. Every miss is logged WITH
+    its reason, so a dash can be explained from the log alone.
     The office must already be selected."""
     from automations.ad_photo_threads.appstream_ads import open_week, sunday_of
     from automations.linkedin_2nd_round_contacts.run import (_READ_TABLE, _count,
                                                              date_header)
-    want = {_key(n) for n in names}
+    want = {_key(n): n for n in names}
+    loose = {_loose(n): _key(n) for n in names}
+    by_id: Dict[str, str] = {}
+    for k, ids in (contacts or {}).items():
+        if k in want:
+            for i in ids:
+                by_id.setdefault(i, k)
     out: Dict[str, str] = {}
+    blank: Dict[str, dt.date] = {}       # had a 2nd round, nobody marked
+    seen: List[Tuple[dt.date, str]] = []  # every 2nd-round name read, for the hint
+    pages = 0
     days = days_back(day, look_back)
     for sunday in sorted({sunday_of(d) for d in days}, reverse=True):
-        if want <= set(out):
+        if want.keys() <= out.keys():
             break
         open_week(app, sunday)
         hrefs = [(d, app.detail_href(C.L_SECOND, date_header(d)))
                  for d in days if sunday_of(d) == sunday]
         for d, h in hrefs:                    # newest day first
-            if want <= set(out):
+            if want.keys() <= out.keys():
                 break
             if not h or not _count(h):
                 continue
             app._goto_detail(h)
             t = app.page.evaluate(_READ_TABLE)
-            for k, v in hired_by(t["header"], t["rows"]).items():
-                if k in want:
-                    out.setdefault(k, v)
-    missing = sorted(want - set(out))
-    log("  2nd round done by: %d of %d found in %d days back%s"
-        % (len(want) - len(missing), len(want), look_back,
-           (" (not found: %s)" % ", ".join(missing)) if missing else ""))
+            pages += 1
+            for name, ids, who in second_rows(t["header"], t["rows"]):
+                seen.append((d, name))
+                k = loose.get(_loose(name)) or next(
+                    (by_id[i] for i in ids if i in by_id), None)
+                if not k or k in out:
+                    continue
+                if who:
+                    out[k] = who
+                else:
+                    blank.setdefault(k, d)
+    missing = sorted(set(want) - set(out))
+    log("  2nd round done by: %d of %d found in %d days back (%d 2nd-round pages "
+        "read)%s" % (len(want) - len(missing), len(want), look_back, pages,
+                     (" (not found: %s)" % ", ".join(missing)) if missing else ""))
+    for k in missing:
+        if k in blank:
+            log("    %s: had a 2nd round on %s, but nobody is marked in Done By 2nd"
+                % (want[k], blank[k].strftime("%m/%d")))
+            continue
+        w = k.split()
+        near, got = [], set()
+        for d, n in seen:
+            p = n.lower().split()
+            if (_loose(n) not in got and p and w and
+                    (_loose(p[0]) == _loose(w[0]) or _loose(p[-1]) == _loose(w[-1]))):
+                got.add(_loose(n))
+                near.append("%s (%s)" % (n, d.strftime("%m/%d")))
+        log("    %s: not on any 2nd-round page in those days (same name or "
+            "phone/email)%s" % (want[k], ("; closest names: " + ", ".join(near[:4]))
+                                if near else ""))
     return out
 
 
@@ -211,8 +309,10 @@ def read_day(app, office: C.Office, day: dt.date, labels=C.LABELS,
             out.second = timed(t["header"], t["rows"], day, lbl)
         elif lbl == C.L_NS_SCHED:
             out.ns_scheduled = names_of(t["header"], t["rows"])
+            out.ns_contacts.update(contacts_of(t["header"], t["rows"]))
         elif lbl == C.L_NS_SHOWED:
             out.ns_showed = names_of(t["header"], t["rows"])
+            out.ns_contacts.update(contacts_of(t["header"], t["rows"]))
         log("  %s: %d" % (lbl, n))
     return out
 
@@ -301,7 +401,7 @@ def to_payload(office: C.Office, mode: str, d: Day,
             "second": [[t.strftime("%H:%M"), n] for t, n in d.second],
             "ns_scheduled": d.ns_scheduled, "ns_showed": d.ns_showed,
             "ns_times": {k: v.strftime("%H:%M") for k, v in d.ns_times.items()},
-            "ns_hired_by": dict(d.ns_hired_by),
+            "ns_hired_by": None if d.ns_hired_by is None else dict(d.ns_hired_by),
             "usual": avg or {}}
 
 
@@ -309,12 +409,13 @@ def from_payload(p: Dict) -> Tuple[C.Office, str, Day, Dict[str, float]]:
     def tt(s):
         h, m = s.split(":")
         return dt.time(int(h), int(m))
+    hb = p.get("ns_hired_by")          # missing (queued before 11/17) = not read
     d = Day(day=dt.date.fromisoformat(p["day"]), owner=p["owner"],
             first=[(tt(a), b) for a, b in p["first"]],
             second=[(tt(a), b) for a, b in p["second"]],
             ns_scheduled=list(p["ns_scheduled"]), ns_showed=list(p["ns_showed"]),
             ns_times={k: tt(v) for k, v in (p.get("ns_times") or {}).items()},
-            ns_hired_by=dict(p.get("ns_hired_by") or {}))
+            ns_hired_by=None if hb is None else dict(hb))
     return C.office(p["office"]), p["mode"], d, dict(p.get("usual") or {})
 
 

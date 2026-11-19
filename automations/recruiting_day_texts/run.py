@@ -201,7 +201,8 @@ def one(app, o: C.Office, mode: str, day: dt.date, send: bool) -> None:
     people = list(dict.fromkeys(d.ns_scheduled + d.ns_showed))
     if mode == "showed" and people:
         try:
-            d.ns_hired_by = RD.second_round_by(app, people, day, log=_log)
+            d.ns_hired_by = RD.second_round_by(app, people, day,
+                                               contacts=d.ns_contacts, log=_log)
         except Exception as e:  # noqa: BLE001 -- the picture goes out without the column
             _log("  hired-by unreadable (%s) -- picture without it" % e)
     if mode == "morning" and T.has_anything(d):

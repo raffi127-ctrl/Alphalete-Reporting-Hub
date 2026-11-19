@@ -150,11 +150,13 @@ def showed_png(day, out: Path) -> Path:
     n_s, n_c = len(day.ns_scheduled), len(day.ns_showed)
     pct = int(round(100.0 * n_c / n_s)) if n_s else 0
 
-    hired = getattr(day, "ns_hired_by", None) or {}
-    pad, w = 24 * S, (720 if hired else 560) * S
+    # Name | Hired By | 1st Day. The middle column shows whenever the lookup
+    # RAN, even if it found nobody (a dash each): None = it failed, no column.
+    hired = getattr(day, "ns_hired_by", None)
+    col = hired is not None
+    pad, w = 24 * S, (720 if col else 560) * S
     rh = 34 * S
-    # Name | Hired By | 1st Day -- the middle column only when AppStream gave one
-    x_hired, x_day = pad + int(w * 0.40), pad + int(w * (0.76 if hired else 0.68))
+    x_hired, x_day = pad + int(w * 0.40), pad + int(w * (0.76 if col else 0.68))
     fr_hired = _font("reg", 15)
     height = pad + 96 * S + (2 + max(len(people), 1)) * rh + pad
     img = Image.new("RGB", (pad * 2 + w, height), BG)
@@ -173,7 +175,7 @@ def showed_png(day, out: Path) -> Path:
     y += rh
     d.rectangle([pad, y, pad + w, y + rh], fill=SUB_BG)
     d.text((pad + 12 * S, y + rh / 2), "Name", font=fs, fill=INK, anchor="lm")
-    if hired:
+    if col:
         d.text((x_hired, y + rh / 2), "Hired By", font=fs, fill=INK, anchor="lm")
     d.text((x_day, y + rh / 2), "1st Day", font=fs, fill=INK, anchor="lm")
     y += rh
@@ -181,7 +183,7 @@ def showed_png(day, out: Path) -> Path:
         if i % 2:
             d.rectangle([pad, y, pad + w, y + rh], fill=ZEBRA)
         d.text((pad + 12 * S, y + rh / 2), name, font=fr, fill=INK, anchor="lm")
-        if hired:
+        if col:
             who = hired.get(" ".join(name.lower().split()))
             d.text((x_hired, y + rh / 2), who or "—", font=fr_hired,
                    fill=INK if who else MUTED, anchor="lm")
