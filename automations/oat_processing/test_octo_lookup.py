@@ -433,6 +433,33 @@ class OctoSaysWhy(unittest.TestCase):
         self.assertEqual(len(lines), OL.OCTO_START_TRIES)
 
 
+class TheBillingMail(unittest.TestCase):
+    ROWS = [{"subject": "Payment declined: Update your billing information", "when": "Wed, Nov 18, 2026, 7:05 PM"},
+            {"subject": "We received your payment of $533.37", "when": "Tue, Nov 17, 2026, 7:35 PM"},
+            {"subject": "Payment declined: Update your billing information", "when": "Mon, Nov 16, 2026, 7:33 PM"},
+            {"subject": "Your Customer Service & Sales - AT&T job is live on Indeed", "when": "Tue, Nov 17, 2026, 2:25 PM"},
+            {"subject": "Action required to make your job visible on Indeed", "when": "Thu, Nov 19, 2026, 9:14 AM"},
+            {"subject": "[Action required] New application for AT&T Wireless Associate", "when": "Thu, Nov 19, 2026, 11:10 AM"},
+            {"subject": "We received your payment of $77.74", "when": "Nov 1, 2026, 9:27 PM"}]
+
+    def test_newest_of_each_kind(self):
+        t = OL.mail_times(self.ROWS)
+        self.assertEqual(t, {"declined": "2026-11-18 19:05", "paid": "2026-11-17 19:35", "live": "2026-11-19 09:14"})
+
+    def test_unreadable_dates_are_skipped(self):
+        self.assertEqual(OL.mail_times([{"subject": "Payment declined", "when": "7:05 PM"}]), {})
+        self.assertIsNone(OL._mail_when("yesterday"))
+
+    def test_the_tally_carries_the_mail_times(self):
+        from automations.icd_alerts import relay as R
+        summary = {"office": "11580", "found": [], "missing": [], "accounts": {}, "billing": {"X": "ok"},
+                   "billing_problems": [], "billing_mail": {"X": {"declined": "2026-11-18 19:05", "signed_in": True}}}
+        with mock.patch.object(OL, "_push_office_key", return_value="carlos"), \
+             mock.patch.object(R, "report_fault", return_value=True) as rf:
+            OL._report("11580", summary, log=lambda m: None)
+        self.assertIn('"billing_mail":{"X":{"declined":"2026-11-18 19:05"', rf.call_args_list[0][0][2])
+
+
 class ItShips(unittest.TestCase):
     def test_both_files_are_in_both_lists(self):
         from automations.icd_alerts.package import AGENT_FILES

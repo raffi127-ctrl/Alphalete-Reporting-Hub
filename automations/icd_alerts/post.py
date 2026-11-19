@@ -4733,6 +4733,16 @@ def main(argv=None) -> int:
                 except Exception as e:  # noqa: BLE001 — a to-do list must never cost the alerts
                     print("could not post the push to-do lists: %s: %s"
                           % (type(e).__name__, str(e)[:100]))
+                # INDEED BILLING HOLDS off the office computers' Octo checks
+                # (probe-octo-lookup rows): a hold goes on the live-ads
+                # sheet's 'Billing Holds' tab, and the office hears when the
+                # ads are back live (Carlos 2026-11-19). Never costs the alerts.
+                try:
+                    from automations.icd_alerts import billing_holds
+                    billing_holds.run(day, send=args.send)
+                except Exception as e:  # noqa: BLE001 — a hold note must never cost the alerts
+                    print("could not handle the billing holds: %s: %s"
+                          % (type(e).__name__, str(e)[:100]))
                 warn_quiet(day, send=args.send)
                 warn_stale_machines(day, send=args.send)
                 # BOTH OF THESE EXISTED AND NOTHING CALLED THEM. A machine
