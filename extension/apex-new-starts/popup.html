@@ -22,7 +22,17 @@
   .names { max-height: 150px; overflow: auto; font-size: 13px; margin-top: 8px; }
   .names div { padding: 2px 0; border-bottom: 1px solid #f0f0f0; }
   .row { display: flex; justify-content: space-between; align-items: center; }
+  .row .links { display: flex; gap: 14px; align-items: center; }
   [hidden] { display: none !important; }
+  /* Chrome caps an extension popup at 800x600, so the board gets about 370px of
+     table and the nine step columns read through a letterbox -- "I need this to
+     be able to be expanded so I can see it all in 1 screen" (Megan,
+     2026-11-19). The SAME page opened as an ordinary tab has no cap, so Full
+     screen is popup.html?full=1 rather than a second copy of the board that
+     would drift from this one. */
+  body.full { width: auto; }
+  body.full main { padding: 16px 22px 24px; }
+  body.full .bd-wrap { max-height: calc(100vh - 230px); }
   .tabs { display: flex; gap: 6px; margin: 10px 0 8px; }
   .tab { flex: 1; width: auto; margin: 0; padding: 7px 8px; font-size: 13px;
          background: #e4e9ef; color: #1d2330; }
@@ -244,7 +254,7 @@
   </section>
 
   <section id="home" hidden>
-    <div class="row"><b id="name"></b><button class="link" id="out">Sign out</button></div>
+    <div class="row"><b id="name"></b><span class="links"><button class="link" id="expand" title="Open the board in a full tab, where Chrome's popup size limit does not apply">View Full Screen</button><button class="link" id="out">Sign out</button></span></div>
 
     <div class="tabs">
       <button id="t-board" class="tab on">Onboarding Checklist (OBCL)</button>
