@@ -37,6 +37,9 @@ TAB = "Security Ledger"
 CAP_TAB = "Captain Bonus (Tableau)"
 OVR_TAB = "Override Weekly (Tableau)"
 DATES_TAB = "Override Dates (Tableau)"
+ICD_TAB = "Override by ICD (Tableau)"
+ICD_HEADER = ["Week (Sun)", "P&L week ending (Sat)", "Period", "ICD owner", "ICD office", "Override", "Pulled"]
+ICD_VIEW = VIEW.rsplit("/", 1)[0] + "/MYOVERRIDESUMMARY"
 DATES_VIEWS = [VIEW.rsplit("/", 1)[0] + "/" + v for v in ("DATESTOREMEMBER-2026", "DATESTOREMEMBER2026", "DatestoRemember2026")] + [VIEW]
 OVR_HEADER = ["Week (Sun)", "P&L week ending (Sat)", "Period", "Standard override", "Pulled", "Source"]
 OVR_SOURCE = "Tableau → Overrides ICD View → ORG Override Summary (Carlos Hidalgo, all campaign rows)"
@@ -545,6 +548,11 @@ def write(rows: list[list], balance: float | None, via_hub: bool = False):
         log(f"override weekly failed (rest of the run is fine): {str(e)[:160]}")
     if via_hub:
         try:
+            m = dt.date.today().month
+            log(write_override_by_icd(svc, [x for x in (m + 1, m, m - 1) if 1 <= x <= 13]))
+        except Exception as e:  # noqa: BLE001
+            log(f"override by icd failed (rest of the run is fine): {str(e)[:160]}")
+        try:
             log(write_dates(svc))
         except Exception as e:  # noqa: BLE001
             log(f"dates refresh failed (rest of the run is fine): {str(e)[:160]}")
@@ -566,6 +574,66 @@ def record_delivery(svc, rows: list[list]) -> int:
     mark_clean("carlos_security_ledger", kind="step")
     log(f"Delivered: '{TAB}' read-back {n} rows")
     return 0
+
+
+def icd_weeks(rows: list[list]) -> list[list]:
+    """[week serial, owner, office, amount] from one 'My Override Summary' crosstab (one row per downline ICD, one column per week)."""
+    from automations.override_bulletin.pulls import _WK_HDR, _num_locale
+    cols, hdr_row = {}, None
+    for ri, r in enumerate(rows[:6]):
+        for ci, c in enumerate(r):
+            m = _WK_HDR.match(str(c).strip())
+            if m:
+                y = int(m.group(3)); y += 2000 if y < 100 else 0
+                cols[ci] = dt.date(y, int(m.group(1)), int(m.group(2))).toordinal() - EPOCH.toordinal()
+                hdr_row = ri
+        if cols:
+            break
+    out = []
+    for r in rows[(hdr_row or 0) + 1:]:
+        name = re.sub(r"\s+", " ", str(r[0])).strip() if r else ""
+        if not name or name.lower().startswith(("override grand total", "grand total", "total")):
+            continue
+        m = re.match(r"^(.*?)\s*\[(.*)\]\s*$", name)
+        owner, office = (m.group(1), m.group(2)) if m else (name, "")
+        for ci, wk in cols.items():
+            v = _num_locale(r[ci]) if ci < len(r) else None
+            if v:
+                out.append([wk, owner.title(), office.title(), round(v, 2)])
+    return out
+
+
+def write_override_by_icd(svc, periods: list[int]) -> str:
+    """Upsert Carlos's weekly override per downline ICD (Tableau 'MY OVERRIDE SUMMARY') keyed by (week, period, owner, office)."""
+    from automations.shared.tableau_patchright import download_crosstab_patchright, tableau_session
+    from automations.override_bulletin.pulls import read_crosstab, _with_filter
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    tabs = {x["properties"]["title"] for x in svc.get(spreadsheetId=PNL_SHEET_ID, fields="sheets.properties").execute()["sheets"]}
+    if ICD_TAB not in tabs:
+        svc.batchUpdate(spreadsheetId=PNL_SHEET_ID, body={"requests": [{"addSheet": {"properties": {"title": ICD_TAB, "gridProperties": {"rowCount": 3000, "columnCount": 30, "frozenRowCount": 1}}}}]}).execute()
+    have = svc.values().get(spreadsheetId=PNL_SHEET_ID, range=f"'{ICD_TAB}'!A2:G", valueRenderOption="UNFORMATTED_VALUE").execute().get("values", [])
+    keep = {(r[0], r[2], r[3], r[4]): r for r in have if len(r) >= 6 and isinstance(r[0], (int, float))}
+    today, got = dt.date.today().isoformat(), 0
+    with tableau_session(headless=True, verbose=False) as pg:
+        for n in periods:
+            label = f"Period {dt.date.today().year}-{n}"
+            path = OUT_DIR / f"Override_by_ICD_P{n}.csv"
+            try:
+                download_crosstab_patchright(_with_filter(ICD_VIEW, "Period", label), "My Override Summary", path, verbose=False, page=pg)
+                rows = icd_weeks(read_crosstab(path))
+            except Exception as e:  # noqa: BLE001
+                log(f"override by icd {label}: no crosstab ({str(e)[:80]})")
+                continue
+            for k in [k for k in keep if k[1] == label]:   # a re-pulled period replaces its old rows (SCI adjusts prior weeks)
+                del keep[k]
+            for wk, owner, office, amt in rows:
+                keep[(wk, label, owner, office)] = [wk, wk + 6, label, owner, office, amt, today]
+            got += len(rows)
+            log(f"override by icd {label}: {len(rows)} rows, total {sum(r[3] for r in rows):,.2f}")
+            out = sorted(keep.values(), key=lambda r: (-r[0], -r[5]))
+            svc.values().clear(spreadsheetId=PNL_SHEET_ID, range=f"'{ICD_TAB}'!A2:G5000").execute()
+            svc.values().update(spreadsheetId=PNL_SHEET_ID, range=f"'{ICD_TAB}'!A1:G{len(out) + 1}", valueInputOption="RAW", body={"values": [ICD_HEADER] + out}).execute()
+    return f"override by icd: {got} rows refreshed from periods {periods}; {len(keep)} on the tab"
 
 
 def probe_override_detail(svc, period: int) -> str:
@@ -641,10 +709,15 @@ def main(argv=None) -> int:
     import getpass
     default_via = os.environ.get("CARLOS_TABLEAU_VIA") or ("hub" if getpass.getuser().lower().startswith("lucy") else "chrome")
     ap.add_argument("--dates-only", action="store_true", help="only refresh the Dates to Remember tab (Lucy / hub session)")
+    ap.add_argument("--icd-periods", default="", metavar="1,2,…", help="only refresh the Override by ICD tab for these periods (hub session)")
     ap.add_argument("--detail-probe", type=int, default=0, metavar="PERIOD", help="dump every OVERRIDE view of the workbook for one period onto a probe tab")
     ap.add_argument("--via", choices=["chrome", "hub"], default=default_via, help="chrome = copy Carlos's Chrome Tableau session (his Mac); hub = the Hub's shared Tableau session (Lucy)")
     args = ap.parse_args(argv)
     log(f"tableau via: {args.via}")
+    if args.icd_periods:
+        from automations.carlos_finance.tiller_sync import _svc
+        log(write_override_by_icd(_svc(), [int(x) for x in args.icd_periods.split(",") if x.strip()]))
+        return 0
     if args.detail_probe:
         from automations.carlos_finance.tiller_sync import _svc
         log(probe_override_detail(_svc(), args.detail_probe))
