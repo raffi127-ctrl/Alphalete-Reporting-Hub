@@ -607,65 +607,151 @@ def tick(now_utc: dt.datetime, *, send: bool, sample: bool,
                 ST.save(d.local_date, ST.record_wave_done(
                     data, d.marker, d.captain_key, 0))
             continue
-        try:
-            offices = capture(dataclasses.replace(d, icds=todo), logfn=logfn)
-        except Exception as exc:  # noqa: BLE001 — a dead session ≠ a silent night
-            reason = "%s: %s" % (type(exc).__name__, str(exc)[:400])
-            logfn("[night-knocks] ✗ capture failed: " + reason)
-            logfn(traceback.format_exc()[-1200:])
-            data = ST.record_failure(data, captain_key=d.captain_key,
-                                     label=d.label, reason=reason)
-            ST.save(d.local_date, alert_now(d, data, 1, send=send, logfn=logfn))
-            continue
+        sent += _send_wave(d, todo, data, send=send, sample=sample,
+                           logfn=logfn)
+    return sent
 
-        n_fail, retry = 0, False
-        for display, canonical, png, failure in offices:
-            if failure is None:
-                to = office_recipients(display, canonical, sample=sample)
-                if not to:
-                    failure = ("%s — no owner email on file "
-                               "(captainship_night_knocks/owners.py)" % display)
-            if failure is not None:
-                # Nobody gets a broken board; Eve hears about it now.
-                logfn("[night-knocks]   ✗ %s" % failure)
-                data = ST.record_failure(data, captain_key=d.captain_key,
-                                         label=d.label, reason=failure,
-                                         kind="office")
-                n_fail += 1
-                continue
-            to_addrs = mail.assert_allowed(to, sample=sample)
-            subject = mail.office_subject(display, d.local_date)
-            msg = mail.build(subject=subject, label=d.label, icds=[display],
-                             fire_local=d.fire_local, boards=[(display, png)],
-                             footer=footer_lines([display], sample=sample),
-                             first=True, to_addrs=to_addrs,
-                             lead="Today's knocking for your office.")
-            if not send:
-                logfn("[night-knocks] DRY-RUN — would send %r to %s"
-                      % (subject, ", ".join(to_addrs)))
-                continue
-            try:
-                mid = mail.send(msg, to_addrs, logfn=logfn)
-            except Exception as exc:  # noqa: BLE001 — one office ≠ the wave
-                reason = "%s — email not sent (%s: %s)" % (
-                    display, type(exc).__name__, str(exc)[:300])
-                logfn("[night-knocks] ✗ " + reason)
-                data = ST.record_failure(data, captain_key=d.captain_key,
-                                         label=d.label, reason=reason,
-                                         kind="office")
-                n_fail += 1
-                retry = True       # SMTP hiccup: the next tick tries this one again
-                continue
-            data = ST.record_office_sent(data, display, d.local_date, mid,
-                                         d.captain_key, to_addrs)
+
+# A board that fails to draw (ownerville stalls — 11/18 Central wave: the
+# Office-Access table never loaded for 5 offices in a row, and those owners got
+# nothing, Coel Reif among them) is tried again on the next tick, 5 minutes
+# later, instead of being written off. Only the LAST try records the failure
+# and alerts Eve, so a stall that clears on its own costs nobody an email and
+# Eve no alert. Three tries ≈ 10-15 minutes, well inside the 60-min grace.
+BOARD_TRIES = 3
+
+
+def _board_attempt(data: dict, office: str, night: dt.date) -> int:
+    """Bump and return this office's board-try count for the night."""
+    tries = data.setdefault("board_tries", {})
+    key = ST.office_marker(office, night)
+    tries[key] = int(tries.get(key) or 0) + 1
+    return tries[key]
+
+
+def _send_wave(d: "S.Due", todo: Sequence[str], data: dict, *, send: bool,
+               sample: bool, logfn=print, retry_boards: bool = True) -> int:
+    """Capture `todo` (offices of wave `d`) and mail each its own board.
+    Returns the number of office mails sent. Shared by the tick and --resend."""
+    sent = 0
+    try:
+        offices = capture(dataclasses.replace(d, icds=tuple(todo)),
+                          logfn=logfn)
+    except Exception as exc:  # noqa: BLE001 — a dead session ≠ a silent night
+        reason = "%s: %s" % (type(exc).__name__, str(exc)[:400])
+        logfn("[night-knocks] ✗ capture failed: " + reason)
+        logfn(traceback.format_exc()[-1200:])
+        data = ST.record_failure(data, captain_key=d.captain_key,
+                                 label=d.label, reason=reason)
+        ST.save(d.local_date, alert_now(d, data, 1, send=send, logfn=logfn))
+        return 0
+
+    n_fail, retry = 0, False
+    for display, canonical, png, failure in offices:
+        if failure is not None and retry_boards and send:
+            n_try = _board_attempt(data, display, d.local_date)
             ST.save(d.local_date, data)
-            sent += 1
-        if send and not retry:
-            data = ST.record_wave_done(data, d.marker, d.captain_key,
-                                       sum(1 for o in offices if o[3] is None))
-        if send:
-            ST.save(d.local_date, alert_now(d, data, n_fail, send=send,
-                                            logfn=logfn))
+            if n_try < BOARD_TRIES:
+                logfn("[night-knocks]   ↻ %s — try %d/%d failed, again "
+                      "next tick (%s)" % (display, n_try, BOARD_TRIES,
+                                          failure))
+                retry = True   # wave stays open: the next tick re-captures
+                continue
+        if failure is None:
+            to = office_recipients(display, canonical, sample=sample)
+            if not to:
+                failure = ("%s — no owner email on file "
+                           "(captainship_night_knocks/owners.py)" % display)
+        if failure is not None:
+            # Nobody gets a broken board; Eve hears about it now.
+            logfn("[night-knocks]   ✗ %s" % failure)
+            data = ST.record_failure(data, captain_key=d.captain_key,
+                                     label=d.label, reason=failure,
+                                     kind="office")
+            n_fail += 1
+            continue
+        to_addrs = mail.assert_allowed(to, sample=sample)
+        subject = mail.office_subject(display, d.local_date)
+        msg = mail.build(subject=subject, label=d.label, icds=[display],
+                         fire_local=d.fire_local, boards=[(display, png)],
+                         footer=footer_lines([display], sample=sample),
+                         first=True, to_addrs=to_addrs,
+                         lead="Today's knocking for your office.")
+        if not send:
+            logfn("[night-knocks] DRY-RUN — would send %r to %s"
+                  % (subject, ", ".join(to_addrs)))
+            continue
+        try:
+            mid = mail.send(msg, to_addrs, logfn=logfn)
+        except Exception as exc:  # noqa: BLE001 — one office ≠ the wave
+            reason = "%s — email not sent (%s: %s)" % (
+                display, type(exc).__name__, str(exc)[:300])
+            logfn("[night-knocks] ✗ " + reason)
+            data = ST.record_failure(data, captain_key=d.captain_key,
+                                     label=d.label, reason=reason,
+                                     kind="office")
+            n_fail += 1
+            retry = True       # SMTP hiccup: the next tick tries this one again
+            continue
+        data = ST.record_office_sent(data, display, d.local_date, mid,
+                                     d.captain_key, to_addrs)
+        ST.save(d.local_date, data)
+        sent += 1
+    if send and not retry:
+        data = ST.record_wave_done(data, d.marker, d.captain_key,
+                                   sum(1 for o in offices if o[3] is None))
+    if send:
+        ST.save(d.local_date, alert_now(d, data, n_fail, send=send,
+                                        logfn=logfn))
+    return sent
+
+
+def failed_offices(data: dict, night: dt.date) -> List[str]:
+    """Offices whose board failed on `night` and that never got their mail."""
+    out: List[str] = []
+    for f in ST.office_failures(data):
+        reason = f.get("reason") or ""
+        if "board unavailable" not in reason:
+            continue
+        name = reason.split(" — ", 1)[0].strip()
+        if name and name not in out and not ST.office_sent(data, name, night):
+            out.append(name)
+    return out
+
+
+def resend(night: dt.date, offices: Sequence[str], *, send: bool,
+           sample: bool, captain_keys: Sequence[str], logfn=print) -> int:
+    """Re-draw and mail a PAST night's boards for offices that missed theirs
+    (11/18: Coel Reif + 4 more, ownerville stalled). No --office = every office
+    whose board failed that night and was never sent. Anyone already mailed for
+    that night is skipped, so running it twice sends nobody twice."""
+    data = ST.load(night)
+    wanted = list(offices) or failed_offices(data, night)
+    wanted = [o for o in wanted if not ST.office_sent(data, o, night)]
+    if not wanted:
+        logfn("[night-knocks] resend %s: nothing owed" % night)
+        return 0
+    logfn("[night-knocks] resend %s: %s" % (night, ", ".join(wanted)))
+    rosters = rosters_for(captain_keys, night=night, logfn=logfn)
+    low = {w.lower(): w for w in wanted}
+    groups: Dict[Tuple[str, str], List[str]] = {}
+    for key, icds in sorted(rosters.items()):
+        for icd in icds:
+            zone = Z.zone_for(icd)
+            if icd.lower() in low and zone:
+                low.pop(icd.lower())
+                groups.setdefault((key, zone), []).append(icd)
+    if low:
+        logfn("[night-knocks] resend: not on any roster / no zone: "
+              + ", ".join(low.values()))
+    sent = 0
+    for (key, zone), icds in sorted(groups.items()):
+        d = S.Due(captain_key=key, label=Z.ZONE_LABEL.get(zone, zone),
+                  zones=(zone,), icds=tuple(icds), local_date=night,
+                  fire_local=S._fire_instant(zone, night).astimezone(
+                      ZoneInfo(zone)))
+        sent += _send_wave(d, icds, ST.load(night), send=send, sample=sample,
+                           logfn=logfn, retry_boards=False)
     return sent
 
 
@@ -873,6 +959,10 @@ def main(argv=None) -> int:
                     help="also run the failure notice for the night just ended")
     ap.add_argument("--notice-test", metavar="YYYY-MM-DD", nargs="?",
                     const="today", help="build the notice for that night now")
+    ap.add_argument("--resend", metavar="YYYY-MM-DD",
+                    help="re-draw + mail that night's boards that failed")
+    ap.add_argument("--office", action="append", default=[],
+                    help="with --resend: only this office (repeatable)")
     args = ap.parse_args(argv)
 
     if args.live and args.sample:
@@ -883,6 +973,11 @@ def main(argv=None) -> int:
 
     now_utc = dt.datetime.now(dt.timezone.utc)
     rc = 0
+    if args.resend:
+        n = resend(dt.date.fromisoformat(args.resend), args.office,
+                   send=args.send, sample=sample, captain_keys=keys)
+        print("[night-knocks] resend: sent=%d" % n)
+        return 0
     if args.tick or args.plan:
         # Before anything else: if the addresses this whole module waits on are
         # still not on disk and it is late enough, go get them. See HARVEST_HOUR.

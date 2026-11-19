@@ -468,16 +468,81 @@ class OneMailPerOffice(unittest.TestCase):
 
     def test_a_broken_board_goes_to_nobody(self):
         def capture(due, logfn=None):
-            return [("Kash Rai", "Kash Rai", None,
-                     "Kash Rai — board unavailable (KnocksPullFailed)"),
-                    ("Cyrus Wade", "Cyrus Wade", None, None)]
+            out = [("Kash Rai", "Kash Rai", None,
+                    "Kash Rai — board unavailable (KnocksPullFailed)"),
+                   ("Cyrus Wade", "Cyrus Wade", None, None)]
+            return [o for o in out if o[0] in due.icds]
+
+        from automations.captainship_night_knocks import run as R
+        sent, alerts = [], []
+        with tempfile.TemporaryDirectory() as d:
+            for _ in range(R.BOARD_TRIES):
+                self._run(d, capture, sent, alerts)
+        self.assertEqual([s for s, _, _ in sent],
+                         ["Tue 9/15 - Daily Knocks - Cyrus Wade"])
+        self.assertEqual(len(alerts), 1)      # only the LAST try alerts Eve
+        self.assertIn("board unavailable", alerts[0][1])
+
+    def test_a_stalled_board_is_retried_next_tick(self):
+        """11/18: ownerville stalled on Coel Reif's board and he got nothing.
+        Now the next tick tries again; once it draws he gets his mail and Eve
+        gets no alert."""
+        calls = []
+
+        def capture(due, logfn=None):
+            calls.append(tuple(due.icds))
+            if len(calls) == 1:
+                return [("Kash Rai", "Kash Rai", None,
+                         "Kash Rai — board unavailable (RuntimeError)"),
+                        ("Cyrus Wade", "Cyrus Wade", None, None)]
+            return [(i, i, None, None) for i in due.icds]
 
         sent, alerts = [], []
         with tempfile.TemporaryDirectory() as d:
             self._run(d, capture, sent, alerts)
-        self.assertEqual([s for s, _, _ in sent],
-                         ["Tue 9/15 - Daily Knocks - Cyrus Wade"])
-        self.assertIn("board unavailable", alerts[0][1])
+            self._run(d, capture, sent, alerts)
+        self.assertEqual(calls[1], ("Kash Rai", "Nobody On File"))
+        self.assertEqual(sorted(s for s, _, _ in sent),
+                         ["Tue 9/15 - Daily Knocks - Cyrus Wade",
+                          "Tue 9/15 - Daily Knocks - Kash Rai"])
+        self.assertTrue(all("board unavailable" not in h
+                            for _, h, _ in alerts))
+
+    def test_resend_mails_only_the_failed_offices_once(self):
+        from automations.captainship_night_knocks import run as R
+        night = dt.date(2026, 9, 15)
+        calls, sent = [], []
+
+        def capture(due, logfn=None):
+            calls.append(tuple(due.icds))
+            return [(i, i, None, None) for i in due.icds]
+
+        quiet = lambda *a, **k: None  # noqa: E731
+        with tempfile.TemporaryDirectory() as d:
+            saved = (ST.DIR, R.rosters_for, R.capture, mail.send)
+            real_zone = Z.zone_for
+            ST.DIR = Path(d)
+            R.rosters_for = lambda *a, **k: {"rafael": ["Kash Rai",
+                                                        "Cyrus Wade"]}
+            R.capture = capture
+            mail.send = lambda msg, to, logfn=None: (
+                sent.append(msg["Subject"]) or "<%d@x>" % len(sent))
+            Z.zone_for = lambda n: "America/Chicago"
+            try:
+                ST.save(night, ST.record_failure(
+                    ST.load(night), captain_key="rafael", label="Central",
+                    reason="Kash Rai — board unavailable (RuntimeError)",
+                    kind="office"))
+                n = R.resend(night, [], send=True, sample=False,
+                             captain_keys=["rafael"], logfn=quiet)
+                n2 = R.resend(night, [], send=True, sample=False,
+                              captain_keys=["rafael"], logfn=quiet)
+            finally:
+                (ST.DIR, R.rosters_for, R.capture, mail.send) = saved
+                Z.zone_for = real_zone
+        self.assertEqual((n, n2), (1, 0))
+        self.assertEqual(calls, [("Kash Rai",)])
+        self.assertEqual(sent, ["Tue 9/15 - Daily Knocks - Kash Rai"])
 
 
 class StateFile(unittest.TestCase):
