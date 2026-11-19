@@ -1563,3 +1563,60 @@ class RehireOnBoardIsNotReterminated(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DailyUpdateEvidenceByHeader(unittest.TestCase):
+    """2026-11-19: the Daily Update tab gained a 'Day Zero Date' column at G,
+    which pushed Name from I to J. The audit read the name at r[8] and so
+    keyed every rep's status by the Training Bonus column."""
+
+    class _WS(object):
+        def __init__(self, rows):
+            self._rows = rows
+
+        def get_all_values(self):
+            return self._rows
+
+    class _SH(object):
+        def __init__(self, tabs):
+            self._tabs = tabs
+
+        def worksheet(self, name):
+            if name not in self._tabs:
+                raise KeyError(name)
+            return DailyUpdateEvidenceByHeader._WS(self._tabs[name])
+
+    NEW = ["Status", "Secondary Status", "Notes", "Day 0 - in Office Start Date",
+           "Day 0 Attendance", "Campaign", "Day Zero Date", "1st Paycheck",
+           "Training Bonus ", "Name", "Email", "Phone #", "Job Ad",
+           "2nd round\nInterview Date", "1st Round", "2nd round ",
+           "2nd show/no show", "Offered", "BOB Status", "Orientation Date",
+           "Week Ending", "Classroom Retention"]
+    OLD = ["Status", "Secondary Status", "Notes", "Day 0 - in Office Start Date",
+           "Day 0 Attendance", "Campaign", "1st Paycheck", "Training Bonus ",
+           "Name", "Email", "Phone #", "2nd round\nInterview Date", "Week Ending"]
+
+    def _row(self, header, **kv):
+        row = [""] * len(header)
+        for key, val in kv.items():
+            row[header.index(key)] = val
+        return row
+
+    def _du(self, header):
+        rows = [header,
+                self._row(header, Status="Not Active", Name="Jane Doe",
+                          **{"Training Bonus ": "Both Bonus Received"}),
+                self._row(header, Status="Active", Name="Sam Roe")]
+        du, _sales, _weeks = audit_run._load_activity(
+            self._SH({"Daily Update": rows}), log=lambda *_a: None, alias={})
+        return du
+
+    def test_new_layout_keys_by_the_name_column(self):
+        du = self._du(self.NEW)
+        self.assertEqual(du.get(audit_run._norm("Jane Doe")), "Not Active")
+        self.assertEqual(du.get(audit_run._norm("Sam Roe")), "Active")
+        self.assertNotIn(audit_run._norm("Both Bonus Received"), du)
+
+    def test_old_layout_still_resolves(self):
+        du = self._du(self.OLD)
+        self.assertEqual(du.get(audit_run._norm("Jane Doe")), "Not Active")
