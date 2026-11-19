@@ -125,3 +125,80 @@ class WhatCountsAsArriving(unittest.TestCase):
 
     def test_a_page_with_neither_is_not_arrival(self):
         self.assertFalse(self.arrived("Loading..."))
+
+
+class WaitingForTheRowsNotTheClock(unittest.TestCase):
+    """A page read before it finished rendering is read wrong, quietly.
+
+    The evidence (2026-11-19, the same PAST day read three times):
+
+        calendar 2026-11-13:  50 rows -> 48 rows -> 52 rows
+        calendar 2026-11-17:  40 rows -> 41 rows -> 48 rows
+
+    A past day cannot gain four people in forty minutes. Across those runs
+    Garett Montelongo lost his start date and five other people gained theirs,
+    purely on what had rendered by the time we looked.
+    """
+
+    class Page:
+        """Renders `counts` one call at a time, then holds still."""
+
+        def __init__(self, counts):
+            self.counts = list(counts)
+            self.seen = 0
+            self.slept = 0
+
+        def evaluate(self, js, arg=None):
+            self.seen += 1
+            i = min(self.seen - 1, len(self.counts) - 1)
+            return self.counts[i]
+
+        def wait_for_timeout(self, ms):
+            self.slept += ms
+
+    def _app(self, counts):
+        page = self.Page(counts)
+        return type("A", (), {"page": page})(), page
+
+    def test_it_waits_while_rows_are_still_arriving(self):
+        app, page = self._app([10, 24, 48, 48, 48, 48, 48, 48, 48, 48])
+        self.assertEqual(R._settled(app, quiet_ms=400), 48)
+
+    def test_it_returns_as_soon_as_the_count_holds_still(self):
+        # WALL TIME, not the fake's sleep counter: the fake does not advance
+        # the clock, so counting its sleeps measures nothing. What matters is
+        # that a page already finished costs the quiet window and not the
+        # flat ten seconds the old code spent on every single day.
+        import time
+        app, _ = self._app([48])
+        t0 = time.monotonic()
+        self.assertEqual(R._settled(app, quiet_ms=400), 48)
+        self.assertLess(time.monotonic() - t0, 3.0)
+
+    def test_an_empty_day_is_a_real_answer_not_a_wait(self):
+        app, _ = self._app([0])
+        self.assertEqual(R._settled(app, quiet_ms=400), 0)
+
+    def test_a_page_that_never_settles_still_returns_what_it_saw(self):
+        # Counting up for ever: it must give back a number rather than hang.
+        app, _ = self._app(list(range(1, 400)))
+        got = R._settled(app, quiet_ms=400, timeout_ms=1200)
+        self.assertGreater(got, 0)
+
+    def test_a_page_that_throws_returns_what_it_had(self):
+        class Boom:
+            def __init__(self): self.n = 0
+            def evaluate(self, js, arg=None):
+                self.n += 1
+                if self.n > 2:
+                    raise RuntimeError("gone")
+                return 17
+            def wait_for_timeout(self, ms): pass
+        app = type("A", (), {"page": Boom()})()
+        self.assertEqual(R._settled(app, quiet_ms=5000, timeout_ms=3000), 17)
+
+    def test_the_start_day_table_has_its_own_counter(self):
+        # Waiting for second-interview rows on the START day's page would
+        # wait the whole timeout and then read nothing.
+        self.assertIn("First Day of Training", R._TRAINING_COUNT_JS)
+        self.assertNotIn("followUp_", R._TRAINING_COUNT_JS)

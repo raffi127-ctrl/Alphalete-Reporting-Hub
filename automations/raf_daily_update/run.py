@@ -204,13 +204,15 @@ def read_start_times(app, start: dt.date) -> Dict[tuple, str]:
     """{(name, phone10): '12:30'} for the new starts on `start`."""
     try:
         app.open_calendar()
-        app.page.wait_for_timeout(10000)
         if start != dt.datetime.now(CENTRAL).date():
             if not _goto_day(app, start):
                 log(f"  !! calendar did not move to {start} -- no start TIMES "
                     f"for that day, so anyone starting then keeps their date "
                     f"and loses the time")
                 return {}
+        # Same late-rendering trap as read_calendar. "0 new start(s) with a
+        # time" was showing up on days that had new starts on them.
+        _settled(app, _TRAINING_COUNT_JS)
         rows = app.page.evaluate(_TRAINING_JS)
     except Exception as e:  # noqa: BLE001
         log(f"  !! start-time read failed ({type(e).__name__}: {e})")
@@ -249,18 +251,77 @@ def _ph10(s: str) -> str:
     return re.sub(r"\D", "", str(s or ""))[-10:]
 
 
+# HOW MANY PEOPLE THE PAGE IS CURRENTLY SHOWING. The same thing _CALENDAR_JS
+# counts, so "settled" means settled for the reader that matters.
+# The START day's page is a different table, so it needs its own count --
+# waiting for the second-interview rows on a page that has none would wait
+# the full timeout and then read nothing.
+_TRAINING_COUNT_JS = (
+    "() => [...document.querySelectorAll('tr')].filter(tr => "
+    "tr.children.length > 4 && /First Day of Training/.test("
+    "tr.children[tr.children.length - 1].innerText || '')).length")
+
+_ROW_COUNT_JS = (
+    '() => document.querySelectorAll('
+    '\'select[id^="followUp_"],select[name^="followUp_"]\').length')
+
+
+def _settled(app, count_js: str = None, *, quiet_ms: int = 1500,
+             timeout_ms: int = 20000) -> int:
+    """Wait until the calendar stops gaining rows, and say how many it has.
+
+    WHY A FIXED SLEEP WAS NOT ENOUGH. read_calendar waited ten seconds and
+    read whatever had arrived, and _goto_day polls for the page's TITLE --
+    which appears the moment it navigates, before any rows do. So a slow page
+    was scraped half-built, and anybody whose row had not rendered simply had
+    no BOB date.
+
+    It is not a theory. The same PAST day, read three times on 2026-11-19:
+
+        calendar 2026-11-13:  50 rows -> 48 rows -> 52 rows
+        calendar 2026-11-17:  40 rows -> 41 rows -> 48 rows
+
+    A past day cannot gain four people in forty minutes. Across those runs
+    Garett Montelongo lost his start date and five others gained theirs,
+    purely on what had rendered by the time we looked.
+
+    So: count, wait, count again, and only believe it once the number has held
+    still for `quiet_ms`. Returns the count it settled on (0 if it never
+    moved, which is a real answer -- a day with nobody on it).
+    """
+    import time
+    count_js = count_js or _ROW_COUNT_JS
+    last, since, t0 = -1, time.monotonic(), time.monotonic()
+    while time.monotonic() - t0 < timeout_ms / 1000.0:
+        try:
+            now = int(app.page.evaluate(count_js) or 0)
+        except Exception:                                      # noqa: BLE001
+            return max(last, 0)
+        if now != last:
+            last, since = now, time.monotonic()
+        elif (time.monotonic() - since) * 1000 >= quiet_ms:
+            return last
+        app.page.wait_for_timeout(250)
+    log("  !! the calendar was still gaining rows after %ds -- reading %d, "
+        "which may be short" % (timeout_ms // 1000, max(last, 0)))
+    return max(last, 0)
+
+
 def read_calendar(app, day: dt.date) -> Dict[tuple, dict]:
     """{(name, phone10): row} off the calendar for `day`. Keyed by phone as
     well as name: two different Oscar Castellons sat on 10/13's calendar."""
     try:
         app.open_calendar()
-        app.page.wait_for_timeout(10000)            # rows render late
         if day != dt.datetime.now(CENTRAL).date():
             if not _goto_day(app, day):
                 log(f"  !! INCOMPLETE: calendar did not move to {day}. Anyone "
                     f"interviewed that day comes out with no outcome and no "
                     f"start date below, which is NOT the same as having none")
                 return {}
+        # ROWS RENDER LATE, so wait for the count to hold still rather than
+        # sleeping a guess at it. This replaces a flat 10s that was both too
+        # long for a quick day and too short for a slow one.
+        _settled(app)
         rows = app.page.evaluate(_CALENDAR_JS)
     except Exception as e:  # noqa: BLE001
         log(f"  !! calendar read failed ({type(e).__name__}: {e})")
