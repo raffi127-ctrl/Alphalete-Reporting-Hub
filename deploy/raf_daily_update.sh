@@ -9,7 +9,11 @@
 # (Megan 2026-10-26) — his sheet is filled by omar_daily_update. Posts in HIS
 # channel (offices.py: #omars-mohammad-office-recruiting-24153-rafael-hidalgo,
 # Megan 2026-10-26). Raf's stays in #org-indeed-accounts — it does not move.
-# One after the other, never together: both drive Lucy 2's one AppStream
+# THEN Algemar (23965), Cyrus (22815) and Vincent (24290), added 2026-11-19 --
+# Slack post only, and their first posts go to MEGAN'S DM rather than an
+# owner's room, so she reads one before it reaches anybody.
+#
+# One after the other, never together: they all drive Lucy 2's one AppStream
 # console. Each has its own Hub status and its own failure alert.
 set -u
 cd "$(dirname "$0")/.." || exit 1
@@ -59,4 +63,30 @@ ST_RAF=$?
 run_one daily_update_omar "Omar Daily Update Post" omar-daily-update-post \
     --office omar --post
 ST_OMAR=$?
-[ $ST_RAF -eq 0 ] && [ $ST_OMAR -eq 0 ]
+
+# THE OTHER THREE 2R OWNERS (Megan, 2026-11-19). The 6pm BOB nudge covers all
+# five offices on the `2R Contacts` roster; only Raf and Omar had a Daily
+# Update, so the day the other three were nudged about was written up nowhere.
+#
+# THEIR FIRST POSTS GO TO MEGAN'S DM, not to an owner's room and not to
+# #org-indeed-accounts (Megan: "DM me the first posts"). She reads one before
+# it reaches anybody. Moving an office to its own room afterwards = set
+# `channel` and posts_in_own_channel=True in offices.py and drop --channel
+# here. SLACK POST ONLY: no `sheet` in offices.py, so --write would refuse and
+# is not passed.
+#
+# One after another, never together: all of these drive this machine's one
+# AppStream console. Each has its own Hub status and its own failure alert.
+MEGAN_DM="U04G5HJBGFN"
+run_one daily_update_algemar "Algemar Daily Update Post" algemar-daily-update-post \
+    --office algemar --post --channel "$MEGAN_DM"
+ST_ALGEMAR=$?
+run_one daily_update_cyrus "Cyrus Daily Update Post" cyrus-daily-update-post \
+    --office cyrus --post --channel "$MEGAN_DM"
+ST_CYRUS=$?
+run_one daily_update_vincent "Vincent Daily Update Post" vincent-daily-update-post \
+    --office vincent --post --channel "$MEGAN_DM"
+ST_VINCENT=$?
+
+[ $ST_RAF -eq 0 ] && [ $ST_OMAR -eq 0 ] && [ $ST_ALGEMAR -eq 0 ] \
+    && [ $ST_CYRUS -eq 0 ] && [ $ST_VINCENT -eq 0 ]
