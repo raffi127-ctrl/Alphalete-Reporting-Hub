@@ -245,6 +245,8 @@ def main(argv=None) -> int:
         _statuses(ws, everyone, (), args.tick)
         _paint(ws, everyone, (), (), args.tick)
         _picture(ws, args)
+        if args.tick:
+            _record_delivery(ws.title, "nothing to look up -- every box colored")
         return 0
 
     import time
@@ -422,7 +424,29 @@ def main(argv=None) -> int:
                     "headers": heads, "people": log,
                     "missing": [p.name for p in missing],
                     "ready_for_owner_submit": [p.name for p in ready]}, indent=1))
+    if args.tick and complete:
+        _record_delivery(ws.title, "%d box(es) ticked, %d ready for owner submit"
+                         % (len(writes), len(ready)))
     return 0 if complete else 2
+
+
+def _record_delivery(tab: str, note: str) -> None:
+    """Today's manifest = the proof shared/delivery_check looks for.
+
+    11/16-11/18: failure-obcl_ov_sweep stayed open across clean passes --
+    "ran clean, but nothing can confirm it DELIVERED" -- because this sweep
+    wrote no manifest (icd_onboarding had the same hole until 11/11). Only a
+    --tick pass that read the whole OwnerVille table records one, so a dry
+    run or a short read never fakes the proof. `verify` stays null on
+    purpose (schedule_config): owner-submit failures have their own ticket.
+    Never raises."""
+    try:
+        from automations.shared import run_manifest
+        run_manifest.write_manifest("obcl_ov_sweep", succeeded=[tab],
+                                    note="%s: %s" % (tab, note))
+    except Exception as e:  # noqa: BLE001 — the proof must never fail the run
+        print("manifest skipped: %s: %s — the sheet is written, but a failure "
+              "ticket won't close itself" % (type(e).__name__, str(e)[:120]))
 
 
 if __name__ == "__main__":

@@ -4081,7 +4081,9 @@
    "priority": "P3",
    "freshness_target": null,
    "depends_on": [],
-   "verify": null
+   "verify": null,
+   "close_on": "exit_zero",
+   "_close_on_note": "2026-11-18: a read-only walk delivers nothing, so a clean exit IS the result. Without this, failure-probe_icd_owner_submit (11/16: OwnervilleBusy, the OV lock held 600s by headshots) could never close itself."
   },
   "probe_onboarding_seed": {
    "_note": "READ-ONLY probe (2026-11-15): what an office's onboarding board WOULD be seeded with. Runs icd_onboarding.run --only seed with NO --write, so it reads the Retention Report twice -- Total New Starts Scheduled for the rows and each person's start date, then New Starts Showed Up for the Showed Up tick -- and writes no cell, no header and no manifest. THE QUESTION IT ANSWERS: does the scheduled row's date column hold the day they are due in? The parse refuses any date outside the week asked for, so a wrong column shows up as 'had no readable date' rather than as wrong Starts. Read the result with `lucy logtail rerun probe_onboarding_seed 200`. No machine: it needs an AppStream session, and any Lucy holding one can select the office. weekdays [] = manual only.",
