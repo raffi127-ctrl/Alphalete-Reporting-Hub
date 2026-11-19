@@ -1994,6 +1994,18 @@ def build_pct_on_board(cols, crew, today, log=print) -> Path:
         OUT_DIR / f"nds_pct_on_board_{today.isoformat()}.png", log=log)
 
 
+def build_teams_board(cols, crew, today, log=print) -> Path:
+    """The NDS Sales Board tab's "Teams — Current Week" box (Carlos
+    2026-11-19: "Send a screenshot of the teams board on the NDS metrics
+    thread and as text message to the Aplayer and leaders chat"). Shoots the
+    live Sheet like pct_on_board; the box ranks its own rows by Apps. Sent
+    when he asks (ON_REQUEST), not with the morning thread."""
+    from automations.sales_boards.teams_box import render_teams_box
+    return render_teams_box(
+        "NDS Sales Board",
+        OUT_DIR / f"nds_teams_board_{today.isoformat()}.png", log=log)
+
+
 def build_day_board(cols, crew, today, log=print) -> Path:
     """Yesterday's board cut (Carlos 2026-10-28) — see board_shots."""
     from automations.nds_metrics import board_shots
@@ -2035,10 +2047,22 @@ POST_GAP_SECONDS = 2.5          # between thread uploads, so they land in order
 # 'NDS Order Log' TAB on the Vantura board is a different thing and still
 # refreshes every morning (order_log_tab.refresh).
 RETIRED = {"order_log"}
+# Sent when Carlos asks, not every morning: built only when named by --only,
+# and then `--post` puts it in today's thread (and on the text chains when it
+# is in TEXT_SECTIONS) like any other board. `rerun nds_metrics --only
+# teams_board --post`. Take a sid out of here to make it a daily section.
+ON_REQUEST = {"teams_board"}
 
 
 def thread_sections():
-    """The sections the live thread lists and posts."""
+    """The sections the morning thread lists and posts."""
+    return [sec for sec in SECTIONS
+            if sec[0] not in HELD_FROM_THREAD | RETIRED | ON_REQUEST]
+
+
+def postable_sections():
+    """What --post may put in the thread: the morning sections plus an
+    ON_REQUEST one that was built (it is only ever built when named)."""
     return [sec for sec in SECTIONS if sec[0] not in HELD_FROM_THREAD | RETIRED]
 
 # Posting order = this order (Carlos 2026-11-14: "Lets move 16 and 17 to be
@@ -2057,6 +2081,10 @@ SECTIONS = [
     # this thread posts 7:30). Verizon's copy rides the 5:10 sales_boards run.
     ("pct_on_board", "\U0001F4CA", "NDS % On Board",
      build_pct_on_board),
+    # Carlos 2026-11-19: the same tab's "Teams — Current Week" box. ON_REQUEST:
+    # never in the morning run, posted + texted by `--only teams_board --post`.
+    ("teams_board", "\U0001F465", "NDS Teams Board",
+     build_teams_board),
     # sales_metrics: REMOVED (Carlos 2026-10-21: "remove the sales metrics")
     # — the old shot was the D2D Metrics view filtered to RAF's office.
     ("activation_overview", "\U0001F4B5", "NDS Activation Report Overview",
@@ -2113,7 +2141,10 @@ def _state_path(today: dt.date) -> Path:
 # two are created, let's also send these on the same text chains").
 # + revenue_board (Carlos 2026-11-14, after the tier-columns preview: "send
 # this new revenue board on the text chains and slack moving forward").
-TEXT_SECTIONS = {"customer_churn", "churn_rates", "churn_by_rep", "revenue_board"}
+# + teams_board (Carlos 2026-11-19: "and as text message to the Aplayer and
+# leaders chat") -- ON_REQUEST, so it only texts when he asks for the board.
+TEXT_SECTIONS = {"customer_churn", "churn_rates", "churn_by_rep", "revenue_board",
+                 "teams_board"}
 TEXT_CAMPAIGN = "NDS METRICS"
 
 
@@ -2175,7 +2206,7 @@ def post_thread(artifacts, today, log=print, force: bool = False) -> None:
         log(f"[nds] opened thread {ts} in {CHANNEL[0]}")
         from automations.shared.slack_metrics_post import pin_message
         pin_message(client, CHANNEL[1], ts, log=log)
-    for (sid, emoji, title, _fn) in thread_sections():
+    for (sid, emoji, title, _fn) in postable_sections():
         path = artifacts.get(sid)
         if not path or (sid in state["posted"] and not force):
             continue
@@ -2386,8 +2417,8 @@ def main(argv=None) -> int:
     for sid, _e, _t, fn in SECTIONS:
         if only and sid not in only:
             continue
-        if sid in RETIRED and not only:
-            continue                      # cancelled; built only when named by --only
+        if sid in RETIRED | ON_REQUEST and not only:
+            continue                      # cancelled / on request: built only when named by --only
         try:
             artifacts[sid] = fn(cols, crew, today)
         except Exception as e:  # noqa: BLE001 — one board never sinks the rest

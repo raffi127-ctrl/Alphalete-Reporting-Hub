@@ -206,6 +206,10 @@ TEXT_ROUTES = {
     # NDS Revenue Board with the tier-bonus columns (Carlos 2026-11-14:
     # "send this new revenue board on the text chains and slack moving forward").
     ("NDS METRICS", "nds_revenue_board"): [TEXT_GROUP_ATT, TEXT_GROUP_ALL],
+    # The NDS Sales Board's Teams box, when Carlos asks for it (nds_metrics
+    # ON_REQUEST). Carlos 2026-11-19: "as text message to the Aplayer and
+    # leaders chat".
+    ("NDS METRICS", "nds_teams_board"): [TEXT_GROUP_ATT, TEXT_GROUP_ALL],
 }
 
 # Seconds to wait after handing Messages an image. TdB proved a group image send
