@@ -80,6 +80,7 @@ ROSTERS = {"active": "activeReps", "lead": "leadReps", "admin": "adminReps"}
 INACTIVE = "inactiveReps"
 
 PAGE_SIZE = 2000                 # the endpoint caps a response near 2000 rows
+INACTIVE_PAGE_SIZE = 500
 _TAG = re.compile(r"<[^>]+>")
 _RQST = re.compile(r"rqst=([A-Za-z0-9_-]+)")
 
@@ -184,7 +185,10 @@ def _post(page, rqst: str, rep_type: str, start: int, length: int) -> dict:
     resp = page.request.post(
         ENDPOINT, data=_payload(rqst, rep_type, start, length),
         headers={"Content-Type": "application/x-www-form-urlencoded",
-                 "X-Requested-With": "XMLHttpRequest"})
+                 "X-Requested-With": "XMLHttpRequest"},
+        # 30s default isn't enough for the retired list: a 2000-row page of
+        # inactiveReps timed out on Lucy 1 (2026-11-19, ov_roster_dump).
+        timeout=120_000)
     if resp.status != 200:
         raise OwnervilleError(
             f"getRepList({rep_type}) answered HTTP {resp.status} — the "
@@ -204,7 +208,10 @@ def _rows(page, rqst: str, rep_type: str, roster: str, *, paged: bool,
     out: List[Rep] = []
     start = 0
     while True:
-        data = _post(page, rqst, rep_type, start, PAGE_SIZE)
+        # The 10k-row retired list goes in smaller pages -- 2000 at once timed
+        # out server-side (2026-11-19). The live rosters stay one request.
+        data = _post(page, rqst, rep_type, start,
+                     INACTIVE_PAGE_SIZE if paged else PAGE_SIZE)
         chunk = data.get("data") or []
         total = int(data.get("recordsTotal") or 0)
         for d in chunk:
