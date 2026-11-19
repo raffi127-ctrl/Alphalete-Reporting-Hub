@@ -374,14 +374,28 @@ ROW_JS = """() => {
             if (osel) {
                 showed = 'yes';
                 offered = norm(osel.options[osel.selectedIndex] ? osel.options[osel.selectedIndex].text : '');
-            } else {
-                const checked = radios.filter(r => r.checked);
+            } else if (radios.length) {
+                // WHICH RADIO IS YES IS DECIDED BY ORDER, NOT BY ITS VALUE.
+                // Probed 2026-11-18 on office 11280: the cell reads "Yes No"
+                // and the values are 1 and 2, not "yes"/"no". Matching the
+                // value against /yes/ made EVERY checked radio read as a
+                // no-show -- all 27 happened to be No that day, so it did not
+                // bite, but one Yes would have been silently dropped from the
+                // chase. The label order in the cell says which index is Yes.
                 const lbl = norm(cell.innerText).toLowerCase();
-                showed = checked.length
-                    ? (/\\byes\\b/.test(lbl) && checked[0].value &&
-                       /yes/i.test(checked[0].value) ? 'yes' : 'no')
-                    : '';
-                if (!showed && checked.length === 0) showed = 'unmarked';
+                const yAt = lbl.indexOf('yes'), nAt = lbl.indexOf('no');
+                const yesFirst = (yAt >= 0 && (nAt < 0 || yAt < nAt));
+                const at = radios.findIndex(r => r.checked);
+                if (at < 0) {
+                    showed = 'unmarked';
+                } else if (radios.length === 2) {
+                    showed = (at === (yesFirst ? 0 : 1)) ? 'yes' : 'no';
+                } else {
+                    // An unexpected number of radios: say so rather than
+                    // guessing, so it shows up as "not ticked" and not as a
+                    // no-show.
+                    showed = 'unmarked';
+                }
             }
         }
 

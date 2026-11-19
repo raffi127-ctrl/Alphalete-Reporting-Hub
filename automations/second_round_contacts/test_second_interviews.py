@@ -322,3 +322,31 @@ class CalledButNeverBooked(unittest.TestCase):
                      ("no_show", "bob", "declined", "disqualified", "lm",
                       "bob_started", "not_marked", "show_up_not_ticked"))
         self.assertEqual(placed, len(rows))
+
+
+class TheShowUpRadios(unittest.TestCase):
+    """Which radio means Yes is decided by ORDER, not by its value.
+
+    Probed 2026-11-18, office 11280: the Show Up cell reads "Yes No" and the
+    radio values are 1 and 2. Matching the value against /yes/ made every
+    checked radio read as a no-show. All 27 were genuinely No that day, so
+    nothing was lost -- but one person marked Yes without an offer decision
+    would have been dropped from the chase without a trace.
+    """
+
+    def test_the_reader_does_not_match_a_radio_value_against_yes(self):
+        self.assertNotIn("/yes/i.test(checked[0].value)", SI.ROW_JS)
+
+    def test_it_uses_the_label_order(self):
+        self.assertIn("yesFirst", SI.ROW_JS)
+        self.assertIn("radios.findIndex", SI.ROW_JS)
+
+    def test_an_odd_number_of_radios_is_unmarked_not_a_no_show(self):
+        # "nobody has said yet" is the safe answer; a wrong no-show puts
+        # somebody on the daily update as not turning up when they did.
+        self.assertIn("showed = 'unmarked'", SI.ROW_JS)
+
+    def test_the_three_values_the_reader_may_produce(self):
+        for raw, want in (("yes", True), ("no", False),
+                          ("unmarked", None), ("", None)):
+            self.assertIs(SI.showed_up({"showed": raw}), want, raw)
