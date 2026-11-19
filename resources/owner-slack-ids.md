@@ -18,6 +18,7 @@ When you confirm a new ID, add it here in the same commit.
 | Bas | Leader in Raf's office; Lucy's daily recordings group DM | U067WLPK92T | basboosmahdi@gmail.com, confirmed by Eve 2026-11-11. ⚠ look-alike U09TWLG53EZ "Bas" (basitsanusi29@gmail.com) is someone else |
 | MJ | Raf's office team; tagged on the 7 PM Daily Focus post | U0488R0E9D5 | given by Eve 2026-11-13 |
 | Camila Hornos Kraschinsky | Recruiting (ARS reports); tagged on 1st to 2nd Below the Mark | U07FWSYP3NV |
+| Tiffani (tiff) Brown | Raf's office; tagged on Raf's Lucy Second Round Scorecards thread (Raf 2026-11-19) | U0B9924FHCL | tiffanibrown8@yahoo.com, display name "tiff". ⚠ look-alikes: U0C8ML0A7V0 "Tiffany", U0BHAMYNQ1X Tiffanie Luckett, U0A0V3BNFMY Tiffany Throneberry |
 | Lucy Reporting | The bot account all reports post as | U0BCG8F9B5Z |
 
 ## ICD / office owners

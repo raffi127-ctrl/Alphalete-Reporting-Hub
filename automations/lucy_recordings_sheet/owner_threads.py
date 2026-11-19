@@ -39,6 +39,11 @@ CHANNEL_ALIASES = {"hammad haque": "Salik Mallick"}
 EXTRA_CHANNELS = {
     "Valeria Tristan": "C0C70G1ENPK",     # Eve 2026-11-16
 }
+# Extra people tagged next to the owner on their thread's list reply.
+# Raf 2026-11-19: "can we tag @tiff to this every post please".
+EXTRA_TAGS = {
+    "Rafael Hidalgo": ["U0B9924FHCL"],    # tiff (Tiffani Brown)
+}
 PAUSE_S = 1.2
 
 
@@ -223,6 +228,7 @@ def post(client, owner_plan: dict, pdfs: dict, list_text, month_png: Path | None
         tag = slack_tag(owner, recs.get(owner))
         if not tag.startswith("<@"):
             tag = slack_tag(name)
+        tag = " ".join([tag] + ["<@%s>" % u for u in EXTRA_TAGS.get(owner, [])])
         if test_to:
             tag = "*%s* (test: would tag %s)" % (owner, tag.replace("<@", "").replace(">", ""))
         head = "*%s* — %s" % (TITLE, _day_label(today.isoformat(), long=True))
