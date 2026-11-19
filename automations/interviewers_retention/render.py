@@ -171,7 +171,9 @@ def css_width(path: Path) -> int:
 
 
 # ------------------------------------------------- THIS WEEK BY DAY (Raf 11/12)
-# A wide board: per day B / S / %, the week B / S / %, then 4 weekly %. Raf:
+# A wide board: the week B / S / % first (Raf 11/18: "move the week total to
+# the front, like the sales board"), then per day B / S / %, then the 4 weekly
+# % still all the way to the right. Raf:
 # readable on a phone at max ~900px; "if 3+ days don't fit, show only the %
 # per day and leave Booked/Showed in the Week column". So the renderer tries
 # the full layout, then the compact one, then steps the type down, and keeps
@@ -187,15 +189,15 @@ def day_board_html(b, *, compact: bool, base: int) -> str:
     top = [f'<th rowspan="2">#</th>', f'<th rowspan="2" class="l">{e(b.name_header)}</th>']
     if own:
         top.append('<th rowspan="2" class="l">Owner</th>')
-    second = []
+    # Week total up front (Raf 11/18), right after the name/owner.
+    top.append('<th colspan="3" class="grp c wk">Week</th>')
+    second = ['<th class="grp wk">B</th>', '<th class="wk">S</th>', '<th class="wk">%</th>']
     for i, d in enumerate(b.days):
         # Compact: the day on two short lines, so the header never sets the width.
         label = (f"{d:%a}<br>{d.month}/{d.day}" if compact else f"{d:%a} {d.month}/{d.day}")
         top.append(f'<th colspan="{per_day}" class="grp c">{label}</th>')
         second += (['<th class="grp">%</th>'] if compact else
                    ['<th class="grp">B</th>', "<th>S</th>", "<th>%</th>"])
-    top.append('<th colspan="3" class="grp c wk">Week</th>')
-    second += ['<th class="grp wk">B</th>', '<th class="wk">S</th>', '<th class="wk">%</th>']
     if b.history_labels:
         top.append(f'<th colspan="{len(b.history_labels)}" class="grp c">Last 4 weeks</th>')
         second += [f'<th class="{"grp" if i == 0 else ""}">{e(l)}</th>'
@@ -206,6 +208,8 @@ def day_board_html(b, *, compact: bool, base: int) -> str:
         cells = [f'<td class="rk">{n}</td>', f'<td class="l nm"><div>{e(ln.name)}{det}</div></td>']
         if own:
             cells.append(owner_td(ln))
+        cells += [f'<td class="grp wk">{ln.booked}</td>', f'<td class="wk">{ln.showed}</td>',
+                  f'<td class="{colour(ln.pct)} wkp">{fmt(ln.pct)}</td>']
         for d in b.days:
             bk, sh = ln.days.get(d, [0, 0])
             p = pct(sh, bk)
@@ -215,8 +219,6 @@ def day_board_html(b, *, compact: bool, base: int) -> str:
             else:
                 cells += [f'<td class="grp">{bk if bk else "—"}</td>',
                           f'<td>{sh if bk else "—"}</td>', pc]
-        cells += [f'<td class="grp wk">{ln.booked}</td>', f'<td class="wk">{ln.showed}</td>',
-                  f'<td class="{colour(ln.pct)} wkp">{fmt(ln.pct)}</td>']
         for j, p in enumerate(ln.history):
             cells.append(f'<td class="h {colour(p) or "na"} {"grp" if j == 0 else ""}">{fmt(p)}</td>')
         rows.append("<tr>" + "".join(cells) + "</tr>")

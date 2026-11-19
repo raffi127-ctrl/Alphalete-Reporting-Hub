@@ -159,6 +159,22 @@ class OnePerOffice(unittest.TestCase):
         self.assertIn(">Owner</th>", doc)
         self.assertNotIn("<small>", doc)       # owner no longer squeezed under the name
 
+    def test_week_total_sits_before_the_days_and_history_stays_last(self):
+        # Raf 11/18: week total up front like the sales board; 4 weeks stays right.
+        from automations.interviewers_retention import render
+        d = dt.date(2026, 11, 16)
+        second = {"Rafael Hidalgo": {d: SimpleNamespace(by={"Nic": [2, 1]})}}
+        b = build.week_board(build.interviewer_days(second, [d], {}), [d], False, "T",
+                             "Interviewer", {}, [])
+        b.history_labels = ["10/26", "11/2", "11/9", "11/16"]
+        for ln in b.lines:
+            ln.history = [None] * 4
+        doc = render.day_board_html(b, compact=True, base=20)
+        self.assertLess(doc.index(">Week</th>"), doc.index("Mon<br>11/16"))
+        self.assertLess(doc.index("Mon<br>11/16"), doc.index(">Last 4 weeks</th>"))
+        row = doc[doc.index("<tbody>"):]
+        self.assertLess(row.index("wkp"), row.index("na grp"))
+
 
 class ArsWeeks(unittest.TestCase):
     def test_podium_and_history_from_ars_and_unmatched_listed(self):
