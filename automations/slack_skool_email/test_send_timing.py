@@ -246,6 +246,43 @@ class TheWeekGate(unittest.TestCase):
         self.assertIn("can't read a date",
                       run._wrong_week("Sheet1", today=MON))
 
+    def test_this_weeks_tab_is_fine_later_in_its_week(self):
+        # 2026-11-19, Thursday: the daily run called 'D2D OBCL 11.16' unbuilt
+        # and opened a ticket, with this week's lineup sitting right there.
+        for day in (17, 19, 22):
+            self.assertIsNone(run._wrong_week(
+                "D2D OBCL 11.16", today=dt.date(2026, 11, day)), day)
+
+
+class ANobodyDueDayIsNotAFailure(unittest.TestCase):
+    """The daily timer means most mornings nobody is due. That must exit 0,
+    or the card goes red six days a week and the real refusal drowns."""
+
+    def _send(self, tab_title, today):
+        from unittest import mock
+
+        class _WS:
+            title = tab_title
+
+        real = run._wrong_week
+        with mock.patch.object(run.config, "early_send_blocked_by_copy",
+                               return_value=None), \
+                mock.patch.object(run, "_resolve_links",
+                                  return_value=("s", "k", "src", [])), \
+                mock.patch.object(run, "_people",
+                                  return_value=(_WS(), [], [])), \
+                mock.patch.object(run, "_wrong_week",
+                                  lambda t, explicit=False: real(
+                                      t, explicit=explicit, today=today)), \
+                mock.patch("builtins.print"):
+            return run.send()
+
+    def test_a_tab_not_due_yet_exits_clean(self):
+        self.assertEqual(self._send("D2D OBCL 11.23", dt.date(2026, 11, 18)), 0)
+
+    def test_last_weeks_tab_still_fails(self):
+        self.assertEqual(self._send("D2D OBCL 11.16", MON), 1)
+
 
 class TheResendGuardIsPerPerson(unittest.TestCase):
     def test_the_per_person_check_exists_and_asks_gmail(self):

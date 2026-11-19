@@ -173,6 +173,14 @@ def _not_yet(people, today=None):
             and not timing.due(p_.chart_date, today, config.SEND_LEAD_DAYS)]
 
 
+WEEK_DAYS = 7
+
+# Opens the refusal for a tab further out than the lead. That is a quiet day
+# (the lineup is built, nobody on it is due yet), not a fault, so the run
+# exits 0 on it instead of turning the card red six days a week.
+NOTHING_DUE_YET = "Nothing to send yet"
+
+
 def _wrong_week(tab_title: str, *, explicit: bool = False, today=None):
     """A refusal message if this tab isn't THIS week's, or None if it's fine.
 
@@ -211,12 +219,20 @@ def _wrong_week(tab_title: str, *, explicit: bool = False, today=None):
     lead = getattr(config, "SEND_LEAD_DAYS", 0) or 0
     if lead and today <= dated <= today + _dt.timedelta(days=lead):
         return None
+    # THIS WEEK'S tab, on a later day of its week (2026-11-19). Since the
+    # timer went daily (52157fa), Tuesday to Sunday the newest tab is the
+    # Monday one -- the lineup IS built -- and the old "dated today" test
+    # called it unbuilt every morning. It is safe to read: _groups mails only
+    # people whose own day is still ahead within the lead, and the Gmail
+    # guard is per person. Seven days old is LAST week's and still refused.
+    if lead and dated < today and (today - dated).days < WEEK_DAYS:
+        return None
     if dated > today:
         # A tab further out than the lead. NOT the fault below -- the lineup
         # has been built, nobody on it is due yet, and saying "this week's
         # lineup hasn't been built" about next week's tab sends somebody
         # looking for a problem that isn't there.
-        return ("Nothing to send yet: the newest tab is {!r} (dated {}), and "
+        return (NOTHING_DUE_YET + ": the newest tab is {!r} (dated {}), and "
                 "theirs goes out {} day(s) before they start. Nobody is due "
                 "until {}.".format(
                     tab_title, dated, lead,
@@ -376,29 +392,30 @@ def preview(tab_name: str = "", *, fetch_link: bool = True) -> int:
 
 
 def _guarded_recipients(tab_name: str):
-    """(worksheet, recipients, slack, skool) -- or Nones, with a printed
-    reason, if we must not send."""
+    """(worksheet, recipients, slack, skool, quiet) -- or Nones, with a
+    printed reason, if we must not send. `quiet` is True only when the reason
+    is that nobody is due yet, which is a normal day and exits 0."""
     slack, skool, _source, problems = _resolve_links()
     if problems:
         print("Refusing to send - the links aren't right yet:")
         for prob in problems:
             print("  !! {}".format(prob))
-        return None, None, "", ""
+        return None, None, "", "", False
 
     ws, _values, people = _people(tab_name)
 
     stale = _wrong_week(ws.title, explicit=bool(tab_name))
     if stale:
         print(stale)
-        return None, None, "", ""
+        return None, None, "", "", stale.startswith(NOTHING_DUE_YET)
 
     send_to = _recipients(people)
     if not send_to:
         # Standing rule: never post/send a blank board. An empty cohort is a
         # quiet week, not a reason to mail nobody and claim success.
         print("Nobody eligible on {!r} - not sending.".format(ws.title))
-        return None, None, "", ""
-    return ws, send_to, slack, skool
+        return None, None, "", "", False
+    return ws, send_to, slack, skool, False
 
 
 def send(tab_name: str = "", *, force: bool = False, slack: bool = False) -> int:
@@ -412,9 +429,9 @@ def send(tab_name: str = "", *, force: bool = False, slack: bool = False) -> int
         print(blocked)
         return 1
 
-    ws, send_to, slack, skool = _guarded_recipients(tab_name)
+    ws, send_to, slack, skool, quiet = _guarded_recipients(tab_name)
     if not send_to:
-        return 1
+        return 0 if quiet else 1
 
     who = gm.assert_right_mailbox()
 
@@ -486,9 +503,9 @@ def send(tab_name: str = "", *, force: bool = False, slack: bool = False) -> int
 def draft(tab_name: str = "") -> int:
     from automations.slack_skool_email import gmail_reception as gm
 
-    ws, send_to, slack, skool = _guarded_recipients(tab_name)
+    ws, send_to, slack, skool, quiet = _guarded_recipients(tab_name)
     if not send_to:
-        return 1
+        return 0 if quiet else 1
 
     who = gm.assert_right_mailbox()
     res = gm.create_draft(
