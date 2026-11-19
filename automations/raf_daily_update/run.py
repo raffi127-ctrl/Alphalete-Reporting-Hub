@@ -129,17 +129,55 @@ _TRAINING_JS = r"""() => [...document.querySelectorAll('tr')]
                  return [c[0], c[1], c[2], c[3]]; })"""
 
 
+def _goto_day(app, day: dt.date, *, tries: int = 2,
+              timeout_ms: int = 15000) -> bool:
+    """Drive the calendar to `day`, and say whether it actually got there.
+
+    WHAT THIS REPLACED, and why it mattered. Both callers used to fire the
+    navigation, throw away what it reported, sleep a flat 15 seconds, then look
+    ONCE for the page's own "found for MM-DD-YYYY" marker. A page that had not
+    finished in those 15 seconds was indistinguishable from a page that never
+    navigated, and either way the day was abandoned with `return {}` -- so a
+    slow load silently cost every start date for the people interviewed that
+    day. Cyrus, 2026-11-18: "calendar did not move to 2026-11-16" on two
+    separate runs, leaving Alexis Ochoa, Shawn Gunnoe and Cameron Simpson with
+    no start date both times, on a report that is already live for Raf.
+
+    Two changes. The marker is POLLED rather than slept on, so a page that
+    arrives in two seconds costs two seconds instead of fifteen -- the ordinary
+    run gets faster, not slower. And CAL_NAV_JS's own status is read: 'nocal'
+    means the widget was not there to drive and 'err' that it threw, both of
+    which are worth saying out loud rather than reporting as a timeout.
+    """
+    want = "found for %s" % day.strftime("%m-%d-%Y")
+    for attempt in range(1, tries + 1):
+        status = app.page.evaluate(_CAL_NAV_JS, day.strftime("%m/%d/%Y"))
+        if status == "nocal":
+            log("  !! no calendar widget on the page to drive (try %d/%d)"
+                % (attempt, tries))
+        elif status == "err":
+            log("  !! calendar navigation threw (try %d/%d)" % (attempt, tries))
+        try:
+            app.page.wait_for_function(
+                "(w) => document.body.innerText.includes(w)",
+                arg=want, timeout=timeout_ms)
+            return True
+        except Exception:                                      # noqa: BLE001
+            log("  calendar still not showing %s after %ds (try %d/%d)"
+                % (day, timeout_ms // 1000, attempt, tries))
+    return False
+
+
 def read_start_times(app, start: dt.date) -> Dict[tuple, str]:
     """{(name, phone10): '12:30'} for the new starts on `start`."""
     try:
         app.open_calendar()
         app.page.wait_for_timeout(10000)
         if start != dt.datetime.now(CENTRAL).date():
-            app.page.evaluate(_CAL_NAV_JS, start.strftime("%m/%d/%Y"))
-            app.page.wait_for_timeout(15000)
-            if not app.page.evaluate("(w) => document.body.innerText.includes(w)",
-                                     f"found for {start:%m-%d-%Y}"):
-                log(f"  !! calendar did not move to {start}")
+            if not _goto_day(app, start):
+                log(f"  !! calendar did not move to {start} -- no start TIMES "
+                    f"for that day, so anyone starting then keeps their date "
+                    f"and loses the time")
                 return {}
         rows = app.page.evaluate(_TRAINING_JS)
     except Exception as e:  # noqa: BLE001
@@ -186,12 +224,10 @@ def read_calendar(app, day: dt.date) -> Dict[tuple, dict]:
         app.open_calendar()
         app.page.wait_for_timeout(10000)            # rows render late
         if day != dt.datetime.now(CENTRAL).date():
-            app.page.evaluate(_CAL_NAV_JS, day.strftime("%m/%d/%Y"))
-            app.page.wait_for_timeout(15000)
-            want = f"found for {day:%m-%d-%Y}"
-            if not app.page.evaluate("(w) => document.body.innerText.includes(w)",
-                                     want):
-                log(f"  !! calendar did not move to {day}")
+            if not _goto_day(app, day):
+                log(f"  !! INCOMPLETE: calendar did not move to {day}. Anyone "
+                    f"interviewed that day comes out with no outcome and no "
+                    f"start date below, which is NOT the same as having none")
                 return {}
         rows = app.page.evaluate(_CALENDAR_JS)
     except Exception as e:  # noqa: BLE001
