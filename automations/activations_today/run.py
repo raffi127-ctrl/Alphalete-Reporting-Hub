@@ -47,8 +47,9 @@ DEFAULT_OWNER = "Rafael Hidalgo"
 LABEL = "📆 Activations Scheduled Today"
 PENDING_TAG = "(fiber + pending wireless)"
 # Live switch: True = every --post-slack run also posts the Pending Orders
-# thread + one pointer line in Metrics. Eve 11/12: OFF until Raf confirms.
-PENDING_LIVE = False
+# thread + one pointer line in Metrics. Eve 11/19: ON (per-line wireless,
+# activated lines kept in grey) while Raf's confirmation is pending.
+PENDING_LIVE = True
 # The Metrics image says "(fiber only)" only while the Pending thread is live.
 FIBER_TAG = "(fiber only)" if PENDING_LIVE else ""
 NONE_TEXT = "📆 No Activations Scheduled Today"
