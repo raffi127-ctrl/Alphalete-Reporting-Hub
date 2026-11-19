@@ -1296,6 +1296,8 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
                         credit_checks: "dict[str, int] | None" = None,
                         extra_columns: "dict | None" = None,
                         end_columns: "dict | None" = None,
+                        display_names: "dict | None" = None,
+                        shade_columns: "tuple" = (),
                         rate_columns: bool = True,
                         knocks_green_at: "int | None" = None,
                         first_knock_green_at: "int | None" = None,
@@ -1494,7 +1496,8 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
                + [THEME_AMBER["total_bg"]])
     _office = f"{title_suffix.upper()} — " if title_suffix else ""
     cols = list(_out)
-    disp = [COMBINED_KNOCKS_DISPLAY.get(c, c) for c in cols]
+    disp = [(display_names or {}).get(c, COMBINED_KNOCKS_DISPLAY.get(c, c))
+            for c in cols]
     if summary_only:
         # Every line is an owner (or the org), not a rep.
         disp = ["Owner" if c == COL_REP else d for c, d in zip(cols, disp)]
@@ -1676,9 +1679,13 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
         _min_w[0] = max(_text_w(_probe, w, _font(11 * SCALE, bold=True))
                         for w in COL_NUM_HEADER.split())
     _shades = None
-    if end_columns:
+    # Teal = "this column carries consumer numbers": the far-right consumer
+    # block, or a business column that now includes consumer (shade_columns).
+    _teal = set(end_columns or ()) | {(display_names or {}).get(c, c)
+                                      for c in (shade_columns or ())}
+    if _teal:
         _shades = {i: END_COLUMN_SHADE for i, name in enumerate(disp)
-                   if name in end_columns}
+                   if name in _teal}
         # Whole words in their headers ("Consumer", "Appointments"): these
         # columns hold one- or two-digit counts, so without a floor the wrap
         # rule hyphenates the label ("Consu-mer").
@@ -2658,6 +2665,40 @@ CONSUMER_BOARD_COLUMNS = ["Consumer Talk To", "Consumer Presentation",
                           "Consumer Sara Plus (Credit Check)"]
 
 
+# Every B2B board leaves these off (Jamis 2026-11-18: "we can remove the
+# qualifying questions, this should decrease the columns").
+B2B_HIDDEN_COLUMNS = (COL_B2B_QUALIFYING_QS,)
+
+# Business column <- the consumer tally folded into it (Jamis 2026-11-18).
+# Total Talk to stays BUSINESS-ONLY on purpose: consumer doors are not in
+# Total Knocks, so folding consumer talk to's into it put "% Talk To's per
+# Knocks" over 100% (Noah 162.5% on the 11/14 preview).
+CONSUMER_COMBINE = [(COL_B2B_TALKED_TO_OWNER, "Consumer Talk To"),
+                    (COL_B2B_PRESENTED_OWNER, "Consumer Presentation"),
+                    (COL_B2B_SARA_CREDIT, "Consumer Sara Plus (Credit Check)")]
+CONSUMER_COMBINED_LABELS = {
+    COL_B2B_TALKED_TO_OWNER: "Talked To (Bus + Cons)",
+    COL_B2B_PRESENTED_OWNER: "Presented (Bus + Cons)",
+    COL_B2B_SARA_CREDIT: "Sara Plus Credit Check (Bus + Cons)",
+}
+
+
+def combine_consumer(rows: "list[dict]"):
+    """(rows, display names, columns to shade): copies of `rows` with each
+    rep's consumer tallies added into the matching business column. Only a
+    column the grid really has is touched (Box has a different set)."""
+    out, touched = [], set()
+    for r in rows or []:
+        r = dict(r)
+        for col, cons in CONSUMER_COMBINE:
+            if col in r and cons in r:
+                r[col] = int(r.get(col) or 0) + int(r.get(cons) or 0)
+                touched.add(col)
+        out.append(r)
+    names = {c: CONSUMER_COMBINED_LABELS[c] for c in touched}
+    return out, names, tuple(sorted(touched))
+
+
 def consumer_end_columns(rows: "list[dict]") -> "dict | None":
     """{consumer column: {rep: n}} when ANY row carries consumer tallies, else
     None. A row without them (a rep the tally did not list) counts 0."""
@@ -2755,8 +2796,14 @@ def render_knocks_boards(target: dt.date, *, rows: "list[dict]",
         # board that draws these rows gets the teal far-right columns with no
         # caller having to ask (Megan 2026-11-15: daytime boards too, every
         # B2B office). A caller's explicit end_columns still wins.
-        if end_columns is None:
-            end_columns = consumer_end_columns(rows)
+        # Jamis 2026-11-18: "combine the credit check, presentations and talk
+        # tos tallies for both consumer and business ... remove the qualifying
+        # questions". So the consumer numbers fold INTO the business columns
+        # (relabelled "(Bus + Cons)", shaded teal) instead of a block of their
+        # own, and Qualifying Questions comes off every B2B board.
+        names, shade = {}, ()
+        if end_columns is None and consumer_end_columns(rows):
+            rows, names, shade = combine_consumer(rows)
         return ([render_total_knocks(
             target, rows=rows, out_dir=out_dir, rate_columns=rate_columns,
             knocks_green_at=knocks_green_at,
@@ -2764,7 +2811,9 @@ def render_knocks_boards(target: dt.date, *, rows: "list[dict]",
             title_suffix=title_suffix, end=end, date_text=date_text,
             base_cols=base, out_cols=out, teams=teams, kpis=kpis,
             credit_checks=credit_checks, extra_columns=extra_columns,
-            end_columns=end_columns)], shape)
+            end_columns=end_columns, display_names=names or None,
+            shade_columns=shade,
+            hide_columns=B2B_HIDDEN_COLUMNS)], shape)
     elif shape == SHAPE_VERIZON:
         # Same renderer as every other shape; Verizon's columns. No
         # extra_totals: the comparison office is fiber.

@@ -158,37 +158,40 @@ def _activations_today(o: B2BOffice, out_dir: Path, log, today=None):
 CONSUMER_TALLY_OFFICES = None
 
 
-def _consumer_columns(o: B2BOffice, day: dt.date, rows: list, log):
-    """{column: {rep: n}} for the far-right consumer columns, or None.
+def _with_consumer(o: B2BOffice, day: dt.date, rows: list, log) -> list:
+    """`rows` carrying each rep's consumer tallies, so the board folds them
+    into its business columns (render.combine_consumer, Jamis 2026-11-18).
 
-    A rep on the knocks board with no consumer tallies gets 0 — the tally
-    call returns only reps who logged one, so a missing rep IS a proven zero.
-    A FAILED pull returns None: the knocks board still posts (business-only)
-    and the log says so loudly, rather than the whole section failing."""
+    The office's own machine normally sends them on the rows already; only
+    when it did not does Lucy 2 pull them itself. A rep the tally does not
+    list gets 0 (the call lists only reps who logged one). A FAILED pull
+    returns the rows untouched: the board posts business-only and the log
+    says so, rather than the whole section failing."""
     if CONSUMER_TALLY_OFFICES is not None and o.key not in CONSUMER_TALLY_OFFICES:
-        return None
-    # The office's own machine already sent them on its rows (relay path):
-    # the board draws them from there, and Lucy 2 has nothing to fetch.
+        return rows
     from automations.total_knocks.render import consumer_end_columns
     if consumer_end_columns(rows):
         log("  [knocks] consumer tallies came with the office's own rows")
-        return None
+        return rows
     from automations.b2b_metrics import consumer_tally as ct
+    from automations.shared.ownerville_knocks import CONSUMER_COLUMNS
     try:
         reps = ct.pull(o.knocks_office, day)
     except Exception as e:  # noqa: BLE001
         log("  [knocks] ⚠ consumer tallies FAILED for {} {} — posting the "
             "board without them: {}".format(o.knocks_office, day, str(e)[:160]))
-        return None
-    from automations.total_knocks.render import CONSUMER_BOARD_COLUMNS
-    cols = {c: v for c, v in ct.extra_columns(reps).items()
-            if c in CONSUMER_BOARD_COLUMNS}
-    names = [r.get("Rep") for r in rows if r.get("Rep")]
-    for col in cols.values():
-        for n in names:
-            col.setdefault(n, 0)
-    log("  [knocks] consumer tallies: {} rep(s) for {}".format(len(reps), day))
-    return cols
+        return rows
+    by = {" ".join(r["rep"].split()).lower(): ct.extra_columns([r]) for r in reps}
+    out = []
+    for row in rows:
+        row = dict(row)
+        cols = by.get(" ".join(str(row.get("Rep") or "").split()).lower()) or {}
+        for c in CONSUMER_COLUMNS:
+            row[c] = int(next(iter((cols.get(c) or {0: 0}).values())))
+        out.append(row)
+    log("  [knocks] consumer tallies: {} rep(s) for {} (Lucy 2 pull)".format(
+        len(reps), day))
+    return out
 
 
 class NoKnocksLogged(Exception):
@@ -222,8 +225,8 @@ def _knocks(o: B2BOffice, out_dir: Path, log, today=None):
     # board (Megan 2026-11-13). Consumer tallies ride at the far right for the
     # offices that asked (Jamis 2026-11-14, Megan picked "B, far right").
     pngs, shape = knocks_render.render_knocks_boards(
-        target, rows=rows, out_dir=out_dir, title_suffix=o.owner,
-        end_columns=_consumer_columns(o, target, rows, log))
+        target, rows=_with_consumer(o, target, rows, log), out_dir=out_dir,
+        title_suffix=o.owner)
     log("  [knocks] {} rep(s), {} board, {}".format(len(rows), shape, target))
     return pngs[0] if len(pngs) == 1 else pngs
 
