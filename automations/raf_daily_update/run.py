@@ -342,13 +342,28 @@ def _find_earlier_interviews(app, day, wanted, ensure_week, pick_sunday,
     day with that interview's leaders and the start date (Danny Martinez:
     2nd round 10/12, BOB 10/13, on the sheet under both)."""
     found: Dict[str, tuple] = {}
+    # DAYS WE COULD NOT LOOK AT. A week that will not open used to be skipped
+    # with `continue` and nothing else: the people who interviewed that week
+    # then fell through to the blank-leader branch in harvest(), so the post
+    # went out missing their 2nd-round interviewer and nobody could tell the
+    # difference between "nobody interviewed them" and "we never looked".
+    # Cyrus, 2026-11-18: six of fifteen BOB'd people came out blank that way
+    # after two `Get Report` timeouts, and the run still exited 0.
+    skipped: List[dt.date] = []
     for back in range(1, lookback + 1):
         if not wanted - set(found):
             break
         d = day - dt.timedelta(days=back)
         app.open_retention_details()
+        # ONE RETRY. The failure seen was `Get Report` timing out at 10s on a
+        # busy machine, not the week being unavailable, so asking twice costs
+        # one page load and turns most of these back into a normal read.
         if not ensure_week(app, pick_sunday(d)):
-            continue
+            log("  retrying the week of %s once" % pick_sunday(d))
+            app.open_retention_details()
+            if not ensure_week(app, pick_sunday(d)):
+                skipped.append(d)
+                continue
         href = app.detail_href(roster_label, date_header_for(d))
         if not href:
             continue
@@ -367,6 +382,15 @@ def _find_earlier_interviews(app, day, wanted, ensure_week, pick_sunday,
             found[k] = (r, start)
             log(f"  {k}: BOB'd {day}, interviewed {d}"
                 + (f", starts {start}" if start else ""))
+    missing = sorted(wanted - set(found))
+    if skipped:
+        log("  !! INCOMPLETE: %d earlier day(s) would not open (%s). Anyone "
+            "who interviewed on those days has no 2nd-round interviewer "
+            "below, which is NOT the same as having none."
+            % (len(skipped), ", ".join(str(d) for d in sorted(skipped))))
+        if missing:
+            log("  !! still unmatched after the look-back: %s"
+                % ", ".join(missing))
     return found
 
 
