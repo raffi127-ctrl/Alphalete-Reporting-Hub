@@ -15,6 +15,8 @@ import unittest
 from automations.icd_onboarding import board as B
 from automations.icd_onboarding import gender_suggest as G
 
+GS = G        # both spellings are used below
+
 # Verbatim from Megan's note (2026-11-18).
 MEGANS_SEVEN = ("Ayodele", "Marquette", "Jovani", "Penina", "Sumera", "Toni",
                 "Carmen")
@@ -163,9 +165,11 @@ class ThePreviewCountsWhatItWouldDo(unittest.TestCase):
 
         from automations.icd_onboarding import gender_suggest as GS
 
+        # THREE, not two. Toni used to be left blank; since 2026-11-19
+        # ("this should guess all") she is filled in too, marked unsure.
         rows = [_row("Michael", "Anderson", row=1),
                 _row("Stacy", "Perez", row=2),
-                _row("Toni", "Lopez", row=3)]          # not guessable
+                _row("Toni", "Lopez", row=3)]          # filled, but UNSURE
 
         class _WS:
             def get_all_values(self):
@@ -190,4 +194,67 @@ class ThePreviewCountsWhatItWouldDo(unittest.TestCase):
                 (S.open_board, S.layout, S.rows_of, F.workbook_for) = old
         finally:
             GS.B.for_week = saved[0]
-        self.assertEqual(n, 2)      # Michael and Stacy; Toni is left alone
+        self.assertEqual(n, 3)      # Michael, Stacy AND Toni (unsure)
+
+
+class GuessesEveryoneButSaysHowSure(unittest.TestCase):
+    """Megan, 2026-11-19: "this should guess all".
+
+    The seven names below are hers, off the 2026-11-18 board -- the ones that
+    came out blank and had to be typed by hand anyway. Every one of them now
+    gets a value, and none of them is allowed to claim to be certain.
+    """
+
+    MEGANS_SEVEN = ["Ayodele", "Marquette", "Jovani", "Penina", "Sumera",
+                    "Toni", "Carmen"]
+
+    def test_every_one_of_megans_seven_now_gets_a_value(self):
+        for name in self.MEGANS_SEVEN:
+            value, _ = GS.best_guess(name)
+            self.assertIn(value, (GS.FEMALE, GS.MALE), name)
+
+    def test_and_not_one_of_them_is_marked_clear(self):
+        # The whole safeguard. A coin flip that tints like a sure thing is
+        # worse than the blank it replaced, because the blank got looked at.
+        for name in self.MEGANS_SEVEN:
+            _, how = GS.best_guess(name)
+            self.assertNotEqual(how, GS.CLEAR, name)
+
+    def test_a_name_we_are_sure_of_is_still_marked_clear(self):
+        self.assertEqual(GS.best_guess("Michael"), (GS.MALE, GS.CLEAR))
+        self.assertEqual(GS.best_guess("Jessica"), (GS.FEMALE, GS.CLEAR))
+
+    def test_the_curated_list_beats_the_ending_rule(self):
+        # Jessica ends in 'a'. It must come back CLEAR off the list, not
+        # LEANING off the suffix -- otherwise the lists stop meaning anything.
+        self.assertEqual(GS.best_guess("Jessica")[1], GS.CLEAR)
+
+    def test_a_name_with_no_signal_admits_it_is_arbitrary(self):
+        self.assertEqual(GS.best_guess("Zzyzx")[1], GS.ARBITRARY)
+
+    def test_an_empty_name_still_answers_rather_than_crashing(self):
+        value, how = GS.best_guess("")
+        self.assertIn(value, (GS.FEMALE, GS.MALE))
+        self.assertEqual(how, GS.ARBITRARY)
+
+    def test_suggest_is_UNCHANGED_so_careful_callers_still_get_a_blank(self):
+        # best_guess is additive. Anything that must not guess keeps working.
+        for name in self.MEGANS_SEVEN:
+            self.assertEqual(GS.suggest(name), "")
+
+    def test_a_typed_answer_is_still_never_overwritten(self):
+        rows = [{"Name": "Toni", "Last Name": "Reed", GS.B.GENDER: "Female",
+                 "_row": 4},
+                {"Name": "Carmen", "Last Name": "Diaz", GS.B.GENDER: "",
+                 "_row": 5}]
+        got = GS.plan_all(rows)
+        self.assertEqual([p["name"] for p in got], ["Carmen Diaz"])
+
+    def test_every_unsure_row_carries_a_reason_an_admin_can_read(self):
+        rows = [{"Name": n, "Last Name": "X", GS.B.GENDER: "", "_row": i}
+                for i, n in enumerate(self.MEGANS_SEVEN, start=4)]
+        for p in GS.plan_all(rows):
+            self.assertTrue(p["why"].strip(), p)
+
+    def test_the_two_tints_are_different_colours(self):
+        self.assertNotEqual(GS.B.SUGGESTED, GS.B.UNSURE)

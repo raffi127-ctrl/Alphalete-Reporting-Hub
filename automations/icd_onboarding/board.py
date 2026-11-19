@@ -221,6 +221,14 @@ GREEN = {"red": 0.71, "green": 0.87, "blue": 0.66}
 # me" without reading as an error.
 SUGGESTED = {"red": 1.0, "green": 0.90, "blue": 0.70}
 
+# THE SECOND TINT: a guess we are NOT confident in (Megan, 2026-11-19:
+# "this should guess all"). Every blank now gets a value, because a blank had
+# to be typed anyway and saved the admin nothing -- but a name we are sure of
+# and a coin flip must not look the same on a payroll record. Amber is "look at
+# me"; this pink is "you have to decide this one". An admin who checks nothing
+# else should check these.
+UNSURE = {"red": 0.98, "green": 0.80, "blue": 0.82}
+
 
 def _fold(text) -> str:
     raw = unicodedata.normalize("NFKD", str(text or ""))

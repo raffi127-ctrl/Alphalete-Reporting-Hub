@@ -352,6 +352,82 @@ def plan(rows: Sequence[Dict]) -> List[Dict]:
     return out
 
 
+# --- GUESSING THE REST ------------------------------------------------------
+# Megan, 2026-11-19: "this should guess all". The 7 blanks on that week's board
+# had to be typed by hand anyway, so a blank bought nobody anything -- it just
+# moved the work and hid it. Every row gets a value now.
+#
+# WHAT DID NOT CHANGE IS WHY THE BLANKS EXISTED: this lands on a payroll
+# record. So the answer is not "guess and say nothing", it is guess and say HOW
+# SURE, and tint the unsure ones differently (board.UNSURE) so an admin who
+# checks nothing else checks those. A confident name and a coin flip must never
+# look alike on this board.
+CLEAR = "clear"          # on the curated list -- the old behaviour
+LEANING = "leaning"      # the ending carries real signal in US names
+ARBITRARY = "arbitrary"  # no signal at all; see _ARBITRARY_DEFAULT
+
+# Endings that genuinely lean in US first names. Kept SHORT on purpose: each
+# one is a claim, and a long list of weak claims is how a coin flip starts
+# looking like an answer. Order matters -- the longest match wins, so 'ine'
+# beats a bare 'e' would if one were ever added.
+_FEMALE_ENDINGS = ("ette", "elle", "ina", "ine", "lyn", "lynn", "leen",
+                   "lene", "issa", "ella", "anna", "ia", "a")
+_MALE_ENDINGS = ("son", "ton", "ius", "os", "us")
+
+# WHEN THERE IS NO SIGNAL AT ALL. This is arbitrary and is labelled arbitrary
+# everywhere it surfaces: in the plan, in the log line, and in the tint. It is
+# NOT a statistical claim about new starts -- we have not measured that, and
+# inventing a number to justify a coin flip would be worse than admitting it is
+# one. It exists only because "guess all" needs a value in every cell.
+_ARBITRARY_DEFAULT = MALE
+
+
+def best_guess(first_name: str):
+    """(value, confidence) for ANY name. The value is never "".
+
+    `suggest` is unchanged and still returns "" unless it is sure -- callers
+    that must not guess keep working. This is the one that always answers.
+    """
+    key = _normalise(first_name)
+    if not key:
+        return (_ARBITRARY_DEFAULT, ARBITRARY)
+    sure = suggest(first_name)
+    if sure:
+        return (sure, CLEAR)
+    for end in sorted(_FEMALE_ENDINGS, key=len, reverse=True):
+        if key.endswith(end):
+            return (FEMALE, LEANING)
+    for end in sorted(_MALE_ENDINGS, key=len, reverse=True):
+        if key.endswith(end):
+            return (MALE, LEANING)
+    return (_ARBITRARY_DEFAULT, ARBITRARY)
+
+
+def plan_all(rows):
+    """Every blank, with a value and how sure we are of it.
+
+    The counterpart to `plan`, which fills only what it is certain of. This
+    one leaves nobody out -- except a cell that already holds something, which
+    is still never overwritten, because a typed answer is a person's and a
+    re-run must not undo somebody's correction.
+    """
+    out = []
+    for r in rows:
+        if str(r.get(B.GENDER) or "").strip():
+            continue                       # never overwrite -- unchanged
+        first = str(r.get("Name") or "").strip()
+        value, how = best_guess(first)
+        out.append({
+            "row": r.get("_row") or r.get("row"),
+            "name": ("%s %s" % (first, r.get("Last Name") or "")).strip(),
+            "first": first,
+            "suggest": value,
+            "confidence": how,
+            "why": "" if how == CLEAR else _why_blank(first),
+        })
+    return out
+
+
 def _why_blank(first: str) -> str:
     """Why this name got no suggestion, in words an admin can act on.
 
@@ -436,16 +512,23 @@ def fill(office_key: str, week_start=None, *, dry_run: bool = False,
     week = week_start or B.week_start_of(dt.date.today())
     mine = B.for_week(all_rows, week)
 
-    todo = plan(mine)
-    still = unclear(mine)
-    for p_ in todo:
+    todo = plan_all(mine)
+    sure = [p_ for p_ in todo if p_["confidence"] == CLEAR]
+    shaky = [p_ for p_ in todo if p_["confidence"] != CLEAR]
+    for p_ in sure:
         log("  suggest  %-28s %s" % (p_["name"], p_["suggest"]))
-    if still:
-        log("  %d still need a person to type them:" % len(still))
-        for p_ in still:
-            log("     %-28s %s" % (p_["name"], p_["why"]))
+    # THE SHAKY ONES ARE THE REPORT. Every cell is filled now, so a run that
+    # printed only what it wrote would read as "gender: done" on a week with
+    # seven coin flips in it -- the exact way the old version could mislead,
+    # arrived at from the opposite direction.
+    if shaky:
+        log("  %d filled in but NOT certain -- these are the ones to check:"
+            % len(shaky))
+        for p_ in shaky:
+            log("     %-28s %-6s  (%s)"
+                % (p_["name"], p_["suggest"], p_["why"]))
     if not todo:
-        log("  nothing clear enough to suggest.")
+        log("  every gender on this week's board is already filled in.")
         return 0
     if dry_run:
         log("  --dry-run: nothing written.")
@@ -454,26 +537,35 @@ def fill(office_key: str, week_start=None, *, dry_run: bool = False,
         # nothing", and the next person turns it off.
         return len(todo)
 
-    n = BH.write(office_key, B.GENDER, wanted(mine), week, log=log)
+    n = BH.write(office_key, B.GENDER,
+                 {p_["name"]: p_["suggest"] for p_ in todo}, week, log=log)
     if not n:
         return 0
 
-    # The tint is the whole point: it is what lets an admin see at a glance
-    # which of these answers nobody has checked.
+    # TWO TINTS, because the whole point is that an admin can see which
+    # answers are ours to stand behind and which are theirs to decide.
     a1 = S._a1(cols[B.GENDER] + 1)
-    want_names = {p_["name"] for p_ in todo}
-    cells = ["%s%d" % (a1, S.FIRST_DATA_ROW + i)
-             for i, r in enumerate(all_rows)
-             if ("%s %s" % (r.get("Name", ""), r.get("Last Name", ""))).strip()
-             in want_names]
-    if cells:
+
+    def _cells(group):
+        names = {p_["name"] for p_ in group}
+        return ["%s%d" % (a1, S.FIRST_DATA_ROW + i)
+                for i, r in enumerate(all_rows)
+                if ("%s %s" % (r.get("Name", ""), r.get("Last Name", ""))).strip()
+                in names]
+
+    for group, colour, what in ((sure, B.SUGGESTED, "suggested"),
+                                (shaky, B.UNSURE, "unsure")):
+        cells = _cells(group)
+        if not cells:
+            continue
         try:
-            ws.format(cells, {"backgroundColor": B.SUGGESTED})
+            ws.format(cells, {"backgroundColor": colour})
         except Exception as exc:                            # noqa: BLE001
             # A missing tint is cosmetic; a half-written week is not. Say so
             # and keep the values -- the admin has a correct cell that merely
             # does not look provisional.
-            log("  (wrote the values, but couldn't tint them: %s)" % exc)
+            log("  (wrote the %s values, but couldn't tint them: %s)"
+                % (what, exc))
     return n
 
 
