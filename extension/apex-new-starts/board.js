@@ -271,7 +271,11 @@
         return due <= today;
       };
 
-      const rowFor = (p, no) => {
+      // `grp` tags every <tr> a person owns (their row AND their hidden reason
+      // editor) with one class, so a removed group collapses as a unit and
+      // nothing of theirs is left behind on screen.
+      const rowFor = (p, no, grp) => {
+        const G = grp ? ' ' + grp : '';
           let out = '';
           const left = remaining(p), b = band(p), name = who(p);
           // OWNER SUBMITTED -> THE WHOLE LINE GOES GREEN (Megan, 2026-11-11:
@@ -291,7 +295,7 @@
           });
           const sub = !stopped && !!String(p['Owner Submit'] || '').trim();
           out += '<tr class="b-' + b + (sub ? ' b-sub' : '') +
-            (stopped ? ' b-stop' : '') + (isOff(p) ? ' b-gone' : '') +
+            (stopped ? ' b-stop' : '') + (isOff(p) ? ' b-gone' : '') + G +
             '" data-who="' + esc(name) + '">' +
             // Numbered: the week's register runs 1..n, and each removal
             // group counts from 1 again (Megan, 2026-11-11: "in the removals-
@@ -387,7 +391,7 @@
         // nothing to spell, and the name is in the question so nobody removes
         // the wrong person from a row of near-identical buttons.
         if (!isOff(p)) {
-          out += '<tr class="whyrow" data-for="' + esc(name) + '" hidden>' +
+          out += '<tr class="whyrow' + G + '" data-for="' + esc(name) + '" hidden>' +
             '<td colspan="' + (STEPS.length + 6) + '">' +
             '<span class="whyq">Remove <b>' + esc(name) +
             '</b> from onboarding \u2014 why?</span>' +
@@ -433,12 +437,20 @@
         });
         const order = REASONS.filter(r => byWhy[r])
           .concat(Object.keys(byWhy).filter(w => REASONS.indexOf(w) < 0).sort());
-        order.forEach(w => {
-          html += '<tr class="sep sep-off"><td colspan="' + (STEPS.length + 6) +
-            '">Removed \u00b7 ' + esc(w) + ' (' + byWhy[w].length + ')</td></tr>';
+        // Collapsed, and each heading opens its own group (Megan, 2026-11-19:
+        // "no shows ... arent collapsed", and "if they don't show they should
+        // remain in the removal area as they aren't going to start more
+        // onboarding"). They stay removed -- the heading's count is the fact
+        // worth seeing; the names under it are only wanted on purpose.
+        order.forEach((w, i) => {
+          const gc = 'og' + i;
+          html += '<tr class="sep sep-off off-head" data-grp="' + gc + '">' +
+            '<td colspan="' + (STEPS.length + 6) + '">' +
+            '<span class="off-caret">\u25b8</span> Removed \u00b7 ' + esc(w) +
+            ' (' + byWhy[w].length + ')</td></tr>';
           let m = 0;
           byWhy[w].sort((a, z) => who(a).localeCompare(who(z)))
-                  .forEach(p => { html += rowFor(p, ++m); });
+                  .forEach(p => { html += rowFor(p, ++m, gc + ' og-hid'); });
         });
       }
       html += '</tbody></table></div>';
@@ -492,6 +504,20 @@
       render(root);
     };
     root.querySelectorAll('.bd-nvm').forEach(b => { b.onclick = shut; });
+
+    // Open or shut one removed group. Toggling a CSS class rather than the
+    // `hidden` attribute on purpose: the reason-editor row carries its own
+    // `hidden`, and reusing it here would pop every editor open on expand.
+    root.querySelectorAll('.off-head').forEach(h => {
+      h.onclick = () => {
+        const gc = h.dataset.grp;
+        const shutNow = root.querySelector('.' + gc + '.og-hid');
+        root.querySelectorAll('.' + gc).forEach(
+          r => r.classList.toggle('og-hid', !shutNow));
+        const c = h.querySelector('.off-caret');
+        if (c) c.textContent = shutNow ? '▾' : '▸';
+      };
+    });
     // "Other" swaps the pick list for a box. The question stays on screen, so
     // it is still obvious who is being removed while they type.
     root.querySelectorAll('.bd-other').forEach(b => {

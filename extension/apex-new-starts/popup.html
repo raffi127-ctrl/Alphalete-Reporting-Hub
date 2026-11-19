@@ -33,6 +33,18 @@
   body.full { width: auto; }
   body.full main { padding: 16px 22px 24px; }
   body.full .bd-wrap { max-height: calc(100vh - 230px); }
+  /* NAME is the one column with no width of its own, so under
+     `table-layout: fixed; width: 100%` it absorbs every pixel a wider window
+     adds -- fine in an 800px popup, absurd on a 2000px screen (Megan,
+     2026-11-19: "the name column is way too wide"). Full screen gives it a
+     width and lets the table be its own size instead of stretching. */
+  body.full table.bd-grid { width: auto; }
+  body.full .bd-grid th.h-nm { width: 300px; }
+  /* A removed group starts shut; its heading opens it. */
+  .bd-grid tr.og-hid { display: none; }
+  .bd-grid tr.off-head td { cursor: pointer; user-select: none; }
+  .bd-grid tr.off-head .off-caret { display: inline-block; width: 11px;
+                                    font-size: 10px; }
   .tabs { display: flex; gap: 6px; margin: 10px 0 8px; }
   .tab { flex: 1; width: auto; margin: 0; padding: 7px 8px; font-size: 13px;
          background: #e4e9ef; color: #1d2330; }
