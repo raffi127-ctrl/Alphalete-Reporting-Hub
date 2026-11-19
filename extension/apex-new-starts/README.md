@@ -15,7 +15,13 @@ This replaces the **Fill Apex bookmark**. Same engine, same run, same panel.
 
 ## Install (per computer, ~1 min)
 1. Chrome → `chrome://extensions` → turn on **Developer mode** (top right).
-2. **Load unpacked** → pick this `extension/apex-new-starts` folder.
+2. **Load unpacked** → pick this `extension/apex-new-starts` folder. Pick it
+   where it sits in the repo — do **not** copy it to the Desktop first. Chrome
+   keeps reading the folder you picked, so a copy never gets the `git pull`
+   fixes this section promises, and deleting the copy later leaves a dead card
+   and no **Fill Apex** button (Megan, 2026-11-19).
+   `python -m automations.shared.extension_doctor` says which folder Chrome is
+   actually reading.
 3. Pin it (puzzle icon → pin **Lucy Onboarding**).
 4. Delete the old **Fill Apex** bookmark so nobody clicks the wrong one.
 

@@ -15,6 +15,11 @@
 
   let me = null, poll = null;
 
+  // Running as a full tab rather than as the icon's popup. Same page, same
+  // code -- only the 800x600 popup cap is gone.
+  const FULL = new URLSearchParams(location.search).get('full') === '1';
+  if (FULL) document.body.classList.add('full');
+
   function say(kind, html) {
     $('msg').className = kind;
     $('msg').innerHTML = html;
@@ -96,6 +101,13 @@
     }
     $('pass').value = '';
     };
+
+  // Already full screen: nothing to expand into, so do not offer it.
+  $('expand').hidden = FULL;
+  $('expand').onclick = () => {
+    chrome.tabs.create({url: chrome.runtime.getURL('popup.html?full=1')});
+    window.close();   // the popup is in the way of the tab it just opened
+  };
 
   $('out').onclick = async () => {
     await new Promise(r => chrome.runtime.sendMessage({type: 'signout'}, r));
