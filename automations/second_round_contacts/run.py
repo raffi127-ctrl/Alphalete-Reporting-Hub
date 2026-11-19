@@ -146,7 +146,8 @@ def run_pass(owners: List[R.Owner], days: List[dt.date], *, write: bool,
                 # they look brand new to this pass and the next run puts them
                 # straight back -- out at 7pm, in at 6am, every day until the
                 # week rolls past. The state is the memory of that decision.
-                # Only the 7pm pass may undo one, and only its own (rules.restore).
+                # Only the audit puts one back, when the missing mark shows up
+                # (rules.restore).
                 prior = acct.get(S.key_for(a))
                 if prior and prior.get("status") == S.REMOVED:
                     removed += 1
@@ -259,12 +260,12 @@ def run_audit(owners: List[R.Owner], *, write: bool, ownerville: bool = True,
             if old and write:
                 S.save(st)
             keys = {k for k, e in entries.items() if e.get("status") == S.TRACKED} - old
-            if evening:
-                # The look-back. Somebody the 7pm rule took out yesterday is no
-                # longer TRACKED, so without this their late mark is never
-                # read and they can never come back (Megan, 2026-11-17).
-                keys |= {k for k, e in entries.items()
-                         if rules.restorable(e, today)} - old
+            # The way back. Somebody taken out is no longer TRACKED, so
+            # without this their late mark is never read and they can never
+            # come back (Megan 2026-11-17 for the 7pm rule; Eve 2026-11-19 for
+            # every rule).
+            keys |= {k for k, e in entries.items()
+                     if rules.restorable(e, today)} - old
             if not keys:
                 continue
             try:
@@ -292,7 +293,7 @@ def run_audit(owners: List[R.Owner], *, write: bool, ownerville: bool = True,
     for account, facts in facts_all.items():
         o = by_account[account]
         svc = K.service(o.account) if write else None
-        group = K.ensure_group(svc, C.GROUP) if (write and evening) else None
+        group = K.ensure_group(svc, C.GROUP) if write else None
         # THE KEEPER HAS TO HAVE BEEN READ. The evening rule removes everybody
         # who is not marked BOB, so a read that returned no BOB rows at all
         # does not mean "nobody was brought on board" -- it means we could not
@@ -309,9 +310,8 @@ def run_audit(owners: List[R.Owner], *, write: bool, ownerville: bool = True,
             e = st[account][k]
             name = " ".join(x for x in (e.get("first_name"), e.get("last_name")) if x)
             f = dict(f, progress=progress.get(name))
-            # ALREADY OUT. Only the evening rule's own removals are up for
-            # review, and only inside its window -- rules.restore says so, and
-            # a standing removal (not hired, never badged) never gets here.
+            # ALREADY OUT. Back in only if the mark its removal was missing
+            # has since shown up -- rules.restore says which mark, per rule.
             if e.get("status") == S.REMOVED:
                 back, why = rules.restore(e, f, today)
                 if not back:
@@ -336,6 +336,7 @@ def run_audit(owners: List[R.Owner], *, write: bool, ownerville: bool = True,
                         e["reason"] = why
                         e.pop("removed", None)
                         e.pop("removed_by", None)
+                        e.pop("removed_rule", None)
                     except Exception as ex:  # noqa: BLE001
                         _log("    FAILED putting %s back: %s" % (name, str(ex)[:160]))
                         failed += 1
@@ -354,10 +355,14 @@ def run_audit(owners: List[R.Owner], *, write: bool, ownerville: bool = True,
                         e["reason"] = why
                         # Which rule did it, so the 7pm pass knows what it may
                         # undo. Only ever the evening one.
-                        if evening and keeper_read and rules.evening_removal(e, f, today):
+                        ev = evening and keeper_read and rules.evening_removal(e, f, today)
+                        if ev:
                             e["removed_by"] = rules.EVENING
                         else:
                             e.pop("removed_by", None)
+                        rule = rules.removal_rule(why, ev or None)
+                        if rule:
+                            e["removed_rule"] = rule
                     except Exception as ex:  # noqa: BLE001
                         _log("    FAILED removing %s: %s" % (name, str(ex)[:160]))
                         failed += 1

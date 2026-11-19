@@ -245,23 +245,105 @@ class EveningLookBack(unittest.TestCase):
     def test_still_blank_stays_out(self):
         self.assertFalse(rules.restore(self.gone(), {}, T)[0])
 
-    def test_a_standing_removal_is_never_undone(self):
-        """Not hired, or never badged. Those are weeks-old judgements and the
-        7pm pass has no business reversing them."""
-        e = self.gone("2026-10-31", by=None)
-        self.assertFalse(rules.restorable(e, T))
-        self.assertFalse(rules.restore(e, {"bob": dt.date(2026, 10, 31)}, T)[0])
+    def test_the_evening_rule_is_undone_by_bob_only(self):
+        """A booked start without BOB is exactly what the 7pm rule removes;
+        bringing that back would be a daily in/out."""
+        self.assertFalse(rules.restore(
+            self.gone(), {"ns_sched": dt.date(2026, 11, 3)}, T)[0])
 
-    def test_outside_the_window_stays_out(self):
+    def test_an_old_evening_removal_still_comes_back_on_bob(self):
+        """Eve 2026-11-19: marked BOB days late still brings them back."""
         e = self.gone("2026-10-20")
+        e["removed"] = "2026-10-20"
+        back, why = rules.restore(e, {"bob": dt.date(2026, 11, 3)}, T)
+        self.assertTrue(back)
+        self.assertIn("marked BOB", why)
+
+    def test_too_old_a_removal_is_no_longer_reviewed(self):
+        e = self.gone("2026-08-01")
+        e["removed"] = "2026-08-01"
         self.assertFalse(rules.restorable(e, T))
-        self.assertFalse(rules.restore(e, {"bob": dt.date(2026, 10, 20)}, T)[0])
+
+
+class EveryRemovalCanComeBack(unittest.TestCase):
+    """Eve 2026-11-19: "what if they get marked BOB later, or end up hired?"
+    Every removal comes back once the mark it was missing shows up."""
+
+    def gone(self, reason, sr="2026-10-20", removed="2026-10-27", rule=None):
+        e = ent(sr, status=S.REMOVED)
+        e.update(removed=removed, reason=reason, display="Ana Lopez (2R 10/20)")
+        if rule:
+            e["removed_rule"] = rule
+        return e
+
+    NOT_HIRED = "not hired / left as a message: second round 2026-10-20, 7 days ago"
+
+    def test_not_hired_comes_back_on_a_late_bob(self):
+        back, why = rules.restore(self.gone(self.NOT_HIRED), {"bob": dt.date(2026, 11, 2)}, T)
+        self.assertTrue(back)
+        self.assertIn("marked BOB", why)
+
+    def test_not_hired_comes_back_on_a_booked_or_showed_start(self):
+        for f in ({"ns_sched": dt.date(2026, 10, 30)}, {"ns_showed": dt.date(2026, 10, 30)}):
+            self.assertTrue(rules.restore(self.gone(self.NOT_HIRED), f, T)[0], f)
+
+    def test_not_hired_reads_the_stamped_rule_too(self):
+        e = self.gone("reworded someday", rule=rules.NOT_HIRED)
+        self.assertTrue(rules.restore(e, {"bob": dt.date(2026, 11, 2)}, T)[0])
+
+    def test_showed_or_offered_alone_does_not_bring_back(self):
+        self.assertFalse(rules.restore(self.gone(self.NOT_HIRED),
+                                       {"showed": dt.date(2026, 10, 20),
+                                        "offered": dt.date(2026, 10, 30)}, T)[0])
+
+    def test_still_blank_stays_out(self):
+        self.assertFalse(rules.restore(self.gone(self.NOT_HIRED), {}, T)[0])
+
+    def test_never_comes_back_just_to_be_taken_out_again(self):
+        """A BOB already 3+ weeks old would be 'never showed' the same day."""
+        self.assertFalse(rules.restore(self.gone(self.NOT_HIRED, sr="2026-09-20", removed="2026-10-27"),
+                                       {"bob": dt.date(2026, 10, 1)}, T)[0])
+
+    def test_no_show_comes_back_only_when_they_show(self):
+        e = self.gone("new start never showed: scheduled 2026-10-01, 21 days ago")
+        self.assertFalse(rules.restore(e, {"bob": dt.date(2026, 10, 1)}, T)[0])
+        self.assertTrue(rules.restore(e, {"bob": dt.date(2026, 10, 1),
+                                          "ns_showed": dt.date(2026, 10, 29),
+                                          "progress": 40}, T)[0])
+
+    def test_never_badged_comes_back_at_100(self):
+        e = self.gone("never fully badged: 60% on View Progress 21 days after showing up")
+        f = {"ns_showed": dt.date(2026, 10, 1)}
+        self.assertFalse(rules.restore(e, dict(f, progress=80), T)[0])
+        self.assertTrue(rules.restore(e, dict(f, progress=100), T)[0])
+
+    def test_an_unknown_removal_is_left_alone(self):
+        self.assertFalse(rules.restorable(self.gone("removed by hand"), T))
+
+    def test_the_audit_puts_a_standing_removal_back_without_the_evening_flag(self):
+        o = mock.Mock(owner="Raf", label="Raf", active=True, account="raf",
+                      offices=["11280"], ov_campaign="RES-AT&T")
+        a = {"first_name": "Ana", "last_name": "Lopez",
+             "phone": "5125550147", "email": "ana@example.test"}
+        k = S.key_for(a)
+        e = dict(self.gone(self.NOT_HIRED), **{x: a[x] for x in ("phone", "email")})
+        st = {"raf": {k: e}}
+        sess = mock.MagicMock(); sess.__enter__.return_value = mock.Mock()
+        with mock.patch("automations.applicant_tracker.applicantstream.session",
+                        return_value=sess),                 mock.patch.object(RUN.S, "load", return_value=st),                 mock.patch.object(RUN.S, "save"),                 mock.patch.object(RUN, "gather_facts",
+                                  return_value=({k: {"bob": dt.date(2026, 11, 2)}}, {C.LABEL_BOB})) as gf,                 mock.patch.object(RUN.K, "service", return_value=mock.Mock()),                 mock.patch.object(RUN.K, "ensure_group", return_value={"resourceName": "g/1"}),                 mock.patch.object(RUN.K, "note_for", return_value="note"),                 mock.patch.object(RUN.K, "create", return_value="people/9") as create:
+            RUN.run_audit([o], write=True, ownerville=False, evening=False, today=T)
+        self.assertIn(k, gf.call_args[0][2])
+        self.assertEqual(create.call_count, 1)
+        self.assertEqual(st["raf"][k]["status"], S.TRACKED)
+        self.assertEqual(st["raf"][k]["resourceName"], "people/9")
+
 
     def test_a_tracked_contact_is_not_a_restore_candidate(self):
         self.assertFalse(rules.restorable(ent(), T))
 
     def test_a_removal_with_no_second_round_date_is_not_a_candidate(self):
-        e = self.gone()
+        e = self.gone(self.NOT_HIRED)
         del e["second_round"]
         self.assertFalse(rules.restorable(e, T))
 

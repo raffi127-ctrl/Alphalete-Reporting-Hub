@@ -9,10 +9,8 @@ from automations.second_round_contacts import config as C
 KEEP, WAIT, DELETE, HIRED = "keep", "wait", "delete", "hired"
 
 # Stamped on the state entry as `removed_by` when the EVENING rule is what took
-# somebody out. It is the only removal that can be undone, so it has to be
-# tellable apart from the standing ones -- a not-hired or never-badged removal
-# stays removed. Matching on the reason prose would do it today and break the
-# first time somebody rewords a message.
+# somebody out. Every removal can be undone now (restore), but each by its own
+# mark, so the rule behind it has to be on record -- see `removed_rule`.
 EVENING = "evening"
 
 
@@ -42,29 +40,96 @@ def evening_removal(entry: dict, facts: dict,
     return "second round %s: not marked BOB by the end of the day" % sr
 
 
+# WHAT TOOK THEM OUT, stamped as `removed_rule` on every removal so the way
+# back can be read off it. Older removals carry only the reason text, so
+# rule_of() falls back to it -- once, here, next to the messages it reads.
+NOT_HIRED, NO_SHOW, NOT_BADGED = "not_hired", "no_show", "not_badged"
+_REASON_PREFIX = {NOT_HIRED: "not hired", NO_SHOW: "new start never showed",
+                  NOT_BADGED: "never fully badged"}
+
+# How long a removal stays up for review. Past this the mark that would bring
+# them back is older than the audit re-reads anyway.
+COMEBACK_DAYS = 60
+
+
+def rule_of(entry: dict) -> Optional[str]:
+    """Which rule took this person out, or None if it cannot be told."""
+    if entry.get("removed_by") == EVENING:
+        return EVENING
+    if entry.get("removed_rule"):
+        return entry["removed_rule"]
+    reason = (entry.get("reason") or "").lower()
+    if "not marked bob" in reason:
+        return EVENING
+    for rule, prefix in _REASON_PREFIX.items():
+        if reason.startswith(prefix):
+            return rule
+    return None
+
+
+def removal_rule(verdict_reason: str, evening_why: Optional[str]) -> Optional[str]:
+    """The rule behind a DELETE that decide() just returned."""
+    if evening_why:
+        return EVENING
+    return rule_of({"reason": verdict_reason})
+
+
 def restorable(entry: dict, today: dt.date) -> bool:
-    """Could the 7pm pass still put this person back? Only its own removals,
-    and only inside its window -- so it never argues with a standing rule."""
-    if entry.get("status") != "removed" or entry.get("removed_by") != EVENING:
+    """Is this removal still up for review? ANY rule's removal now (Eve,
+    2026-11-19: "what if they get marked BOB later, or end up hired?"), for
+    COMEBACK_DAYS after it was made."""
+    if entry.get("status") != "removed" or rule_of(entry) is None:
         return False
     try:
         sr = dt.date.fromisoformat(entry["second_round"])
     except (KeyError, ValueError):
         return False
-    return in_evening_window(sr, today)
+    try:
+        when = dt.date.fromisoformat(entry.get("removed") or "")
+    except ValueError:
+        when = sr
+    return 0 <= (today - when).days <= COMEBACK_DAYS and sr <= today
 
 
 def restore(entry: dict, facts: dict, today: dt.date) -> Tuple[bool, str]:
-    """(put them back?, reason). The other half of the look-back: somebody
-    marked after 7pm, or the next morning, was marked into a contact that had
-    already gone. The mark is the evidence; the removal was a guess made when
-    the box was still blank."""
+    """(put them back?, reason). Somebody taken out who has SINCE got the mark
+    the removal was waiting for comes back in (Eve, 2026-11-19):
+
+      not marked BOB (the 7pm rule)              -> BOB
+      not hired in 7 days                        -> BOB, new start booked,
+                                                    or new start showed
+      new start never showed                     -> new start showed
+      never fully badged                         -> 100% on View Progress
+
+    "Showed up" or "offered" alone never brings anyone back -- the keeper is
+    BOB (Megan, 2026-11-17). And nobody comes back only to be taken straight
+    out again by the standing rules: if decide() would remove them today, they
+    stay out."""
     if not restorable(entry, today):
         return False, ""
-    if facts.get("bob"):
-        return True, ("marked BOB on %s, after the 7pm pass had taken them "
-                      "out" % facts["bob"])
-    return False, ""
+    rule = rule_of(entry)
+    why = ""
+    # The 7pm rule takes out anyone without BOB even when a start is booked,
+    # so only BOB can undo it -- a booked start would bring them back at 6am
+    # for the 7pm pass to take out again, every day of its window.
+    marks = ((("bob", "marked BOB"),) if rule == EVENING else
+             (("ns_showed", "new start showed"),
+              ("ns_sched", "new start booked"), ("bob", "marked BOB")))
+    if rule in (EVENING, NOT_HIRED):
+        for f, label in marks:
+            if facts.get(f):
+                why = "%s on %s, after being taken out" % (label, facts[f])
+                break
+    elif rule == NO_SHOW and facts.get("ns_showed"):
+        why = "new start showed on %s, after being taken out" % facts["ns_showed"]
+    elif rule == NOT_BADGED and (facts.get("progress") or 0) >= 100:
+        why = "reached 100% on View Progress, after being taken out"
+    if not why:
+        return False, ""
+    verdict, _ = decide(dict(entry, status="tracked"), facts, today)
+    if verdict == DELETE:
+        return False, ""
+    return True, why
 
 
 def decide(entry: dict, facts: dict, today: dt.date,
