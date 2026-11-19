@@ -322,7 +322,7 @@ def decide_sales(sales: Dict, last_posted: Optional[Dict],
     return moved, merged, False
 
 
-def _nds_scoreboard(sales: Dict, fired: List[str], show=None) -> str:
+def _nds_scoreboard(sales: Dict, fired: List[str], show=None, teams=None) -> str:
     """NDS: Air / lines / upgrades as three sections, upgrades OUTSIDE the
     total (Megan, 2026-09-22: "colten should have AIR / NLs / Upgrade - 3
     sections" ... "I don't think upgrades count as a unit of sale though").
@@ -359,6 +359,10 @@ def _nds_scoreboard(sales: Dict, fired: List[str], show=None) -> str:
     lines.append("NL's: %d" % sum(r[3] for r in rows))
     lines.append("Upgrades: %d" % sum(r[4] for r in rows))
     lines.append("%s TOTALS: %d" % (N.TROPHY, sum(r[1] for r in rows)))
+    if teams is not None:
+        # One line per team under TOTALS, like Raf's (Carlos 2026-11-19).
+        # A team's number is what TOTALS counts: Air + lines, no upgrades.
+        lines.extend(N.team_lines([(r[0], {"NL": r[1]}) for r in rows], teams))
     return "\n".join(lines)
 
 
@@ -547,7 +551,7 @@ def scoreboard_text(sales: Dict, fired: List[str], campaign=None,
     if names == ("Sales", "Volume", "Big", "Huge"):
         return _box_scoreboard(sales, fired, show)
     if str(campaign or "").strip().lower() == "nds":
-        return _nds_scoreboard(sales, fired, show)
+        return _nds_scoreboard(sales, fired, show, teams=teams)
     if names == ("Lines", "Sales"):
         return _verizon_scoreboard(sales, fired, show)
     if names != ("Int", "Int Up", "DTV", "NL"):
@@ -767,6 +771,24 @@ def eco_zero_lines(sales: Dict, knock_rows: List[Dict], campaign=None,
     return ["", "Reps on a Zero:"] + names if names else []
 
 
+def _text_teams(key, office, day, log=print):
+    """The team book behind an office's standings text, or None. Raf's is his
+    own sales board's Team column; Carlos's is the Vantura Master's NDS Sales
+    Board (vantura_teams, 2026-11-19). Never raises."""
+    try:
+        from automations.icd_alerts import vantura_teams as VT
+        vantura = key in VT.OFFICE_KEYS
+    except Exception:  # noqa: BLE001 -- a machine without the file: as before
+        vantura = False
+    if vantura:
+        try:
+            return VT.for_day(day, log=lambda m: log("%-10s %s" % (key, m)))
+        except Exception:  # noqa: BLE001 -- a team split never costs the text
+            return None
+    from automations.icd_alerts import knocks_post as _KP
+    return _KP._teams_for(office, day)
+
+
 def _standings_board(key, day, office, board_sales, flames, show, tab,
                      knocks_today, log=print):
     """The whole day's standings the text group gets -- the scoreboard plus
@@ -775,7 +797,7 @@ def _standings_board(key, day, office, board_sales, flames, show, tab,
     from automations.icd_alerts import config as _CFG
     from automations.icd_alerts import knocks_post as _KP
     board = scoreboard_text(board_sales, flames, office.campaign, show,
-                            teams=_KP._teams_for(office, day))
+                            teams=_text_teams(key, office, day, log=log))
     if not board:
         return board, knocks_today
     # RAF'S HEADCOUNT BLOCK under the totals, same as his partner chat
