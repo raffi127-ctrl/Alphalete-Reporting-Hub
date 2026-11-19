@@ -14418,6 +14418,28 @@
    "timeout_minutes": 20,
    "verify": null
   },
+  "disable_bob_call_nudge_agent": {
+   "on_scheduler": false,
+   "machine": "Lucy 1",
+   "display_name": "Disable: BOB Call Nudge LaunchAgent",
+   "_note": "Retires the standalone com.alphalete.bob-call-nudge LaunchAgent on the machine it runs it on (Lucy 1): launchctl bootout, then the plist is moved aside to .plist.disabled so a re-login cannot re-load it. Megan, 2026-11-19: \"don't take anything live yet for actual posting - I want this all built out first\", then \"no, disarm\" - the nudge had been installed earlier the same day and would have sent real DMs to five office owners from 16:05 CT. REVERSIBLE and that is the point: `lucy rerun install_bob_call_nudge_agent --machine \"Lucy 1\"` puts it straight back, so nothing built today is lost. Reading it with `lucy rerun bob_nudge_dry` still works while it is disarmed - the dry run is a module, not the agent. Run it with --machine \"Lucy 1\": disable jobs never move (routing.NEVER_MOVE_PREFIXES), because the agent exists on one machine and nowhere else.",
+   "command": [
+    "automations.day_orchestrator.disable_agent"
+   ],
+   "base_args": [
+    "bob-call-nudge"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "data_sources": [],
+   "depends_on": [],
+   "freshness_target": null,
+   "priority": "P3",
+   "source_type": "local",
+   "timeout_minutes": 5,
+   "verify": null
+  },
   "install_bob_call_nudge_agent": {
    "on_scheduler": false,
    "machine": "Lucy 1",
