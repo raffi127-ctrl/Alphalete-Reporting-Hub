@@ -6931,6 +6931,32 @@
    "verify": null,
    "close_on": "exit_zero"
   },
+  "night_knocks_resend": {
+   "order": 1.2,
+   "machine": "Lucy 3",
+   "on_scheduler": false,
+   "display_name": "Night Knocks: resend a past night's failed boards",
+   "_note": "Eve 2026-11-19 (Coel Reif: 'No daily knocks'): the 11/18 Central wave lost 5 boards to an ownerville stall. Hand-run only: `lucy rerun night_knocks_resend --resend YYYY-MM-DD` re-draws and mails that night's failed boards to their owners (add --office NAME to pick). Never sends an office twice. Lucy 3 because the night state file and the ownerville profile live there.",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.captainship_night_knocks.run"
+   ],
+   "base_args": [
+    "--send",
+    "--live"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "after": [],
+   "depends_on": [],
+   "timeout_minutes": 30,
+   "priority": "P3",
+   "freshness_target": null,
+   "verify": null,
+   "close_on": "exit_zero"
+  },
   "captainship_knocks": {
    "order": 1,
    "machine": "Lucy 3",
