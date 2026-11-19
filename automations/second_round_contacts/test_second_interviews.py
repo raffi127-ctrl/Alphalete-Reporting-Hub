@@ -272,3 +272,53 @@ class TheRightTableOnThePage(unittest.TestCase):
         # is what the nudge and the probe both log it from.
         self.assertRegex(SI.ROW_JS, r"return\s*\{[^}]*\bsection\b")
         self.assertTrue(hasattr(SI, "read_day_full"))
+
+
+class CalledButNeverBooked(unittest.TestCase):
+    """"BOB - Called | SMS Sent" is a started call, not a finished one.
+
+    Megan, 2026-11-18, on Jaryt Talmadge and Jayden Fuller: "they were marked
+    to BOB, but then they weren't actually brought on board because that final
+    action column wasn't marked ... no scheduling was done in ApplicantStream
+    for their first day, because that also means that they didn't get their
+    brought on board email that confirms the offer for the applicant."
+    """
+
+    def test_the_two_mid_call_statuses(self):
+        for status in ("BOB - Called | SMS Sent", "BOB - Waiting Answer"):
+            r = row(status=status, offered="Yes",
+                    action="First Day of Sales | Disqualify | Decline | Pause")
+            self.assertTrue(SI.bob_started(r), status)
+            self.assertEqual(SI.mark_of(r), "", "%s is not a landed call" % status)
+            self.assertEqual(len(SI.owed([r])), 1, "%s is still chased" % status)
+
+    def test_a_booked_bob_is_not_started_it_is_done(self):
+        self.assertFalse(SI.bob_started(row(status="BOB - Booked")))
+
+    def test_somebody_nobody_rang_is_not_in_this_bucket(self):
+        self.assertFalse(SI.bob_started(row(status="Confirmed by Text")))
+
+    def test_it_says_the_email_never_went_out(self):
+        got = SI.describe(row(first="Jaryt", last="Talmadge",
+                              status="BOB - Called | SMS Sent"), TODAY)
+        self.assertIn("no first day is scheduled", got)
+        self.assertIn("brought-on-board email", got)
+        self.assertNotIn("not marked yet", got)
+
+    def test_the_daily_update_keeps_them_apart(self):
+        rows = [row(first="Jaryt", status="BOB - Called | SMS Sent"),
+                row(first="Taylor", status="Confirmed by Text")]
+        got = SI.daily_update(rows, TODAY)
+        self.assertEqual(got["bob_started"], ["Jaryt Hernandez"])
+        self.assertEqual(got["not_marked"], ["Taylor Hernandez"])
+
+    def test_everybody_still_lands_somewhere_exactly_once(self):
+        rows = [row(first="Jaryt", status="BOB - Called | SMS Sent"),
+                row(first="Alma", status="BOB - Booked"),
+                row(first="Baile", showed="no", status="Called"),
+                row(first="Claudia", showed="", status="")]
+        got = SI.daily_update(rows, TODAY)
+        placed = sum(len(got[k]) for k in
+                     ("no_show", "bob", "declined", "disqualified", "lm",
+                      "bob_started", "not_marked", "show_up_not_ticked"))
+        self.assertEqual(placed, len(rows))

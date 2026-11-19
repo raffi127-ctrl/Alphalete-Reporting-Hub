@@ -100,6 +100,7 @@ def outstanding(rows: List[dict]) -> List[dict]:
     return [{"name": SI.name_of(r),
              "line": SI.describe(r),
              "status": str(r.get("status") or "").strip(),
+             "bob_started": SI.bob_started(r),
              "mark": SI.mark_of(r)}
             for r in SI.owed(rows)]
 
@@ -247,24 +248,48 @@ def message(owner_name: str, people: List[dict], today: dt.date) -> str:
     emoji wall, no explanation of the system -- somebody reading this at 6pm
     wants to know who to ring.
     """
+    # TWO DIFFERENT ASKS, so they are not run together in one list.
+    #
+    # Somebody at "BOB - Called | SMS Sent" has already been rung -- asking
+    # "did you call them?" reads as if nobody is paying attention. What is
+    # actually missing is the first day, and Megan's point is what that costs:
+    # "no scheduling was done in ApplicantStream for their first day, because
+    # that also means that they didn't get their brought on board email that
+    # confirms the offer for the applicant" (2026-11-18). The applicant has
+    # accepted and heard nothing back.
+    started = [p for p in people if p.get("bob_started")]
+    to_call = [p for p in people if not p.get("bob_started")]
+
+    def named(items):
+        # The status they ARE sitting at is worth showing: "Confirmed by Text"
+        # looks done to a person skimming the page, and is the most common
+        # thing these people are parked on.
+        out = []
+        for p in items:
+            at = p.get("status") or ""
+            out.append("  - %s%s" % (p["name"],
+                                     "   (currently: %s)" % at if at and
+                                     at.lower() != SI.UNSET else ""))
+        return "\n".join(out)
+
     n = len(people)
-    head = ("*%d BOB call%s still to make* - %s\n"
-            "Everyone below turned up today and has no mark yet. At 7pm "
-            "anyone still unmarked comes out of your reception contacts, so "
-            "marking the call on ApplicantStream sorts this out.\n"
-            "Each one gets one of four: *BOB* (with the start date), "
-            "*Declined*, *Disqualified* or *LM*."
-            % (n, "" if n == 1 else "s", owner_name))
-    # The status they ARE sitting at is worth showing: "Confirmed by Text"
-    # looks done to a person skimming the page, and is the most common thing
-    # these people are parked on.
-    lines = []
-    for p in people:
-        at = p.get("status") or ""
-        lines.append("  - %s%s" % (p["name"],
-                                   "   (currently: %s)" % at if at and
-                                   at.lower() != SI.UNSET else ""))
-    return head + "\n\n" + "\n".join(lines)
+    blocks = ["*%d BOB call%s still to sort out* - %s\nAt 7pm anyone still "
+              "unmarked comes out of your reception contacts, so marking it "
+              "on ApplicantStream sorts this out."
+              % (n, "" if n == 1 else "s", owner_name)]
+
+    if to_call:
+        blocks.append("*Turned up, no mark yet* - each one gets one of four: "
+                      "*BOB* (with the start date), *Declined*, "
+                      "*Disqualified* or *LM*.\n" + named(to_call))
+
+    if started:
+        blocks.append("*Called, but never booked* - the call looks made and "
+                      "the offer was a yes, but no first day is scheduled, so "
+                      "the brought-on-board email confirming the offer has "
+                      "not gone to them.\n" + named(started))
+
+    return "\n\n".join(blocks)
 
 
 def within_working_hours(office, when: dt.datetime) -> bool:

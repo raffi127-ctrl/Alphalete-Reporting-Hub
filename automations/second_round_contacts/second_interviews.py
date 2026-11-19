@@ -49,6 +49,18 @@ from typing import Dict, List, Optional, Tuple
 # Compared whitespace-collapsed and lower-cased, never with `in`, so
 # "BOB - Waiting Answer" cannot match on "bob -" and count as a landed call.
 BOB = "bob - booked"
+# THE CALL WAS STARTED AND NEVER LANDED. Megan, 2026-11-18, on Jaryt Talmadge
+# and Jayden Fuller: "they were marked to BOB, but then they weren't actually
+# brought on board because that final action column wasn't marked ... no
+# scheduling was done in ApplicantStream for their first day, because that
+# also means that they didn't get their brought on board email that confirms
+# the offer for the applicant."
+#
+# So these are NOT the same ask as somebody nobody has rung yet. The call looks
+# made; what is missing is the first day, and without it the applicant never
+# got the email confirming the offer they accepted. Chased, but told
+# differently.
+BOB_STARTED = {"bob - called | sms sent", "bob - waiting answer"}
 DECLINED = "declined next round"
 DISQUALIFIED = "rejected or not qualified"
 LM = "left message"
@@ -168,6 +180,11 @@ def owed(rows: List[Dict]) -> List[Dict]:
     return [r for r in rows if showed_up(r) is True and not mark_of(r)]
 
 
+def bob_started(row: Dict) -> bool:
+    """Offered the role and the BOB call is under way, but no first day set."""
+    return norm(row.get("status")) in BOB_STARTED
+
+
 def describe(row: Dict, today: Optional[dt.date] = None) -> str:
     """One line for a person: the mark, and the date when there is one."""
     name, mark = name_of(row), mark_of(row)
@@ -184,6 +201,9 @@ def describe(row: Dict, today: Optional[dt.date] = None) -> str:
                                              " (%s)" % stamp if stamp else "")
     if mark == "LM":
         return "%s - left message, no answer yet" % name
+    if bob_started(row):
+        return ("%s - call looks made, but no first day is scheduled, so no "
+                "brought-on-board email has gone out" % name)
     return "%s - not marked yet" % name
 
 
@@ -195,8 +215,8 @@ def daily_update(rows: List[Dict], today: Optional[dt.date] = None) -> Dict:
     picture of the day (Megan asked for the showed list explicitly).
     """
     out = {"no_show": [], "bob": [], "declined": [], "disqualified": [],
-           "lm": [], "not_marked": [], "show_up_not_ticked": [],
-           "total": len(rows)}
+           "lm": [], "bob_started": [], "not_marked": [],
+           "show_up_not_ticked": [], "total": len(rows)}
     for r in rows:
         up = showed_up(r)
         if up is False:
@@ -216,6 +236,8 @@ def daily_update(rows: List[Dict], today: Optional[dt.date] = None) -> Dict:
                 (name_of(r), disqualified_at(r.get("action", ""))))
         elif mark == "LM":
             out["lm"].append(name_of(r))
+        elif bob_started(r):
+            out["bob_started"].append(name_of(r))
         else:
             out["not_marked"].append(name_of(r))
     return out

@@ -455,3 +455,38 @@ class TheOfficeDidNotSwitchGuard(unittest.TestCase):
         self.assertNotIn("message(label", src)
         self.assertNotIn("target_for(label", src)
         self.assertIn("message(o.owner", src)
+
+
+class TheDmAsksTheRightThing(unittest.TestCase):
+    """Somebody already rung is not asked "did you call them?"."""
+
+    def _msg(self, people):
+        return N.message("Rafael Hidalgo", people, TODAY)
+
+    def test_a_started_call_gets_its_own_section(self):
+        got = self._msg([{"name": "Jaryt Talmadge",
+                          "status": "BOB - Called | SMS Sent",
+                          "bob_started": True}])
+        self.assertIn("Called, but never booked", got)
+        self.assertIn("no first day is scheduled", got)
+        self.assertIn("brought-on-board email", got)
+        self.assertNotIn("Turned up, no mark yet", got)
+
+    def test_somebody_nobody_rang_gets_the_four(self):
+        got = self._msg([{"name": "Daijah Moss", "status": "Called",
+                          "bob_started": False}])
+        self.assertIn("Turned up, no mark yet", got)
+        self.assertIn("*Declined*", got)
+        self.assertNotIn("Called, but never booked", got)
+
+    def test_both_sections_appear_and_nobody_is_listed_twice(self):
+        people = [{"name": "Jaryt Talmadge", "status": "BOB - Called | SMS Sent",
+                   "bob_started": True},
+                  {"name": "Daijah Moss", "status": "Called",
+                   "bob_started": False}]
+        got = self._msg(people)
+        self.assertIn("Turned up, no mark yet", got)
+        self.assertIn("Called, but never booked", got)
+        for who in ("Jaryt Talmadge", "Daijah Moss"):
+            self.assertEqual(got.count(who), 1, who)
+        self.assertIn("*2 BOB calls still to sort out*", got)
