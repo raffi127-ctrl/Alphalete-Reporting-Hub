@@ -1969,7 +1969,7 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
 
         records = _loads(row[COL_RECORDS]) or {}
         last = _loads(row[COL_LAST_POSTED] if len(row) > COL_LAST_POSTED else "")
-        show = RN.resolver(name_fixes, key)
+        show = RN.day_resolver(RN.resolver(name_fixes, key), key, day)
         # THE THREE ALERTS for the offices that opted in (Carlos 2026-10-22):
         # the Records count says "on the tablet", and the Wireless credit
         # checks riding in the sales add "got a credit check" / "got a passed

@@ -102,3 +102,37 @@ def ensure_tab(book=None) -> str:
     ws.update("A1:E1", [HEADERS])
     ws.format("A1:E1", {"textFormat": {"bold": True}})
     return ws.title
+
+
+# --- one rep ringing sales under another rep's SaraPlus login, for a day -----
+# Carlos 2026-11-19: "jacob is selling under esmeralda today" -- the text said
+# Esmeralda had the sale and Jacob's four were "missing". SaraPlus cannot be
+# told who really sold, so, like every fix in this file, it is DISPLAY ONLY:
+# the relay state stays keyed by the SaraPlus name (nothing is re-announced),
+# and the standings, the shout-outs and the team line all say the real seller.
+# DATED, so it ends by itself at midnight. The pattern is every word that must
+# appear in the SaraPlus name (so "ESMERALDA" matches whatever surnames
+# SaraPlus holds for her). The board and payroll are NOT touched by this.
+#   {(office key, "YYYY-MM-DD"): {"WORDS IN THE SARAPLUS NAME": "Real Seller"}}
+SOLD_UNDER = {
+    ("carlos-b2batt", "2026-11-19"): {"ESMERALDA": "Jacob Ortega"},
+}
+
+
+def day_resolver(show: Optional[Callable[[str], str]], office: str,
+                 day) -> Optional[Callable[[str], str]]:
+    """`show` with today's SOLD_UNDER entries for this office laid over it;
+    `show` itself (None included) when there are none."""
+    iso = day.isoformat() if hasattr(day, "isoformat") else str(day)
+    swaps = SOLD_UNDER.get((str(office or "").strip().lower(), iso))
+    if not swaps:
+        return show
+    pats = [(set(str(k).upper().split()), v) for k, v in swaps.items()]
+
+    def shown(name: str) -> str:
+        words = set(str(name or "").upper().split())
+        for need, real in pats:
+            if need and need <= words:
+                return real
+        return show(name) if show else name
+    return shown
