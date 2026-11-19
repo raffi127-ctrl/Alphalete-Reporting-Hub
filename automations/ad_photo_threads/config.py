@@ -810,6 +810,10 @@ _SCORECARD_TABS = {
     # plus the two Fridays before it. No All in One tab (none asked for).
     "jairo": {"scorecard_seconds_from_sheet": True, "scorecard": True,
               "scorecard_tag": "U0BVCKR63CK"},  # Eve 10/29: jairoruizpmg, not U04Q6T14M34
+    # Colten 11/19: the same Friday post in Frank's indeed-photos channel.
+    # No All in One tab (none asked for).
+    "frank": {"scorecard_seconds_from_sheet": True, "scorecard": True,
+              "scorecard_tag": "U089GE0HG1H"},  # frankmatos1128 (owner-slack-ids)
 }
 
 OFFICES += [

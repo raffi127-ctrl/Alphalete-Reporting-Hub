@@ -58,6 +58,7 @@ from __future__ import annotations
 
 import datetime as dt
 import pathlib
+import time
 from typing import Dict, List, Optional, Sequence
 
 from automations.icd_onboarding import board as B
@@ -288,6 +289,7 @@ def from_ownerville(office_key: str, week_start: dt.date, *,
     """
     import time
 
+    from automations.icd_onboarding import ov_misses as OVM
     from automations.obcl_ov_sweep import config as OVC
     from automations.obcl_ov_sweep import ov_table
     from automations.obcl_ov_sweep.run import PROFILE_DIR
@@ -312,21 +314,45 @@ def from_ownerville(office_key: str, week_start: dt.date, *,
         found = {B._fold(n) for n in reps}
         missing = [n for n in wanted if B._fold(n) not in found]
         if missing:
+            # DON'T ASK AGAIN ABOUT SOMEBODY OWNERVILLE ALREADY SAID IT HAS
+            # NOT GOT. Measured 2026-11-19: 21 of 29 were not there, each
+            # search costs ~27s, and the budget then ran out with 10 names
+            # never asked about -- so the wasted time was also crowding out
+            # the searches that would have found somebody. A miss goes stale
+            # after ov_misses.COOLDOWN_MIN, so anyone added during the day is
+            # still picked up; until then the budget goes to new names.
+            ask = OVM.fresh(office_key, week_start, missing)
+            skipped = len(missing) - len(ask)
             log("  ownerville: %d of this week's %d were not on page one — "
                 "asking the search for them" % (len(missing), len(wanted)))
+            if skipped:
+                log("    skipping %d OwnerVille said it has not got in the "
+                    "last %d min — they are re-asked after that, not ticked"
+                    % (skipped, OVM.COOLDOWN_MIN))
             t0 = time.monotonic()
             got = 0
-            for name in missing:
+            for name in ask:
                 if time.monotonic() - t0 >= budget:
                     log("    time budget reached; %d not searched this run"
-                        % (len(missing) - got))
+                        % (len(ask) - got))
                     break
                 try:
                     ov_table.lookup_person(page, name, heads, reps)
                 except Exception as e:      # noqa: BLE001 — one name, not the run
                     log("    %s: search failed (%s)" % (name, type(e).__name__))
                 got += 1
-            still = [n for n in wanted if B._fold(n) not in {B._fold(x) for x in reps}]
+            seen = {B._fold(x) for x in reps}
+            still = [n for n in wanted if B._fold(n) not in seen]
+            # Remember only the ones we ACTUALLY asked about and did not find;
+            # a name the budget never reached has not been answered, and
+            # recording it would stop it being asked next time either.
+            asked = ask[:got]
+            OVM.remember(office_key, week_start,
+                         [n for n in asked if B._fold(n) not in seen])
+            # And a name that DID turn up stops being treated as absent the
+            # moment it appears, however it appeared.
+            OVM.forget(office_key, week_start,
+                       [n for n in wanted if B._fold(n) in seen])
             log("    searched %d in %.0fs — %d still not found in OwnerVille"
                 % (got, time.monotonic() - t0, len(still)))
 
@@ -605,20 +631,48 @@ OWN_CLOCK = ("no_shows",)
 UNROUTED = HAND_RUN_ONLY + OWN_CLOCK
 
 
+def _mmss(seconds: float) -> str:
+    """'3m07s' / '47s'. Minutes only once there are minutes, so a quick step
+    does not read as a slow one."""
+    whole = int(round(seconds))
+    return ("%dm%02ds" % (whole // 60, whole % 60)) if whole >= 60 else "%ds" % whole
+
+
 def for_office(office_key: str, week_start: dt.date, *, dry_run: bool = True,
                only: Sequence[str] = (), log=print) -> Dict[str, object]:
     """Every step for one office. Never stops on one failing."""
     out: Dict[str, object] = {}
+    # HOW LONG EACH STEP TOOK. Measured 2026-11-19: one office on Lucy 3 took
+    # 19m19s (12:30:03 to 12:49:22) and ticked NOTHING, so the time is spent
+    # waiting on pages rather than doing work. That matters because the board
+    # is meant to move to each ICD's own machine and scan every 15 minutes
+    # (Megan): a run longer than the gap means the `pgrep` guard drops ticks
+    # and the real cadence quietly becomes the runtime. A total alone cannot
+    # say WHICH step to fix, so each one is timed and they are printed slowest
+    # first -- costs one clock read per step.
+    spent: List[tuple] = []
     for name, fn in STEPS:
         if only and name not in only:
             continue
         log("%s · %s" % (office_key, name))
+        started = time.monotonic()
         try:
             out[name] = fn(office_key, week_start, dry_run=dry_run, log=log)
         except Exception as e:  # noqa: BLE001
             # One source being down is not a reason to skip the others.
             out[name] = "%s: %s" % (type(e).__name__, str(e)[:160])
             log("  ✗ %s" % out[name])
+        finally:
+            # In `finally` on purpose: a step that THREW is the one most worth
+            # timing, and it is also the one a plain line after the call would
+            # never reach.
+            took = time.monotonic() - started
+            spent.append((took, name))
+            log("  · %s took %s" % (name, _mmss(took)))
+    if spent:
+        total = sum(t for t, _ in spent)
+        log("%s · %s in all: %s" % (office_key, _mmss(total), ", ".join(
+            "%s %s" % (n, _mmss(t)) for t, n in sorted(spent, reverse=True))))
     return out
 
 

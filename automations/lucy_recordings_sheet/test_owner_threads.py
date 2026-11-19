@@ -123,6 +123,18 @@ class Post(unittest.TestCase):
         self.assertEqual(len(files["file_uploads"]), 1)
         self.assertIn("Mon, Nov 16", files["file_uploads"][0]["title"])
 
+    def test_raf_thread_also_tags_tiff(self):
+        c = FakeClient()
+        self._post(c)
+        self.assertTrue(c.calls[1][1]["text"].startswith("<@U045Z8N0ZQC> <@U0B9924FHCL>"))
+
+    def test_other_owners_get_no_extra_tag(self):
+        self.plan = {"Frank Matos": {"2026-11-16": [rec("U1", "2026-11-16T09:00:00")]}}
+        self.pdfs = {("Frank Matos", "2026-11-16"): (self.pdf, 1)}
+        c = FakeClient()
+        self._post(c)
+        self.assertNotIn("U0B9924FHCL", c.calls[1][1]["text"])
+
     def test_live_never_posts_twice_a_day(self):
         self._post(FakeClient())
         c = FakeClient()

@@ -35,6 +35,31 @@ COL_OFFICE = "Office"
 COL_BLUEINK = "Blue Ink"
 COL_RATE = "Rate of Pay"
 
+# THE REST OF WHAT APEX ASKS (Megan, 2026-11-19: "this should be on the
+# enrollment form so we can have them enter in what is correct for them").
+# Every one of these reached the code as an Alphalete constant in
+# apex.DEFAULTS, so until an office answers, its people get Alphalete's.
+#
+# {what Apex calls it: the Office Settings column that answers it}
+APEX_COLUMNS = {
+    "position": "Position",
+    "pay_basis": "Pay Basis",
+    "pay_frequency": "Pay Frequency",
+    "department": "Department",
+    "country": "Country",
+    "security_role": "Security Role",
+    "pay_state": "State Working In",
+    "tax_state": "State Taxed In",
+}
+
+# THE TWO THAT MUST BE ASKED, never defaulted. The others are a description of
+# the job and a wrong one is visible to anyone reading the record; these two
+# land on a TAX record, where Texas on a Florida office is both wrong and
+# invisible. Same reasoning as the rate, and the same answer: an office nobody
+# has asked holds its people back and is named, rather than being handed
+# Alphalete's.
+APEX_MUST_ASK = ("pay_state", "tax_state")
+
 YES = {"yes", "y", "true", "1", "on"}
 NO = {"no", "n", "false", "0", "off", "none"}
 
@@ -196,3 +221,34 @@ def mark_not_applicable(office_key, week_start, *, dry_run: bool = True,
                           {name: NOT_APPLICABLE for name in names},
                           dry_run=False, log=lambda *a: None, ws=ws)
     return n
+
+
+def apex_settings(office_key: str, book=None) -> Dict[str, str]:
+    """{apex field: this office's answer} for whatever they HAVE answered.
+
+    Only answered columns appear. A caller overlays this on apex.DEFAULTS, so
+    an absent key means "nobody said" and never means "blank it".
+    """
+    key = str(office_key or "").strip().lower()
+    if not key:
+        return {}
+    for r in _rows(book):
+        if r.get(COL_OFFICE, "").strip().lower() != key:
+            continue
+        out: Dict[str, str] = {}
+        for field, column in APEX_COLUMNS.items():
+            said = str(r.get(column, "") or "").strip()
+            if said:
+                out[field] = said
+        return out
+    return {}
+
+
+def apex_unanswered(office_key: str, book=None) -> List[str]:
+    """The MUST-ASK fields this office has not answered, in Apex's words.
+
+    Empty means nothing is blocking. Anything in here has to stop the person
+    rather than fall back, because the fallback is another company's state.
+    """
+    said = apex_settings(office_key, book=book)
+    return [f for f in APEX_MUST_ASK if not said.get(f)]

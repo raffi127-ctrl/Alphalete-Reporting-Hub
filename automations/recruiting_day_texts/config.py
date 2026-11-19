@@ -73,9 +73,13 @@ OFFICES: Dict[str, Office] = {
     "aya": Office(key="aya", appstream_id="22992", owner="Aya Alkhafaji",
                   team="Indelible", group="Indelible Lvl 1🔥",
                   tz="America/New_York"),
-    # MORE THAN ONE GROUP -- using the first; others: NEW A Players / ATT B2B Leaders
+    # NEW A Players (Carlos 2026-11-19: "can you do that on my aplayers text
+    # chain as well?"). It was "Box B2B", the first of his three groups, and
+    # every send there failed: "Can not send message to a chat you are not a
+    # member of!" -- Lucy 1 is no longer in that chat (Box went off 10/28).
+    # Other approved group: ATT B2B Leaders.
     "carlos": Office(key="carlos", appstream_id="11580", owner="Carlos Hidalgo",
-                  team="Alphalete", group="Box B2B",
+                  team="Alphalete", group="NEW A Players",
                   tz="America/Chicago"),
     "cody": Office(key="cody", appstream_id="21151", owner="Cody Cannon",
                   team="Aeon", group="ASC A-Players",

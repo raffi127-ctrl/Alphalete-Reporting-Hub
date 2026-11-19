@@ -62,6 +62,28 @@ def apex_values(c: BRD.Candidate, hire: BID.NewHire,
             v["rate"] = said
         elif str(office_key).strip().lower() != "raf":
             v.pop("rate", None)
+
+        # EVERYTHING ELSE APEX ASKS, the same way (Megan, 2026-11-19: "this
+        # should be on the enrollment form so we can have them enter in what
+        # is correct for them"). Position, pay basis, pay frequency,
+        # department, country and security role all reached the code as
+        # Alphalete's constants, so an office that never answered got
+        # Alphalete's answers on its people's records.
+        #
+        # ANSWERED VALUES OVERLAY; the rest keep the default. That is safe for
+        # a job description -- a wrong one is visible to anyone who reads the
+        # record -- but NOT for the two state fields, which land on a tax
+        # record where "Texas" on a Florida office is wrong and invisible.
+        # Those are dropped instead, exactly like the rate, so the person is
+        # held back and named rather than filed under another company's state.
+        try:
+            mine = OS.apex_settings(office_key)
+            unanswered = OS.apex_unanswered(office_key)
+        except Exception:      # noqa: BLE001 -- unreadable is not "use ours"
+            mine, unanswered = {}, list(OS.APEX_MUST_ASK)
+        v.update(mine)
+        for field in unanswered:
+            v.pop(field, None)
     email = v.pop("email", "")
     if email:
         v["account_email"] = email
