@@ -62,14 +62,21 @@ class BoardSlots(unittest.TestCase):
     def at(self, h, m, day=18):  # 11/18/2026 is a Wednesday
         return dt.datetime(2026, 11, day, h, m)
 
-    def test_each_slot_posts_once_inside_its_hour(self):
-        self.assertEqual(self.b.due(self.at(14, 3), set()).key, "first")
-        self.assertEqual(self.b.due(self.at(17, 20), set()).key, "money")
-        self.assertIsNone(self.b.due(self.at(17, 20), {"2026-11-18|money"}))
+    def test_every_hour_10am_to_9pm(self):
+        # Raf 11/19: same frequency as the OwnerVille GPS threads (hourly).
+        self.assertEqual(self.b.due(self.at(10, 0), set()).key, "h10")
+        self.assertEqual(self.b.due(self.at(15, 30), set()).key, "h15")
+        self.assertEqual(self.b.due(self.at(21, 55), set()).key, "h21")
+        self.assertIsNone(self.b.due(self.at(9, 59), set()))
+        self.assertIsNone(self.b.due(self.at(22, 0), set()))
+        self.assertIsNone(self.b.due(self.at(15, 30), {"2026-11-18|h15"}))
 
-    def test_never_late_never_sunday(self):
-        self.assertIsNone(self.b.due(self.at(15, 30), set()))   # 2 PM missed
-        self.assertIsNone(self.b.due(self.at(21, 5, day=22), set()))  # Sunday
+    def test_text_only_three_times_a_day(self):
+        texted = [s.hour for s in self.b.SLOTS if s.text]
+        self.assertEqual(texted, [14, 17, 21])
+
+    def test_never_sunday(self):
+        self.assertIsNone(self.b.due(self.at(21, 5, day=22), set()))
 
     def test_board_rows_knocked_first_then_idle_with_houses(self):
         summ = [{"Rep": "A", "Doors": 3, "Assigned Houses": 10},
@@ -81,7 +88,7 @@ class BoardSlots(unittest.TestCase):
     def test_text_caption_is_plain_words(self):
         rows = [{"Rep": "A", "Doors": 30, "Sold": 2, "Mobile Sold": 1},
                 {"Rep": "B", "Doors": 0, "Sold": 0}]
-        cap = self.b.text_caption(self.b.SLOTS[1], dt.date(2026, 11, 18), rows)
+        cap = self.b.text_caption(next(x for x in self.b.SLOTS if x.hour == 17), dt.date(2026, 11, 18), rows)
         self.assertEqual(cap, "Spectrum Knocks · Money Lap · Wed 11/18 — "
                               "1 reps, 30 doors, 3 sold")
         self.assertNotIn("*", cap)

@@ -1,4 +1,13 @@
-"""Spectrum Knocks board — a picture of every rep's day, posted 3x a day.
+"""Spectrum Knocks board — a picture of every rep's day, posted every hour.
+
+Raf 2026-11-19: "can we get it to come out at the same frequency that the other
+knocking report is coming out at?" -> the OwnerVille GPS threads in the same
+channel (rep_knock_threads) go every hour, 10 AM-9 PM CT. So Slack now gets the
+board at the top of every hour, 10 AM-9 PM CT, Mon-Sat. An hour with no doors
+yet today posts nothing (no empty boards at 10 AM). The iMessage text stays at
+three a day (2 PM, 5 PM, 9 PM) so the A-Players group chat isn't hit hourly.
+
+History:
 
 Raf 2026-11-18 ("can we have it send to knocking reports?") + Eve ("igual que
 el de OwnerVille"): the OwnerVille intraday knock boards post at 2:00 PM
@@ -17,9 +26,9 @@ assigned houses but no doors yet (greyed, at the bottom — at 2 PM that's the
 "who isn't out yet" list). Same numbers as the "Spectrum Knocks" tab.
 
     # preview: draws the PNG to output/spectrum_knocks/board/, posts nothing
-    python -m automations.spectrum_knocks.board --slot first --force
+    python -m automations.spectrum_knocks.board --slot h14 --force
     # test post to Eve's own DM
-    python -m automations.spectrum_knocks.board --slot eod --force --send --to D087ZGE2B0F
+    python -m automations.spectrum_knocks.board --slot h21 --force --send --to D087ZGE2B0F
     # live (the LaunchAgent, every 5 min; posts each slot once, when it's due)
     python -m automations.spectrum_knocks.board --tick --send --text
 """
@@ -42,7 +51,7 @@ SHEET_URL = ("https://docs.google.com/spreadsheets/d/"
              "1qUiljtWXhcy3OGhQ_81LnNPIsUXjad3MJi-VzjEIDV8/edit#gid=24854023")
 TZ = "America/Chicago"
 # A slot posts only within this many minutes after its time; a box that was
-# asleep at 2 PM must not drop a "First Knocks" board at 6 PM.
+# asleep at 2 PM must not drop the 2 PM board at 3:30.
 LATE_LIMIT_MIN = 60
 
 OUT_DIR = Path(__file__).resolve().parents[2] / "output" / "spectrum_knocks" / "board"
@@ -55,13 +64,14 @@ class Slot:
     hour: int
     minute: int
     label: str
+    text: bool = False                 # also goes to the iMessage group
 
 
-SLOTS = (
-    Slot("first", 14, 0, "First Knocks"),
-    Slot("money", 17, 15, "Money Lap"),
-    Slot("eod", 21, 0, "End of Day"),
-)
+FIRST_HOUR, LAST_HOUR = 10, 21         # same hours as rep_knock_threads
+_NAMED = {14: "First Knocks", 17: "Money Lap", 21: "End of Day"}
+SLOTS = tuple(
+    Slot("h%02d" % h, h, 0, _NAMED.get(h, "Hourly"), text=h in _NAMED)
+    for h in range(FIRST_HOUR, LAST_HOUR + 1))
 POST_DAYS = {0, 1, 2, 3, 4, 5}        # Mon-Sat
 
 
@@ -297,7 +307,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             return 0
         key = "%s|%s" % (now.date().isoformat(), slot.key)
         want_slack = a.send and key not in done
-        want_text = a.text and (key + "|text") not in done
+        want_text = a.text and slot.text and (key + "|text") not in done
         if not (want_slack or want_text):
             print("[spectrum_board] %s CT — %s already posted" % (_clock(now), slot.label))
             return 0
@@ -306,7 +316,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         if not a.force and due(now, set()) != slot:
             print("[spectrum_board] %s isn't due now (use --force)" % slot.label)
             return 0
-        want_slack, want_text = True, a.text
+        want_slack, want_text = a.send, a.text
     else:
         ap.error("give --tick or --slot (or --check-text)")
     day = dt.date.fromisoformat(a.day) if a.day else now.date()
@@ -317,6 +327,17 @@ def main(argv: Optional[List[str]] = None) -> int:
     sub = "%s  ·  %s %s  ·  as of %s CT" % (slot.label, day.strftime("%a"), _md(day), asof)
     png = render(rows, sub, OUT_DIR / day.isoformat() / ("%s.png" % slot.key))
     knocked = [r for r in rows if r["Doors"]]
+    if a.tick and not knocked and day == now.date():
+        # Nobody's out yet: no empty board. Mark the hour so the next 5-min
+        # tick doesn't pull again; the next hour tries fresh.
+        print("[spectrum_board] %s CT — no doors yet, %s skipped"
+              % (_clock(now), slot.label))
+        if a.send or a.text:
+            k = "%s|%s" % (day.isoformat(), slot.key)
+            state.setdefault("posted", {})[k] = "skipped"
+            state["posted"][k + "|text"] = "skipped"
+            _save(state, day)
+        return 0
     caption = ("*Spectrum Knocks · %s · %s %s* — %d reps, %d doors, %d sold\n"
                "Full sheet: <%s|Spectrum Knocks tab>"
                % (slot.label, day.strftime("%a"), _md(day), len(knocked),
