@@ -19349,6 +19349,17 @@
    "verify": null,
    "timeout_minutes": 240,
    "machine": "Lucy 2"
+  },
+  "billing_holds": {
+   "on_scheduler": false,
+   "_off_scheduler_note": "Indeed billing holds off the office computers' Octo checks -> the live-ads 'Billing Holds' tab + a back-live DM to the office group. Runs INSIDE the poster tick (post.py --watch) on Lucy 1; this entry only makes `lucy rerun billing_holds [--send] [--day YYYY-MM-DD]` work for previews and catch-ups. Preview by default. Added 2026-11-19 (Carlos).",
+   "display_name": "Indeed Billing Holds",
+   "source_type": "sheets",
+   "data_sources": [],
+   "command": [
+    "automations.icd_alerts.billing_holds"
+   ],
+   "base_args": []
   }
  },
  "read_only_standalone": {
@@ -19378,16 +19389,5 @@
   "verify": {
    "type": "not_configured"
   }
- },
- "billing_holds": {
-  "on_scheduler": false,
-  "_off_scheduler_note": "Indeed billing holds off the office computers' Octo checks -> the live-ads 'Billing Holds' tab + a back-live DM to the office group. Runs INSIDE the poster tick (post.py --watch) on Lucy 1; this entry only makes `lucy rerun billing_holds [--send] [--day YYYY-MM-DD]` work for previews and catch-ups. Preview by default. Added 2026-11-19 (Carlos).",
-  "display_name": "Indeed Billing Holds",
-  "source_type": "sheets",
-  "data_sources": [],
-  "command": [
-   "automations.icd_alerts.billing_holds"
-  ],
-  "base_args": []
  }
 }
