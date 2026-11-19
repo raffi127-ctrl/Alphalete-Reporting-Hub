@@ -58,6 +58,7 @@ from __future__ import annotations
 
 import datetime as dt
 import pathlib
+import time
 from typing import Dict, List, Optional, Sequence
 
 from automations.icd_onboarding import board as B
@@ -605,20 +606,48 @@ OWN_CLOCK = ("no_shows",)
 UNROUTED = HAND_RUN_ONLY + OWN_CLOCK
 
 
+def _mmss(seconds: float) -> str:
+    """'3m07s' / '47s'. Minutes only once there are minutes, so a quick step
+    does not read as a slow one."""
+    whole = int(round(seconds))
+    return ("%dm%02ds" % (whole // 60, whole % 60)) if whole >= 60 else "%ds" % whole
+
+
 def for_office(office_key: str, week_start: dt.date, *, dry_run: bool = True,
                only: Sequence[str] = (), log=print) -> Dict[str, object]:
     """Every step for one office. Never stops on one failing."""
     out: Dict[str, object] = {}
+    # HOW LONG EACH STEP TOOK. Measured 2026-11-19: one office on Lucy 3 took
+    # 19m19s (12:30:03 to 12:49:22) and ticked NOTHING, so the time is spent
+    # waiting on pages rather than doing work. That matters because the board
+    # is meant to move to each ICD's own machine and scan every 15 minutes
+    # (Megan): a run longer than the gap means the `pgrep` guard drops ticks
+    # and the real cadence quietly becomes the runtime. A total alone cannot
+    # say WHICH step to fix, so each one is timed and they are printed slowest
+    # first -- costs one clock read per step.
+    spent: List[tuple] = []
     for name, fn in STEPS:
         if only and name not in only:
             continue
         log("%s · %s" % (office_key, name))
+        started = time.monotonic()
         try:
             out[name] = fn(office_key, week_start, dry_run=dry_run, log=log)
         except Exception as e:  # noqa: BLE001
             # One source being down is not a reason to skip the others.
             out[name] = "%s: %s" % (type(e).__name__, str(e)[:160])
             log("  ✗ %s" % out[name])
+        finally:
+            # In `finally` on purpose: a step that THREW is the one most worth
+            # timing, and it is also the one a plain line after the call would
+            # never reach.
+            took = time.monotonic() - started
+            spent.append((took, name))
+            log("  · %s took %s" % (name, _mmss(took)))
+    if spent:
+        total = sum(t for t, _ in spent)
+        log("%s · %s in all: %s" % (office_key, _mmss(total), ", ".join(
+            "%s %s" % (n, _mmss(t)) for t, n in sorted(spent, reverse=True))))
     return out
 
 
