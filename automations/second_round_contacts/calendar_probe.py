@@ -96,6 +96,11 @@ def main(argv=None) -> int:
         print("\n%s" % data["error"])
         return 1
 
+    # WHICH TABLE. The page has several with the same "Follow Up Status"
+    # header; printing the heading is how a wrong-table read gets caught.
+    print("\n=== TABLE READ ===\n   heading: %r"
+          % (data.get("section") or "(none -- would have REFUSED)"))
+
     print("\n=== HEADERS (%d) ===\n   %s" % (len(data["headers"]), data["headers"]))
 
     print("\n=== EVERY FOLLOW UP STATUS THE DROPDOWN OFFERS ===")

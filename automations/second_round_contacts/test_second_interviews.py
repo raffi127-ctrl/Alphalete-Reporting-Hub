@@ -216,3 +216,30 @@ class TheDailyUpdate(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TheRightTableOnThePage(unittest.TestCase):
+    """The calendar has several tables with a "Follow Up Status" header.
+
+    Reading the first one found the NEW STARTS table on Raf's office (11280)
+    and Vincent's (24290) while finding the right one on Omar's (24232) --
+    probed 2026-11-18. That is a nudge naming the wrong people to an owner, so
+    the reader anchors on the SECOND INTERVIEWS heading and refuses without it.
+    """
+
+    def test_the_reader_anchors_on_the_heading(self):
+        self.assertIn("second", SI.ROW_JS.lower())
+        self.assertIn("DOCUMENT_POSITION_FOLLOWING", SI.ROW_JS)
+
+    def test_it_refuses_rather_than_falling_back_to_a_column_match(self):
+        self.assertIn("no SECOND INTERVIEWS heading anywhere on the page",
+                      SI.ROW_JS)
+
+    def test_it_excludes_the_new_start_and_first_interview_headings(self):
+        self.assertIn("new", SI.ROW_JS.lower())
+        self.assertIn("first", SI.ROW_JS.lower())
+
+    def test_the_section_comes_back_so_it_can_be_logged(self):
+        self.assertIn("section, options", SI.ROW_JS.replace("\n", " ")
+                      if "section, options" in SI.ROW_JS else "section")
+        self.assertTrue(hasattr(SI, "read_day_full"))

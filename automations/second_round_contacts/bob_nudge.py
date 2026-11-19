@@ -359,7 +359,8 @@ def run(owners: List[R.Owner], *, send: bool, show_window: bool = True,
             # ever on the current one.
             try:
                 label = app.select_office(o.offices[0])
-                rows = SI.read_day(app)
+                read = SI.read_day_full(app)
+                rows = read["rows"]
                 shown = SI.shown_date(app)
             except Exception as exc:                        # noqa: BLE001
                 # A failed read is NOT "nobody made their calls".
@@ -374,6 +375,15 @@ def run(owners: List[R.Owner], *, send: bool, show_window: bool = True,
             # trusted, and the DM always goes to the roster owner.
             _log("  %s: office %s -> AppStream says %r"
                  % (o.owner, o.offices[0], label or "(nothing)"))
+
+            # WHICH TABLE DID WE READ. The calendar has several with the same
+            # "Follow Up Status" header -- second interviews, new starts, first
+            # interviews -- and reading the wrong one names the wrong people.
+            # The heading is logged every run so that can never be silent.
+            if read.get("error"):
+                _log("  %s: NUDGING NOBODY -- %s" % (o.owner, read["error"]))
+                continue
+            _log("    read the %r table" % (read.get("section") or "(unnamed)"))
 
             # THE WRONG-RECIPIENT GUARD. If select_office quietly does not
             # switch, this read is the PREVIOUS office's rows, and nudging on it

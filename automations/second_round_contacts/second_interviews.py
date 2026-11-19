@@ -205,18 +205,63 @@ def counts(rows: List[Dict]) -> Tuple[int, int, int]:
 ROW_JS = """() => {
     const norm = s => (s || '').replace(/\\s+/g, ' ').trim();
 
-    // The SECOND INTERVIEWS table is the one with a "Follow Up Status" header.
-    let table = null, headers = [];
-    for (const t of document.querySelectorAll('table')) {
+    // FIND THE TABLE BY ITS SECTION HEADING, NOT BY ITS COLUMNS.
+    //
+    // The calendar page carries SEVERAL tables with an identical "Follow Up
+    // Status" header -- second interviews, new starts, and first interviews
+    // all have one. Taking the first match read the NEW STARTS table on Raf's
+    // office (11280) and Vincent's (24290) while reading the right one on
+    // Omar's (24232), which is how a nudge ends up naming the wrong people to
+    // an owner. Probed 2026-11-18: 11280's first match had the actions
+    // "First Day of Sales" / "Reschedule First Day of Training", and 24232's
+    // had "Brought on Board (Nov 23)" / "Reschedule 2nd".
+    //
+    // So the heading is the anchor. If no SECOND INTERVIEWS heading can be
+    // found, this REFUSES rather than falling back to a column match: the
+    // caller treats an empty read as "nudge nobody", which is the safe end.
+    const labels = [];
+    for (const el of document.querySelectorAll(
+            'h1,h2,h3,h4,h5,h6,caption,th,td,div,span,b,strong,p,legend')) {
+        const t = norm(el.textContent);
+        if (t.length < 60 && /second\\s+interview/i.test(t)
+                && !/new\\s+start|first\\s+interview/i.test(t)) {
+            labels.push({el, text: t});
+        }
+    }
+    if (!labels.length) {
+        return {error: 'no SECOND INTERVIEWS heading anywhere on the page'};
+    }
+
+    const hasFollowUp = t => {
         for (const tr of t.querySelectorAll('tr')) {
             const cells = [...tr.children].map(c => norm(c.innerText));
-            if (cells.some(c => /^follow up status$/i.test(c))) {
-                table = t; headers = cells; break;
-            }
+            if (cells.some(c => /^follow up status$/i.test(c))) return cells;
         }
-        if (table) break;
+        return null;
+    };
+
+    // The deepest label wins: on a page where an outer container also mentions
+    // "second interviews", the innermost one is the actual heading.
+    labels.sort((a, b) => {
+        const depth = el => { let d = 0; while (el.parentElement) { d++; el = el.parentElement; } return d; };
+        return depth(b.el) - depth(a.el);
+    });
+
+    const tables = [...document.querySelectorAll('table')];
+    let table = null, headers = [], section = '';
+    for (const lab of labels) {
+        // A heading INSIDE its own table (a caption row) counts first.
+        const inside = tables.find(t => t.contains(lab.el) && hasFollowUp(t));
+        const after = tables.find(t => !t.contains(lab.el) && hasFollowUp(t)
+            && (lab.el.compareDocumentPosition(t) & Node.DOCUMENT_POSITION_FOLLOWING));
+        const pick = inside || after;
+        if (pick) { table = pick; headers = hasFollowUp(pick); section = lab.text; break; }
     }
-    if (!table) return {error: 'no table with a Follow Up Status header'};
+    if (!table) {
+        return {error: 'found a SECOND INTERVIEWS heading ('
+                + labels.map(l => l.text).slice(0, 3).join(' / ')
+                + ') but no Follow Up Status table under it'};
+    }
 
     const idx = name => headers.findIndex(h => h.toLowerCase().startsWith(name));
     const want = {first: idx('first name'), last: idx('last name'),
@@ -271,8 +316,24 @@ ROW_JS = """() => {
                    follow_up_by: text(want.by), follow_up_time: text(want.time),
                    action: text(want.action)});
     }
-    return {headers, rows, options: [...options]};
+    return {headers, rows, section, options: [...options]};
 }"""
+
+
+def read_day_full(app) -> Dict:
+    """The raw read: rows, the heading they came from, and any refusal.
+
+    Separate from read_day so the caller can LOG which section it landed on.
+    A silent wrong-table read is the failure this exists to prevent.
+    """
+    app.open_calendar()
+    data = app.page.evaluate(ROW_JS)
+    if not isinstance(data, dict):
+        return {"rows": [], "section": "", "error": "the page returned nothing"}
+    return {"rows": list(data.get("rows") or []),
+            "section": str(data.get("section") or ""),
+            "headers": list(data.get("headers") or []),
+            "error": str(data.get("error") or "")}
 
 
 def read_day(app) -> List[Dict]:
@@ -288,11 +349,7 @@ def read_day(app) -> List[Dict]:
     different questions, and the report cannot say what somebody was marked
     while the calendar cannot look back.
     """
-    app.open_calendar()
-    data = app.page.evaluate(ROW_JS)
-    if not isinstance(data, dict) or data.get("error"):
-        return []
-    return list(data.get("rows") or [])
+    return read_day_full(app)["rows"]
 
 
 def shown_date(app) -> str:
