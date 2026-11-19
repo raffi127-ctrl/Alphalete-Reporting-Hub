@@ -151,6 +151,33 @@ class HowEachPersonReads(unittest.TestCase):
                               action="Disqualified (11-17 9:20 AM) | Pause"), TODAY)
         self.assertEqual(got, "Jesse Nwokeji - disqualified (11-17 9:20 AM)")
 
+    def test_rejected_or_not_qualified_means_declined_when_the_action_says_so(self):
+        # One status covers both outcomes; only the Action column says which.
+        # Raf's office, 2026-11-18: three people who DECLINED carried
+        # "Rejected or Not qualified", and reading the status alone put them on
+        # the daily update as disqualified.
+        declined = row(first="Chandler", last="Wester", offered="Yes",
+                       status="Rejected or Not qualified",
+                       action="Declined (11-18 12:22 PM) | Undecline | Pause")
+        self.assertEqual(SI.mark_of(declined), "Declined")
+        self.assertEqual(SI.declined_at(declined["action"]), "11-18 12:22 PM")
+        self.assertIn("declined the role (11-18 12:22 PM)",
+                      SI.describe(declined, TODAY))
+
+        disq = row(first="Elson", last="Fonseca", offered="No",
+                   status="Rejected or Not qualified",
+                   action="Disqualified (11-18 7:10 AM) | Undisqualify | Pause")
+        self.assertEqual(SI.mark_of(disq), "Disqualified")
+
+    def test_the_decline_BUTTON_is_not_a_decline(self):
+        # "First Day of Sales | Disqualify | Decline | Pause" is the list of
+        # buttons offered, not something that happened. Matching the bare word
+        # would turn every disqualification into a decline.
+        buttons = row(status="Rejected or Not qualified",
+                      action="First Day of Sales | Disqualify | Decline | Pause")
+        self.assertEqual(SI.declined_at(buttons["action"]), "")
+        self.assertEqual(SI.mark_of(buttons), "Disqualified")
+
     def test_declined_and_lm(self):
         self.assertIn("declined the role",
                       SI.describe(row(status="Declined Next Round"), TODAY))
@@ -185,7 +212,8 @@ class TheDailyUpdate(unittest.TestCase):
         got = SI.daily_update(self.rows, TODAY)
         self.assertEqual([n for n, _ in got["bob"]],
                          ["Alma Hernandez", "Kylie Hernandez"])
-        self.assertEqual(got["declined"], ["Dana Hernandez"])
+        self.assertEqual([n for n, _ in got["declined"]],
+                         ["Dana Hernandez"])
         self.assertEqual([n for n, _ in got["disqualified"]],
                          ["Jesse Hernandez"])
         self.assertEqual(got["lm"], ["Jacob Hernandez"])

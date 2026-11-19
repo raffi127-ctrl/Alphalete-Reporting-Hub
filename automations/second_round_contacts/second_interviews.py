@@ -81,8 +81,20 @@ def showed_up(row: Dict) -> Optional[bool]:
 
 
 def mark_of(row: Dict) -> str:
-    """"BOB" | "Declined" | "Disqualified" | "LM" | "" for somebody who showed."""
-    return MARKED.get(norm(row.get("status")), "")
+    """"BOB" | "Declined" | "Disqualified" | "LM" | "" for somebody who showed.
+
+    "Rejected or Not qualified" COVERS BOTH. Raf's office uses that one status
+    for the applicant turning the role down and for the leader not moving
+    forward, and only the Action column says which (probed 2026-11-18, office
+    11280: Elson Fonseca offer=No action "Disqualified (11-18 7:10 AM)";
+    Chandler Wester offer=Yes action "Declined (11-18 12:22 PM)"). Reading the
+    status alone reported three of Raf's declines as disqualifications on the
+    daily update, which is the opposite story about why somebody did not start.
+    """
+    got = MARKED.get(norm(row.get("status")), "")
+    if got == "Disqualified" and declined_at(row.get("action", "")):
+        return "Declined"
+    return got
 
 
 def bob_date(action: str, today: Optional[dt.date] = None) -> Optional[dt.date]:
@@ -129,6 +141,17 @@ def disqualified_at(action: str) -> str:
     return " ".join(m.group(1).split()) if m else ""
 
 
+def declined_at(action: str) -> str:
+    """The stamp out of "Declined (11-18 12:22 PM)", verbatim, or "".
+
+    Anchored on "declined (" so the word inside an action LIST -- the
+    "Decline" button in "First Day of Sales | Disqualify | Decline | Pause" --
+    is not mistaken for a decline that happened.
+    """
+    m = re.search(r"\bdeclined\s*\(([^)]+)\)", str(action or ""), re.I)
+    return " ".join(m.group(1).split()) if m else ""
+
+
 def fmt_date(when: dt.date) -> str:
     """11/30/2026. Built by hand: %-d is glibc/BSD only and %#d is Windows
     only, and every report here has to run on both."""
@@ -156,7 +179,9 @@ def describe(row: Dict, today: Optional[dt.date] = None) -> str:
         stamp = disqualified_at(row.get("action", ""))
         return "%s - disqualified%s" % (name, " (%s)" % stamp if stamp else "")
     if mark == "Declined":
-        return "%s - declined the role" % name
+        stamp = declined_at(row.get("action", ""))
+        return "%s - declined the role%s" % (name,
+                                             " (%s)" % stamp if stamp else "")
     if mark == "LM":
         return "%s - left message, no answer yet" % name
     return "%s - not marked yet" % name
@@ -184,7 +209,8 @@ def daily_update(rows: List[Dict], today: Optional[dt.date] = None) -> Dict:
         if mark == "BOB":
             out["bob"].append((name_of(r), bob_date(r.get("action", ""), today)))
         elif mark == "Declined":
-            out["declined"].append(name_of(r))
+            out["declined"].append(
+                (name_of(r), declined_at(r.get("action", ""))))
         elif mark == "Disqualified":
             out["disqualified"].append(
                 (name_of(r), disqualified_at(r.get("action", ""))))
