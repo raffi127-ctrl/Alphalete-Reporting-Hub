@@ -456,6 +456,21 @@ def field_value(page, key: str) -> str:
     return (loc.first.input_value() if loc.count() else "") or ""
 
 
+def _location_options(page) -> List[str]:
+    """Whatever the Location type-ahead is showing right now, by each of the
+    three shapes it has been seen in. Read in one place so it can be POLLED
+    until the list arrives instead of scraped once after a fixed sleep."""
+    out = [" ".join(t.split()) for t in
+           page.locator(".locationSuggestion:visible").all_inner_texts()]
+    if not out:
+        out = _visible_options(page)
+    if not out:   # the type-ahead's list may not be role=option
+        out = [" ".join(t.split()) for t in
+               page.locator("li:visible, .pac-item:visible, [id*=location] div:visible").all_inner_texts()
+               if t.strip()]
+    return out
+
+
 def _visible_options(page) -> List[str]:
     """Visible option names, each ONCE: an option and its inner box both
     match (live run 11/04 saw 'Sterling - Elite' twice)."""
@@ -533,15 +548,31 @@ def fill_order(page, location: Dict, log=print) -> None:
         # REAL KEYSTROKES: fill() set the text without the type-ahead
         # noticing -- no list (live run 11/04).
         box.press_sequentially(" ".join(str(location.get("city") or "").split()), delay=150)
-        page.wait_for_timeout(3000)
-        sugg = [" ".join(t.split()) for t in
-                page.locator(".locationSuggestion:visible").all_inner_texts()]
-        if not sugg:
-            sugg = _visible_options(page)
-        if not sugg:   # the type-ahead's list may not be role=option
-            sugg = [" ".join(t.split()) for t in
-                    page.locator("li:visible, .pac-item:visible, [id*=location] div:visible").all_inner_texts()
-                    if t.strip()]
+        # WAIT FOR THE LIST, don't sleep once and look. A single 3s pause is a
+        # guess about how fast Sterling answers; when it is slower the scrape
+        # reads an empty list and the run reports "no location suggestion for
+        # Plano, TX, USA among 0 shown", which reads like a wrong city rather
+        # than a page that had not finished drawing (Aisha, 2026-11-19: 0 of 6
+        # sent, every one of them at this step, the whole run taking 9m21s).
+        # Same shape as the retry in _choose above. It still gives up -- just
+        # on an empty list that stayed empty, which is a fact worth reporting.
+        # Did the keystrokes even land? An empty list has two very different
+        # causes -- a page that was still drawing, and a box that never got
+        # the text (an overlay eating focus) -- and they were indistinguishable
+        # from "among 0 shown". Say which, so the next failure names itself.
+        typed = " ".join(str(location.get("city") or "").split())
+        in_box = " ".join((box.input_value() or "").split())
+        if typed.lower() not in in_box.lower():
+            raise ValueError(
+                "the Location box did not take the typed city: it reads %r, "
+                "not %r -- nothing had focus, so no list could appear"
+                % (in_box, typed))
+        sugg: List[str] = []
+        for _ in range(12):          # ~15s in 1.25s steps
+            page.wait_for_timeout(1250)
+            sugg = _location_options(page)
+            if any(location_matches(x, location) for x in sugg):
+                break
         if not any(location_matches(x, location) for x in sugg):
             _snap(page, "location-list", log)   # map what the list really is
         want = pick_location_suggestion(sugg, location)
