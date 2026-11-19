@@ -222,7 +222,9 @@
    "base_args": [],
    "cadence": {
     "weekdays": [],
-    "days_of_month": [1],
+    "days_of_month": [
+     1
+    ],
     "not_before": "10:00"
    },
    "priority": "P3",
@@ -241,7 +243,9 @@
    "command": [
     "automations.reception_contacts_cleanup.run"
    ],
-   "base_args": ["--dry-run"],
+   "base_args": [
+    "--dry-run"
+   ],
    "cadence": {
     "weekdays": []
    },
@@ -16118,7 +16122,7 @@
   },
   "second_round_contacts_evening_dry": {
    "on_scheduler": false,
-    "_off_scheduler_note": "DRY RUN. No --write, so it creates and deletes NOTHING -- it prints what the 7pm cleanup would do. Added 2026-11-17 so the first live night is not the first run ever: it removes people from an owner's real Gmail contacts and puts them back, and that is not a thing to try out on the schedule. `lucy rerun second_round_contacts_evening_dry`, with NO --machine: it writes nothing, so it needs no Contacts token -- only a warm ApplicantStream session -- and a probe belongs on the least-loaded Lucy rather than piled onto Lucy 1. The LIVE 7pm pass is pinned to Lucy 1, because that one does need the reception accounts' tokens. on_scheduler:false -- it is a handle, not a clock.",
+   "_off_scheduler_note": "DRY RUN. No --write, so it creates and deletes NOTHING -- it prints what the 7pm cleanup would do. Added 2026-11-17 so the first live night is not the first run ever: it removes people from an owner's real Gmail contacts and puts them back, and that is not a thing to try out on the schedule. `lucy rerun second_round_contacts_evening_dry`, with NO --machine: it writes nothing, so it needs no Contacts token -- only a warm ApplicantStream session -- and a probe belongs on the least-loaded Lucy rather than piled onto Lucy 1. The LIVE 7pm pass is pinned to Lucy 1, because that one does need the reception accounts' tokens. on_scheduler:false -- it is a handle, not a clock.",
    "display_name": "2nd-round evening cleanup -- DRY RUN (prints only)",
    "source_type": "appstream",
    "data_sources": [],
@@ -18927,7 +18931,7 @@
   },
   "verizon_churn_tab": {
    "on_scheduler": false,
-   "_off_scheduler_note": "VERIZON CHURN tab for Nico's office (Carlos 2026-11-15: 'NDS has this NDS churn tab ... can we make one for Verizon as well?'). on_scheduler:false = NOT in the 4am batch: it RIDES verizon_daily_nicolas (verizon_office.daily refreshes it right after the Order Log tab, same Credico pull). Present so `lucy rerun verizon_churn_tab -- --write` refreshes it by hand. The 0-30 day rolloff list (stacked Port / BYOD / New tables), the activations-vs-disconnects box, Credico's eight churn tiers with '\u25c0 now' off the calendar window, the per-rep 0-30 activation rate. Terms from verizon_office/comp.py (the Credico PDFs Nico forwarded 11/7). LIVE on the Vantura Master since 2026-11-15 (Carlos approved; daily.CHURN_TAB_PROD = True). A hand rerun needs `--prod` to hit the Master, else it goes to the sandbox. Lucy 4: it has the Hub inbox login.",
+   "_off_scheduler_note": "VERIZON CHURN tab for Nico's office (Carlos 2026-11-15: 'NDS has this NDS churn tab ... can we make one for Verizon as well?'). on_scheduler:false = NOT in the 4am batch: it RIDES verizon_daily_nicolas (verizon_office.daily refreshes it right after the Order Log tab, same Credico pull). Present so `lucy rerun verizon_churn_tab -- --write` refreshes it by hand. The 0-30 day rolloff list (stacked Port / BYOD / New tables), the activations-vs-disconnects box, Credico's eight churn tiers with '◀ now' off the calendar window, the per-rep 0-30 activation rate. Terms from verizon_office/comp.py (the Credico PDFs Nico forwarded 11/7). LIVE on the Vantura Master since 2026-11-15 (Carlos approved; daily.CHURN_TAB_PROD = True). A hand rerun needs `--prod` to hit the Master, else it goes to the sandbox. Lucy 4: it has the Hub inbox login.",
    "machine": "Lucy 4",
    "display_name": "Verizon Churn tab (Credico, rides the daily run)",
    "source_type": "email",
@@ -19374,5 +19378,16 @@
   "verify": {
    "type": "not_configured"
   }
+ },
+ "billing_holds": {
+  "on_scheduler": false,
+  "_off_scheduler_note": "Indeed billing holds off the office computers' Octo checks -> the live-ads 'Billing Holds' tab + a back-live DM to the office group. Runs INSIDE the poster tick (post.py --watch) on Lucy 1; this entry only makes `lucy rerun billing_holds [--send] [--day YYYY-MM-DD]` work for previews and catch-ups. Preview by default. Added 2026-11-19 (Carlos).",
+  "display_name": "Indeed Billing Holds",
+  "source_type": "sheets",
+  "data_sources": [],
+  "command": [
+   "automations.icd_alerts.billing_holds"
+  ],
+  "base_args": []
  }
 }

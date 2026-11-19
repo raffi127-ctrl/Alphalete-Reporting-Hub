@@ -161,6 +161,8 @@ def run(day: Optional[dt.date] = None, *, send: bool = False, book=None, dash=No
     rows = [r for r in octo_rows(book, day) if r["key"] not in handled]
     if not rows:
         return []
+    log("BILLING-HOLDS: %d new check row(s) today (%s); %d hold(s) open"
+        % (len(rows), ", ".join(r["at"] for r in rows), len(opens)))
     ws = None
     did: List[Dict] = []
     for r in rows:
