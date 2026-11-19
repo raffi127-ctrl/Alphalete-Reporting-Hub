@@ -341,7 +341,8 @@ class SoloOffices(unittest.TestCase):
 
 class OfficeRecipients(unittest.TestCase):
     """Raf 2026-09-15: each office's night mail goes only to that office's
-    owner — plus Eve (Eve, same day). Nobody else, and no captainship distro."""
+    owner. Eve's copy came off 2026-11-19 (replies reach alphaletereporting).
+    Nobody else, and no captainship distro."""
 
     # Old spellings kept in zones.py for offices the board now names
     # differently (Kash Patel = Kash Rai, …) plus Isaiah Thomas — none of them
@@ -358,11 +359,11 @@ class OfficeRecipients(unittest.TestCase):
                                       "email is never mailed — add it to "
                                       "owners.OWNER_EMAILS")
 
-    def test_owner_and_eve_only(self):
+    def test_owner_only(self):
         from automations.captainship_night_knocks import run as R
         self.assertEqual(R.office_recipients("Kash Rai", "Kash Rai",
                                              sample=False),
-                         ["Palace.kash@gmail.com", "eve@alphaletemarketing.com"])
+                         ["Palace.kash@gmail.com"])
 
     def test_canonical_name_is_the_fallback(self):
         from automations.captainship_night_knocks import owners as O
@@ -424,11 +425,9 @@ class OneMailPerOffice(unittest.TestCase):
             self.assertEqual(n, 2)
             by_subject = {s: to for s, to, _ in sent}
             self.assertEqual(by_subject["Tue 9/15 - Daily Knocks - Kash Rai"],
-                             ["Palace.kash@gmail.com",
-                              "eve@alphaletemarketing.com"])
+                             ["Palace.kash@gmail.com"])
             self.assertEqual(by_subject["Tue 9/15 - Daily Knocks - Cyrus Wade"],
-                             ["cywadeambient@gmail.com",
-                              "eve@alphaletemarketing.com"])
+                             ["cywadeambient@gmail.com"])
             for subject, _to, msg in sent:
                 other = ("Cyrus Wade" if "Kash" in subject else "Kash Rai")
                 html = msg.get_body(("html",)).get_content()

@@ -65,15 +65,14 @@ class AssertImpersonatingPinned(unittest.TestCase):
 
 
 class NightMailRecipients(unittest.TestCase):
-    def test_shealey_angel_and_eve(self):
+    def test_shealey_and_angel(self):
         self.assertEqual(owners.recipients("Shealey Miller"),
                          ["miller10xbusiness@gmail.com",
-                          "padilla10x2001@gmail.com",
-                          owners.ALWAYS_CC])
+                          "padilla10x2001@gmail.com"])
 
-    def test_a_normal_office_is_still_owner_plus_eve(self):
+    def test_a_normal_office_is_owner_only(self):
         self.assertEqual(owners.recipients("Nuri Burgos"),
-                         ["nuri@22select.com", owners.ALWAYS_CC])
+                         ["nuri@22select.com"])
 
 
 if __name__ == "__main__":

@@ -26,8 +26,9 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional
 
-# Eve gets a copy of every office's mail (Eve 2026-09-15).
-ALWAYS_CC = "eve@alphaletemarketing.com"
+# No copy to Eve any more (Eve 2026-11-19): an owner with a problem replies
+# to the mail, and the reply lands in alphaletereporting@gmail.com (the From).
+# Failure alerts still go to Eve (mail.ALERT_RECIPIENTS).
 
 OWNER_EMAILS: Dict[str, str] = {
     # rafael
@@ -169,7 +170,7 @@ def owner_email(*names: str) -> Optional[str]:
 
 
 def recipients(*names: str) -> List[str]:
-    """[owner, any EXTRA_RECIPIENTS, Eve] for one office, or [] when the
+    """[owner, any EXTRA_RECIPIENTS] for one office, or [] when the
     owner has no address."""
     owner = owner_email(*names)
     if not owner:
@@ -179,6 +180,4 @@ def recipients(*names: str) -> List[str]:
         for a in _EXTRA_BY_KEY.get(_key(n), ()):
             if a.lower() not in {x.lower() for x in out}:
                 out.append(a)
-    if ALWAYS_CC not in {x.lower() for x in out}:
-        out.append(ALWAYS_CC)
     return out
