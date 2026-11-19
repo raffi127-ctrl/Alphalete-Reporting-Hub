@@ -38,6 +38,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import re
+import time
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
@@ -368,16 +369,56 @@ def _library_ws():
         return ws
 
 
-def _library_card_ids() -> Set[str]:
+class LibraryUnreadable(RuntimeError):
+    """The Report Library Sheet could not be read. NOT the same as "it has no
+    cards" — callers must not create or rewrite anything on this."""
+
+
+# A COULDN'T-READ IS NOT AN EMPTY LIBRARY (Megan 2026-11-19: 100+ "Hub card
+# updated" emails overnight). These helpers used to swallow the read error and
+# return set(). On 11/19 the 2:45am schedule guard's library read failed, the
+# coverage sweep took that empty set to mean "none of the 109 scheduler reports
+# has a card", and rewrote every one of their rows at 3:27-3:31 — each rewrite
+# stamped a fresh timestamp, so hub_library_watch mailed one "card updated" per
+# row, and the reads that failed mid-write appended duplicate rows. Now the read
+# retries 429/5xx and, if it still fails, RAISES; every caller already wraps
+# hub_coverage in try/except, so a bad read skips the sweep instead.
+#
+# The short cache is what keeps the read from failing in the first place: the
+# guard reloads ~100 timed jobs and each reload asked resolve_card -> a full
+# library read, all inside the Sheets per-minute read cap. One read per two
+# minutes per process is plenty; every write here clears it.
+_LIB_CACHE: dict = {"at": 0.0, "recs": None}
+_LIB_CACHE_TTL = 120.0
+
+
+def _forget_library_cache() -> None:
+    _LIB_CACHE["recs"] = None
+
+
+def _library_records() -> list:
+    now = time.monotonic()
+    if (_LIB_CACHE["recs"] is not None
+            and now - _LIB_CACHE["at"] < _LIB_CACHE_TTL):
+        return _LIB_CACHE["recs"]
     try:
-        recs = _library_ws().get_all_records()
-    except Exception:
-        return set()
+        from automations.recruiting_report.fill import _retry
+        recs = _retry(lambda: _library_ws().get_all_records())
+    except Exception as e:  # noqa: BLE001
+        raise LibraryUnreadable("%s: %s" % (type(e).__name__, e)) from e
+    _LIB_CACHE.update(at=now, recs=recs)
+    return recs
+
+
+def _library_card_ids() -> Set[str]:
+    """Raises LibraryUnreadable when the Sheet can't be read — never set()."""
+    recs = _library_records()
     return {str(r.get("ID", "")).strip() for r in recs if str(r.get("ID", "")).strip()}
 
 
 def existing_card_ids() -> Set[str]:
-    """Every id the Hub renders a card for: hardcoded + shared library."""
+    """Every id the Hub renders a card for: hardcoded + shared library.
+    Raises LibraryUnreadable if the library can't be read."""
     return _hardcoded_card_ids() | _library_card_ids()
 
 
@@ -422,7 +463,13 @@ def resolve_card(report_id: str, report_name: str = "", *,
     # network) is trusted as-is.
     if mapped and mapped in _hardcoded_card_ids():
         return mapped
-    existing = _existing if _existing is not None else existing_card_ids()
+    try:
+        existing = _existing if _existing is not None else existing_card_ids()
+    except LibraryUnreadable:
+        # Can't see the library, so we can't know whether a card exists — and
+        # guessing "no" is what rewrote 109 cards on 2026-11-19. Write nothing;
+        # hand back the same id the auto-create path would have.
+        return report_id if create else None
     # A curated target that exists as a library card is valid too.
     if mapped and mapped in existing:
         return mapped
@@ -699,18 +746,37 @@ def ensure_library_card(report_id: str, report_name: str, *,
     try:
         from automations.recruiting_report.fill import _retry
         ws = _library_ws()
-        row = [cid, name, real_module or "", "Auto (self-registered)",
-               dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
-               json.dumps(meta), script]
+        # A failed lookup is NOT "no row yet": treating it that way appended a
+        # second copy of cards that already had one (2026-11-19). Write nothing.
         try:
-            found = ws.find(cid, in_column=1)
-        except Exception:
-            found = None
+            found = _retry(lambda: ws.find(cid, in_column=1))
+        except Exception as e:  # noqa: BLE001
+            return False, ("could not check the library for %r (%s) — nothing "
+                           "written" % (cid, type(e).__name__))
         if found:
+            old = _retry(lambda: ws.row_values(found.row)) + [""] * 7
+            try:
+                old_meta = json.loads(old[5]) if old[5] else {}
+            except Exception:
+                old_meta = {}
+            # Keep the card's ORIGINAL registration time. Re-stamping "now" on
+            # every refresh made every rewrite look like an edit, and
+            # hub_library_watch emails one "Hub card updated" per edit.
+            if old_meta.get("auto_registered_at"):
+                meta["auto_registered_at"] = old_meta["auto_registered_at"]
+            created_at = old[4] or meta["auto_registered_at"]
+            row = [cid, name, real_module or "", "Auto (self-registered)",
+                   created_at, json.dumps(meta), script]
+            if old[:5] == row[:5] and old_meta == meta and old[6] == script:
+                return True, "library card %r already up to date" % cid
             _retry(lambda: ws.update([row], "A%d:G%d" % (found.row, found.row),
                                      value_input_option="RAW"))
+            _forget_library_cache()
             return True, "updated existing library card %r" % cid
+        row = [cid, name, real_module or "", "Auto (self-registered)",
+               meta["auto_registered_at"], json.dumps(meta), script]
         _retry(lambda: ws.append_row(row, value_input_option="RAW"))
+        _forget_library_cache()
         return True, "created library card %r (%s)" % (cid, name)
     except Exception as e:  # noqa: BLE001 — never sink a report over card creation
         return False, "%s: %s" % (type(e).__name__, e)
@@ -1052,11 +1118,9 @@ def _plist_schedule(plist_path: Path) -> Optional[dict]:
 
 def _auto_library_ids() -> set:
     """Library-Sheet card ids that THIS module created (Created By 'Auto …').
-    Rewriting one of those is safe; rewriting a card a person built is not."""
-    try:
-        recs = _library_ws().get_all_records()
-    except Exception:
-        return set()
+    Rewriting one of those is safe; rewriting a card a person built is not.
+    Raises LibraryUnreadable when the Sheet can't be read."""
+    recs = _library_records()
     return {str(r.get("ID", "")).strip() for r in recs
             if str(r.get("Created By", "")).startswith("Auto")}
 
