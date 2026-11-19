@@ -396,7 +396,7 @@ def pull_overrides_hub(periods: list[int], page=None) -> list[list]:
     return out
 
 
-def write_overrides(svc, via_hub: bool) -> str:
+def write_overrides(svc, via_hub: bool, only_periods=None) -> str:
     """Upsert the weekly standard override by (week, period). First run backfills every period of the year."""
     have = svc.values().get(spreadsheetId=PNL_SHEET_ID, range=f"'{OVR_TAB}'!A2:F", valueRenderOption="UNFORMATTED_VALUE").execute().get("values", [])
     have = [r for r in have if len(r) >= 4 and isinstance(r[0], (int, float))]
@@ -405,6 +405,8 @@ def write_overrides(svc, via_hub: bool) -> str:
     m = dt.date.today().month
     # newest first; each period is its own Tableau session (~1-4 min), so save after every one — a timeout keeps what it got
     periods = [x for x in ((m, m - 1, m + 1) if have else (m, m - 1, m - 2, m + 1)) if 1 <= x <= 13]
+    if only_periods:
+        periods = list(only_periods)
     today = dt.date.today().isoformat()
     keep = {(r[0], r[2]): r for r in have}
     got = 0
@@ -415,6 +417,8 @@ def write_overrides(svc, via_hub: bool) -> str:
             if not fresh:
                 continue
             got += len(fresh)
+            for k in [k for k in keep if k[1] == fresh[0][1]]:   # a re-pulled period replaces its old rows — SCI moves weeks between periods
+                del keep[k]
             for wk, label, amt in fresh:
                 keep[(wk, label)] = [wk, wk + 6, label, amt, today, OVR_SOURCE]
             rows = sorted(keep.values(), key=lambda r: (-r[0], str(r[2])))
@@ -709,11 +713,16 @@ def main(argv=None) -> int:
     import getpass
     default_via = os.environ.get("CARLOS_TABLEAU_VIA") or ("hub" if getpass.getuser().lower().startswith("lucy") else "chrome")
     ap.add_argument("--dates-only", action="store_true", help="only refresh the Dates to Remember tab (Lucy / hub session)")
+    ap.add_argument("--weekly-periods", default="", metavar="1,2,…", help="only refresh the Override Weekly tab for these periods (hub session)")
     ap.add_argument("--icd-periods", default="", metavar="1,2,…", help="only refresh the Override by ICD tab for these periods (hub session)")
     ap.add_argument("--detail-probe", type=int, default=0, metavar="PERIOD", help="dump every OVERRIDE view of the workbook for one period onto a probe tab")
     ap.add_argument("--via", choices=["chrome", "hub"], default=default_via, help="chrome = copy Carlos's Chrome Tableau session (his Mac); hub = the Hub's shared Tableau session (Lucy)")
     args = ap.parse_args(argv)
     log(f"tableau via: {args.via}")
+    if args.weekly_periods:
+        from automations.carlos_finance.tiller_sync import _svc
+        log(write_overrides(_svc(), True, [int(x) for x in args.weekly_periods.split(",") if x.strip()]))
+        return 0
     if args.icd_periods:
         from automations.carlos_finance.tiller_sync import _svc
         log(write_override_by_icd(_svc(), [int(x) for x in args.icd_periods.split(",") if x.strip()]))
