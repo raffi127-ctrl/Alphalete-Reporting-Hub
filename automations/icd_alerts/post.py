@@ -2977,6 +2977,9 @@ def open_faults(day: Optional[dt.date] = None, book=None) -> List[Dict]:
             "detail": (row[F_DETAIL] or "").strip(),
             "count": (row[F_COUNT] or "").strip(),
             "first": (row[F_FIRST] or "").strip(),
+            # The office's own clock at the LATEST occurrence: the relay
+            # rewrites it on every repeat (empty_read_is_a_quiet_day).
+            "local": (row[F_LOCAL] or "").strip(),
             "platform": (row[F_PLATFORM] or "").strip(),
         })
     return out
@@ -3058,6 +3061,17 @@ def empty_read_is_a_quiet_day(fault: Dict, sales: Optional[Dict[str, int]]) -> b
     Held unposted, like waits_for_a_repeat: still on the Faults tab, and the
     first tick after a sale shows up posts it. Unreadable knocks = post, so
     a broken tab never silences a real empty read.
+
+    ONLY THE SALES GRID EMPTY, credit checks in: held until the office's
+    evening (SALES_ONLY_EMPTY_FROM_HOUR, its own clock at the latest empty
+    read). 11/17-11/18: 26-36 offices a day posted "a hiccup reading
+    SaraPlus" between 12:40 and 17:10 -- 58 of 72 were this shape: checks
+    run, a sale logged at the door, and no SaraPlus order yet. The next
+    hourly read found the orders (Haytham 9, Raf 8, Oren 7 the same
+    afternoon), so the fault stopped repeating and its Local Time froze
+    before the evening -- never posted. A grid STILL empty in the evening
+    after a door sale is what this alarm exists for (Omar 2026-10-28: two
+    sales posted in his room by 2pm, 0 reps on the relay), and still posts.
     """
     if str(fault.get("stage") or "") != "sweep-empty" or sales is None:
         return False
@@ -3065,7 +3079,47 @@ def empty_read_is_a_quiet_day(fault: Dict, sales: Optional[Dict[str, int]]) -> b
     # khalil / khalil-nds: the knocks key and the SaraPlus key can differ.
     sold = [n for k, n in sales.items()
             if k == office or k.startswith(office) or office.startswith(k)]
-    return not any(sold)
+    if not any(sold):
+        return True
+    if _sales_grid_only(fault):
+        hour = _local_hour(fault.get("local"))
+        return hour is not None and hour < SALES_ONLY_EMPTY_FROM_HOUR
+    return False
+
+
+# Office-local hour from which an empty SALES grid (credit checks fine, a door
+# sale logged) is reported. Before it, the order usually just isn't in yet.
+SALES_ONLY_EMPTY_FROM_HOUR = 17
+
+
+def _sales_grid_only(fault: Dict) -> bool:
+    """The empty read was the SALES grid alone: the credit checks came back.
+
+    sara_read puts "SALES grid (AT&T) parsed to 0 reps" first, and adds the
+    "credit-check read for <day> parsed to 0 reps" section only when the
+    credit-check grid was empty too."""
+    d = str(fault.get("detail") or "")
+    return (d.startswith("SALES grid (AT&T) parsed to 0 reps")
+            and "credit-check read for" not in d)
+
+
+def _local_hour(raw) -> Optional[int]:
+    """Hour (0-23) of a Local Time cell, or None when it can't be read.
+
+    The laptop sends isoformat ("2026-11-18T14:53:02"); Sheets may show it as
+    "11/18/2026 14:53:02" or with AM/PM. None = don't hold on the clock."""
+    m = None
+    for m in re.finditer(r"(\d{1,2}):(\d{2})(?::\d{2})?\s*([AaPp][Mm])?", str(raw or "")):
+        pass
+    if not m:
+        return None
+    h = int(m.group(1))
+    ap = (m.group(3) or "").lower()
+    if ap == "pm" and h < 12:
+        h += 12
+    elif ap == "am" and h == 12:
+        h = 0
+    return h if 0 <= h <= 23 else None
 
 
 # --- the tick after a fault clears -----------------------------------------

@@ -70,5 +70,59 @@ class QuietDayTest(unittest.TestCase):
             self.assertFalse(P.empty_read_is_a_quiet_day(_fault(stage=st), {}), st)
 
 
+SALES_ONLY = "SALES grid (AT&T) parsed to 0 reps\nurl: ...\nHistory rows 11/11-11/17"
+BOTH_EMPTY = (SALES_ONLY + "\n\ncredit-check read for 2026-11-18 parsed to 0 reps\n...")
+
+
+def _sold(local, detail=SALES_ONLY, office="george"):
+    f = _fault(office=office)
+    f.update(detail=detail, local=local)
+    return P.empty_read_is_a_quiet_day(f, {office: 3})
+
+
+class SalesGridOnlyTest(unittest.TestCase):
+    """11/17-11/18: checks in, a door sale, no SaraPlus order yet = held."""
+
+    def test_afternoon_sales_only_empty_is_held(self):
+        self.assertTrue(_sold("2026-11-18T14:53:02"))
+
+    def test_still_empty_in_the_evening_posts(self):
+        """Omar 2026-10-28: sales at the door, the grid never filled."""
+        self.assertFalse(_sold("2026-11-18T17:05:00"))
+
+    def test_both_grids_empty_after_a_sale_posts_as_before(self):
+        self.assertFalse(_sold("2026-11-18T11:00:00", detail=BOTH_EMPTY))
+
+    def test_unreadable_clock_posts(self):
+        self.assertFalse(_sold(""))
+        self.assertFalse(_sold("soon"))
+
+    def test_sheets_display_formats(self):
+        self.assertTrue(_sold("11/18/2026 14:53:02"))
+        self.assertTrue(_sold("11/18/2026 2:53:02 PM"))
+        self.assertFalse(_sold("11/18/2026 5:53:02 PM"))
+        self.assertTrue(_sold("11/18/2026 12:10:00 AM"))
+
+    def test_unreadable_knocks_still_posts(self):
+        f = _fault()
+        f.update(detail=SALES_ONLY, local="2026-11-18T13:00:00")
+        self.assertFalse(P.empty_read_is_a_quiet_day(f, None))
+
+    def test_the_reader_carries_the_local_clock(self):
+        row = [""] * (P.F_POSTED + 1)
+        row[P.F_OFFICE], row[P.F_DAY], row[P.F_STAGE] = "george", "2026-10-23", "sweep-empty"
+        row[P.F_LOCAL] = "2026-10-23T15:00:00"
+
+        class WS:
+            def get_all_values(self):
+                return [["head"], row]
+
+        class Book:
+            def worksheet(self, name):
+                return WS()
+        got = P.open_faults(DAY, book=Book())
+        self.assertEqual(got[0]["local"], "2026-10-23T15:00:00")
+
+
 if __name__ == "__main__":
     unittest.main()
