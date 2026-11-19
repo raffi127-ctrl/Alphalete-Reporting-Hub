@@ -1717,7 +1717,9 @@ class PullAiSettingsLabelTest(unittest.TestCase):
         prefs = {k for k in P.FIELDS.values()
                  if k.endswith(("_buffer", "_threshold"))}
         self.assertEqual(prefs, {"offered_buffer", "accepted_buffer",
-                                 "ghosting_threshold"})
+                                 "ghosting_threshold",
+                                 # AppStream's 11/16 layout
+                                 "interviewer_prep_buffer"})
 
 
 class AddressHistoryWiringTest(unittest.TestCase):

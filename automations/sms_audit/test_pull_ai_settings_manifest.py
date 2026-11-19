@@ -15,7 +15,13 @@ from automations.sms_audit import pull_ai_settings as P
 from automations.sms_audit import ai_settings_tab as TAB
 from automations.shared import run_manifest
 
-FULL_FIELDS = {label: "x" for label in P.FIELDS}
+NEW_LAYOUT = ("earliest interview time the ai can offer minutes from now",
+              "interviewer prep time in minutes")
+# A real page carries ONE layout: before 11/16, two timeslot buffers;
+# after, one "earliest interview time" field plus a prep time.
+FULL_FIELDS = {label: "x" for label in P.FIELDS if label not in NEW_LAYOUT}
+NEW_FIELDS = {label: "x" for label in P.FIELDS
+              if not label.startswith("timeslot buffer")}
 ROWS = [{"name": "Wrong number", "routing": "Silent", "message": ""}]
 
 
@@ -93,6 +99,17 @@ class Incomplete(unittest.TestCase):
         failed = wm.call_args.kwargs["failed"][0]
         self.assertIn("not on the page at all", failed)
         self.assertIn("FIELDS", failed)
+
+    def test_the_11_16_layout_is_complete(self):
+        """One earliest-offer field and no accepted one is the new normal."""
+        _rc, wm = _main(NEW_FIELDS)
+        self.assertEqual(list(wm.call_args.kwargs["failed"]), [])
+
+    def test_the_11_16_layout_without_its_earliest_offer_fails(self):
+        fields = {k: v for k, v in NEW_FIELDS.items()
+                  if not k.startswith("earliest interview time")}
+        _rc, wm = _main(fields)
+        self.assertIn("offered_buffer", wm.call_args.kwargs["failed"][0])
 
     def test_a_filled_buffer_is_never_called_blank(self):
         _rc, wm = _main(blank=("office zip",))

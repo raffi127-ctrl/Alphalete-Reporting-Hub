@@ -166,11 +166,15 @@ Full evidence in `resources/appstream-ai-preferences-standard.md`. Short version
 (standard changed 2026-11-13 — the 180 / 300 that was here read the accepted
 buffer wrong; Aptel confirmed both buffers are "too soon" floors):
 
-| Setting | Standard | Never |
+| Setting (AppStream's name since 11/16) | Standard | Never |
 |---|---|---|
-| Timeslot Buffer — times **offered by AI** | **60** | above 120 · under 30 |
-| Timeslot Buffer — times **accepted by candidates** | **60** | above 120 · under 30 |
+| **Earliest Interview Time the AI Can Offer** (minutes from now) | **60** | above 120 · under 30 |
 | Ghosting Threshold | 60 (30 where someone works the queue) | — |
+| Interviewer Prep Time (minutes) | none yet: shown, not graded | — |
+
+AppStream merged the two timeslot buffers ("offered by AI" / "accepted by
+candidates") into the one earliest-offer field on 2026-11-16; "accepted" is
+gone. Details in the standard doc.
 
 These are per office, nothing surfaces them, and no two offices were found set
 the same. **Check them on every ICD.** The point of the standard is to keep

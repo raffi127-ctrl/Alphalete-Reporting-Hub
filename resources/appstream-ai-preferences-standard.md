@@ -4,13 +4,23 @@
 AI → Settings → AI Preferences, they are per office, and nothing surfaces them —
 an office can run for months on whatever it was set up with.
 
-| Setting | Standard | Never |
+| Setting (AppStream's name since 11/16) | Standard | Never |
 |---|---|---|
-| Timeslot Buffer — times **offered by AI** | **60** | above 120 (kills same-day) · under 30 |
-| Timeslot Buffer — times **accepted by candidates** | **60** | above 120 (kills same-day) · under 30 |
+| **Earliest Interview Time the AI Can Offer** (minutes from now) | **60** | above 120 (kills same-day) · under 30 |
 | Ghosting Threshold | 60, or 30 where someone works the queue | — |
+| Interviewer Prep Time (minutes) | none yet: shown, not graded | — |
 
 Set 2026-11-13 by Megan. Replaces the old 180 / 300 standard (see "What changed").
+
+> **AppStream changed this page on 2026-11-16** (between 12:51 and 15:44 CT).
+> The two timeslot buffers below became ONE field, "Earliest interview time
+> the AI can offer (minutes from now)", which means exactly what the old
+> "offered by AI" buffer meant: the AI never offers a time sooner than this.
+> The "accepted by candidates" buffer is gone. "Interviewer prep time",
+> "Interview type" and "Office address 2 (suite/unit)" are new. First seen on
+> 11580's page, 2026-11-18: earliest 15, prep 5, ghosting 60. The audit
+> (`sms_audit.pull_ai_settings`, the ApplicantStream card) reads both layouts.
+> The sections below describe the pre-11/16 pair and are kept for history.
 
 ---
 

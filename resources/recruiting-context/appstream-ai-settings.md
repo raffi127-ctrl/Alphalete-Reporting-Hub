@@ -63,6 +63,14 @@ Two faults found here on 2026-10-01:
 > **60 / 60 / 60** — evidence and history in
 > [../appstream-ai-preferences-standard.md](../appstream-ai-preferences-standard.md).
 
+> **Since 2026-11-16 AppStream shows ONE field here: "Earliest interview
+> time the AI can offer (minutes from now)"**, which is the offered buffer
+> below under a new name. The accepted buffer is gone; "Interviewer prep
+> time (in minutes)", "Interview type" and "Office address 2 (suite/unit)"
+> are new (the suite field is one this doc's mockup asked eStream for).
+> Seen on 11580's page 2026-11-18. The two descriptions below are the
+> pre-11/16 layout.
+
 **Timeslot Buffer — For Times Offered by AI (minutes)**
 The AI will not offer a time sooner than this. Talking to someone at 9:30 with
 60 here, the earliest the AI offers is 10:30.

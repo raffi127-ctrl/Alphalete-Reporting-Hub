@@ -41,8 +41,10 @@ def snapshot(setup):
     out = {}
     for label, value, _f in s.get("info") or []:
         out["AI Settings · " + label.split(" (")[0]] = value or ""
-    for (key, label, _m), row in zip(SP.PREFS, s.get("prefs") or []):
-        out["Buffer · " + label] = "" if row[1] is None else str(row[1])
+    # The row's own label: rows the office's page lacks are skipped
+    # (SP.PREFS_IF_PRESENT), so zipping against SP.PREFS would misname them.
+    for row in s.get("prefs") or []:
+        out["Buffer · " + row[0]] = "" if row[1] is None else str(row[1])
     for name, routing, msg, _f in s.get("replies") or []:
         out["AI reply · " + (name or "")] = "{}: {}".format(
             routing or "(no type)", msg or "")

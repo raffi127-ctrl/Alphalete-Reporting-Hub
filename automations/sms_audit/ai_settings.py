@@ -197,11 +197,18 @@ def lint(info, prefs, office=None, median_reply=None, template_names=None,
     title = (info.get("escalation_contact_title") or "").strip()
 
     # --- the two buffers, against this office's own applicants ----------
+    # Since 11/16 AppStream has ONE "earliest interview time the AI can
+    # offer" field (read as offered_buffer) and no accepted one, so there is
+    # no offered-minus-accepted window to measure -- a reading Aptel had
+    # already withdrawn on 11/13 (fixes.check_preferences grades the floor
+    # instead). Only an unset earliest-offer is a fault here now.
     w = window(prefs)
-    if w is None:
+    if _int(prefs.get("offered_buffer")) is None:
         out.append(("WINDOW TOO SHORT",
-                    "the timeslot buffers are not both set, so nobody knows "
-                    "how long an applicant has"))
+                    "the earliest interview time the AI can offer is not "
+                    "set, so nobody knows how soon an applicant is booked"))
+    elif w is None:
+        pass
     elif median_reply is None:
         # No history to measure against. Most applicants anywhere take 20
         # to 30 minutes, so only call out a window that is short by any

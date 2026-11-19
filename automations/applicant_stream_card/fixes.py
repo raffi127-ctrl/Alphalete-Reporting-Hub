@@ -123,7 +123,12 @@ TOO_SOON_WHY = (
     "Under 30 minutes, an applicant can be booked into an interview they "
     "can't get ready for or log in to in time. 60 gives them an hour.")
 STANDARD_LABEL = {
-    "offered_buffer": "Timeslot Buffer — For Times Offered by AI",
+    # The field's name on AppStream's page, so an owner can find it. Since
+    # 11/16 the two timeslot buffers are one field under this name (same
+    # meaning as the old "offered" one); "accepted" no longer exists, and
+    # check_preferences skips a value the page doesn't have.
+    "offered_buffer": "Earliest Interview Time the AI Can Offer "
+                      "(minutes from now)",
     "accepted_buffer": "Timeslot Buffer — For Times Accepted by "
                        "Candidates",
     "ghosting_threshold": "Ghosting Threshold",

@@ -58,7 +58,14 @@ PREFS = [
     ("ghosting_threshold", "Ghosting flag",
      "Minutes of silence before a conversation is flagged as ghosting. "
      "Display only."),
+    # New on AppStream's page 11/16. No standard yet, so shown, not graded.
+    ("interviewer_prep_buffer", "Interviewer prep time",
+     "Minutes kept free before each interview so whoever runs it can get "
+     "ready. Display only."),
 ]
+# Rows shown only when the office's page still has the field: AppStream
+# folded the two timeslot buffers into one on 11/16, and "accepted" went.
+PREFS_IF_PRESENT = {"accepted_buffer", "interviewer_prep_buffer"}
 
 # Raf's ARS doc, Auditing Process -> Templates: the texts and emails that
 # should be live at every office (resources/recruiting-context/
@@ -537,10 +544,13 @@ def gather(sinfo=None, prefs=None, esc_rows=None, bodies=None, states=None,
             # Flag only what the card grades (fixes.check_preferences), so
             # page 2 never contradicts page 1 over a 45 vs 60.
             hit = [i for i in F.check_preferences({key: now})]
+            if key in PREFS_IF_PRESENT and not str(now or "").strip():
+                continue
             if hit:
                 flag = _flag("We recommend {}".format(_mins(
                     F.STANDARD[key])), "", hit[0]["why"], APTEL_FIX)
-            out["prefs"].append((label, now, F.STANDARD[key], meaning, flag))
+            out["prefs"].append((label, now, F.STANDARD.get(key), meaning,
+                                 flag))
     if esc_rows is not None:
         approved = {_k(n): (num, msg) for num, n, msg in F.approved_replies()}
         lint = {}
@@ -955,8 +965,11 @@ def render_ai(setup):
         add(_head("Buffer times + ghosting", n.get("prefs"), checked=True))
         add("<div class='truth'><table class='prefs'><tr><th></th>"
             "<th>Set now</th><th>Our standard</th></tr>")
-        for (key, _l, _m), (label, now, want, meaning, flag) in zip(
-                PREFS, s["prefs"]):
+        # By label, not position: a row the office's page lacks is skipped
+        # (PREFS_IF_PRESENT), so zip(PREFS, rows) would pair the wrong key.
+        _key_of = {l: k for k, l, _m in PREFS}
+        for label, now, want, meaning, flag in s["prefs"]:
+            key = _key_of.get(label, "")
             ex = example(key, now)
             if ex:
                 meaning = "{} {}".format(meaning, ex)
@@ -966,7 +979,8 @@ def render_ai(setup):
                     "" if flag else " class='okay'",
                     "" if flag else "\u2713 ",
                     _e(_mins(now)) if now not in (None, "") else
-                    "<i>blank</i>", _e(_mins(want))))
+                    "<i>blank</i>",
+                    _e(_mins(want)) if want is not None else "—"))
             if flag:
                 add("<tr><td colspan='3'>{}</td></tr>".format(
                     _flags_html([flag])))

@@ -78,6 +78,15 @@ FIELDS = {
     "timeslot buffer for times accepted by candidates in minutes":
         "accepted_buffer",
     "ghosting threshold in minutes": "ghosting_threshold",
+    # AppStream's 11/16 layout (between 12:51 and 15:44 CT): the two
+    # timeslot buffers became ONE field, and a prep time was added. The new
+    # field is the old "offered" floor word for word -- the AI never offers
+    # a time sooner than this -- so it keeps the offered_buffer key and
+    # every check built on it. "Accepted" has no successor. Seen on 11580's
+    # p=1504 settings pane, 2026-11-18 probe.
+    "earliest interview time the ai can offer minutes from now":
+        "offered_buffer",
+    "interviewer prep time in minutes": "interviewer_prep_buffer",
 }
 
 
@@ -268,19 +277,24 @@ def office_holes(info, prefs, rows, blank=()):
     the line says which (Megan 2026-11-16)."""
     holes = []
     blank = set(blank or ())
-    missing = [b for b in ("offered_buffer", "accepted_buffer")
+    # accepted_buffer only counts where the page still HAS that field (old
+    # layout, label present but empty). Since 11/16 AppStream has one
+    # "earliest interview time the AI can offer" field, read as
+    # offered_buffer, and no accepted one -- its absence is the new normal.
+    need = ("offered_buffer",) + (("accepted_buffer",)
+                                  if "accepted_buffer" in blank else ())
+    missing = [b for b in need
                if not str((prefs or {}).get(b, "")).strip()]
     if missing:
         unset = [b for b in missing if b in blank]
         if len(unset) == len(missing):
             holes.append(
                 "{} blank on the AppStream page — set {} on p=1504 (AI tab "
-                "-> AI Settings) for this office; the window an applicant "
-                "gets is offered minus accepted, so an empty one is not a "
+                "-> AI Settings) for this office; an empty one is not a "
                 "default".format(" / ".join(missing),
                                  "them" if len(missing) > 1 else "it"))
         else:
-            holes.append("no {} — the window check can't run (the label is "
+            holes.append("no {} — the buffer check can't run (the label is "
                          "not on the page at all, so check p=1504's wording "
                          "against FIELDS)".format(" / ".join(missing)))
     if not rows:
