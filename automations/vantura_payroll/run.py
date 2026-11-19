@@ -1121,6 +1121,58 @@ def _webapp_url() -> str:
         return ""
 
 
+def _webapp_result(text: str) -> str:
+    """The web app's `result`, or "" when the reply is not its JSON.
+
+    doGet answers {"ok":true,"action":..,"result":..}. Anything else is Google
+    talking, not our script -- 11/18 11:13 the refresh ran past Apps Script's
+    6-minute limit and the reply was Google's HTML error page."""
+    import json as _json
+    try:
+        got = _json.loads(text or "")
+    except ValueError:
+        return ""
+    if not isinstance(got, dict) or got.get("ok") is not True:
+        return ""
+    return str(got.get("result") or "")
+
+
+def _trigger_refresh(url: str, *, log=_log) -> str:
+    """Run 'Refresh commission sheets' and say honestly how it went.
+
+    Returns the summary line ("refresh: ..."). It starts with "refresh: FAILED"
+    unless the board was rebuilt AND the P&L sync finished.
+
+    WHY (11/18): apiRefresh rebuilds the Commission tabs, then syncs Carlos's
+    P&L, in one call. A heavier week (243 RAW rows vs 208) pushed it past the
+    6-minute limit; Google returned an HTML page, and the old code put that
+    page's first 150 characters in the summary as if it had worked. The tie-out
+    then read a half-synced P&L ($10,622.54 vs $8,134.50) and Carlos's pack
+    was held as "does not tie". The sync on its own fits in its own 6 minutes,
+    so it is re-run alone before giving up."""
+    import requests
+    r = requests.get(url, params={"action": "refresh"}, timeout=600)
+    first = _webapp_result(r.text) if r.ok else ""
+    log(f"refresh -> HTTP {r.status_code} {r.text[:150]!r}")
+    if first == "refreshed":
+        return "refresh: refreshed"
+    why = (f"HTTP {r.status_code}" if not r.ok
+           else (f"result {first!r}" if first else "not the web app's reply"
+                 " (likely the 6-minute limit)"))
+    log(f"refresh did not finish ({why}) — running the P&L sync on its own")
+    try:
+        s = requests.get(url, params={"action": "sync"}, timeout=600)
+        second = _webapp_result(s.text) if s.ok else ""
+        log(f"sync -> HTTP {s.status_code} {s.text[:150]!r}")
+    except requests.RequestException as e:
+        second, s = "", None
+        log(f"sync call failed: {type(e).__name__}: {str(e)[:120]}")
+    if second == "synced":
+        return f"refresh: rebuilt, P&L re-synced on its own (refresh: {why})"
+    return (f"refresh: FAILED (refresh: {why}; sync: "
+            f"{repr(second) if second else 'no reply from the web app'})")
+
+
 def _refresh_and_check(week: dt.date, raw_range: tuple[int, int], *,
                        write: bool, sheet_id: str, log=_log) -> dict:
     """Trigger 'Refresh commission sheets' headlessly (apiRefresh via the
@@ -1141,11 +1193,7 @@ def _refresh_and_check(week: dt.date, raw_range: tuple[int, int], *,
         log(f"dry-run: would GET {{webapp}}?action=refresh")
         parts.append("refresh: dry-run (not triggered)")
     else:
-        import requests
-        r = requests.get(url, params={"action": "refresh"}, timeout=600)
-        r.raise_for_status()
-        parts.append(f"refresh: {r.text[:150]}")
-        log(f"refresh -> {r.text[:150]}")
+        parts.append(_trigger_refresh(url, log=log))
 
     # Read-only checks — always run (on a dry-run they preview the CURRENT
     # block state, i.e. pre-load zeros; the numbers are real after a live run).
@@ -1328,6 +1376,8 @@ def payroll_holes(summary: str, checks: str, raf_note: str,
     holes = []
     if "SKIPPED" in s or not s.startswith("refresh"):
         holes.append("refresh not triggered")
+    elif s.startswith("refresh: FAILED"):
+        holes.append("refresh did not finish -- the P&L may be half-synced")
     if "tie-out FAILED" in c:
         holes.append("Commission does not tie to the P&L")
     if "tie-out check errored" in c:
@@ -2310,11 +2360,9 @@ def main(argv: list[str] | None = None) -> int:
         if not url:
             _log("refresh NOT triggered -- no web-app URL on this machine")
             return 1
-        import requests
-        resp = requests.get(url, params={"action": "refresh"}, timeout=600)
-        resp.raise_for_status()
-        _log(f"refresh -> {resp.text[:200]}")
-        return 0
+        line = _trigger_refresh(url)
+        _log(line)
+        return 1 if line.startswith("refresh: FAILED") else 0
 
     if getattr(args, "owner_orderlog", None):
         return _owner_orderlog_probe(args.owner_orderlog, args.weeks_back, lead_rep_id=args.lead_rep_id or "",
