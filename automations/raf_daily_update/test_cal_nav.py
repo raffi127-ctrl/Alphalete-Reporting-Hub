@@ -86,3 +86,42 @@ class TheCalendarMove(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class WhatCountsAsArriving(unittest.TestCase):
+    """_ARRIVED_JS is a page script, so its LOGIC is checked here in Python.
+
+    Kept in step with the real thing by construction: the cases come straight
+    off the probe of office 22815 on 2026-11-16.
+    """
+
+    @staticmethod
+    def arrived(text, want=(11, 16, 2026), old="found for 11-16-2026"):
+        import re
+        if old and old in text:
+            return True
+        m = re.search(r"Calendars?\s+for\s+(\d{1,2})/(\d{1,2})/(\d{4})",
+                      text, re.I)
+        return bool(m) and (int(m.group(1)), int(m.group(2)),
+                            int(m.group(3))) == want
+
+    def test_the_busy_day_that_used_to_be_thrown_away(self):
+        # The real title line, verbatim from the probe. No "... for <date>"
+        # phrase anywhere on it, because no section was empty.
+        page = ("Cyrus Wade | Ambient Marketing, Inc. | "
+                "Calendars for 11/16/2026 | Export to Excel")
+        self.assertTrue(self.arrived(page))
+
+    def test_the_old_nothing_found_marker_still_counts(self):
+        # Quiet days carry it, and Raf's live report relies on those working.
+        self.assertTrue(self.arrived("No applicants found for 11-16-2026"))
+
+    def test_a_different_day_is_not_arrival(self):
+        self.assertFalse(self.arrived("Calendars for 11/17/2026"))
+
+    def test_an_unpadded_day_still_counts(self):
+        self.assertTrue(self.arrived("Calendars for 11/6/2026",
+                                     want=(11, 6, 2026), old=""))
+
+    def test_a_page_with_neither_is_not_arrival(self):
+        self.assertFalse(self.arrived("Loading..."))

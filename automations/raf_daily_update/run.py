@@ -129,6 +129,38 @@ _TRAINING_JS = r"""() => [...document.querySelectorAll('tr')]
                  return [c[0], c[1], c[2], c[3]]; })"""
 
 
+# HOW WE KNOW THE CALENDAR ARRIVED.
+#
+# It used to be one string: "found for MM-DD-YYYY". That is a NOTHING-FOUND
+# message -- the page only writes it for a section with no rows -- so the test
+# passed on quiet days and failed on busy ones. Cyrus, 2026-11-16: every
+# section had rows, so no such phrase existed anywhere on the page, the day was
+# abandoned, and Shawn Gunnoe, Alexis Ochoa and Cameron Simpson lost their
+# start date on three separate runs. It was always a Monday that broke, because
+# Monday is the day most likely to have every section full. Probed 2026-11-19
+# (daily_update_calday_probe, office 22815): nav reported 'ok', the page read
+# "Calendars for 11/16/2026" with 60 rows, and "... for <date>" appeared
+# nowhere.
+#
+# The title line is what the PAGE writes once it has navigated, so that is the
+# signal. NOT the date picker, tempting as it looks: CAL_NAV_JS sets the picker
+# itself before the widget navigates, so waiting on it would report success
+# instantly on a navigation that never happened.
+#
+# The old marker is still accepted. This is deliberately MORE permissive than
+# what it replaces -- it can only turn a failing day into a working one, never
+# the reverse, and Raf's live report runs this same code.
+#
+# Slashes, not hyphens, and the day is not zero-padded on every page, so the
+# numbers are compared as numbers rather than by formatting them.
+_ARRIVED_JS = r"""(w) => {
+    const t = document.body.innerText || '';
+    if (w.old && t.includes(w.old)) return true;
+    const m = t.match(/Calendars?\s+for\s+(\d{1,2})\/(\d{1,2})\/(\d{4})/i);
+    return !!m && +m[1] === w.m && +m[2] === w.d && +m[3] === w.y;
+}"""
+
+
 def _goto_day(app, day: dt.date, *, tries: int = 2,
               timeout_ms: int = 15000) -> bool:
     """Drive the calendar to `day`, and say whether it actually got there.
@@ -149,7 +181,8 @@ def _goto_day(app, day: dt.date, *, tries: int = 2,
     means the widget was not there to drive and 'err' that it threw, both of
     which are worth saying out loud rather than reporting as a timeout.
     """
-    want = "found for %s" % day.strftime("%m-%d-%Y")
+    arg = {"m": day.month, "d": day.day, "y": day.year,
+           "old": "found for %s" % day.strftime("%m-%d-%Y")}
     for attempt in range(1, tries + 1):
         status = app.page.evaluate(_CAL_NAV_JS, day.strftime("%m/%d/%Y"))
         if status == "nocal":
@@ -158,9 +191,8 @@ def _goto_day(app, day: dt.date, *, tries: int = 2,
         elif status == "err":
             log("  !! calendar navigation threw (try %d/%d)" % (attempt, tries))
         try:
-            app.page.wait_for_function(
-                "(w) => document.body.innerText.includes(w)",
-                arg=want, timeout=timeout_ms)
+            app.page.wait_for_function(_ARRIVED_JS, arg=arg,
+                                       timeout=timeout_ms)
             return True
         except Exception:                                      # noqa: BLE001
             log("  calendar still not showing %s after %ds (try %d/%d)"
