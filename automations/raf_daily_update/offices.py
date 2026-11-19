@@ -70,6 +70,38 @@ OFFICES: Dict[str, Office] = {
         channel="C0CEZ64FYM6",   # #24232-kalkan-marketing-inc-omar-mohamad
         posts_in_own_channel=True,   # Megan 2026-10-26: post in his channel
         tag_helpers={"Omar Mohamad": "U0C144X8SBD"}),   # not look-alike U0A0J2T9XKL
+    # THE OTHER THREE 2R OWNERS (2026-11-19). The 6pm BOB nudge already runs
+    # for all five offices on the `2R Contacts` roster; these three were the
+    # ones with no Daily Update of their own, so the day they are nudged about
+    # was never written up anywhere. Same report, same layout.
+    #
+    # NO `channel` AND NO `sheet` YET, on purpose. Every office before them
+    # started by posting into #org-indeed-accounts and writing nothing
+    # (posts_in_own_channel=False, sheet=""), so the first runs can be read
+    # before they reach an owner's room -- Raf's own entry still carries its
+    # test sheet for the same reason. Their live link and room go in when
+    # Megan gives each office its go; --write refuses until `sheet` is set.
+    "algemar": Office(
+        # Office 23965 "Algemar Kennel El Paso" -- Raf's funnel renamed
+        # (Maud, 2026-11-10). El Paso is MOUNTAIN, but the roster records
+        # America/Chicago and that is what the nudge uses; the Daily Update
+        # does not read a timezone, so the two cannot disagree here.
+        key="algemar", office_id="23965", owner="Algemar Kennel",
+        tag_helpers={"Algemar Kennel": "U09MXMU76MB"}),
+    "cyrus": Office(
+        # Reception from Maud (#l10-alphalete 2026-11-13); token authorized by
+        # Eve the same day. Cyrus is the one of the three who already has an
+        # ECO office (`cyrus`), so his Slack id comes from the owner list
+        # rather than the roster, where his cell is blank.
+        key="cyrus", office_id="22815", owner="Cyrus Wade",
+        tag_helpers={"Cyrus Wade": "U06A1QA642X"}),
+    "vincent": Office(
+        # 24290, NOT 24332 (Megan, 2026-11-18: "24290 is Vincent's AppStream").
+        # 24332 came from Maud 11/13 and read back zero second-interview rows,
+        # which is how the wrong id was caught. Access was granted on 24332, so
+        # a first run here is also the check that Lucy can see 24290 at all.
+        key="vincent", office_id="24290", owner="Vincent Dodson",
+        tag_helpers={"Vincent Dodson": "U09K1SXDZK2"}),
 }
 
 
