@@ -115,6 +115,11 @@ def pick_sunday(d: dt.date) -> dt.date:
     return d - dt.timedelta(days=(d.weekday() + 1) % 7)
 
 
+# How long to wait on the Get Report click. Generous on purpose: see the note
+# at the click itself. Raised from 10s on 2026-11-19.
+GET_REPORT_TIMEOUT_MS = 30000
+
+
 def ensure_week(app, sun: dt.date) -> bool:
     """Drive the report to the Sun-Sat week starting `sun` (the datepicker
     only accepts Sundays; the Get Report button reloads the grid)."""
@@ -146,7 +151,14 @@ def ensure_week(app, sun: dt.date) -> bool:
                 a.click();
             }""", {"m": sun.month - 1, "y": sun.year, "d": sun.day})
         app.page.wait_for_timeout(1200)
-        app.page.click("text=Get Report", timeout=10000)
+        # 10s was not enough, repeatedly. The click itself succeeds; what
+        # times out is waiting for the navigation it starts, and on a loaded
+        # machine that takes longer than ten seconds -- Cyrus, 2026-11-19:
+        # the week of 11/08 blew this twice in a row thirty seconds apart,
+        # taking Taylor Granger, Kaden Butler and Aubrie Scott off that run.
+        # A timeout here is not a cheap failure: the whole week is skipped,
+        # so paying a few more seconds beats losing seven days of interviews.
+        app.page.click("text=Get Report", timeout=GET_REPORT_TIMEOUT_MS)
         app.page.wait_for_load_state("domcontentloaded", timeout=60000)
         app.page.wait_for_timeout(4000)
         ok = app.page.evaluate(
