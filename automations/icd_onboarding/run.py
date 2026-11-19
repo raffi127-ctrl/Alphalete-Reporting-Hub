@@ -289,6 +289,7 @@ def from_ownerville(office_key: str, week_start: dt.date, *,
     """
     import time
 
+    from automations.icd_onboarding import ov_misses as OVM
     from automations.obcl_ov_sweep import config as OVC
     from automations.obcl_ov_sweep import ov_table
     from automations.obcl_ov_sweep.run import PROFILE_DIR
@@ -313,21 +314,45 @@ def from_ownerville(office_key: str, week_start: dt.date, *,
         found = {B._fold(n) for n in reps}
         missing = [n for n in wanted if B._fold(n) not in found]
         if missing:
+            # DON'T ASK AGAIN ABOUT SOMEBODY OWNERVILLE ALREADY SAID IT HAS
+            # NOT GOT. Measured 2026-11-19: 21 of 29 were not there, each
+            # search costs ~27s, and the budget then ran out with 10 names
+            # never asked about -- so the wasted time was also crowding out
+            # the searches that would have found somebody. A miss goes stale
+            # after ov_misses.COOLDOWN_MIN, so anyone added during the day is
+            # still picked up; until then the budget goes to new names.
+            ask = OVM.fresh(office_key, week_start, missing)
+            skipped = len(missing) - len(ask)
             log("  ownerville: %d of this week's %d were not on page one — "
                 "asking the search for them" % (len(missing), len(wanted)))
+            if skipped:
+                log("    skipping %d OwnerVille said it has not got in the "
+                    "last %d min — they are re-asked after that, not ticked"
+                    % (skipped, OVM.COOLDOWN_MIN))
             t0 = time.monotonic()
             got = 0
-            for name in missing:
+            for name in ask:
                 if time.monotonic() - t0 >= budget:
                     log("    time budget reached; %d not searched this run"
-                        % (len(missing) - got))
+                        % (len(ask) - got))
                     break
                 try:
                     ov_table.lookup_person(page, name, heads, reps)
                 except Exception as e:      # noqa: BLE001 — one name, not the run
                     log("    %s: search failed (%s)" % (name, type(e).__name__))
                 got += 1
-            still = [n for n in wanted if B._fold(n) not in {B._fold(x) for x in reps}]
+            seen = {B._fold(x) for x in reps}
+            still = [n for n in wanted if B._fold(n) not in seen]
+            # Remember only the ones we ACTUALLY asked about and did not find;
+            # a name the budget never reached has not been answered, and
+            # recording it would stop it being asked next time either.
+            asked = ask[:got]
+            OVM.remember(office_key, week_start,
+                         [n for n in asked if B._fold(n) not in seen])
+            # And a name that DID turn up stops being treated as absent the
+            # moment it appears, however it appeared.
+            OVM.forget(office_key, week_start,
+                       [n for n in wanted if B._fold(n) in seen])
             log("    searched %d in %.0fs — %d still not found in OwnerVille"
                 % (got, time.monotonic() - t0, len(still)))
 
