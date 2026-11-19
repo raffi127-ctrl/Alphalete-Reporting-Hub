@@ -16062,6 +16062,26 @@
    "timeout_minutes": 5,
    "verify": null
   },
+  "icd_onboarding_now": {
+   "on_scheduler": false,
+   "machine": "Lucy 3",
+   "_off_scheduler_note": "on_scheduler:false -- the board's OWN timer is the standalone com.alphalete.icd-onboarding LaunchAgent (hourly 6:30am-8:30pm machine-local, deploy/icd_onboarding.sh), so this is NOT a second clock and must never be put on one. It exists because until 2026-11-19 there was no way to run the full board AT ALL except waiting for the agent: only single steps were registered (probe_onboarding_seed, probe_icd_owner_submit), so a failed run could not be re-driven and a change could not be tried without waiting up to an hour. `lucy rerun icd_onboarding_now --machine \"Lucy 3\"` runs the same module the agent runs. NO --write in base_args on purpose: the module's default is a dry run, so a re-run prints what it WOULD tick and changes nothing unless somebody asks for --write. Pin the machine: the board runs where that office's OwnerVille is, and Lucy 2 is signed in as Carlos, which found 0 of 10 on 2026-11-10.",
+   "display_name": "ICD Onboarding Board (re-run, dry by default)",
+   "source_type": "browser",
+   "data_sources": [],
+   "command": [
+    "automations.icd_onboarding.run"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 30,
+   "verify": null
+  },
   "icd_onboarding_no_shows": {
    "on_scheduler": false,
    "machine": "Lucy 3",
