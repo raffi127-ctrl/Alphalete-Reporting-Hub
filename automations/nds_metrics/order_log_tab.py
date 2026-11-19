@@ -72,13 +72,15 @@ DAYS_KEPT: Optional[int] = None       # None = keep every line
 # export carries no pay-period field (probed 11/11), so it is computed.
 # Everything after Week Ending moved one column right (Delivered Message Sent
 # is X, was W); every reader resolves by header.
-HEADERS = ("Week Ending", "Pay Period", "Rep", "Line", "Line Status", "Customer", "Device",
+HEADERS = ("Week Ending", "Pay Period", "Order Date", "Last Updated",
+           "Rep", "Line", "Line Status", "Customer", "Device",
            "Email", "Zip", "DSI #", "Wireless Order #", "BAN", "Phone #",     # GROUP_COLS, folded beside Customer
            "Type", "Plan",                                                    # ... these two too (11/17 pm)
-           "Order Date", "Last Updated",
            "Ship Date", "Delivered", "Activation Date", "Disconnect Date",
            "Taylor's Notes", "Notes", "Being worked on", "Delivered Message Sent",
            "Shipping Status", "Shipping Notes", "Churn Bucket", "Port Status")
+# 2026-11-19, Carlos: "move the order date and last updated column to the left
+# of column C" (C = Rep) -- both dates now sit right after Pay Period.
 # 2026-11-17 evening, Carlos, by the letters of the layout then live (M = Device,
 # Q = Line Status, E = Customer): "column M lets move to the right of column E
 # and column Q lets move the left of E" -- Line Status sits just LEFT of

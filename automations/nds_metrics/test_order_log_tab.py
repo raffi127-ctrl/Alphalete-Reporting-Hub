@@ -46,7 +46,9 @@ class Rows(unittest.TestCase):
         self.assertEqual(T.HEADERS[c - 2:c + 2], ("Line", "Line Status", "Customer", "Device"))
         self.assertEqual(T.HEADERS[c + 2:c + 10], ("Email", "Zip", "DSI #", "Wireless Order #", "BAN", "Phone #",
                                                    "Type", "Plan"))
-        self.assertEqual(T.HEADERS[c + 10:c + 13], ("Order Date", "Last Updated", "Ship Date"))
+        self.assertEqual(T.HEADERS[c + 10], "Ship Date")
+        # 11/19: Order Date and Last Updated sit left of Rep, right after Pay Period
+        self.assertEqual(T.HEADERS[:5], ("Week Ending", "Pay Period", "Order Date", "Last Updated", "Rep"))
         self.assertEqual(T.HEADERS[-1], "Port Status")                           # 11/17 pm: moved to the very end
         self.assertEqual(T.HEADERS[T._COL["Activation Date"] + 1], "Disconnect Date")
         self.assertEqual(r[T._COL["Disconnect Date"]], "")
