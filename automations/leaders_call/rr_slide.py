@@ -172,7 +172,7 @@ def _shadow_text(c, x, y, text, font, size, fill, shadow, dx=3.0, dy=3.0,
             c.drawString(x + ox, y + oy, text)
 
 
-def _badge(c, cx, cy, r):
+def _badge(c, cx, cy, r, lines=None):
     c.saveState()
     c.translate(cx, cy)
     c.rotate(9)
@@ -184,7 +184,7 @@ def _badge(c, cx, cy, r):
     c.setLineWidth(1.0)
     c.circle(0, 0, r * 0.88, fill=0, stroke=1)
     c.setFillColor(NEON_Y)
-    for i, line in enumerate(RR["badge"]):
+    for i, line in enumerate(lines or RR["badge"]):
         size = 15.5 if i == 1 else 14.5
         c.setFont("Helvetica-Bold", size)
         c.drawCentredString(0, 8 - i * 16.5, line)

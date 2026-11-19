@@ -87,6 +87,10 @@ from automations.leaders_call.rr_slide import RRSlide     # noqa: E402
 # trip that already happened. Bump the date (or pass rr=False) when it changes.
 RR_THROUGH = dt.date(2026, 10, 18)
 
+# Costa Rica 2027 save-the-date (Maud/Raf 2026-11-19), every deck until the
+# trip ends. Trip details live in leaders_call.cr_slide.CR.
+CR_THROUGH = dt.date(2027, 5, 21)
+
 
 def clean_owner(owner):
     b = str(owner).split("\n")[0].split("[")[0].strip()
@@ -554,7 +558,7 @@ def _rows_ok(rows) -> bool:
 def build_pdf(results: dict, out_path, qualifiers: dict,
               week_end: "dt.date | None" = None, summary: "str | None" = None,
               promotions: "list | None" = None, rr: bool = True,
-              org_apps="auto", chat: bool = True) -> Path:
+              org_apps="auto", chat: bool = True, cr: bool = True) -> Path:
     """Render the Leader's Call widescreen deck from a run's `results` dict.
 
     results: {section_title: [(rep, owner, value)]}. Empty/None sections are
@@ -627,6 +631,15 @@ def build_pdf(results: dict, out_path, qualifiers: dict,
             story += [PageBreak(), RRSlide(week_label)]
         except Exception as e:
             print(f"   \u26a0 R&R slide skipped: {e}")
+
+    # Costa Rica save-the-date (Raf via Maud 2026-11-19): every deck until the
+    # trip, just before the chat slide (which stays last). Fail-soft.
+    if cr and dt.date.today() <= CR_THROUGH:
+        try:
+            from automations.leaders_call.cr_slide import CRSlide
+            story += [PageBreak(), CRSlide(week_label)]
+        except Exception as e:
+            print(f"   ⚠ Costa Rica slide skipped: {e}")
 
     # THE LAST SLIDE (Megan 2026-09-28): the weekly "join the chat" promo for
     # #top-leaders-alphalete-org (Raf's ask the same day) — every deck, after
