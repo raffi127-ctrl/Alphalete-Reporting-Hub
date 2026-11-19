@@ -2,7 +2,7 @@
 
 Every operational README from Carlos's MacBook, gathered in one place so any device can read them. Synced twice a day (7:30am and 8:00pm Central) by `sync_readmes.sh`, after the 7pm README-updater tasks have run.
 
-_Last sync: 2026-11-18 07:30 CST_
+_Last sync: 2026-11-18 20:00 CST_
 
 **Read-only mirror.** Edit the source file on the MacBook (path shown per section), not this repo; the next sync overwrites everything here.
 
@@ -23,7 +23,7 @@ Source: `~/alphalete-readmes/`
 | [ONE-ON-ONES-README.md](ops/ONE-ON-ONES-README.md) | ONE-ON-ONES README — Carlos's Monday 1:1 call | 2026-10-19 |
 | [RESUME-PUSHING-README.md](ops/RESUME-PUSHING-README.md) | Resume Pushing — How It Works | 2026-11-16 |
 | [SECOND-ROUND-CONTACTS-README.md](ops/SECOND-ROUND-CONTACTS-README.md) | Second-round contacts for new owners — how it works | 2026-10-31 |
-| [VANTURA-BOARD-README.md](ops/VANTURA-BOARD-README.md) | Vantura Master Sales Board — How It All Works | 2026-11-17 |
+| [VANTURA-BOARD-README.md](ops/VANTURA-BOARD-README.md) | Vantura Master Sales Board — How It All Works | 2026-11-18 |
 | [VANTURA-PAYROLL-SESSION-README.md](ops/VANTURA-PAYROLL-SESSION-README.md) | Vantura Payroll — Session Handoff README | 2026-11-15 |
 | [VANTURA-PNL-COMMISSION-README.md](ops/VANTURA-PNL-COMMISSION-README.md) | Vantura P&L + Commission — How It All Works | 2026-09-06 |
 | [VANTURA-REPS-CONTACTS-README.md](ops/VANTURA-REPS-CONTACTS-README.md) | Vantura Reps → Google Contacts (alphaletegp) — how it works | 2026-10-31 |
@@ -34,7 +34,7 @@ Source: `~/recruiting-report/`
 
 | File | What it is | Last edited |
 |---|---|---|
-| [PUSHING-OPERATIONS-README.md](recruiting-report/PUSHING-OPERATIONS-README.md) | Resume & Applicant Pushing — Operations README | 2026-11-17 |
+| [PUSHING-OPERATIONS-README.md](recruiting-report/PUSHING-OPERATIONS-README.md) | Resume & Applicant Pushing — Operations README | 2026-11-18 |
 | [README.md](recruiting-report/README.md) | Alphalete Reporting Hub | 2026-10-24 |
 | [automations/ad_sales_board/README.md](recruiting-report/automations/ad_sales_board/README.md) | Ad Sales Board — day-by-day names per ad, dressed as a sales board | 2026-10-21 |
 | [automations/applicant_replies/README.md](recruiting-report/automations/applicant_replies/README.md) | Applicant replies — Lucy answering applicants in AppStream (SHADOW ONLY) | 2026-11-11 |

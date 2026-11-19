@@ -328,6 +328,25 @@ gspread from the mini. A poller-code change still needs `update` +
 
 ## Changelog (auto-appended daily at 7 PM; newest first)
 
+### 2026-11-18 (manual)
+- **Second day of the Octo run, read through `relay_faults`:** 11/17 1:27pm
+  row = "5 found, 1 not" (Baldomar Salazar Jr., Alexandra Camacho, Kiara
+  Levano, Abigail Chavez, Dennis Cooper found; Magma "could not start (Failed
+  to get proxy data)"), NO billing read — the shape of a lookups-only run in
+  the hour the schedule runs billing only; every shipped version's kick passes
+  `--billing-only` there and no other caller exists, so what produced it is
+  OPEN (a hand run on that computer, or a stale copy — the row could not say).
+  Fix shipped (release 2026.11.18.1): every tally carries `ran` = {argv,
+  release, host, pid, lookups, billing}. 11/18 5:01–5:31am: 1 found (Jimmy
+  Edward, Hawk), Angelica Arriaga + Maria Garcia walled, Valeria Mejia not in
+  the Hawk list; billing 16 clean, Revolt "in use on another computer"
+  (Carlos's own laptop window, still open). The office's push sent 25 on 11/17.
+  Also noted: a `crash` row "timeout: The read operation timed out" ×19 on
+  both 11/16 and 11/17 — pre-dates the Octo job, not it. And
+  `package.AGENT_FILES` now declares apex_login / apex_guard / apex_2fa_setup
+  (shipped in the txt since the 11/17 lucy eco pnl releases), which had
+  failed `UpdateScriptTests` on main.
+
 ### 2026-11-17 (manual)
 - **First scheduled Octo run on Carlos's office computer, 5:01–5:33am:** 9
   names on its list, 3 found (Haffid Mendoza Pineda + Karina Escalera on
