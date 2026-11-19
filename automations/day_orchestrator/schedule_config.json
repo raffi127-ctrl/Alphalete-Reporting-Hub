@@ -2713,6 +2713,25 @@
     "weekdays": []
    }
   },
+  "daily_update_calday_probe": {
+   "on_scheduler": false,
+   "_off_scheduler_note": "READ-ONLY, off-scheduler. `lucy rerun daily_update_calday_probe 22815 2026-11-16` prints what the calendar page actually says after we drive it to a day, instead of testing it for the one literal string read_calendar relies on (\"found for MM-DD-YYYY\"). Built 2026-11-19: that test fails for Cyrus on 11/16 on every run - three runs, two drives each on the last - so the day is abandoned and Shawn Gunnoe, Alexis Ochoa and Cameron Simpson lose their start date, on a report already live for Raf. Megan opened that day in ApplicantStream the same morning: it HAS second-round rows, so the day is not empty and the read is wrong about something. Prints the picker value, the title line, every '... for <date>' phrase on the page, whether our marker is among them, and each section's header row. Writes nothing, clicks nothing. Office and date are POSITIONAL because the mini's own argparse eats anything starting with '-'.",
+   "display_name": "Daily Update: calendar day probe (read-only)",
+   "source_type": "browser",
+   "data_sources": [],
+   "command": [
+    "automations.raf_daily_update.calday_probe"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 10,
+   "verify": null
+  },
   "daily_update_algemar": {
    "on_scheduler": false,
    "machine": "Lucy 2",
