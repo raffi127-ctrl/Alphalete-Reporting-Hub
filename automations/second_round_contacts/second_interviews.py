@@ -295,13 +295,29 @@ ROW_JS = """() => {
                   status: idx('follow up status'), by: idx('follow up by'),
                   time: idx('follow up time'), action: idx('action')};
 
-    const rows = [], options = new Set();
+    // EVERY ROW THE READER DROPS IS REPORTED. A person row that fails to parse
+    // is a BOB call nobody gets chased for, and a silent skip is how one goes
+    // missing (Megan, 2026-11-18: Raf had 51 second interviews booked and this
+    // read 50). So the count of <tr> seen, kept and skipped comes back with
+    // the rows, with the reason and the raw text for each skip.
+    const rows = [], options = new Set(), skipped = [];
+    let seen = 0;
     for (const tr of table.querySelectorAll('tr')) {
+        seen++;
         const cells = [...tr.children];
-        if (cells.length < 5) continue;
+        if (cells.length < 5) {
+            skipped.push({why: 'only ' + cells.length + ' cell(s)',
+                          text: norm(tr.innerText).slice(0, 120)});
+            continue;
+        }
         const text = i => (i >= 0 && cells[i]) ? norm(cells[i].innerText) : '';
         const first = text(want.first), last = text(want.last);
-        if (!first || /^first name$/i.test(first)) continue;
+        if (/^first name$/i.test(first)) { continue; }      // the header row
+        if (!first) {
+            skipped.push({why: 'no first name in column ' + want.first,
+                          text: norm(tr.innerText).slice(0, 120)});
+            continue;
+        }
 
         // Follow Up Status is a <select>: the chosen one AND every option it
         // offers, which is the vocabulary we have to classify.
@@ -318,16 +334,26 @@ ROW_JS = """() => {
         // "Show Up" is two different controls: radio Yes/No for a no-show, and
         // an "Offer Position? [Yes/No]" <select> once somebody has turned up.
         // Which control is present is itself the answer to "did they show".
-        let showed = '', offered = '';
+        let showed = '', offered = '', show_raw = null;
         const cell = cells[want.show];
         if (cell) {
             const osel = cell.querySelector('select');
+            const radios = [...cell.querySelectorAll('input[type=radio]')];
+            // DIAGNOSTIC: the markup itself comes back, so "did they turn up"
+            // is settled from what the page does rather than from a guess at
+            // what a radio's value spells. Megan, 2026-11-18: Raf had 32 show
+            // and this read 23.
+            show_raw = {
+                has_select: !!osel,
+                text: norm(cell.innerText).slice(0, 80),
+                radios: radios.map(r => ({name: r.name || '', value: r.value,
+                                          checked: r.checked}))
+            };
             if (osel) {
                 showed = 'yes';
                 offered = norm(osel.options[osel.selectedIndex] ? osel.options[osel.selectedIndex].text : '');
             } else {
-                const checked = [...cell.querySelectorAll('input[type=radio]')]
-                    .filter(r => r.checked);
+                const checked = radios.filter(r => r.checked);
                 const lbl = norm(cell.innerText).toLowerCase();
                 showed = checked.length
                     ? (/\\byes\\b/.test(lbl) && checked[0].value &&
@@ -338,11 +364,12 @@ ROW_JS = """() => {
         }
 
         rows.push({first, last, email: text(want.email),
-                   showed, offered, status,
+                   showed, offered, status, show_raw,
                    follow_up_by: text(want.by), follow_up_time: text(want.time),
                    action: text(want.action)});
     }
-    return {headers, rows, section, options: [...options]};
+    return {headers, rows, section, skipped, seen,
+            options: [...options]};
 }"""
 
 
@@ -359,6 +386,8 @@ def read_day_full(app) -> Dict:
     return {"rows": list(data.get("rows") or []),
             "section": str(data.get("section") or ""),
             "headers": list(data.get("headers") or []),
+            "skipped": list(data.get("skipped") or []),
+            "seen": int(data.get("seen") or 0),
             "error": str(data.get("error") or "")}
 
 

@@ -114,6 +114,25 @@ def main(argv=None) -> int:
               % ((r["first"] + " " + r["last"]).strip(), r["showed"] or "-",
                  r["offered"] or "-", r["status"], r["action"]))
 
+    print("\n=== SHOW UP: WHAT THE CELL ACTUALLY CONTAINS ===")
+    print("   %d <tr> seen, %d kept, %d skipped"
+          % (data.get("seen") or 0, len(rows), len(data.get("skipped") or [])))
+    for sk in (data.get("skipped") or []):
+        print("   SKIPPED (%s): %s" % (sk.get("why"), sk.get("text")))
+    shapes = {}
+    for r in rows:
+        raw = r.get("show_raw") or {}
+        key = ("select" if raw.get("has_select") else
+               "radios(%d checked=%s)" % (
+                   len(raw.get("radios") or []),
+                   ",".join(str(x.get("value")) for x in (raw.get("radios") or [])
+                            if x.get("checked")) or "none"))
+        shapes.setdefault(key, []).append(
+            ((r["first"] + " " + r["last"]).strip(), r["showed"], raw.get("text", "")))
+    for key, who in sorted(shapes.items(), key=lambda kv: -len(kv[1])):
+        print("   %-34s x%-3d  e.g. %s -> showed=%r  cell=%r"
+              % (key, len(who), who[0][0], who[0][1], who[0][2]))
+
     print("\n=== STATUS -> HOW OFTEN, AND WHAT THE ACTION SAYS ===")
     seen = {}
     for r in rows:

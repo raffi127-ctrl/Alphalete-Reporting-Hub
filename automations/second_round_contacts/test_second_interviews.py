@@ -268,6 +268,7 @@ class TheRightTableOnThePage(unittest.TestCase):
         self.assertIn("first", SI.ROW_JS.lower())
 
     def test_the_section_comes_back_so_it_can_be_logged(self):
-        self.assertIn("section, options", SI.ROW_JS.replace("\n", " ")
-                      if "section, options" in SI.ROW_JS else "section")
+        # The reader must HAND BACK which heading it landed on; read_day_full
+        # is what the nudge and the probe both log it from.
+        self.assertRegex(SI.ROW_JS, r"return\s*\{[^}]*\bsection\b")
         self.assertTrue(hasattr(SI, "read_day_full"))
