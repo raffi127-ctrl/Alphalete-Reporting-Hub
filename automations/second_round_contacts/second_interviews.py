@@ -296,14 +296,15 @@ ROW_JS = """() => {
     });
 
     const tables = [...document.querySelectorAll('table')];
-    let table = null, headers = [], section = '';
+    let table = null, headers = [], section = '', sectionEl = null;
     for (const lab of labels) {
         // A heading INSIDE its own table (a caption row) counts first.
         const inside = tables.find(t => t.contains(lab.el) && hasFollowUp(t));
         const after = tables.find(t => !t.contains(lab.el) && hasFollowUp(t)
             && (lab.el.compareDocumentPosition(t) & Node.DOCUMENT_POSITION_FOLLOWING));
         const pick = inside || after;
-        if (pick) { table = pick; headers = hasFollowUp(pick); section = lab.text; break; }
+        if (pick) { table = pick; headers = hasFollowUp(pick);
+                    section = lab.text; sectionEl = lab.el; break; }
     }
     if (!table) {
         return {error: 'found a SECOND INTERVIEWS heading ('
@@ -404,7 +405,23 @@ ROW_JS = """() => {
                    follow_up_by: text(want.by), follow_up_time: text(want.time),
                    action: text(want.action)});
     }
-    return {headers, rows, section, skipped, seen,
+    // THE PAGE'S OWN TALLY, off the SECOND INTERVIEWS heading bar:
+    //   "First Day of Sales: 8 | 3rd Interview Completed: 0 |
+    //    Showed Up: 2 | No Show: 4 | OPEN: 0"
+    // ApplicantStream counts the same rows we are about to count, on the same
+    // page, for free. Reading it gives an independent answer to check ours
+    // against -- see `tally_problem`.
+    let banner = '';
+    if (sectionEl) {
+        const bar = sectionEl.closest('tr') || sectionEl.parentElement;
+        banner = bar ? norm(bar.innerText) : '';
+    }
+    const tally = {};
+    for (const m of banner.matchAll(/([A-Za-z0-9' ]+?)\\s*:\\s*(\\d+)/g)) {
+        tally[norm(m[1]).toLowerCase()] = parseInt(m[2], 10);
+    }
+
+    return {headers, rows, section, skipped, seen, banner, tally,
             options: [...options]};
 }"""
 
@@ -424,6 +441,8 @@ def read_day_full(app) -> Dict:
             "headers": list(data.get("headers") or []),
             "skipped": list(data.get("skipped") or []),
             "seen": int(data.get("seen") or 0),
+            "banner": str(data.get("banner") or ""),
+            "tally": dict(data.get("tally") or {}),
             "error": str(data.get("error") or "")}
 
 
@@ -457,3 +476,57 @@ def shown_date(app) -> str:
             }""")
     except Exception:                                      # noqa: BLE001
         return "(could not tell)"
+
+# --- CHECKING OUR COUNT AGAINST THE PAGE'S OWN ------------------------------
+# The SECOND INTERVIEWS heading bar carries ApplicantStream's own tally of the
+# very rows we just read:
+#
+#   "First Day of Sales: 8 | 3rd Interview Completed: 0 |
+#    Showed Up: 2 | No Show: 4 | OPEN: 0"
+#
+# Two reader bugs this would have caught the day they shipped, instead of
+# after a day of wrong numbers (both on Vincent's office, 2026-11-18):
+#
+#   * the Show Up radios were matched on their VALUE, which is 1/2 and never
+#     spells "yes", so both of his Yes rows read as No. We reported 0 showed
+#     and 6 no-shows where the page said 2 and 4.
+#   * and the run was read as "8 never ticked" when those eight were people
+#     already Brought on Board -- the page counts them under First Day of
+#     Sales, which is not an unanswered question at all.
+#
+# WHAT COUNTS AS AGREEING. "Showed Up" and "No Show" are the two the chase
+# turns on, so those are compared exactly. Everything else on the bar is a
+# stage rather than an answer and is not second-guessed here.
+#
+# A DISAGREEMENT IS NEVER RESOLVED SILENTLY. This returns a sentence for a
+# human; it does not "correct" either number. Which one is right is exactly
+# what nobody can tell from inside the reader, and quietly preferring one is
+# how a wrong count becomes invisible again.
+TALLY_SHOWED = "showed up"
+TALLY_NO_SHOW = "no show"
+
+
+def tally_problem(rows: List[Dict], tally: Optional[Dict]) -> str:
+    """"" when our count matches the page's own, else what differs.
+
+    An absent or unparsable tally is "" -- a page that does not carry the bar
+    is not a disagreement, and refusing to read it would turn a cosmetic
+    change on ApplicantStream into a broken report.
+    """
+    if not tally:
+        return ""
+    ours_yes = sum(1 for r in rows if showed_up(r) is True)
+    ours_no = sum(1 for r in rows if showed_up(r) is False)
+    said = []
+    for label, ours in ((TALLY_SHOWED, ours_yes), (TALLY_NO_SHOW, ours_no)):
+        theirs = tally.get(label)
+        if theirs is None:
+            continue
+        if int(theirs) != ours:
+            said.append("%s: the page says %d, we read %d"
+                        % (label, int(theirs), ours))
+    if not said:
+        return ""
+    return ("our count and ApplicantStream's own do not agree -- %s. Nothing "
+            "has been corrected either way: check the Show Up column before "
+            "trusting either number." % "; ".join(said))

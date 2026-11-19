@@ -350,3 +350,67 @@ class TheShowUpRadios(unittest.TestCase):
         for raw, want in (("yes", True), ("no", False),
                           ("unmarked", None), ("", None)):
             self.assertIs(SI.showed_up({"showed": raw}), want, raw)
+
+
+class ThePageCountsTheSameRowsWeDo(unittest.TestCase):
+    """The SECOND INTERVIEWS heading bar carries ApplicantStream's own tally.
+
+    Both numbers below are real, off Vincent's office (24290) on 2026-11-18:
+
+        First Day of Sales: 8 | 3rd Interview Completed: 0 |
+        Showed Up: 2 | No Show: 4 | OPEN: 0
+
+    and what the reader said that evening was "0 showed, 6 no-show, 8 never
+    ticked". Reading the bar would have caught it on the day, instead of a
+    day of wrong numbers and an office being told it had not done its job.
+    """
+
+    REAL = {"first day of sales": 8, "3rd interview completed": 0,
+            "showed up": 2, "no show": 4, "open": 0}
+
+    @staticmethod
+    def _rows(yes, no):
+        return ([{"showed": "yes"}] * yes) + ([{"showed": "no"}] * no)
+
+    def test_a_matching_count_says_nothing(self):
+        self.assertEqual(SI.tally_problem(self._rows(2, 4), self.REAL), "")
+
+    def test_the_radio_bug_would_have_been_caught(self):
+        # What the broken reader produced: every Yes read as a No.
+        said = SI.tally_problem(self._rows(0, 6), self.REAL)
+        self.assertIn("showed up", said)
+        self.assertIn("the page says 2, we read 0", said)
+        self.assertIn("no show", said)
+        self.assertIn("the page says 4, we read 6", said)
+
+    def test_it_corrects_NEITHER_number(self):
+        # Which one is right is exactly what the reader cannot know, and
+        # quietly preferring one is how a wrong count goes invisible again.
+        said = SI.tally_problem(self._rows(0, 6), self.REAL)
+        self.assertIn("Nothing has been corrected", said)
+
+    def test_people_already_brought_on_board_are_not_a_disagreement(self):
+        # The eight under "First Day of Sales" have no Show Up radios because
+        # they are past that stage. They are not unanswered, and the check
+        # does not treat the stage columns as answers.
+        rows = self._rows(2, 4) + [{"showed": "yes"}] * 0
+        self.assertEqual(SI.tally_problem(rows, self.REAL), "")
+
+    def test_a_page_with_no_bar_is_not_a_disagreement(self):
+        # A cosmetic change on ApplicantStream must not break the report.
+        self.assertEqual(SI.tally_problem(self._rows(2, 4), {}), "")
+        self.assertEqual(SI.tally_problem(self._rows(2, 4), None), "")
+
+    def test_a_bar_missing_one_label_still_checks_the_other(self):
+        said = SI.tally_problem(self._rows(0, 4), {"showed up": 2})
+        self.assertIn("showed up", said)
+        self.assertNotIn("no show", said)
+
+    def test_the_reader_asks_the_page_for_its_tally(self):
+        self.assertIn("tally", SI.ROW_JS)
+        self.assertIn("banner", SI.ROW_JS)
+
+    def test_a_row_with_no_radios_already_counts_as_showed(self):
+        # The Offer Position dropdown replaces the radios once somebody is
+        # through. That is not "nobody said".
+        self.assertRegex(SI.ROW_JS, r"if \(osel\)[^}]*showed = 'yes'")
