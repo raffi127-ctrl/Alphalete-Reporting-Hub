@@ -1127,10 +1127,18 @@ def tick(*, send: bool, force: bool, board: bool, headless: bool = True,
         today, now, rows, state, send=send and C.NO_DISPO_SEND)
 
     _log("timing: board drawn %.0fs into the tick" % (_time.time() - t0))
-    if want_board and C.GPS_ALERTS:
-        # Every board tick (:00/:30), like Raf's: 3 failed-GPS knocks in a row.
-        gps_check(today, now, state, send=send, headless=headless)
-        _log("timing: gps check done %.0fs into the tick" % (_time.time() - t0))
+
+    def _gps():
+        # Every board tick (:00/:30), like Raf's: 3 failed-GPS knocks in a
+        # row. AFTER the board and the gaps are out (2026-11-19): the 3:30
+        # tick had its board drawn 83s in and then sat behind this check until
+        # 296s -- three and a half minutes of a finished board not posted.
+        if want_board and C.GPS_ALERTS:
+            try:
+                gps_check(today, now, state, send=send, headless=headless)
+            except Exception as e:  # noqa: BLE001 -- the board is already out
+                _log("gps check failed: %s: %s" % (type(e).__name__, str(e)[:160]))
+            _log("timing: gps check done %.0fs into the tick" % (_time.time() - t0))
 
     if not send:
         _log("DRY RUN -- would post:")
@@ -1139,6 +1147,7 @@ def tick(*, send: bool, force: bool, board: bool, headless: bool = True,
         _log("  gaps:\n%s" % (body or "(nobody over 15 min)"))
         _log("  call-out: %s" % (callout or "(none)"))
         _log("  no-dispo: %s" % (no_dispo or "(none)"))
+        _gps()
         return 1 if grid_failed else 0
 
     from automations.icd_alerts import post as P
@@ -1168,6 +1177,9 @@ def tick(*, send: bool, force: bool, board: bool, headless: bool = True,
             _log("text: no-dispo queued")
         else:
             _log("no-dispo (NO_DISPO_SEND off, not sent): %s" % no_dispo)
+    _log("timing: board + gaps out %.0fs into the tick" % (_time.time() - t0))
+    _save(state)        # the sends are on record before the slow check runs
+    _gps()
     _save(state)
     return 1 if grid_failed else 0
 
