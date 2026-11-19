@@ -114,6 +114,13 @@ BORROWED_RIDE_LEADERS = {"rafael": ["Cinthya Reyes"]}
 # waits up to this many minutes for a share newer than the slot's start;
 # past that it draws with what is there and says so in the log.
 BORROWED_FRESH_WAIT_MIN = 9
+# Carlos 2026-11-19: the wait made every board 6-8 min late (1 min before
+# 11/3) -- "lets do your suggestion": ONE board, on time, no waiting; the
+# borrowed reps show Raf's last shared numbers and their names say when those
+# are from, e.g. "Cinthya Reyes GP (as of 2:04)". BORROWED_WAIT True brings
+# the 11/3 behaviour back (hold the board for a share from this slot).
+BORROWED_WAIT = False
+BORROWED_AS_OF = True
 # Since 2026-11-03 Raf's board draws on HIS office Mac (Lucy 1's gap_alerts
 # for him is switched off), so nothing writes his 'Lucy Knocks' row any more
 # -- Cinthya + Nathaly vanished from the NDS board 11/04-11/05. His Mac
