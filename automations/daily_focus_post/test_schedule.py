@@ -31,7 +31,7 @@ class Format(unittest.TestCase):
 
     def test_second_rounds_on_top_with_morning_afternoon(self):
         txt = S.format_funnel(dt.date(2026, 11, 16), "Main", "11280", self.DATA)
-        self.assertIn("Main (11280)", txt)
+        self.assertIn(":red_circle: *MAIN FUNNEL* (11280)", txt)
         self.assertIn("Mon 11/16", txt)
         self.assertLess(txt.index("2nd rounds: 6"), txt.index("1st rounds: 9"))
         self.assertIn("2nd rounds: 6*   (morning 1 \u00b7 afternoon 5)", txt)
@@ -43,6 +43,20 @@ class Format(unittest.TestCase):
         self.assertNotIn("9:00 AM", second)       # 1st-only slot stays out
         order = [first.index(t) for t in ("9:00 AM", "10:30 AM", "1:00 PM")]
         self.assertEqual(order, sorted(order))    # 10:30 AM before 1:00 PM
+
+    def test_each_funnel_has_its_own_color(self):
+        empty = {"first": {}, "second": {}, "totals": {"first": 0, "second": 0}}
+        dots = {lab: S.format_funnel(dt.date(2026, 11, 16), lab, oid, empty)
+                .split()[0] for oid, lab in roster.RAF.booked_funnels}
+        self.assertEqual(dots["Main"], ":red_circle:")
+        self.assertEqual(dots["LinkedIn"], ":large_blue_circle:")
+        self.assertEqual(dots["AI"], ":large_green_circle:")
+        self.assertEqual(len(set(dots.values())), len(dots))  # no repeats
+
+    def test_round_lines_carry_the_color(self):
+        txt = S.format_funnel(dt.date(2026, 11, 16), "AI", "24065", self.DATA)
+        self.assertIn(":large_green_circle: *2nd rounds: 6*", txt)
+        self.assertIn(":large_green_circle: *1st rounds: 9*", txt)
 
     def test_nothing_booked(self):
         txt = S.format_funnel(dt.date(2026, 11, 16), "El Paso", "23965", {
@@ -113,7 +127,7 @@ class BookedReplies(unittest.TestCase):
         self.assertEqual(txt.call_count, 4)
         heads = [c.args[0].split("\n")[0] for c in txt.call_args_list]
         for (oid, label), head in zip(roster.RAF.booked_funnels, heads):
-            self.assertIn(f"{label} ({oid})", head)
+            self.assertIn(f"{label.upper()} FUNNEL* ({oid})", head)
         for c in txt.call_args_list + img.call_args_list:
             self.assertEqual(c.kwargs["thread_ts"], "DU.1")
         img.assert_called_once()

@@ -132,6 +132,19 @@ def _am_pm(slots: Dict[str, int]):
     return am, pm
 
 
+# One color per funnel so the four replies tell apart at a glance (Megan,
+# 2026-11-19: "headers labeling which accounts ... color coding so the red
+# numbers are main funnel, blue are linked in, green is AI" -- but keep it
+# TEXT, not a picture). Slack can't color text, so a colored dot leads the
+# header and each round line. El Paso got no color from Megan: orange.
+FUNNEL_DOT = {
+    "Main": ":red_circle:",
+    "LinkedIn": ":large_blue_circle:",
+    "AI": ":large_green_circle:",
+    "El Paso": ":large_orange_circle:",
+}
+
+
 def format_funnel(day: dt.date, label: str, office: str, data: Dict) -> str:
     """One funnel's reply. 2nd rounds FIRST and on their own (Raf 2026-11-18:
     "I want to separate the first and the second round ... just look at the
@@ -139,8 +152,9 @@ def format_funnel(day: dt.date, label: str, office: str, data: Dict) -> str:
     count so "is the afternoon full?" is answered at a glance. Monospace
     block so the columns line up on a phone."""
     tot = data.get("totals") or {}
-    head = (f"*{label} ({office}) \u2014 interviews booked for "
-            f"{day:%a} {day.month}/{day.day}*")
+    dot = FUNNEL_DOT.get(label, ":white_circle:")
+    head = (f"{dot} *{label.upper()} FUNNEL* ({office}) \u2014 interviews "
+            f"booked for *{day:%a} {day.month}/{day.day}*")
     if not (tot.get("first") or tot.get("second")):
         return head + "\nNothing booked yet."
     parts = [head]
@@ -148,10 +162,11 @@ def format_funnel(day: dt.date, label: str, office: str, data: Dict) -> str:
         slots = data.get(key) or {}
         n = tot.get(key, 0)
         if not n:
-            parts.append(f"*{name}: 0*")
+            parts.append(f"{dot} *{name}: 0*")
             continue
         am, pm = _am_pm(slots)
-        parts.append(f"*{name}: {n}*   (morning {am} \u00b7 afternoon {pm})")
+        parts.append(f"{dot} *{name}: {n}*   "
+                     f"(morning {am} \u00b7 afternoon {pm})")
         lines = [f"{'no time' if t == '?' else t:<10}{slots[t]:>4}"
                  for t in sorted(slots, key=_sort_key)]
         parts.append("```" + "\n".join(lines) + "```")
