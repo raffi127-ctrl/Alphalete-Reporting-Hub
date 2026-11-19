@@ -568,6 +568,72 @@ def record_delivery(svc, rows: list[list]) -> int:
     return 0
 
 
+def probe_override_detail(svc, period: int) -> str:
+    """Discovery pull: every 'OVERRIDE' view of the Overrides ICD View workbook for one period, each crosstab sheet
+    dumped raw (capped) onto tab 'Override Detail (probe)' so the per-ICD layout can be read before building on it."""
+    from automations.shared.tableau_patchright import download_crosstab_patchright, tableau_session
+    from automations.recruiting_report.opt_phase import list_crosstab_sheets
+    from automations.override_bulletin.pulls import read_crosstab, _with_filter
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    tab = "Override Detail (probe)"
+    label = f"Period {dt.date.today().year}-{period}"
+    base = VIEW.rsplit("/", 1)[0] + "/"
+    body = [["Pulled", dt.date.today().isoformat(), "Period filter", label], []]
+    with tableau_session(headless=True, verbose=False) as pg:
+        names = []
+        try:
+            pg.goto(VIEW, wait_until="domcontentloaded")
+            pg.wait_for_timeout(10_000)
+            raw = pg.evaluate("""async (wbid) => {
+                const xsrf = (document.cookie.match(/XSRF-TOKEN=([^;]+)/) || [])[1] || '';
+                const body = {method: 'getViews', params: {filter: {operator: 'and', clauses: [{operator: 'eq', field: 'workbookId', value: wbid}]},
+                              order: [{field: 'name', ascending: true}], page: {startIndex: 0, maxItems: 200}}};
+                const r = await fetch('/vizportal/api/web/v1/getViews', {method: 'POST', credentials: 'include',
+                              headers: {'Content-Type': 'application/json', 'X-XSRF-TOKEN': xsrf}, body: JSON.stringify(body)});
+                return await r.text();
+            }""", "936712")
+            names = [v.get("name", "") for v in (json.loads(raw).get("result", {}).get("views") or [])]
+        except Exception as e:  # noqa: BLE001
+            log(f"detail: view list failed ({str(e)[:100]})")
+        body += [["## workbook views"]] + [[n] for n in names] + [[]]
+        for i in range(0, len(names), 3):
+            log("detail: views " + " | ".join(names[i:i + 3]))
+        targets = [n for n in names if "OVERRIDE" in n.upper()] or ["MY OVERRIDE DETAILED SUMMARY", "ORG OVERRIDE SUMMARY"]
+        for name in targets:
+            slug = re.sub(r"\s+", "", name)
+            view = _with_filter(base + slug, "Period", label)
+            try:
+                sheets = list_crosstab_sheets(view, page=pg, verbose=False)
+            except Exception as e:  # noqa: BLE001
+                log(f"detail: {slug[:34]} no crosstab ({str(e)[:50]})")
+                body += [[f"## {name}", "no crosstab dialog"], []]
+                continue
+            log(f"detail: {slug[:34]} sheets {sheets}"[:190])
+            for sh in sheets[:6]:
+                out = OUT_DIR / f"Detail_{re.sub(r'[^A-Za-z0-9]+', '_', slug + '_' + sh)}.csv"
+                try:
+                    download_crosstab_patchright(view, sh, out, verbose=False, page=pg)
+                    rows = [list(r) for r in read_crosstab(out) if any(str(c).strip() for c in r)]
+                except Exception as e:  # noqa: BLE001
+                    log(f"detail: {slug[:24]}/{sh[:24]} failed ({str(e)[:50]})")
+                    body += [[f"## {name} / {sh}", "download failed"], []]
+                    continue
+                mine = sum(1 for r in rows if OWNER in " ".join(map(str, r)).lower())
+                log(f"detail: {slug[:24]}/{sh[:24]} {len(rows)} rows, {mine} mention owner")
+                body += [[f"## {name} / {sh}", f"{len(rows)} rows", f"{mine} rows mention owner"]] + [r[:40] for r in rows[:4000]] + [[]]
+    tabs = {x["properties"]["title"] for x in svc.get(spreadsheetId=PNL_SHEET_ID, fields="sheets.properties").execute()["sheets"]}
+    if tab not in tabs:
+        svc.batchUpdate(spreadsheetId=PNL_SHEET_ID, body={"requests": [{"addSheet": {"properties": {"title": tab, "gridProperties": {"rowCount": max(1000, len(body) + 50), "columnCount": 42}}}}]}).execute()
+    else:
+        sid = next(x["properties"] for x in svc.get(spreadsheetId=PNL_SHEET_ID, fields="sheets.properties").execute()["sheets"] if x["properties"]["title"] == tab)
+        if sid["gridProperties"]["rowCount"] < len(body) + 10:
+            svc.batchUpdate(spreadsheetId=PNL_SHEET_ID, body={"requests": [{"appendDimension": {"sheetId": sid["sheetId"], "dimension": "ROWS", "length": len(body) + 50 - sid["gridProperties"]["rowCount"]}}]}).execute()
+        svc.values().clear(spreadsheetId=PNL_SHEET_ID, range=f"'{tab}'!A1:AP60000").execute()
+    for i in range(0, len(body), 2000):
+        svc.values().update(spreadsheetId=PNL_SHEET_ID, range=f"'{tab}'!A{i + 1}", valueInputOption="RAW", body={"values": body[i:i + 2000]}).execute()
+    return f"detail: {len(body)} lines written to '{tab}'"
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true")
@@ -575,9 +641,14 @@ def main(argv=None) -> int:
     import getpass
     default_via = os.environ.get("CARLOS_TABLEAU_VIA") or ("hub" if getpass.getuser().lower().startswith("lucy") else "chrome")
     ap.add_argument("--dates-only", action="store_true", help="only refresh the Dates to Remember tab (Lucy / hub session)")
+    ap.add_argument("--detail-probe", type=int, default=0, metavar="PERIOD", help="dump every OVERRIDE view of the workbook for one period onto a probe tab")
     ap.add_argument("--via", choices=["chrome", "hub"], default=default_via, help="chrome = copy Carlos's Chrome Tableau session (his Mac); hub = the Hub's shared Tableau session (Lucy)")
     args = ap.parse_args(argv)
     log(f"tableau via: {args.via}")
+    if args.detail_probe:
+        from automations.carlos_finance.tiller_sync import _svc
+        log(probe_override_detail(_svc(), args.detail_probe))
+        return 0
     if args.dates_only:
         from automations.carlos_finance.tiller_sync import _svc
         svc = _svc()
