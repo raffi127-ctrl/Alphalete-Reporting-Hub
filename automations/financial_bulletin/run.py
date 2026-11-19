@@ -15,6 +15,7 @@ average money saved / pay / withdrawal and operating %.
   Owners pay           = 'Owners Payroll'
   Withdrawal/dividend  = 'Owners Withdrawal'
   Operating %          = 'Operating %'
+  Indeed spend         = 'Indeed'
 
 Averages skip blank weeks (an owner whose book didn't come in that week is not
 a $0 week). Only the tab this script creates is ever written.
@@ -78,7 +79,13 @@ METRICS: List[Tuple[str, str, str]] = [
     ("Owners Payroll", "OWNERS PAY (Owners Payroll)", "money"),
     ("Owners Withdrawal", "OWNERS WITHDRAWAL / DIVIDEND", "money"),
     ("Operating %", "OPERATING %", "pct"),
+    # Rafael, reply to the Org Finances mail 2026-11-19: "can we add a huge box
+    # thing for indeed spend please?" — the 'Indeed' row the Financial Report
+    # already writes into each tab's financial section.
+    ("Indeed", "INDEED SPEND", "money"),
 ]
+# Columns of the summary tables: name (+ org) + one average per metric + count.
+_NM = len(METRICS)
 
 
 def _num(v) -> Optional[float]:
@@ -370,7 +377,7 @@ def build_grid(owners, weeks: List[dt.date], groups: Optional[Dict[str, str]] = 
 
     if groups:
         # BY ORG: each org's owner averages, side by side.
-        add(["BY ORG"] + [""] * 5, "section")
+        add(["BY ORG"] + [""] * (_NM + 1), "section")
         add(["ORG"] + avg_heads + ["OWNERS"], "summary_head")
         for i, g in enumerate(order):
             who = [o for o in names if groups[o] == g]
@@ -383,7 +390,7 @@ def build_grid(owners, weeks: List[dt.date], groups: Optional[Dict[str, str]] = 
         add([])
 
     # Summary: one row per owner, Rafael's four columns.
-    add(["OWNER AVERAGES"] + [""] * (5 + off), "section")
+    add(["OWNER AVERAGES"] + [""] * (_NM + 1 + off), "section")
     first = len(rows)
     add(["OWNER"] + (["ORG"] if groups else []) + avg_heads + ["WEEKS WITH DATA"],
         "summary_head", o=off)
@@ -392,7 +399,7 @@ def build_grid(owners, weeks: List[dt.date], groups: Optional[Dict[str, str]] = 
             + [series_avg(o, l) for l, _h, _k in METRICS] + [n_weeks(o)],
             "summary_odd" if i % 2 else "summary", o=off)
     if groups:
-        filt = (first, len(rows), 6 + off)
+        filt = (first, len(rows), _NM + 2 + off)
     add(["ALL OWNERS AVERAGE"] + ([""] if groups else [])
         + [_avg([series_avg(o, l) for o in names]) for l, _h, _k in METRICS]
         + [""], "summary_avg", o=off)
@@ -443,6 +450,7 @@ PALETTE = [
     ("#1565C0", "#BBDEFB", "#F0F7FD"),   # owners pay — blue
     ("#E65100", "#FFE0B2", "#FFF7EE"),   # withdrawal / dividend — orange
     ("#6A1B9A", "#E1BEE7", "#F8F1FA"),   # operating % — purple
+    ("#00838F", "#B2EBF2", "#EEFAFB"),   # indeed spend — teal
 ]
 
 
@@ -494,7 +502,7 @@ def _fmt_requests(ws_id: int, marks, ncols: int, nrows: int, filt=None) -> List[
             paint(r, 0, 1, {"textFormat": {"italic": True,
                                            "foregroundColor": _rgb("#5F6B7A")}})
         elif style == "section":
-            paint(r, 0, max(n, 6), {"backgroundColor": _rgb(dark), "verticalAlignment": "MIDDLE",
+            paint(r, 0, max(n, _NM + 2), {"backgroundColor": _rgb(dark), "verticalAlignment": "MIDDLE",
                                     "textFormat": {"bold": True, "fontSize": 12,
                                                    "foregroundColor": white}})
             reqs.append({"updateDimensionProperties": {
@@ -534,7 +542,7 @@ def _fmt_requests(ws_id: int, marks, ncols: int, nrows: int, filt=None) -> List[
                     paint(r, 1 + off + i, 2 + off + i,
                           {"numberFormat": pct if kinds[i] == "pct" else money,
                            "backgroundColor": _rgb(plight) if style.endswith("odd") else white})
-                paint(r, 5 + off, 6 + off, {"horizontalAlignment": "CENTER"})
+                paint(r, _NM + 1 + off, _NM + 2 + off, {"horizontalAlignment": "CENTER"})
             else:
                 paint(r, 1, n, {"numberFormat": num})
                 # the average column: bold on the block's tint
@@ -547,7 +555,7 @@ def _fmt_requests(ws_id: int, marks, ncols: int, nrows: int, filt=None) -> List[
                 for i in range(len(METRICS)):
                     paint(r, 1 + off + i, 2 + off + i,
                           {"numberFormat": pct if kinds[i] == "pct" else money})
-                paint(r, 5 + off, 6 + off, {"horizontalAlignment": "CENTER"})
+                paint(r, _NM + 1 + off, _NM + 2 + off, {"horizontalAlignment": "CENTER"})
             else:
                 paint(r, 1, n, {"numberFormat": num})
     if filt:
