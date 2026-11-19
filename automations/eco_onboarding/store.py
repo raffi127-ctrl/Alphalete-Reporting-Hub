@@ -144,3 +144,24 @@ def _supports_dash() -> bool:
         return True
     except ValueError:
         return False
+
+
+def offices(book=None) -> List[str]:
+    """Every office key already on the tab, A-Z.
+
+    The form offers these rather than asking somebody to TYPE their key: a
+    typed key that does not match creates a second row for an office that
+    already has one, and nothing downstream would ever look at it. It also
+    means the form works without the owner pressing Enter, which is the whole
+    reason the first version appeared to do nothing.
+    """
+    try:
+        ws = _sheet(book)
+        have = headers(ws)
+        if S.COL_OFFICE not in have:
+            return []
+        col = have.index(S.COL_OFFICE) + 1
+        said = [str(v).strip() for v in ws.col_values(col)[1:]]
+        return sorted({v for v in said if v}, key=str.lower)
+    except Exception:          # noqa: BLE001
+        return []

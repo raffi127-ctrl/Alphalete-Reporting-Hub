@@ -49,12 +49,29 @@ st.title("LucyECO Onboarding")
 st.caption("Your office's answers, asked once. Everything below goes to your "
            "onboarding board, your background checks and your payroll records.")
 
-office = st.text_input("Your office key", key="eco_office",
-                       help="The short name we use for your office, like "
-                            "'raf' or 'vincent'.").strip()
+# PICK, DO NOT TYPE. A typed key that does not match makes a SECOND row for
+# an office that already has one, and nothing downstream would ever read it.
+# It also means the form works without pressing Enter -- a text box does not
+# rerun Streamlit until it commits, so the first version looked like it did
+# nothing when somebody typed and waited.
+NEW = "+ My office isn't listed"
+known = store.offices()
+if known:
+    picked = st.selectbox("Your office", [""] + known + [NEW], key="eco_pick")
+else:
+    st.warning("Could not read the office list — type your key instead.")
+    picked = NEW
+
+if picked == NEW:
+    office = st.text_input(
+        "Your office key", key="eco_office",
+        help="The short name for your office, like 'raf' or 'vincent'. "
+             "Press Enter when you have typed it.").strip()
+else:
+    office = picked.strip()
 
 if not office:
-    st.info("Enter your office key to begin.")
+    st.info("Choose your office to begin.")
     st.stop()
 
 try:
