@@ -246,6 +246,67 @@ def parse(data: bytes, log=print):
     return orders, lines
 
 
+def trace(today: dt.date, needle: str = "", log=print) -> int:
+    """READ-ONLY look at one day's cached feed, compact enough for logdump:
+    every order whose parsed line rows do not match its own 'Lines' count
+    (a line row filed under the wrong order shows up exactly there), every
+    phone number that sits under more than one order, and -- for `needle`
+    (customer / rep / order # / phone substring) -- the matching orders with
+    their neighbours in document order and every line under them."""
+    import collections as _coll
+    f = cached(today)
+    if not f:
+        log(f"[trace] no wireless cache for {today}")
+        return 1
+    orders, lines = parse(f.read_bytes(), log=lambda *_: None)
+    by_order = _coll.OrderedDict((id(o), []) for o in orders)
+    owner = {id(o): o for o in orders}
+    orphan = 0
+    for l in lines:
+        hit = [k for k, o in owner.items() if all(l.get(f_) == o.get(f_) for f_ in ("wireless_order", "dsi", "customer", "order_date"))]
+        if hit:
+            by_order[hit[-1]].append(l)
+        else:
+            orphan += 1
+    log(f"[trace] {today}: {len(orders)} order(s), {len(lines)} line(s), {orphan} line(s) with no order")
+
+    def show(o, mark=""):
+        ls = by_order[id(o)]
+        log(f"[trace] {mark}#{orders.index(o):03d} {o.get('customer','')[:26]} | {o.get('rep','')[:22]} | {o.get('order_date','')} | "
+            f"{o.get('wireless_order','')} | hdr lines={o.get('line_count','')} parsed={len(ls)} | {o.get('order_status','')[:30]}")
+        for l in ls:
+            log(f"[trace]     L{l.get('line_no','')} {l.get('line_type','')[:8]} {l.get('line_phone','')} | {l.get('line_status','')} | "
+                f"ship {l.get('ship_date','') or '-'} dlv {l.get('delivered','') or '-'} port {l.get('port_status','') or '-'}")
+
+    bad = [o for o in orders if str(o.get("line_count", "")).strip().isdigit()
+           and int(o["line_count"]) != len(by_order[id(o)])]
+    log(f"[trace] orders whose line rows != their 'Lines' count: {len(bad)}")
+    for o in bad[:40]:
+        show(o, "MISMATCH ")
+    phones = _coll.defaultdict(set)
+    for o in orders:
+        for l in by_order[id(o)]:
+            if (l.get("line_phone") or "").strip():
+                phones[l["line_phone"].strip()].add(orders.index(o))
+    dup = {p_: ix for p_, ix in phones.items() if len(ix) > 1}
+    log(f"[trace] phone numbers under more than one order: {len(dup)}")
+    for p_, ix in list(dup.items())[:40]:
+        log(f"[trace] DUP {p_} -> " + ", ".join(f"#{i:03d} {orders[i].get('customer','')[:20]}" for i in sorted(ix)))
+    n = (needle or "").strip().lower()
+    if n:
+        hits = [i for i, o in enumerate(orders)
+                if n in " ".join(str(v) for v in o.values()).lower()
+                or any(n in (l.get("line_phone") or "").lower() for l in by_order[id(o)])]
+        log(f"[trace] orders matching {needle!r}: {len(hits)}")
+        seen = set()
+        for i in hits:
+            for j in (i - 1, i, i + 1):
+                if 0 <= j < len(orders) and j not in seen:
+                    seen.add(j)
+                    show(orders[j], "HIT " if j == i else "near ")
+    return 0
+
+
 def cached(today: dt.date):
     f = OUT_DIR / f"nds_wireless_{today.isoformat()}.html"
     return f if f.exists() else None

@@ -2370,12 +2370,24 @@ def main(argv=None) -> int:
     ap.add_argument("--tab", action="store_true",
                     help="refresh the 'NDS Order Log' tab on the Vantura board from "
                          "today's wireless feed; alone = ONLY that, no pull, no post")
+    ap.add_argument("--feed-trace", default=None, metavar="TEXT",
+                    help="READ-ONLY: show how --today's cached wireless feed files its line rows "
+                         "under orders (mismatched line counts, numbers under two orders, and the "
+                         "orders matching TEXT); nothing is pulled, written or posted")
     ap.add_argument("--tier-columns", action="store_true",
                     help="Revenue Board: tier-bonus potential columns (preview; off by default)")
     a = ap.parse_args(argv)
     FLAGS["tier_columns"] = bool(getattr(a, "tier_columns", False)) or FLAGS["tier_columns"]
     today = (dt.date.fromisoformat(a.today) if a.today else dt.date.today())
     OUT_DIR.mkdir(parents=True, exist_ok=True)
+
+    if a.feed_trace is not None:
+        # wins over every other switch (rerun appends to base_args, so --post
+        # is always there): a look at the cache, nothing else
+        from automations.nds_metrics import wireless_pull
+        rc = wireless_pull.trace(today, a.feed_trace)
+        print("=== done ===", flush=True)
+        return rc
 
     if a.tab and not (a.post or a.dm or a.only):
         # The tab by itself (Carlos 2026-10-29): today's cached feed -> tab.

@@ -103,3 +103,36 @@ class Windows(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FeedTrace(unittest.TestCase):
+    """11/19: the tab showed a customer with three extra lines that belonged
+    to another order. trace() is the read-only look at how a day's feed files
+    its line rows -- the order's own 'Lines' count is the check."""
+
+    def test_trace_flags_an_order_holding_more_lines_than_it_says(self):
+        import datetime as dt
+        import pathlib
+        import tempfile
+        other = list(NEW_ROW)
+        other[1], other[3], other[5], other[7] = "JOHN ROE", "DSI2", "99-2", "1"
+        line2 = list(LINE_ROW)
+        line2[0], line2[4] = "2", "2145550102"
+        # JOHN ROE says 1 line but two rows follow him; CLAUDIA says 2 and has 1
+        html = "<table>" + "".join(_tr(r) for r in (NEW_HDR, NEW_ROW, LINE_HDR, LINE_ROW,
+                                                    other, LINE_HDR, LINE_ROW, line2)) + "</table>"
+        with tempfile.TemporaryDirectory() as d:
+            f = pathlib.Path(d) / "feed.html"
+            f.write_text(html)
+            real, WP.cached = WP.cached, lambda day: f
+            try:
+                logs = []
+                self.assertEqual(WP.trace(dt.date(2026, 11, 19), "roe", log=logs.append), 0)
+            finally:
+                WP.cached = real
+        text = "\n".join(logs)
+        self.assertIn("2 order(s), 3 line(s)", text)
+        self.assertIn("orders whose line rows != their 'Lines' count: 2", text)
+        self.assertIn("DUP 2145550101", text)                 # the same number under both orders
+        self.assertIn("HIT #001 JOHN ROE", text)
+        self.assertIn("near #000 CLAUDIA MURILLO", text)
