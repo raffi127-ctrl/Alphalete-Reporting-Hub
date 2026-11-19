@@ -209,6 +209,25 @@
   }
  },
  "reports": {
+  "ov_roster_dump": {
+   "on_scheduler": false,
+   "_off_scheduler_note": "Build run (Eve/JD 2026-11-19, reception contacts cleanup step 2): READ-ONLY dump of every OwnerVille rep incl. retired with email+phone to output/logs/ov-roster-dump.json. Runs only through `lucy rerun`.",
+   "display_name": "OwnerVille roster dump (contacts cleanup)",
+   "source_type": "ownerville",
+   "data_sources": [],
+   "command": [
+    "automations.mobrium_list.roster_dump"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P2",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 20,
+   "verify": null
+  },
   "cancel_feedback": {
    "on_scheduler": true,
    "machine": "Lucy 4",
