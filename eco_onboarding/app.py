@@ -26,6 +26,26 @@ from automations.eco_onboarding import store             # noqa: E402
 st.set_page_config(page_title="LucyECO Onboarding", page_icon="📋")
 
 
+# BOTH READS ARE CACHED. Opening the sheet takes a couple of MINUTES on a cold
+# client, and Streamlit re-runs this whole file on every keystroke that
+# commits -- so without this the owner picks their office and waits two
+# minutes, then answers a question and waits again. They would close the tab,
+# and rightly.
+#
+# Short TTLs rather than none: the office list changes when somebody is
+# enrolled, and a row changes when somebody saves. Five minutes is longer than
+# anybody takes to fill this in and shorter than they would wait to see a new
+# office appear.
+@st.cache_data(ttl=300, show_spinner="Loading your offices…")
+def _offices():
+    return store.offices()
+
+
+@st.cache_data(ttl=300, show_spinner="Loading your office's answers…")
+def _current(office_key: str):
+    return store.read(office_key)
+
+
 def _ask(q: S.Question, current: str):
     """One question, one input. No syntax, no multi-answer boxes."""
     key = "eco_" + q.field
@@ -55,7 +75,7 @@ st.caption("Your office's answers, asked once. Everything below goes to your "
 # rerun Streamlit until it commits, so the first version looked like it did
 # nothing when somebody typed and waited.
 NEW = "+ My office isn't listed"
-known = store.offices()
+known = _offices()
 if known:
     picked = st.selectbox("Your office", [""] + known + [NEW], key="eco_pick")
 else:
@@ -75,7 +95,7 @@ if not office:
     st.stop()
 
 try:
-    current = store.read(office)
+    current = _current(office)
 except Exception as exc:                                   # noqa: BLE001
     st.error("Could not read Office Settings: %s" % exc)
     st.stop()
@@ -137,6 +157,9 @@ if st.button("Save my answers", type="primary"):
             st.error("Could not save: %s" % exc)
         else:
             if ok:
+                # The row just changed, so the cached copy is now a lie.
+                _current.clear()
+                _offices.clear()
                 st.success("Saved. Your onboarding board will use these from "
                            "its next run.")
                 st.caption(said)
