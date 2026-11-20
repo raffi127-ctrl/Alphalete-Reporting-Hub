@@ -227,6 +227,12 @@ TEXT_ROUTES = {
     # top three tables that shows the total numbers for the Office, AT&T, and
     # Verizon."
     ("2ND ROUNDS", "second_rounds_cards"): [TEXT_GROUP_ALL],
+    # The by-leader picture (second_round_report --view leaders --text), daily
+    # Mon-Sat 9:00 AM. Carlos 2026-11-20: "Send daily in the morning on the
+    # Aplayers and leaders text chain" / "On the A Players you can send now.
+    # Leaders you can send at 9am" -- one kind per chain so each texts once a day.
+    ("2ND ROUNDS", "second_rounds_leaders_ap"): [TEXT_GROUP_ALL],
+    ("2ND ROUNDS", "second_rounds_leaders_att"): [TEXT_GROUP_ATT],
 }
 
 # Seconds to wait after handing Messages an image. TdB proved a group image send
