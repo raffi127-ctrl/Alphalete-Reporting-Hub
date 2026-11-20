@@ -162,9 +162,23 @@ class YesterdayTest(unittest.TestCase):
         self.assertIn("*JD Mascorro* (1)", txt)
         self.assertIn(":x: " + DUPLICATE, txt)
         self.assertIn("*1 counted*", txt)
-        self.assertIn("1. Ana L. · 9:05 AM · score 5.0 :white_check_mark:", txt)
+        self.assertIn("1. Ana L. · 9:05 AM · score 5.0 :red_circle:", txt)
+        self.assertNotIn(":white_check_mark:", txt)
         self.assertIn("2. Ana L. · 2:30 PM", txt)
         self.assertNotIn(" min ·", txt)
+
+    def test_counted_mark_is_the_grade(self):
+        from automations.lucy_recordings_sheet.run import COUNTED, yesterday_text
+        txt = yesterday_text("2026-11-19", [
+            ["7:45 AM", "Aleen Avila", "Eveliz Wright", 30, 8.0, COUNTED],
+            ["7:48 AM", "Christian Soto", "Eveliz Wright", 30, 6.5, COUNTED],
+            ["7:53 AM", "Eduardo Perez", "Eveliz Wright", 30, 0.0, COUNTED],
+            ["8:00 AM", "Mauri Diaz", "Eveliz Wright", 30, "", COUNTED]])
+        self.assertIn("score 8.0 :large_green_circle:", txt)
+        self.assertIn("score 6.5 :large_yellow_circle:", txt)
+        self.assertIn("score 0.0 :red_circle:", txt)
+        self.assertIn("4. Mauri D. · 8:00 AM\n", txt)
+        self.assertIn("8+", txt)
 
 
 class ScopeTest(unittest.TestCase):
