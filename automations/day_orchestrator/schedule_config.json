@@ -4142,7 +4142,7 @@
    "on_scheduler": true,
    "order": 41.1,
    "machine": "Lucy 3",
-   "_note": "MONDAYS, right after nds_program_focus_all (Eve 2026-10-26). Copies the typed values of NDS owners' tabs that Raf also wants on the ATT Program - Focus Report (first one: 'JC Lopez - NDS' -> 'JC Lopez (NDS)', Raf's mail 10/25). Sheets-only, no Tableau, no AppStream: the NDS tab stays the ONE that gets filled, this keeps the ATT copy identical instead of running the 45-min NDS pull twice. Never clears a cell. `after` not depends_on: a half-failed NDS run still has real work worth mirroring. Lucy 3 because that is where the NDS fill runs, so the mirror lands minutes after it. Add more owners in MIRRORS in automations/recruiting_report/mirror_nds_tab.py.",
+   "_note": "MONDAYS, right after nds_program_focus_all (Eve 2026-10-26); also TUESDAYS since 2026-11-20 as a catch-up pass: David Pisikian (B2B) is mirrored from the Carlos 1on1s book, which carlos_focus fills on Lucy 2 with no cross-machine ordering, so Monday can run before it. Idempotent, never clears a cell. Copies the typed values of NDS owners' tabs that Raf also wants on the ATT Program - Focus Report (first one: 'JC Lopez - NDS' -> 'JC Lopez (NDS)', Raf's mail 10/25). Sheets-only, no Tableau, no AppStream: the NDS tab stays the ONE that gets filled, this keeps the ATT copy identical instead of running the 45-min NDS pull twice. Never clears a cell. `after` not depends_on: a half-failed NDS run still has real work worth mirroring. Lucy 3 because that is where the NDS fill runs, so the mirror lands minutes after it. Add more owners in MIRRORS in automations/recruiting_report/mirror_nds_tab.py.",
    "display_name": "NDS tabs mirrored onto the ATT Program",
    "source_type": "sheet",
    "data_sources": [],
@@ -4152,7 +4152,8 @@
    "base_args": [],
    "cadence": {
     "weekdays": [
-     0
+     0,
+     1
     ]
    },
    "priority": "P3",
