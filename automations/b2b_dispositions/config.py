@@ -209,7 +209,9 @@ TEXT_ROUTES = {
     # The NDS Sales Board's Teams box, when Carlos asks for it (nds_metrics
     # ON_REQUEST). Carlos 2026-11-19: "as text message to the Aplayer and
     # leaders chat".
-    ("NDS METRICS", "nds_teams_board"): [TEXT_GROUP_ATT, TEXT_GROUP_ALL],
+    # Carlos 2026-11-20: "on the slack NDS metrics thread and on the b2b
+    # leaders text chain" -- leaders chain only from now on.
+    ("NDS METRICS", "nds_teams_board"): [TEXT_GROUP_ATT],
     # Week tables off the AT&T (NDS) + Verizon Sales Boards (week_one_text),
     # Mon-Fri: WEEK 1 cut at today's column at 10:45, WEEK 1-4 at 11:30.
     # Carlos 2026-11-19: "it should be sent on the A Players text chain" /

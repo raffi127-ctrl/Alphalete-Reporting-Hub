@@ -38,6 +38,25 @@ class Layout(unittest.TestCase):
         self.assertEqual(L.status_for(cand("a", bob="Letting us know")), L.LETTING)
         self.assertEqual(L.status_for(cand("a")), L.TO_CALL)
 
+    def test_owner_liked_is_the_offer_not_the_acceptance(self):
+        # the November tab's own wording: a leader saying no is the only No
+        self.assertEqual(L.owner_liked_for(cand("a", offered="N")), "No")
+        self.assertEqual(L.owner_liked_for(cand("a", bob="Declined")), "Yes")
+        self.assertEqual(L.owner_liked_for(cand("a", bob="BOB")), "Yes")
+        self.assertEqual(L.owner_liked_for(cand("a", bob="LM")), "Yes")
+        # a no-show: nobody formed an opinion, so the cell stays empty
+        self.assertEqual(
+            L.owner_liked_for(cand("a", show="No Show", offered="")), "")
+
+    def test_the_run_writes_owner_liked_and_leaves_day1_alone(self):
+        self.assertIn("owner_liked", L.WRITE_KEYS)
+        self.assertIn("ad", L.WRITE_KEYS)
+        self.assertIn("int1", L.WRITE_KEYS)
+        # SHOWED TO DAY 1 is decided on the start day — day1.py fills it
+        self.assertNotIn("day1", L.WRITE_KEYS)
+        self.assertEqual(L.build_rows([cand("a", bob="BOB")])[0]["owner_liked"],
+                         "Yes")
+
     def test_order_matches_recruiters(self):
         rows = L.build_rows([cand("lm", bob="LM"), cand("ns", show="No Show"),
                              cand("no", offered="N"), cand("dec", bob="Declined"),

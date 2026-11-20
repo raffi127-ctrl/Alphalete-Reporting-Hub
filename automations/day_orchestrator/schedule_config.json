@@ -209,6 +209,34 @@
   }
  },
  "reports": {
+  "ars_web_watch": {
+   "on_scheduler": true,
+   "_note": "Eve 2026-11-20: ARS REPORT workbooks are being replaced by Camila's ARS Interview Tracker web. READ-ONLY daily check: an office with >=3 web rows and 0 ARS rows in the last 5 days = it stopped filling ARS, so Hub reports reading ARS lose it. DMs Eve only when that list changes. No machine pin: any Lucy with Sheets + Slack.",
+   "display_name": "ARS -> web watch",
+   "source_type": "api",
+   "data_sources": [],
+   "command": [
+    "automations.ars_web_watch.run"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ],
+    "not_before": "09:00"
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 15,
+   "verify": null
+  },
   "reception_contacts_cleanup": {
    "on_scheduler": true,
    "_note": "JD/Eve 2026-11-19: monthly cleanup of alphaletereception contacts. Rule A old applicants (>30d, never hired), rule B retired in OwnerVille + never on a Sales Board (start >= 2024-07-01). Lucy 1 = has the reception contacts token + OwnerVille. Stops itself above 1500 deletes. DMs Eve the count.",
@@ -2696,6 +2724,29 @@
     "automations.raf_daily_update.run"
    ],
    "base_args": []
+  },
+  "raf_daily_update_day1": {
+   "on_scheduler": false,
+   "machine": "Lucy 2",
+   "standalone_weekdays": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5
+   ],
+   "_note": "on_scheduler:false - it runs inside deploy/raf_daily_update.sh (5pm CT Mon-Sat on Lucy 2, straight after raf_daily_update), so it is not in the 4am batch and it never moves machine. PUBLISHES NO HUB PHASE on purpose: the '2nd Round Daily Update Post' card derives daily_runs from the number of OFFICES and reads \"the pill is green only when EVERY office posted\", so a sixth phase that is not an office post would leave it permanently unclosable. It alerts on failure instead (tag raf-daily-update-day1-failed) and this entry exists so `lucy rerun raf_daily_update_day1` works - with no args that is a DRY preview. WHAT IT DOES: SHOWED TO DAY 1 (column K) is the one column the daily write CANNOT fill - a row is about an interview day, that column is about the person's start day a week later ('11/2/26 ... BOB ... 11/9'), so on interview evening the answer does not exist. It was going unfilled on every row, which matters because the '2nd Rds' tab counts \"New starts showed\" as K=\"YES\" and nothing else: an empty K reads as a 0% show rate for every leader. This sweep returns for the rows whose start day has passed and asks, in Megan's order of 2026-10-01, (1) the sales board's New Starts block, where presence IS the attendance, then (2) the OBCL's Final Status (\"owner submitted and terminated both showed - count those\"), reusing local_office_1on1s.obcl rather than restating the rule. The order is what the live data forced: on 11/20 the OBCL carried all 39 of Raf's started BOBs and had a status for 2 of them. Names are matched on the full name and then on first-name + first-surname-token, because the board writes 'Mirsha Ruiz Gomez' where the sheet writes 'Mirsha Ruiz'; a typo ('Trevor Wooda') stays a logged miss rather than a guess. A person neither source has decided stays BLANK and is logged by name - blank means \"not answered yet\", never \"did not show\". Sweeps the current month tab AND the previous one, because somebody interviewed 10/30 starts in November while their row stays on October's tab. Only ever fills an EMPTY cell, so a recruiter's own typed answer wins and re-runs are safe. KNOWN CEILING: both sources are Raf's own office, so on 11/20 it answered 104 of 224 started rows - the rest started at other ICDs, whose attendance is not on this board. TEST PHASE: --write --test-sheet (Daily Update 2026 - LUCY), same as raf_daily_update.",
+   "display_name": "Raf Daily Update · Showed To Day 1 (TEST)",
+   "source_type": "sheets",
+   "data_sources": [],
+   "command": [
+    "automations.raf_daily_update.day1"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": []
+   }
   },
   "omar_daily_update": {
    "on_scheduler": false,

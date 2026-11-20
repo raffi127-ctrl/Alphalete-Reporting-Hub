@@ -660,8 +660,7 @@ def write_sheet(rows: List[dict], day: dt.date, write: bool,
         ws.add_rows(need - ws.row_count + 10)
     data = []
     for n, r in enumerate(add, last + 1):
-        for key in ("date", "int1", "int2", "first", "last", "phone",
-                    "status", "bob_date", "time", "email", "ad"):
+        for key in L.WRITE_KEYS:
             if key in lay and r.get(key):
                 data.append({"range": f"'{ws.title}'!{L.col_letter(lay[key])}{n}",
                              "values": [[r[key]]]})
