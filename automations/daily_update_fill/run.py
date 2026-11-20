@@ -81,14 +81,52 @@ STATUS_ADMIN = "Admin"
 STATUS_ORIENT = "Orientation Scheduled"
 
 
-def _orient_date(v, today):
-    m = re.match(r"^(\d{1,2})/(\d{1,2})", _n(v))
+def _orient_date(v, today, use_year=False):
+    m = re.match(r"^(\d{1,2})/(\d{1,2})(?:/(\d{2,4}))?", _n(v))
     if not m:
         return None
+    # use_year (YEAR_DATES boards): a written year wins -- the Vantura master's
+    # dates carry one since 2026-11-19. Otherwise m/d is this year, as always.
+    y = int(m.group(3)) if (use_year and m.group(3)) else today.year
+    if y < 100:
+        y += 2000
     try:
-        return dt.date(today.year, int(m.group(1)), int(m.group(2)))
+        return dt.date(y, int(m.group(1)), int(m.group(2)))
     except ValueError:
         return None
+
+
+# Dates WITH their year, on the Vantura master only (Carlos 2026-11-19: "add the
+# year if that makes things easier"). Its Daily Update held 'm/d' text with no
+# year, so a 2025 row and a 2026 row with the same month/day looked alike: the
+# Roll Call menu re-added last year's people as this year's new starts, and
+# Day Zero / Week Ending read old rows in the wrong year. The master's 2nd-round
+# and orientation dates are now real dates (m/d/yyyy); this writes new ones the
+# same way. The owner boards keep 'm/d' text, byte for byte as before.
+YEAR_DATES = {"Carlos Hidalgo"}
+DATE_FIELDS = ("date2", "orient")       # written USER_ENTERED there, so they land as dates
+
+
+def _mdy(d) -> str:
+    return f"{d.month}/{d.day}/{d.year}"
+
+
+def _with_year(md_text, near):
+    """'11/20' -> '11/20/2026': the year that puts the date on or after `near`
+    (an orientation follows its interview; an interview on 12/29 and an
+    orientation on 1/5 cross the year). Anything that is not bare m/d -- it
+    already has a year, or is not a date -- comes back unchanged."""
+    m = re.match(r"^\s*(\d{1,2})/(\d{1,2})\s*$", md_text or "")
+    if not m:
+        return md_text
+    for y in (near.year, near.year + 1):
+        try:
+            d = dt.date(y, int(m.group(1)), int(m.group(2)))
+        except ValueError:
+            continue
+        if d >= near - dt.timedelta(days=30):
+            return _mdy(d)
+    return md_text
 # Vantura master (Carlos, 2026-08-24): terminations and classroom flips ONLY —
 # no sale=>Active automation of ANY flavor there (the WeekData-history variant
 # inflated his Actives to 162). Actives on the master are set by hand. The
@@ -300,7 +338,7 @@ def apply_to_sheet(name_label, sheet_id, tab, cands, cr_map, write):
     for idx, nm in enumerate(col_i):
         if nm:
             existing[nm.lower()] = idx + 1               # last wins
-    data, appended = [], 0
+    data, data_ue, appended = [], [], 0
     next_row = max(n_before + 1, 3)                      # data starts row 2/3
     for c in cands:
         key = c["name"].lower()
@@ -308,12 +346,16 @@ def apply_to_sheet(name_label, sheet_id, tab, cands, cr_map, write):
             continue
         cr = cr_map.get(key)
         orientation = c["orientation"]
+        dated = name_label in YEAR_DATES
+        if dated and orientation:
+            orientation = _with_year(orientation, c["day"])
         status = STATUS_NOT_ACTIVE
         t_val = ""
         if cr:
             t_val = CR_SHOW if cr[1] else CR_NOSHOW
             if not orientation:
-                orientation = f"{cr[0].month}/{cr[0].day}"
+                orientation = (_mdy(cr[0]) if dated
+                               else f"{cr[0].month}/{cr[0].day}")
             if cr[1]:
                 status = STATUS_CR
             # reaching the training roster proves they were offered + BOB'd,
@@ -324,7 +366,8 @@ def apply_to_sheet(name_label, sheet_id, tab, cands, cr_map, write):
         row = next_row
         next_row += 1
         existing[key] = row
-        ldate = f"{c['day'].month}/{c['day'].day}"
+        ldate = (_mdy(c["day"]) if dated
+                 else f"{c['day'].month}/{c['day'].day}")
         data.append({"range": f"'{tab}'!{_cl(lay['status'])}{row}",
                      "values": [[status]]})
         # Campaign (col F) — the owner boards are single-campaign, so stamp it
@@ -341,8 +384,8 @@ def apply_to_sheet(name_label, sheet_id, tab, cands, cr_map, write):
                          ("second", c["second_round"]), ("show", c["show"]),
                          ("offered", c["offered"]), ("bob", c["bob_status"]),
                          ("orient", orientation), ("ad", c["ad"])):
-            data.append({"range": f"'{tab}'!{_cl(lay[key])}{row}",
-                         "values": [[val]]})
+            (data_ue if dated and key in DATE_FIELDS else data).append(
+                {"range": f"'{tab}'!{_cl(lay[key])}{row}", "values": [[val]]})
         if t_val:
             data.append({"range": f"'{tab}'!{_cl(lay['cr'])}{row}",
                          "values": [[t_val]]})
@@ -362,6 +405,9 @@ def apply_to_sheet(name_label, sheet_id, tab, cands, cr_map, write):
         + ("" if write else "  (dry-run)"))
     if write and data:
         sh.values_batch_update(body={"valueInputOption": "RAW", "data": data})
+    if write and data_ue:                                # YEAR_DATES boards only
+        sh.values_batch_update(body={"valueInputOption": "USER_ENTERED",
+                                     "data": data_ue})
     return appended, cr_updates
 
 
@@ -549,11 +595,13 @@ def sync_statuses(name_label, sh, tab, write) -> int:
                 ("", STATUS_ORIENT)):
             want = STATUS_CR
         elif cur == STATUS_ORIENT and (t == CR_NOSHOW or (
-                (_orient_date(col_r[idx] if idx < len(col_r) else "", today_)
+                (_orient_date(col_r[idx] if idx < len(col_r) else "", today_,
+                              name_label in YEAR_DATES)
                  or today_) < today_ - dt.timedelta(days=2))):
             want = STATUS_NOT_ACTIVE     # orientation came and went, no show
         elif cur in ("", STATUS_NOT_ACTIVE) and not t and (
-                (_orient_date(col_r[idx] if idx < len(col_r) else "", today_)
+                (_orient_date(col_r[idx] if idx < len(col_r) else "", today_,
+                              name_label in YEAR_DATES)
                  or dt.date(1, 1, 1)) >= today_):
             want = STATUS_ORIENT         # scheduled to start
         else:
