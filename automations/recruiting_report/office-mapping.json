@@ -1,7 +1,7 @@
 {
   "confirmed_count": 58,
   "needs_review_count": 0,
-  "skip_count": 40,
+  "skip_count": 39,
   "confirmed": [
     {
       "sheet_tab": "Raf Hidalgo",
@@ -501,10 +501,6 @@
       "opt_source": "b2b"
     },
     {
-      "sheet_tab": "Spencer Brown",
-      "reason": "2026-11-20 (Maud/Starr, Eve): tab for Starr's Monday 1on1. LeafGuard owner - the Hub has no LeafGuard sales source and no AppStream office found yet. Move to confirmed/sales_only once his office is known."
-    },
-    {
       "sheet_tab": "Edgar Muniz II",
       "reason": "terminated 2026-07-22 (keeps filled tab; excluded from pull)"
     },
@@ -650,7 +646,14 @@
       "office_id_was": "22162",
       "reason": "2026-10-28: Camila (ARS) 'cerr\u00f3' \u2014 Eve: turn recruiting OFF for now, keep sales. Moved confirmed -> sales_only WITHOUT promote_when_visible, so AppStream seeing the office never flips it back. Recruiting rows keep their history, stop updating.",
       "opt_source": "b2b"
+    },
+    {
+      "sheet_tab": "Spencer Brown",
+      "as_owner": "Spencer Brown",
+      "promote_when_visible": true,
+      "opt_source": "none",
+      "reason": "2026-11-20 (Maud/Starr, Eve): tab for Starr's Monday 1on1. LeafGuard owner; Maud asked AppStream for access. Next AppStream pull promotes him by itself and backfills recruiting. opt_source none: no Tableau source carries LeafGuard sales, so Raf's OPT phase skips him instead of reporting a bogus alias gap every week."
     }
   ],
-  "sales_only_count": 4
+  "sales_only_count": 5
 }
