@@ -127,7 +127,7 @@ class DriftCatchesWhatActuallyMatters(_FakeRepo):
 class APackedCopyIsNotGreen(_FakeRepo):
     """The regression that let Raf's machine report all-clear."""
 
-    def _chrome(self, location: int):
+    def _chrome(self, location: int, store: dict | None = None):
         """A Chrome user-data dir whose one profile holds our extension."""
         root = self.tmp / "chrome"
         prof = root / "Profile 26"
@@ -143,7 +143,8 @@ class APackedCopyIsNotGreen(_FakeRepo):
                     "location": location,
                     "path": ("dapenpchflbhodfhndnlhojjnfmmabnp/1.1.5_0"
                              if location != 4 else str(self.copy)),
-                    "manifest": {"name": "Lucy BG Send", "version": "1.1.5"},
+                    "manifest": dict({"name": "Lucy BG Send",
+                                      "version": "1.1.5"}, **(store or {})),
                 }}}}))
         if location != 4:
             dest = prof / "Extensions" / "dapenpchflbhodfhndnlhojjnfmmabnp" / "1.1.5_0"
@@ -194,3 +195,58 @@ class APackedCopyIsNotGreen(_FakeRepo):
                         "the repo folder itself must read as a checkout")
         self.assertEqual(ED.drift_against_repo(str(self.ext), "office-admin"),
                          ([], []), "the repo compared against itself")
+
+
+class AStoreInstallGetsTheRightFix(APackedCopyIsNotGreen):
+    """The Hub sends admins a Chrome Web Store link ON PURPOSE.
+
+    So a store install is not somebody's hand copy, and "remove the card and
+    Load unpacked" is the wrong thing to tell an admin -- the earlier version
+    of this check said exactly that. `git pull` cannot reach a store build;
+    only publishing a new store version can, and when it is published Chrome
+    updates every admin by itself.
+    """
+
+    STORE = {"update_url": "https://clients2.google.com/service/update2/crx",
+             "key": "MIIBIjANBg..."}
+
+    def _run(self):
+        import contextlib
+        import io
+        self._chrome(location=1, store=self.STORE)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = ED.main([])
+        return code, buf.getvalue()
+
+    def test_a_store_build_behind_the_repo_is_reported_and_fails(self):
+        (self.copy / "content.js").write_text("// no guard here\n")
+        code, out = self._run()
+        self.assertEqual(code, 1)
+        self.assertIn("content.js", out)
+        self.assertIn("Web Store", out)
+
+    def test_a_store_build_is_never_told_to_load_unpacked(self):
+        (self.copy / "content.js").write_text("// no guard here\n")
+        _, out = self._run()
+        self.assertNotIn("Load unpacked and pick", out,
+                         "an admin on the store build was told to Load "
+                         "unpacked -- that is not how they installed it")
+        self.assertIn("publish", out.lower())
+
+    def test_it_says_the_other_admins_are_on_the_same_code(self):
+        """One profile on this Mac is a sample, not the scope."""
+        (self.copy / "content.js").write_text("// no guard here\n")
+        _, out = self._run()
+        self.assertIn("every admin", out)
+
+    def test_a_hand_copy_still_gets_load_unpacked(self):
+        """The control: no update_url means it really is somebody's copy."""
+        self._chrome(location=1)
+        import contextlib
+        import io
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            ED.main([])
+        self.assertIn("Load unpacked and pick", buf.getvalue())
+        self.assertNotIn("Web Store", buf.getvalue())

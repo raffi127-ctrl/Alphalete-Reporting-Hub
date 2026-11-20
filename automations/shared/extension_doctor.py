@@ -182,6 +182,13 @@ def records(root: pathlib.Path, prof: pathlib.Path):
                     # broken on 2026-11-19. Only the folder on disk knows.
                     "readable": bool(disk),
                     "unpacked": rec.get("location") == 4,
+                    # A Web Store install carries Google's update_url. It is
+                    # NOT a hand copy and must not be told to Load unpacked:
+                    # admins are sent the store link by the Hub on purpose, so
+                    # the fix for them is a new version PUBLISHED to the store.
+                    "from_store": "clients2.google.com" in str(
+                        (manifest.get("update_url")
+                         or disk.get("update_url") or "")),
                     "reasons": rec.get("disable_reasons"),
                 })
     return found, devmode
@@ -394,12 +401,17 @@ def main(argv=None) -> int:
                 own_copy = not from_a_checkout(r["path"], r["folder"])
                 if own_copy and r["readable"]:
                     problems += 1
-                    kind = ("this is a copy on disk, not the repo folder"
-                            if r["unpacked"] else
-                            "Chrome is running its own packed copy, not the "
-                            "repo folder")
-                    print("      FROZEN COPY: %s, so `git pull` will never "
-                          "reach it." % kind)
+                    if r["from_store"]:
+                        print("      BEHIND THE REPO: this is the Chrome Web "
+                              "Store build. `git pull` does not reach it — "
+                              "only publishing a new store version does.")
+                    else:
+                        print("      FROZEN COPY: %s, so `git pull` will never "
+                              "reach it."
+                              % ("this is a copy on disk, not the repo folder"
+                                 if r["unpacked"] else
+                                 "Chrome is running its own packed copy, not "
+                                 "the repo folder"))
                     moved = drift_against_repo(r["full"], r["folder"])
                     if moved is None:
                         print("      Could not compare it against the repo "
@@ -420,9 +432,19 @@ def main(argv=None) -> int:
                         else:
                             print("      Its files match the repo today, but "
                                   "the next fix will not reach it.")
-                    print("      Fix: remove this card, then Load unpacked "
-                          "and pick:")
-                    print("      %s" % pick_this(r["folder"]))
+                    if r["from_store"]:
+                        print("      This came from the Chrome Web Store, so "
+                              "it is NOT a hand copy and Load unpacked is the "
+                              "wrong fix.")
+                        print("      Fix: publish %s to the Web Store listing. "
+                              "Chrome then updates every admin by itself."
+                              % (repo_version(r["folder"]) or "the new version"))
+                        print("      Until that is published, every admin on "
+                              "the store build is running this same code.")
+                    else:
+                        print("      Fix: remove this card, then Load unpacked "
+                              "and pick:")
+                        print("      %s" % pick_this(r["folder"]))
                 if r["readable"] and not why and not own_copy:
                     print("      OK — installed and on, from the repo folder.")
                     ok_in[r["folder"]].append((prof.name, label))
