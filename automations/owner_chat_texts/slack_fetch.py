@@ -18,6 +18,7 @@ Python 3.9-safe (Lucy runtime).
 from __future__ import annotations
 
 import datetime as dt
+import time
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -30,9 +31,21 @@ class TrackerFetchError(RuntimeError):
     pass
 
 
+class _FileGone(TrackerFetchError):
+    """The reply's file was deleted between reading the thread and downloading
+    it: Lucy 3's poster heals a partial set by DELETING its replies and
+    re-posting them in order (tableau_screenshots.slack_post.delete_image_replies)."""
+
+
+# How long to let a re-post land before reading the thread again.
+REPOST_WAIT_S = 20
+
+
 def _download(url: str, token: str, dest: Path) -> Path:
     r = requests.get(url, headers={"Authorization": "Bearer %s" % token},
                      timeout=60)
+    if r.status_code in (404, 410):
+        raise _FileGone("%s -> %s" % (url[:100], r.status_code))
     r.raise_for_status()
     if not r.content.startswith(b"\x89PNG"):
         head = r.content[:60].decode("utf-8", "replace")
@@ -109,7 +122,7 @@ def thread_status(day: dt.date, only: Optional[List[str]] = None
     return present, missing
 
 
-def fetch_tracker_pngs(day: dt.date, out_dir: Path
+def fetch_tracker_pngs(day: dt.date, out_dir: Path, tries: int = 3
                        ) -> Tuple[List[Tuple[Dict, Path]], List[str]]:
     """Download today's posted tracker images, in channel post order.
 
@@ -117,14 +130,35 @@ def fetch_tracker_pngs(day: dt.date, out_dir: Path
     in the thread yet (late data / capture failure on Lucy 3). Raises only when
     the thread itself can't be found or read — "no thread" and "no scope" are
     hard stops; one late tracker is not.
+
+    A file that 404s mid-read is being RE-POSTED, not lost (2026-11-20 10:09:
+    Lucy 3's catch-up cleared and re-posted the Quantum Fiber reply while Lucy 1
+    was reading the thread; the 404 crashed the run and the day's tracker PDF
+    never went out). So: wait for the re-post, read the thread again, start
+    over. A file still gone on the last read counts as missing, which the caller
+    already handles (wait, or send partial with the gap named).
     """
-    _client, token, _channel, replies = _resolve_thread(day)
-    found, missing = [], []
-    for spec, fobj in _match_specs(replies, day):
-        if not fobj:
-            missing.append(spec.get("title") or spec.get("id"))
+    for attempt in range(tries):
+        last = attempt == tries - 1
+        _client, token, _channel, replies = _resolve_thread(day)
+        found, missing, reread = [], [], False
+        for spec, fobj in _match_specs(replies, day):
+            title = spec.get("title") or spec.get("id")
+            if not fobj:
+                missing.append(title)
+                continue
+            dest = out_dir / ("%s.png" % spec["id"])
+            try:
+                _download(fobj["url_private"], token, dest)
+            except _FileGone:
+                if not last:
+                    reread = True
+                    break
+                missing.append(title)
+                continue
+            found.append((spec, dest))
+        if reread:
+            time.sleep(REPOST_WAIT_S)
             continue
-        dest = out_dir / ("%s.png" % spec["id"])
-        _download(fobj["url_private"], token, dest)
-        found.append((spec, dest))
-    return found, missing
+        return found, missing
+    return [], []                     # unreachable: the last pass always returns
