@@ -47,11 +47,11 @@ def _crew():
 
 class Money(unittest.TestCase):
     def test_columns_in_carlos_order(self):
-        # 11/20: Ported From / SPM Number / Wireless Order # / BAN gone; four payout columns right of
-        # Est. Revenue; "Package" is headed "Plan" and sits next to Next Up
-        self.assertEqual(ROL.COLUMNS, ("Order Date", "Activation Date", "Customer Name", "Status", "Est. Revenue",
-                                       "30% Payout", "40% Payout", "45% Payout", "50% Payout",
-                                       "Device", "Plan", "Next Up", "Phone Number", "Zip Code"))
+        # 11/20: Ported From / SPM Number / Wireless Order # / BAN gone; "Package" is headed "Plan" and sits
+        # next to Next Up; Est. Revenue + the four payout columns close the table, far right
+        self.assertEqual(ROL.COLUMNS, ("Order Date", "Activation Date", "Customer Name", "Status",
+                                       "Device", "Plan", "Next Up", "Phone Number", "Zip Code", "Est. Revenue",
+                                       "30% Payout", "40% Payout", "45% Payout", "50% Payout"))
 
     def test_payouts_and_totals(self):
         self.assertEqual(ROL.payouts(213), {"30% Payout": 63.9, "40% Payout": 85.2, "45% Payout": 95.85,
@@ -61,10 +61,10 @@ class Money(unittest.TestCase):
         self.assertEqual(ROL.totals(lines), {"Est. Revenue": 426.0, "30% Payout": 127.8, "40% Payout": 170.4,
                                              "45% Payout": 191.7, "50% Payout": 213.0})
         row = ROL.total_row(lines)
-        self.assertIn('colspan="4">Total</td>', row)                       # label spans Order Date..Status
+        self.assertIn('colspan="9">Total</td>', row)                       # label spans Order Date..Zip Code
         for money in ("$426", "$127.80", "$170.40", "$191.70", "$213.00"):
             self.assertIn(">%s</td>" % money, row)
-        self.assertIn('colspan="5"></td>', row)                            # Device..Zip Code
+        self.assertTrue(row.endswith('<td class="tot">$213.00</td></tr>'))  # the 50% total is the last cell
 
 
 class Lines(unittest.TestCase):
@@ -175,6 +175,8 @@ class Lines(unittest.TestCase):
         self.assertLess(page.rindex(">Total</td>"), page.index("Pending / Disconnect / Cancel"))
         self.assertIn(">$63.90</td>", page)
         self.assertIn("<th>Plan</th><th>Next Up</th>", page)
+        self.assertIn("<th>Zip Code</th><th>Est. Revenue</th><th>30% Payout</th><th>40% Payout</th>"
+                      "<th>45% Payout</th><th>50% Payout</th></tr>", page)          # the money is far right
         for gone in ("Ported From", "SPM Number", "Wireless Order", ">BAN<", "<th>Package</th>"):
             self.assertNotIn(gone, page)
         # the Activation/Pay Week box: 5 weeks, the current one last and highlighted (Carlos 11/20)
@@ -194,7 +196,9 @@ class Lines(unittest.TestCase):
                     '<td class="now">$50</td>', "<td>Tier 3</td><td>7\u20138</td><td>$75</td>",
                     "<td>Tier 4</td><td>9+</td><td>$110</td>"):
             self.assertIn(row, page)
-        self.assertIn("Week of 11/15 to 11/21: 6 orders, Tier 2.", page)
+        self.assertNotIn('class="note"', page)                             # no fine print under the boxes (Carlos 11/20)
+        for fine in ("Highlighted = this week", "Week of 11/15", "Sales = apps", "week in progress"):
+            self.assertNotIn(fine, page)
         self.assertIn('colspan="9">Sales by Week Ending (last 5 weeks)', page)
         # Orders + Tier right after the week ending (Carlos 11/20), revenue far right
         self.assertIn("<th>Week Ending</th><th>Orders</th><th>Tier</th><th>Sales</th>", page)
@@ -206,14 +210,88 @@ class Lines(unittest.TestCase):
         self.assertIn(cells("alt", "11/1", 4, "Tier 1", 0, 0, 0, 0, "-", "$0"), page)
         self.assertIn(cells("", "11/8", 1, "-", 1, 1, 0, 0, "100%", "$213"), page)
         self.assertIn(cells("alt", "11/15", 3, "-", 3, 1, 1, 1, "33%", "$306"), page)
-        self.assertIn(cells("now", "11/22*", 6, "Tier 2", 1, 1, 0, 0, "100%", "$193"), page)
-        self.assertIn("Orders and Tier = the bonus week, Sunday to Saturday", page)
+        self.assertIn(cells("now", "11/22", 6, "Tier 2", 1, 1, 0, 0, "100%", "$193"), page)
 
-    def test_tier_box_below_the_first_band_and_without_a_count(self):
-        box = ROL.tier_box(((dt.date(2026, 11, 15), dt.date(2026, 11, 21)), (2, 3)))
-        self.assertIn("Week of 11/15 to 11/21: 2 orders, 2 more to Tier 1.", box)
-        self.assertNotIn('class="now"', box)
-        self.assertNotIn("Week of", ROL.tier_box(None))                  # the bands alone when the count is unavailable
+    def test_tier_box_marks_the_reps_band_only(self):
+        week = (dt.date(2026, 11, 15), dt.date(2026, 11, 21))
+        self.assertNotIn('class="now"', ROL.tier_box((week, (2, 3))))      # below the first band: nothing marked
+        self.assertNotIn('class="now"', ROL.tier_box(None))                # the bands alone when the count is unavailable
+        self.assertIn('<td class="now">Tier 3</td>', ROL.tier_box((week, (8, 20))))
+
+
+class SoldUnder(unittest.TestCase):
+    """Carlos 11/20: this week's sales under Esmeralda's login, last week's under Sebastian's and the
+    customer Sundararaghandran Viswanathan all belong to Jacob."""
+    HDR = ["Rep", "sp.Order Date (copy)", "Customer Name"]
+    RULES = [{"to": "Jacob Isaiah Ortega", "from": ["esmeralda", "gonzalez"], "start": dt.date(2026, 11, 16),
+              "end": dt.date(2026, 11, 22), "customer": [], "date": None, "why": "stretch"},
+             {"to": "Jacob Isaiah Ortega", "from": ["sebastian", "avellaneda"], "start": None, "end": None,
+              "customer": [], "date": dt.date(2026, 11, 11), "why": "tab row 2"},
+             {"to": "Jacob Isaiah Ortega", "from": ["aaron", "de", "la", "torre"], "start": None, "end": None,
+              "customer": ["sundararaghandran", "viswanathan"], "date": None, "why": "tab row 8"}]
+
+    def test_customer_matches_the_exports_short_name(self):
+        full = ["sundararaghandran", "viswanathan"]
+        self.assertTrue(ROL.customer_matches(full, "Sundararaghandran V"))
+        self.assertTrue(ROL.customer_matches(full, "SUNDARARAGHANDRAN VISWANATHAN"))
+        self.assertTrue(ROL.customer_matches(["juan", "diego", "gonzalez", "hernandez"], "JUAN DIEGO G"))
+        self.assertFalse(ROL.customer_matches(full, "Sundararaghandran K"))
+        self.assertFalse(ROL.customer_matches(full, "SUNDAR V"))
+        self.assertFalse(ROL.customer_matches(full, "V"))
+        self.assertFalse(ROL.customer_matches([], "RAGHAVAN G"))
+
+    def test_real_seller(self):
+        rs = lambda rep, day, cust: ROL.real_seller(self.RULES, rep, day, cust)
+        self.assertEqual(rs("Esmeralda Gonzalez", dt.date(2026, 11, 19), "JARROD P"), "Jacob Isaiah Ortega")
+        self.assertEqual(rs("Esmeralda Gonzalez", dt.date(2026, 11, 10), "MIRIAM R"), "")          # the week before: hers
+        self.assertEqual(rs("Sebastian Pedro Avellaneda", dt.date(2026, 11, 11), "RAGHAVAN G"), "Jacob Isaiah Ortega")
+        self.assertEqual(rs("Sebastian Pedro Avellaneda", dt.date(2026, 11, 18), "SOMEONE E"), "")
+        self.assertEqual(rs("Aaron De La Torre", dt.date(2026, 11, 12), "Sundararaghandran V"), "Jacob Isaiah Ortega")
+        self.assertEqual(rs("Aaron De La Torre", dt.date(2026, 11, 12), "OTHER C"), "")
+        self.assertEqual(rs("Andrew De La Torre", dt.date(2026, 11, 12), "Sundararaghandran V"), "")  # a different rep
+        self.assertEqual(rs("Jacob Isaiah Ortega", dt.date(2026, 11, 19), "ANY B"), "")              # already his
+        only_date = [{"to": "X Y", "from": [], "start": None, "end": None, "customer": [], "date": dt.date(2026, 11, 11)}]
+        self.assertEqual(ROL.real_seller(only_date, "Some Rep", dt.date(2026, 11, 11), "A B"), "")   # a date alone moves nothing
+
+    def test_apply_moves_copies_and_spells_like_the_export(self):
+        cols = Cols(self.HDR)
+        rows = [["Esmeralda Gonzalez", "11/19/2026", "JARROD P"], ["Esmeralda Gonzalez", "11/10/2026", "MIRIAM R"],
+                ["Sebastian Pedro Avellaneda", "11/11/2026", "RAGHAVAN G"], ["Aaron De La Torre", "11/12/2026", "Sundararaghandran V"],
+                ["Jacob Isaiah Ortega", "10/30/2026", "SUNDARARAGHANDRAN V"]]
+        short = [dict(r, to="Jacob Ortega") for r in self.RULES]                    # the tab may spell him short
+        out, moved = ROL.apply_sold_under(cols, rows, short)
+        self.assertEqual([r[0] for r in out], ["Jacob Isaiah Ortega", "Esmeralda Gonzalez", "Jacob Isaiah Ortega",
+                                               "Jacob Isaiah Ortega", "Jacob Isaiah Ortega"])
+        self.assertEqual(moved, {("Esmeralda Gonzalez", "Jacob Isaiah Ortega"): 1,
+                                 ("Sebastian Pedro Avellaneda", "Jacob Isaiah Ortega"): 1,
+                                 ("Aaron De La Torre", "Jacob Isaiah Ortega"): 1})
+        self.assertEqual(rows[0][0], "Esmeralda Gonzalez")                           # the caller's rows are untouched
+        self.assertEqual(ROL.apply_sold_under(cols, rows, []), (rows, {}))
+
+    def test_rules_come_from_payrolls_two_lists(self):
+        from automations.vantura_payroll import run as VP
+        tab = [["Customer", "Sale Date", "From Rep", "To Rep", "Note", "Added", "Last applied"],
+               ["", "11/11/2026", "Sebastian Avellaneda", "Jacob Isaiah Ortega", "", "", ""],
+               ["", "", "", "", "", "", ""],
+               ["How it works: ...", "", "", "", "", "", ""],
+               ["", "", "Nicholas Paul Smedra", "Nicholas Smedra", "rate fix", "", ""],          # spelling only: skipped
+               ["Sundararaghandran Viswanathan", "", "Aaron De La Torre", "Jacob Isaiah Ortega", "", "", ""]]
+        book = mock.Mock()
+        book.worksheet.return_value.get_all_values.return_value = tab
+        stretch = [("Esmeralda Gonzalez", "Jacob Isaiah Ortega", dt.date(2026, 11, 16), dt.date(2026, 11, 22), "why")]
+        with mock.patch.object(VP, "SOLD_UNDER_PAYROLL", stretch), \
+                mock.patch("automations.recruiting_report.fill.open_by_key", return_value=book) as opened:
+            rules = ROL.sold_under_rules(log=lambda *_a: None)
+        opened.assert_called_once_with(VP.SHEET_ID)
+        book.worksheet.assert_called_once_with("Payroll Transfers")
+        self.assertEqual([(r["to"], r["from"], r["start"], r["date"], r["customer"]) for r in rules],
+                         [("Jacob Isaiah Ortega", ["esmeralda", "gonzalez"], dt.date(2026, 11, 16), None, []),
+                          ("Jacob Isaiah Ortega", ["sebastian", "avellaneda"], None, dt.date(2026, 11, 11), []),
+                          ("Jacob Isaiah Ortega", ["aaron", "de", "la", "torre"], None, None,
+                           ["sundararaghandran", "viswanathan"])])
+        with mock.patch.object(VP, "SOLD_UNDER_PAYROLL", stretch), \
+                mock.patch("automations.recruiting_report.fill.open_by_key", side_effect=RuntimeError("sheets down")):
+            self.assertEqual(len(ROL.sold_under_rules(log=lambda *_a: None)), 1)       # the stretches survive a dead tab
 
 
 if __name__ == "__main__":
