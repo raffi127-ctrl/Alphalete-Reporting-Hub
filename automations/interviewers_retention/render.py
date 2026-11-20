@@ -25,6 +25,8 @@ SCALE = 2               # device pixels per CSS px in the PNG
 
 GREEN_BG, GREEN_FG = "#cdebd3", "#155c2a"
 RED_BG, RED_FG = "#f6d1cc", "#8f2318"
+# Week columns on the by-day board (Raf 11/19: "way more apparent" than Mon-Fri).
+WEEK_HEAD, WEEK_BG = "#1f3b6b", "#dce8f7"
 
 _CSS = f"""
 * {{ box-sizing: border-box; }}
@@ -190,8 +192,10 @@ def day_board_html(b, *, compact: bool, base: int) -> str:
     if own:
         top.append('<th rowspan="2" class="l">Owner</th>')
     # Week total up front (Raf 11/18), right after the name/owner.
-    top.append('<th colspan="3" class="grp c wk">Week</th>')
-    second = ['<th class="grp wk">B</th>', '<th class="wk">S</th>', '<th class="wk">%</th>']
+    # Raf 11/19: the week columns must jump out from Mon-Fri at a glance -- navy
+    # header, light-blue cells, a thick navy frame; the days stay gray.
+    top.append('<th colspan="3" class="grp c wk wkL wkR">Week</th>')
+    second = ['<th class="grp wk wkL">B</th>', '<th class="wk">S</th>', '<th class="wk wkR">%</th>']
     for i, d in enumerate(b.days):
         # Compact: the day on two short lines, so the header never sets the width.
         label = (f"{d:%a}<br>{d.month}/{d.day}" if compact else f"{d:%a} {d.month}/{d.day}")
@@ -199,8 +203,9 @@ def day_board_html(b, *, compact: bool, base: int) -> str:
         second += (['<th class="grp">%</th>'] if compact else
                    ['<th class="grp">B</th>', "<th>S</th>", "<th>%</th>"])
     if b.history_labels:
-        top.append(f'<th colspan="{len(b.history_labels)}" class="grp c">Last 4 weeks</th>')
-        second += [f'<th class="{"grp" if i == 0 else ""}">{e(l)}</th>'
+        top.append(f'<th colspan="{len(b.history_labels)}" class="grp c wk wkL wkR">Last 4 weeks</th>')
+        last = len(b.history_labels) - 1
+        second += [f'<th class="wk{" grp wkL" if i == 0 else ""}{" wkR" if i == last else ""}">{e(l)}</th>'
                    for i, l in enumerate(b.history_labels)]
     rows = []
     for n, ln in enumerate(b.lines, 1):
@@ -208,8 +213,8 @@ def day_board_html(b, *, compact: bool, base: int) -> str:
         cells = [f'<td class="rk">{n}</td>', f'<td class="l nm"><div>{e(ln.name)}{det}</div></td>']
         if own:
             cells.append(owner_td(ln))
-        cells += [f'<td class="grp wk">{ln.booked}</td>', f'<td class="wk">{ln.showed}</td>',
-                  f'<td class="{colour(ln.pct)} wkp">{fmt(ln.pct)}</td>']
+        cells += [f'<td class="grp wk wkL">{ln.booked}</td>', f'<td class="wk">{ln.showed}</td>',
+                  f'<td class="{colour(ln.pct) or "wk"} wkp wkR">{fmt(ln.pct)}</td>']
         for d in b.days:
             bk, sh = ln.days.get(d, [0, 0])
             p = pct(sh, bk)
@@ -220,7 +225,8 @@ def day_board_html(b, *, compact: bool, base: int) -> str:
                 cells += [f'<td class="grp">{bk if bk else "—"}</td>',
                           f'<td>{sh if bk else "—"}</td>', pc]
         for j, p in enumerate(ln.history):
-            cells.append(f'<td class="h {colour(p) or "na"} {"grp" if j == 0 else ""}">{fmt(p)}</td>')
+            edge = (" wkL" if j == 0 else "") + (" wkR" if j == len(ln.history) - 1 else "")
+            cells.append(f'<td class="h {colour(p) or "na wkna"} {"grp" if j == 0 else ""}{edge}">{fmt(p)}</td>')
         rows.append("<tr>" + "".join(cells) + "</tr>")
     counts = (f'<div class="counts"><span class="pill good">{b.green} at 50% or more</span>'
               f'<span class="pill bad">{b.red} under 50%</span></div>') if b.lines else ""
@@ -237,9 +243,11 @@ def day_board_html(b, *, compact: bool, base: int) -> str:
     .board td.ow div {{ max-width:{base * 8}px; }}
     .board th.c {{ text-align:center; }}
     .board th.grp, .board td.grp {{ border-left:2px solid #b9bfb4; }}
-    .board th.wk {{ background:#e3e7e0; color:#1d2420; }}
-    .board td.wk {{ background:#f6f7f4; font-weight:600; }}
+    .board th.wk {{ background:{WEEK_HEAD}; color:#ffffff; }}
+    .board td.wk, .board td.wkna {{ background:{WEEK_BG}; color:{WEEK_HEAD}; font-weight:700; }}
     .board td.wkp {{ font-size:{base + 2}px; }}
+    .board .wkL {{ border-left:4px solid {WEEK_HEAD}; }}
+    .board .wkR {{ border-right:4px solid {WEEK_HEAD}; }}
     """
     note = ('<div class="note">— = no 2nd rounds booked that day / week. '
             'Last 4 weeks = the same weeks as the podium below.</div>')
