@@ -275,7 +275,21 @@ def _side(label: str, s: str) -> str:
 
 def render_status(o) -> str:
     """'✅ OwnerVille · ❌ Slack: <why>' for one auto_deactivate.Outcome."""
-    return f"{_side('OwnerVille', o.ov)} · {_side('Slack', o.slack)}"
+    base = f"{_side('OwnerVille', o.ov)} · {_side('Slack', o.slack)}"
+    arc = getattr(o, "arc", "")
+    # ARC only shows for reps who were in ARC — most of Raf's reps never are.
+    return base + (f" · {_side('ARC', arc)}" if arc else "")
+
+
+_ARC_DONE = " · ✅ ARC"
+
+
+def _keep_arc(old_status: str, new_status: str) -> str:
+    """A rep terminated in ARC drops off ARC's active list, so the next run has
+    no ARC result for them — keep the ✅ ARC an earlier run earned."""
+    if _ARC_DONE in old_status and "ARC" not in new_status:
+        return new_status + _ARC_DONE
+    return new_status
 
 
 def _outcome_for(name: str, outcomes: list | None):
@@ -308,9 +322,11 @@ def _restatus(text: str, outcomes: list) -> str:
         o = _outcome_for(name, outcomes)
         if o is not None:
             base = line[:m.start()] if m else line
-            out.append(f"{base} · {render_status(o)}")
+            prev = line[m.start():] if m else ""
+            out.append(f"{base}{_keep_arc(prev, ' · ' + render_status(o))}")
         elif m:
-            out.append(f"{line[:m.start()]} · ✅ OwnerVille · ✅ Slack")
+            out.append(f"{line[:m.start()]}"
+                       f"{_keep_arc(line[m.start():], ' · ✅ OwnerVille · ✅ Slack')}")
         else:
             out.append(line)
     return "\n".join(out)

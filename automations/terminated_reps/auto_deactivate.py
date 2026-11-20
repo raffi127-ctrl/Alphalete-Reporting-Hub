@@ -54,6 +54,7 @@ class Outcome:
     email: str = ""
     moved: str = ""              # another office's recruiting channel they're in
     cleared: bool = False        # Slack checked and nothing says they moved
+    arc: str = ""                # ARC (Credico): "done" | "" (not there) | reason
     notes: list = field(default_factory=list)
 
     @property
