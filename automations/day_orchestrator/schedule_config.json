@@ -16810,6 +16810,28 @@
    "timeout_minutes": 15,
    "machine": "Lucy 2"
   },
+  "install_second_round_leaders_agent": {
+   "on_scheduler": false,
+   "_note": "One-shot installer for com.alphalete.second-round-leaders-1120 on Lucy 2 (Fri 11/20 6:30: AppStream pull + the by-leader 2nd-rounds picture DM'd to Carlos; acts only on 2026-11-20). Remove with `... --remove` afterwards.",
+   "display_name": "Install 2nd-round by-leader one-shot (Fri 11/20 6:30am)",
+   "source_type": "none",
+   "data_sources": [],
+   "command": [
+    "automations.day_orchestrator.install_agent"
+   ],
+   "base_args": [
+    "second-round-leaders-1120"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 15,
+   "machine": "Lucy 2"
+  },
   "nds_tnc_check": {
    "on_scheduler": false,
    "machine": "Lucy 2",

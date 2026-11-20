@@ -632,7 +632,8 @@ def _as_cell(kinds: Dict[str, int], have_as: bool) -> str:
     return "<td class='asc'>%s</td>" % (" &middot; ".join(parts) or "—")
 
 
-def render_leaders(L: Dict, through: dt.date, weeks: int) -> str:
+def render_leaders(L: Dict, through: dt.date, weeks: int, as_err: str = "") -> str:
+    show_as = L["have_as"]
     def table(team, cls):
         T = L["teams"].get(team) or {"leaders": [], "total": second_block([]), "ns": ns_block([])}
         rows = ""
@@ -641,16 +642,17 @@ def render_leaders(L: Dict, through: dt.date, weeks: int) -> str:
                      "<td>%d</td><td>%d</td><td class='pc'>%s</td>%s</tr>"
                      % (html.escape(name), b["conducted"], b["offered"], b["accepted"],
                         pct(b["close_pct"]) if b["conducted"] else "—", n["scheduled"], n["showed"],
-                        pct(n["show_pct"]) if n["scheduled"] else "—", _as_cell(kinds, L["have_as"])))
+                        pct(n["show_pct"]) if n["scheduled"] else "—",
+                        _as_cell(kinds, True) if show_as else ""))
         b, n = T["total"], T["ns"]
         rows += ("<tr class='tot'><td class='nm'>%s total</td><td>%d</td><td>%d</td><td>%d</td><td class='pc'>%s</td>"
-                 "<td>%d</td><td>%d</td><td class='pc'>%s</td><td></td></tr>"
+                 "<td>%d</td><td>%d</td><td class='pc'>%s</td>%s</tr>"
                  % (team, b["conducted"], b["offered"], b["accepted"], pct(b["close_pct"]),
-                    n["scheduled"], n["showed"], pct(n["show_pct"])))
+                    n["scheduled"], n["showed"], pct(n["show_pct"]), "<td></td>" if show_as else ""))
         return ("<table class='%s'><tr class='th'><th class='nm'>%s leader</th><th>2nd rounds<br>conducted</th>"
                 "<th>Offered</th><th>Accepted</th><th>Closing %%</th><th>New starts<br>scheduled</th>"
-                "<th>New starts<br>showed</th><th>NS show %%</th><th>AppStream<br>done by</th></tr>%s</table>"
-                % (cls, team, rows))
+                "<th>New starts<br>showed</th><th>NS show %%</th>%s</tr>%s</table>"
+                % (cls, team, "<th>AppStream<br>done by</th>" if show_as else "", rows))
     notes = []
     k = L["kinds"]
     if L["have_as"]:
@@ -675,7 +677,9 @@ def render_leaders(L: Dict, through: dt.date, weeks: int) -> str:
                             + (" +%d more" % (len(only_du) - 8) if len(only_du) > 8 else ""))
             notes.append("%s: AppStream %d, Daily Update %d &mdash; %s." % (label, n_as, n_du, "; ".join(bits)))
     else:
-        notes.append("AppStream person-by-person check not loaded (run --appstream-pull first).")
+        notes.append("AppStream &ldquo;Done By 2nd&rdquo; check: %s"
+                     % ("AppStream couldn't be reached (%s) &mdash; not in this picture yet." % html.escape(as_err[:90])
+                        if as_err else "not loaded yet."))
     none = L["teams"].get("none")
     if none and none["total"]["conducted"]:
         notes.append("Not on a team (no interviewer, no campaign): %d." % none["total"]["conducted"])
@@ -783,6 +787,8 @@ def main(argv=None) -> int:
     ap.add_argument("--appstream-pull", action="store_true",
                     help="read AppStream's per-person lists into the '2R AppStream Pull' tab, then stop")
     ap.add_argument("--from", dest="from_", help="--appstream-pull: first day (default 4 weeks back)")
+    ap.add_argument("--pull", action="store_true",
+                    help="--view leaders: refresh the AppStream pull first (best effort; the report still goes out)")
     a = ap.parse_args(argv)
     if a.only_on and dt.date.today().isoformat() != a.only_on:
         _log("--only-on %s: today is %s -- nothing to do" % (a.only_on, dt.date.today()))
@@ -830,6 +836,13 @@ def main(argv=None) -> int:
                 _log("note NOT sent (pass --send-note) -- would go to %s" % users)
     elif a.view == "leaders":
         from automations.second_round_report import appstream_people as AP
+        as_err = ""
+        if a.pull:
+            try:
+                AP.write_tab(AP.pull(first, through, OFFICE, log=_log), log=_log)
+            except Exception as e:  # noqa: BLE001 -- AppStream down: the Daily Update numbers still go out
+                as_err = "%s: %s" % (type(e).__name__, str(e).splitlines()[0][:160] if str(e) else "")
+                _log("AppStream pull failed -- %s" % as_err)
         L = leaders_summary(rows, first, through, AP.read_tab(), rosters)
         for team in TEAMS:
             for name, b, n, kinds in L["teams"][team]["leaders"]:
@@ -839,7 +852,7 @@ def main(argv=None) -> int:
                                                              for r in L["others"]]))
         for d in L["diffs"]:
             _log("diff %s: AS %d DU %d only AS %s only DU %s" % d)
-        page = render_leaders(L, through, a.weeks)
+        page = render_leaders(L, through, a.weeks, as_err=as_err)
         out = Path(a.out) if a.out else OUT_DIR / ("second_rounds_leaders_%dweeks_%s.png" % (a.weeks, stamp))
         caption = ("2nd rounds & new starts by leader — last %d weeks (%s – %s)"
                    % (a.weeks, first.strftime("%b %-d"), through.strftime("%b %-d")))
