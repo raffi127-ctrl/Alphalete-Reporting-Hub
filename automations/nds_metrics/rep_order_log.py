@@ -16,20 +16,35 @@ and BAN ... to the right of [estimated revenue] add in columns to say 30%
 payout, 40%, 45%, and 50%, and then underneath it a total row that adds all
 those up"):
 
-  Order Date | Activation Date | Customer Name | Status | Est. Revenue |
-  30% Payout | 40% Payout | 45% Payout | 50% Payout |
-  Device | Plan | Next Up | Phone Number | Zip Code
+  Order Date | Activation Date | Customer Name | Status |
+  Device | Plan | Next Up | Phone Number | Zip Code |
+  Est. Revenue | 30% Payout | 40% Payout | 45% Payout | 50% Payout
+
+(the money columns sat right after Status until the evening of 11/20, when
+Carlos had them moved to the far right).
 
 Plan = the rate plan the customer was signed up on (Tableau's Package:
 "AT&T Premium 2.0" / "AT&T Extra 2.0" / "AT&T Value 2.0"). The column was
 headed "Package" until Carlos asked on 11/20 for "the plan that the rep
 signed the customer up on ... next to the next up column" -- it was already
 there under the other name, so the header changed and nothing was added.
+A line the export has no Package (or Device) for yet -- a fresh order -- takes
+them from the 'NDS Order Log' tab, the SaraPlus feed, where every line has
+its plan (TabPlans; Carlos 11/20: "you don't have the plan filled out for
+everyone, so get that fixed"); the price is worked out on the filled values.
 
 Est. Revenue = the revenue board's per-line price, the deposit's rates
 (revenue_extras.board_line_price: port $213 / $193 in footprint, BYOD port
-$188 / $168, new-number line $25, upgrade $30, tablet-wearable $25), $0 on a
-Cancelled line. Each payout column is that share of the line's Est. Revenue.
+$188 / $168, new-number line $25, upgrade $30, tablet-wearable $25) PLUS the
+plan's add-on, the deposit's own row (line_revenue.addon_of: Premium $15,
+Extra $10, Value / others $0 -- Carlos 11/20: "I don't think you're accounting
+for the extra value or the premium plan because that changes the revenue");
+PLUS the tier bonus on a port line (Carlos 11/20: "are you accounting for
+the tier in the revenue as well?" -- line_tier_rates: the line's own posted
+'Rep Tier Bonus Status', else the rate of its LOGIN's order count that
+Sun-Sat week; $30 / $50 / $75 / $110). $0 on a Cancelled line. Not in it:
+the Air bundle, Protect.
+Each payout column is that share of the line's Est. Revenue.
 The Total row sums the five money columns for the ACTIVATED week above it
 (what that Friday pays); the Pending / Disconnect / Cancel band carries no
 total -- nothing in it is paid. Everything comes off Tableau (the NDS Order
@@ -40,16 +55,38 @@ that says entry-level payout is 30% ... a table that shows the tier bonuses,
 and a box that shows how many sales the rep has done the last 4 weeks ... by
 week ending, and ... how many have activated, so we can have one view for all
 the stats on the rep"):
-  * Activation/Pay Week calendar (as before);
+  * Activation/Pay Week calendar -- 5 weeks, the current one LAST and
+    highlighted, rolling a week every week (Carlos 11/20 evening: "just show
+    5 total weeks, and then the current week being the last one"; it was 3
+    weeks back + 6 ahead, the workbook's);
   * PAYOUT LEVELS -- his four lines, fixed text (PAYOUT_LEVELS);
   * TIER BONUS -- sow_rates rep_tier bands (orders with a port line in the
     Sun-Sat week -> $ per activated port line) with the rep's own count for
     the tier week, the revenue board's count (run.revenue_tier_columns);
-  * SALES BY WEEK ENDING -- the last 4 Mon-Sun weeks (the current one
-    starred): apps sold (port phones + BYODs + Internet Air, the revenue
-    board's "apps", by ORDER date), then how many of them activated (Posted /
-    Active, or Disconnected after activating -- the Activation Rate by Week
-    Ending rule), still pending, cancelled, and the rate.
+  * SALES BY WEEK ENDING -- the last 5 Mon-Sun weeks (the current one
+    starred; 4 until Carlos's "show the last 5 weeks", 11/20 evening): apps
+    sold (port phones + BYODs + Internet Air, the revenue board's "apps", by
+    ORDER date), then how many of them activated (Posted / Active, or
+    Disconnected after activating -- the Activation Rate by Week Ending
+    rule), still pending, cancelled, the rate, and far right the Est.
+    Revenue of everything sold that week that is not cancelled ("Lets add
+    the revenue to the far right": every line at its Est. Revenue, Air and
+    the non-app lines included, a pending line counted at full value).
+    Right after the week ending: Orders and Tier ("something that shows the
+    order count and then the tier that they hit that week") -- the revenue
+    board's tier count for the Sun-Sat bonus week tied to that Mon-Sun week
+    (tier_weeks), so a row mixes the two weeks exactly as the board does;
+    the Tier is that count's band, or the band Smart Circle has already
+    POSTED on the rep's port lines of that week when that is higher
+    (posted_tier_rates, the export's "Rep Tier Bonus Status").
+No fine print under the boxes (Carlos 11/20 evening: "get rid of the fine
+print at the bottom of the tables. It's not needed") -- what each column
+means lives here: Sales = apps by the Mon-Sun week sold; Orders / Tier = the
+Sun-Sat bonus week tied to it, a double-tier day twice; Est. Revenue = all
+that week's lines that are not cancelled; yellow = the current week.
+A blank spacer row sits between one block's grey Total row and the next blue
+band, and before the orange band ("add a space in between each table"): one
+table still, so the columns stay lined up.
 
   rerun nds_metrics --rep-shot "Esmeralda" --dm U046G04P5LG
 Python 3.9-safe (Lucy runtime).
@@ -64,8 +101,10 @@ from typing import Dict, List, Optional, Sequence
 PAYOUT_PCTS = (30, 40, 45, 50)
 PAYOUT_COLS = tuple("%d%% Payout" % p for p in PAYOUT_PCTS)
 MONEY_COLS = ("Est. Revenue",) + PAYOUT_COLS
-COLUMNS = (("Order Date", "Activation Date", "Customer Name", "Status") + MONEY_COLS
-           + ("Device", "Plan", "Next Up", "Phone Number", "Zip Code"))
+# Carlos 11/20 evening: "Lets add the revenue to the far right" / "you didnt
+# move the payouts to the far right" -- the five money columns close the table.
+COLUMNS = (("Order Date", "Activation Date", "Customer Name", "Status",
+            "Device", "Plan", "Next Up", "Phone Number", "Zip Code") + MONEY_COLS)
 
 
 def payouts(revenue: float) -> Dict[str, float]:
@@ -85,24 +124,110 @@ PAYOUT_LEVELS = (("Entry Level", "30%"),
                  ("Leadership", "40%"),
                  ("Leadership, 12 apps the week prior", "45%"),
                  ("Leadership, 16 apps the week prior", "50%"))
-SALES_WEEKS = 4
+SALES_WEEKS = 5
+CAL_WEEKS = 5            # the Activation/Pay Week box: this many weeks, the current one last
 ACTIVATED_STATUSES = ("Posted", "Active", "Disconnected")
 
 
-def weekly_sales(cols, crew: Sequence, today: dt.date, weeks: int = SALES_WEEKS):
+class TabPlans:
+    """The 'NDS Order Log' tab's Plan + Device by line, to fill what the export
+    leaves blank: by the line's phone number; a number the tab lacks falls
+    back to the order's DSI # when every tab line of that order agrees. A
+    miss is '' -- never a guess. `filled` / `missed` count for the run log."""
+
+    def __init__(self, header: Sequence[str], rows: Sequence[Sequence[str]]):
+        from automations.nds_metrics.order_log_tab import LineIndex
+        self._digits = LineIndex.digits
+        hdr = [str(h).strip().lower() for h in header]
+
+        def col(name):
+            return hdr.index(name) if name in hdr else None
+        ip, idsi, ipl, idv = col("phone #"), col("dsi #"), col("plan"), col("device")
+        self.by_phone: Dict[str, dict] = {}
+        self.by_dsi: Dict[str, list] = {}
+        for r in rows:
+            def g(i, r=r):
+                return str(r[i]).strip() if i is not None and i < len(r) else ""
+            rec = {"Plan": g(ipl), "Device": g(idv)}
+            ph = self._digits(g(ip))
+            if ph:
+                self.by_phone.setdefault(ph, rec)
+            dsi = g(idsi).upper()
+            if dsi:
+                self.by_dsi.setdefault(dsi, []).append(rec)
+        self.filled = self.missed = 0
+
+    @classmethod
+    def read(cls, log=print) -> Optional["TabPlans"]:
+        """Off the live tab; None (and a NOTE) when it can't be read."""
+        try:
+            from automations.nds_metrics import order_log_tab as OLT
+            from automations.recruiting_report.fill import _retry, open_by_key
+            ws = open_by_key(OLT.VANTURA_SHEET_ID).worksheet(OLT.TAB)
+            vals = _retry(lambda: ws.get_all_values()) or []
+            return cls(vals[0], vals[1:]) if vals else None
+        except Exception as e:  # noqa: BLE001
+            log(f"[nds] rep order log: NOTE the NDS Order Log tab is unreadable ({type(e).__name__}: "
+                f"{str(e)[:90]}) -- a plan the export lacks stays blank")
+            return None
+
+    def get(self, key: str, phone="", dsi="") -> str:
+        rec = self.by_phone.get(self._digits(phone)) if phone else None
+        if rec is None or not rec.get(key):
+            same = {c.get(key, "") for c in self.by_dsi.get(str(dsi or "").strip().upper(), [])} - {""}
+            rec = {key: same.pop()} if len(same) == 1 else None
+        if rec and rec.get(key):
+            self.filled += 1
+            return rec[key]
+        self.missed += 1
+        return ""
+
+
+def _filled_rec(cols, r, idx, tab, i_tn, i_spm) -> dict:
+    """revenue_extras.line_rec, its blank Package / Device filled from the tab."""
+    from automations.nds_metrics import revenue_extras as RX
+    from automations.nds_metrics.run import _c
+    rec = RX.line_rec(cols, r, idx)
+    if tab is not None and not (rec.get("package") and rec.get("device")):
+        phone = _c(cols, r, i_tn) if i_tn is not None else ""
+        dsi = _c(cols, r, i_spm) if i_spm is not None else ""
+        if not rec.get("package"):
+            rec["package"] = tab.get("Plan", phone, dsi)
+        if not rec.get("device"):
+            rec["device"] = tab.get("Device", phone, dsi)
+    return rec
+
+
+def line_value(rec: dict, status: str, rates: dict) -> float:
+    """Est. Revenue of one sold line: the revenue board's base price + the
+    plan's add-on (Premium $15 / Extra $10); $0 once cancelled."""
+    if status == "Cancelled":
+        return 0.0
+    from automations.nds_metrics import revenue_extras as RX
+    from automations.nds_metrics.line_revenue import addon_of
+    return RX.board_line_price(rec, rates) + addon_of(rec.get("package", ""), rates)
+
+
+def weekly_sales(cols, crew: Sequence, today: dt.date, weeks: int = SALES_WEEKS, tab=None,
+                 tier_by_line=None):
     """-> (week endings oldest first, {rep: {we: Counter sold / activated /
-    pending / cancelled}}): apps (the revenue board's rule -- port phones +
-    BYODs + Internet Air) by the Mon-Sun week of the ORDER date, for the last
-    `weeks` weeks through today's. Activated = Posted / Active now, or
-    Disconnected after activating (the Activation Rate by Week Ending rule)."""
+    pending / cancelled / revenue}}): apps (the revenue board's rule -- port
+    phones + BYODs + Internet Air) by the Mon-Sun week of the ORDER date, for
+    the last `weeks` weeks through today's. Activated = Posted / Active now,
+    or Disconnected after activating (the Activation Rate by Week Ending
+    rule). revenue = the Est. Revenue of EVERY line sold that week (the
+    non-app lines too -- a tablet, an upgrade), $0 for a cancelled one, each
+    priced as on the picture (line_value). `tab` = TabPlans for a line the
+    export has no Package / Device for."""
     import collections
     from automations.nds_metrics import revenue_extras as RX
     from automations.nds_metrics.activation_by_week import week_ending
-    from automations.nds_metrics.run import _c, _parse_date
-    idx = RX.column_index(cols)
+    from automations.nds_metrics.run import _c, _parse_date, sow_rates
+    idx, rates = RX.column_index(cols), sow_rates()
     i_od = cols.need("order date", "sp.order date (copy)", "sp.order date", "order date")
     i_rep = cols.need("rep", "rep")
     i_dtr, i_spe = cols.find("dtr status"), cols.find("spe.status")
+    i_tn, i_spm = cols.find("spe.tn"), cols.find("sp.spm number", "spm number")
     last = week_ending(today)
     wes = [last - dt.timedelta(days=7 * k) for k in range(weeks - 1, -1, -1)]
     out: Dict[str, dict] = {}
@@ -112,30 +237,278 @@ def weekly_sales(cols, crew: Sequence, today: dt.date, weeks: int = SALES_WEEKS)
         if not rep or od is None:
             continue
         we = week_ending(od)
-        if we not in wes or RX.line_kind(RX.line_rec(cols, r, idx)) not in RX.APP_KINDS:
+        if we not in wes:
             continue
+        rec = _filled_rec(cols, r, idx, tab, i_tn, i_spm)
         st = _status(_c(cols, r, i_dtr) if i_dtr is not None else "",
                      _c(cols, r, i_spe) if i_spe is not None else "")
         c = out.setdefault(rep, {}).setdefault(we, collections.Counter())
+        if st != "Cancelled":
+            c["revenue"] += line_value(rec, st, rates) + (tier_by_line or {}).get(
+                line_key(_c(cols, r, i_spm) if i_spm is not None else "",
+                         _c(cols, r, i_tn) if i_tn is not None else ""), 0.0)
+        if RX.line_kind(rec) not in RX.APP_KINDS:
+            continue
         c["sold"] += 1
         c["activated" if st in ACTIVATED_STATUSES else "cancelled" if st == "Cancelled" else "pending"] += 1
     return wes, out
 
 
-def tier_standing(cols, lines: Sequence, today: dt.date, log=print):
-    """-> ((sunday, saturday), {rep: (orders, port lines)}) for the Sun-Sat
-    tier week the revenue board is on -- its own count (double-tier days
-    included), so the picture and the board never disagree."""
-    from automations.nds_metrics import revenue_extras as RX
+def double_days(log=print) -> set:
+    """The double-tier days (sow_rates seed + Sean's emails), read once."""
+    from automations.nds_metrics.run import sow_rates
+    seed = sow_rates()["rep_tier"].get("double_days") or []
+    try:
+        from automations.nds_metrics import double_tier
+        return set(double_tier.days(seed, log=log))
+    except Exception as e:  # noqa: BLE001
+        log(f"[nds] rep order log: double-tier days off the seed only ({type(e).__name__})")
+        return set(seed)
+
+
+def tier_weeks(cols, lines: Sequence, wes: Sequence[dt.date], log=print, dbl=None) -> Dict[dt.date, dict]:
+    """{week ending: {rep: (orders, port lines)}} -- for each Mon-Sun week
+    ending, the Sun-Sat tier week the revenue board ties to it (the Sunday
+    before that Monday .. Saturday), counted by the board's own counter
+    (run.revenue_tier_columns: orders with a port line, a double-tier day
+    twice), so the picture and the board never disagree. One inbox read for
+    the double-tier days, whatever the number of weeks (`dbl` = days already
+    read)."""
     from automations.nds_metrics.run import revenue_tier_columns
-    asof = RX.board_day(today)
-    monday = asof - dt.timedelta(days=asof.weekday())
-    _h, _cells, counts = revenue_tier_columns(
-        cols, lines, monday,
-        cols.need("order date", "sp.order date"), cols.need("rep", "rep"),
-        cols.find("ported from", "port"), cols.find("spe.tn type", "tn type"),
-        cols.find("sp.spm number", "spm number"), log=log)
-    return (monday - dt.timedelta(days=1), monday + dt.timedelta(days=5)), counts
+    if dbl is None:
+        dbl = double_days(log=log)
+    idx = (cols.need("order date", "sp.order date"), cols.need("rep", "rep"),
+           cols.find("ported from", "port"), cols.find("spe.tn type", "tn type"),
+           cols.find("sp.spm number", "spm number"))
+    out: Dict[dt.date, dict] = {}
+    for we in wes:
+        _h, _cells, counts = revenue_tier_columns(cols, lines, we - dt.timedelta(days=6), *idx,
+                                                  log=lambda *_a, **_k: None, double_days=dbl)
+        out[we] = counts
+    return out
+
+
+def line_key(spm, tn) -> tuple:
+    from automations.nds_metrics.order_log_tab import LineIndex
+    return (str(spm or "").strip().upper(), LineIndex.digits(tn))
+
+
+def line_tier_rates(cols, rows: Sequence, log=print, dbl=None) -> Dict[tuple, float]:
+    """{line_key(order id, number): $ tier bonus} for every PORT line (a
+    financed port or a BYOD port -- line_revenue's rule; tablets, upgrades and
+    new numbers earn none) on `rows`, the export as Smart Circle sees it: one
+    rep per LOGIN, BEFORE the sold-under moves. The deposit pays a line the
+    tier of the login it was rung under, and payroll moves that money with the
+    line, so that is what the line is worth to its real seller. A Posted
+    line's own 'Rep Tier Bonus Status' is the truth; any other line gets the
+    rate of the login's order count in the Sun-Sat week its order is in
+    (tier_weeks: the revenue board's counter, a double-tier day twice).
+    Paid when the line activates, so a pending line carries what it will
+    earn."""
+    from automations.nds_metrics import revenue_extras as RX
+    from automations.nds_metrics.run import _c, _parse_date, tier_bands
+    idx = RX.column_index(cols)
+    i_od = cols.need("order date", "sp.order date (copy)", "sp.order date", "order date")
+    i_rep, i_tn = cols.need("rep", "rep"), cols.find("spe.tn")
+    i_spm, i_dtr = cols.find("sp.spm number", "spm number"), cols.find("dtr status")
+    i_t = cols.find("rep tier bonus status")
+    g = lambda r, i: _c(cols, r, i) if i is not None else ""
+    ports = []
+    for r in rows:
+        od = _parse_date(g(r, i_od))
+        rec = RX.line_rec(cols, r, idx)
+        if od is None or str(rec.get("tn_type") or "").strip().lower() != "port":
+            continue
+        if RX.line_kind(rec) not in ("new phone", "byod"):
+            continue
+        sun = od - dt.timedelta(days=(od.weekday() + 1) % 7)
+        ports.append((r, sun + dt.timedelta(days=7)))            # keyed like tier_week_of
+    if not ports:
+        return {}
+    tiers = tier_weeks(cols, rows, sorted({we for _r, we in ports}), log=log, dbl=dbl)
+    bands = tier_bands()
+    out: Dict[tuple, float] = {}
+    for r, we in ports:
+        rate = None
+        if g(r, i_dtr).strip().lower() == "posted":
+            try:
+                rate = float(g(r, i_t))
+            except ValueError:
+                rate = None
+        if rate is None:
+            n = tiers.get(we, {}).get(g(r, i_rep), (0, 0))[0]
+            rate = max([float(b) for thr, b in bands if n >= thr] or [0.0])
+        out[line_key(g(r, i_spm), g(r, i_tn))] = rate
+    return out
+
+
+def tier_week_of(we: dt.date):
+    """(sunday, saturday) of the tier week tied to the Mon-Sun week ending `we`."""
+    return we - dt.timedelta(days=7), we - dt.timedelta(days=1)
+
+
+def tier_label(n_orders: int, bands=None, paid_rate: float = 0.0) -> str:
+    """'Tier 2' for an order count, '-' below the first band. `paid_rate` =
+    the $ per line Smart Circle has posted for that week (posted_tier_rates):
+    the higher of the two wins, so a tier they are paying is never hidden by
+    an order our count missed."""
+    from automations.nds_metrics.run import tier_bands
+    bands = bands or tier_bands()
+    reached = [k for k, (thr, rate) in enumerate(bands, 1) if n_orders >= thr or (paid_rate and paid_rate >= rate)]
+    return ("Tier %d" % reached[-1]) if reached else "-"
+
+
+def posted_tier_rates(cols, lines: Sequence, wes: Sequence[dt.date]) -> Dict[dt.date, dict]:
+    """{week ending: {rep: $ per line}} -- the highest "Rep Tier Bonus Status"
+    Smart Circle has POSTED on a port line the rep sold in that week's tier
+    week (the export's own column: 30 / 50 / 75 / 110, 0 = none). A rep-week
+    with no posted port line is absent; {} per week when the export has no
+    such column. Checked 2026-11-20 on the 11/15 export: of 34 rep-weeks with
+    a posted port line our order count gave the same tier on 33 (the other
+    was paid Tier 1 on a count of 3)."""
+    from automations.nds_metrics.run import _c, _parse_date
+    out: Dict[dt.date, dict] = {we: {} for we in wes}
+    i_t = cols.find("rep tier bonus status")
+    if i_t is None:
+        return out
+    i_od, i_rep = cols.need("order date", "sp.order date"), cols.need("rep", "rep")
+    i_tn, i_dtr = cols.find("spe.tn type", "tn type"), cols.find("dtr status")
+    spans = [(we,) + tier_week_of(we) for we in wes]
+    for r in lines:
+        if i_dtr is None or _c(cols, r, i_dtr).strip().lower() != "posted":
+            continue
+        if i_tn is None or _c(cols, r, i_tn).strip().lower() != "port":
+            continue
+        od, rep = _parse_date(_c(cols, r, i_od)), _c(cols, r, i_rep)
+        try:
+            rate = float(_c(cols, r, i_t) or 0)
+        except ValueError:
+            continue
+        if od is None or not rep or rate <= 0:
+            continue
+        for we, sun, sat in spans:
+            if sun <= od <= sat:
+                out[we][rep] = max(out[we].get(rep, 0.0), rate)
+    return out
+
+
+# ------------------------------------------------------------ sold under ----
+# Carlos 2026-11-20, asking for Jacob Ortega's picture: "for this week, all the
+# sales that were done under Esmeralda belonged to Jacob, so move those to him.
+# Last week, all the sales done under Sebastian belonged to Jacob, and this
+# customer also belongs to Jacob. Sundararaghandran Viswanathan". The export
+# credits the SaraPlus login that placed the order; payroll already moves such
+# sales to the real seller (vantura_payroll: SOLD_UNDER_PAYROLL stretches + the
+# board's 'Payroll Transfers' tab), so the picture reads the SAME two lists and
+# shows each line -- its payouts, its tier order, its weekly sales -- on the
+# real seller's picture and not on the login's.
+
+def _name_words(s) -> list:
+    return "".join(ch if ch.isalnum() else " " for ch in str(s or "").lower()).split()
+
+
+def customer_matches(rule_words: Sequence[str], shown: str) -> bool:
+    """A transfer rule's customer (the order log's full name, as words) vs the
+    export's short one ("Sundararaghandran V", "RAGHAVAN G": the given names
+    and the surname's initial). Equal word for word, or every shown word but
+    the last equal and the last one the start of the rule's next word."""
+    t, r = _name_words(shown), list(rule_words)
+    if not t or not r:
+        return False
+    if t == r:
+        return True
+    k = len(t) - 1
+    return k >= 1 and len(r) > k and t[:k] == r[:k] and r[k].startswith(t[k])
+
+
+def sold_under_rules(log=print) -> List[dict]:
+    """The moves payroll makes, as rules for real_seller:
+      * vantura_payroll.SOLD_UNDER_PAYROLL -- a whole stretch under one login
+        (from rep, to rep, first / last ORDER date);
+      * the board's 'Payroll Transfers' tab -- one sale (Customer and / or
+        Sale Date, From Rep -> To Rep). A row with neither a customer nor a
+        date is payroll's spelling fix, not a move, and is skipped.
+    Best-effort: an unreadable tab logs a NOTE and leaves the stretches."""
+    from automations.nds_metrics.run import _parse_date
+    from automations.vantura_payroll import run as VP
+    rules = [{"to": to, "from": _name_words(frm), "start": a, "end": b, "customer": [], "date": None,
+              "why": "stretch %s-%s" % (a.strftime("%m/%d"), b.strftime("%m/%d"))}
+             for frm, to, a, b, _why in VP.SOLD_UNDER_PAYROLL]
+    try:
+        from automations.recruiting_report.fill import open_by_key
+        vals = open_by_key(VP.SHEET_ID).worksheet(VP.TRANSFERS_TAB).get_all_values()
+        for r in VP.rules_from_values(vals, log=lambda _m: None):
+            day = _parse_date(r["sale_date"]) if r["sale_date"] else None
+            if not r["customer"] and day is None:
+                continue
+            rules.append({"to": r["to_rep"], "from": _name_words(r["from_rep"]), "start": None, "end": None,
+                          "customer": _name_words(r["customer"]), "date": day,
+                          "why": "%s row %d" % (VP.TRANSFERS_TAB, r["row"])})
+    except Exception as e:  # noqa: BLE001
+        log(f"[nds] rep order log: NOTE {type(e).__name__} reading the Payroll Transfers tab "
+            f"({str(e)[:90]}) -- only the whole-stretch moves applied")
+    return rules
+
+
+def real_seller(rules: Sequence[dict], rep: str, order_date, customer: str) -> str:
+    """The rep a line really belongs to when a rule moves it, else ''. Every
+    key a rule carries must match (payroll's own test): the login's name holds
+    every From Rep word, the order date is inside the stretch / on the sale
+    date, the customer matches. A line already under the To Rep is left."""
+    have = set(_name_words(rep))
+    for rule in rules:
+        to = set(_name_words(rule["to"]))
+        if not to or to <= have or (have and have <= to):
+            continue
+        if rule["from"] and not all(w in have for w in rule["from"]):
+            continue
+        if rule["start"] and not (order_date and rule["start"] <= order_date <= rule["end"]):
+            continue
+        if rule["date"] and order_date != rule["date"]:
+            continue
+        if rule["customer"] and not customer_matches(rule["customer"], customer):
+            continue
+        if not (rule["from"] or rule["customer"]):
+            continue                       # a date alone would move the whole office's day
+        return rule["to"]
+    return ""
+
+
+def apply_sold_under(cols, rows: Sequence, rules: Sequence[dict]):
+    """-> (the rows with the Rep cell rewritten to the real seller -- copies,
+    the originals untouched -- and {(login, real seller): lines moved}). The
+    real seller is written the way the export spells them when they have
+    lines of their own there ("Jacob Ortega" -> "Jacob Isaiah Ortega")."""
+    import collections
+    from automations.nds_metrics.run import _c, _parse_date
+    if not rules:
+        return list(rows), {}
+    i_rep = cols.need("rep", "rep")
+    i_od = cols.need("order date", "sp.order date (copy)", "sp.order date", "order date")
+    i_cu = cols.find("customer name")
+    known = {}
+    for r in rows:
+        nm = _c(cols, r, i_rep)
+        if nm:
+            known.setdefault(frozenset(_name_words(nm)), nm)
+
+    def spelled(to: str) -> str:
+        want = frozenset(_name_words(to))
+        if want in known:
+            return known[want]
+        near = [nm for words, nm in known.items() if want <= words or words <= want]
+        return near[0] if len(near) == 1 else to
+    out, moved = [], collections.Counter()
+    for r in rows:
+        rep = _c(cols, r, i_rep)
+        to = real_seller(rules, rep, _parse_date(_c(cols, r, i_od)),
+                         _c(cols, r, i_cu) if i_cu is not None else "")
+        if to:
+            r = list(r)
+            r[i_rep] = spelled(to)
+            moved[(rep, r[i_rep])] += 1
+        out.append(r)
+    return out, dict(moved)
 
 
 def _next_up(wip: str, wireless_type: str) -> str:
@@ -162,9 +535,11 @@ def _status(dtr: str, spe: str) -> str:
     return s or "Pending"
 
 
-def rep_lines(cols, crew: Sequence, today: dt.date, log=print) -> Dict[str, List[dict]]:
+def rep_lines(cols, crew: Sequence, today: dt.date, log=print, tab=None,
+              tier_by_line=None) -> Dict[str, List[dict]]:
     """{rep: [line dict, ...]} off the crew's Tableau lines (one row per line,
-    as load_crew returns them)."""
+    as load_crew returns them). `tab` = TabPlans: the Plan / Device of a line
+    the export leaves blank."""
     from automations.nds_metrics import revenue_extras as RX
     from automations.nds_metrics.run import _c, _parse_date, sow_rates
     idx, rates = RX.column_index(cols), sow_rates()
@@ -179,6 +554,7 @@ def rep_lines(cols, crew: Sequence, today: dt.date, log=print) -> Dict[str, List
         "pkg": cols.find("package"),
         "wip": cols.find("wireless installment plan"),
         "tn": cols.find("spe.tn"),
+        "spm": cols.find("sp.spm number", "spm number"),
         "zip": cols.find("customer zip simple", "customer zip"),
         "wt": cols.find("spe.wireless type", "wireless type"),
         "prod": cols.find("product type (broken out)", "product type"),
@@ -198,9 +574,12 @@ def rep_lines(cols, crew: Sequence, today: dt.date, log=print) -> Dict[str, List
             continue                                   # Air / Internet lines are not on the wireless log
         status = _status(g(r, "dtr"), g(r, "spe"))
         # priced like the revenue board prices a sold line (in-footprint ports
-        # $20 less, a tablet / wearable $25 whatever its number type)
-        revenue = (0.0 if status == "Cancelled"
-                   else RX.board_line_price(RX.line_rec(cols, r, idx), rates))
+        # $20 less, a tablet / wearable $25 whatever its number type) + the
+        # plan's add-on, on the Package / Device the tab fills in when blank
+        rec = _filled_rec(cols, r, idx, tab, i["tn"], i["spm"])
+        revenue = line_value(rec, status, rates)
+        if revenue:                       # + the tier bonus the line earns (line_tier_rates)
+            revenue += (tier_by_line or {}).get(line_key(g(r, "spm"), g(r, "tn")), 0.0)
         line = {
             "Order Date": od,
             "Activation Date": _parse_date(g(r, "act")),
@@ -208,8 +587,8 @@ def rep_lines(cols, crew: Sequence, today: dt.date, log=print) -> Dict[str, List
             "Customer Name": g(r, "cust"),
             "Status": status,
             "Est. Revenue": revenue,
-            "Device": g(r, "dev"),
-            "Plan": g(r, "pkg"),             # Tableau's Package IS the rate plan ("AT&T Extra 2.0")
+            "Device": g(r, "dev") or rec.get("device", ""),
+            "Plan": rec.get("package", ""),  # Tableau's Package IS the rate plan ("AT&T Extra 2.0")
             "Next Up": _next_up(g(r, "wip"), g(r, "wt")),
             "Phone Number": g(r, "tn"),
             "Zip Code": g(r, "zip"),
@@ -272,22 +651,22 @@ _CSS = """
  td.pdc{background:#C55A11;color:#fff;font-weight:700;font-size:13px}
  td.tot{background:#D9D9D9;color:#000;font-weight:700;font-size:13px}
  td.tot.lbl{text-align:right}
- .row{display:flex;gap:26px;align-items:flex-start;margin-top:6px}
+ tr.gap td{border:none;background:#fff;height:18px;padding:0}
+ .row{display:flex;gap:16px;align-items:flex-start;margin-top:6px}
  .cal{margin-top:0}
  .cal td.l{text-align:left}
  .cal td.b{font-weight:700}
- .row .note{max-width:420px;white-space:normal}
  .cal td.t{background:#6D8FC9;font-weight:700}
  .cal th{background:#1F3864}
  .cal td.alt{background:#C9DAF8}
  .cal td.now{background:#FFE599;font-weight:700}
- .note{font-size:11px;font-style:italic;color:#333;margin-top:-10px}
 </style>"""
 
 
 def total_row(lines: Sequence[dict]) -> str:
     """'Total' under the money columns: label across the columns left of Est.
-    Revenue, one sum per money column, one blank cell across the rest."""
+    Revenue, one sum per money column, one blank cell across anything right
+    of them (nothing, now that the money closes the table)."""
     t = totals(lines)
     first = COLUMNS.index(MONEY_COLS[0])
     after = len(COLUMNS) - first - len(MONEY_COLS)
@@ -319,22 +698,15 @@ def tier_box(tier=None) -> str:
         cls = ' class="now"' if thr == cur else ""
         rows += (f'<tr><td{cls}>Tier {k}</td><td{cls}>{lab}</td>'
                  f'<td{cls}>${rate:,.0f}</td></tr>')
-    note = "Orders with a port line, Sunday to Saturday. Paid on each port line when it activates."
-    if tier:
-        (sun, sat), (orders, _pl) = tier
-        if cur is not None:
-            where = "Tier %d" % (1 + [t for t, _r in bands].index(cur))
-        else:
-            where = "%d more to Tier 1" % (bands[0][0] - orders)
-        note = ("Week of %d/%d to %d/%d: %d order%s, %s. " % (sun.month, sun.day, sat.month, sat.day, orders,
-                                                              "" if orders == 1 else "s", where)) + note
     return ('<div><table class="cal"><tr><td class="t" colspan="3">Tier Bonus</td></tr>'
             '<tr><th>Tier</th><th>Orders in the week</th><th>Bonus per port line</th></tr>'
-            + rows + f'</table><div class="note">{_html.escape(note)}</div></div>')
+            + rows + '</table></div>')
 
 
-def sales_box(weekly, today: dt.date) -> str:
-    """`weekly` = (week endings, {we: Counter}) for ONE rep (weekly_sales)."""
+def sales_box(weekly, today: dt.date, orders=None) -> str:
+    """`weekly` = (week endings, {we: Counter}) for ONE rep (weekly_sales);
+    `orders` = {we: (tier order count, tier label)} for the same rep (build:
+    tier_weeks + tier_label) -- None leaves the Orders and Tier columns out."""
     from automations.nds_metrics.activation_by_week import week_ending
     wes, per = weekly
     now = week_ending(today)
@@ -343,24 +715,31 @@ def sales_box(weekly, today: dt.date) -> str:
         c = per.get(we) or {}
         sold, act = int(c.get("sold", 0)), int(c.get("activated", 0))
         cls = "now" if we == now else ("alt" if n % 2 else "")
-        cells = ["%d/%d%s" % (we.month, we.day, "*" if we == now else ""), str(sold), str(act),
+        tier_cells = []
+        if orders is not None:
+            n_ord, lab = orders.get(we, (0, "-"))
+            tier_cells = [str(int(n_ord)), lab]
+        cells = ["%d/%d" % (we.month, we.day)] + tier_cells + [str(sold), str(act),
                  str(int(c.get("pending", 0))), str(int(c.get("cancelled", 0))),
-                 ("%.0f%%" % (100.0 * act / sold)) if sold else "-"]
+                 ("%.0f%%" % (100.0 * act / sold)) if sold else "-",
+                 "$" + format(float(c.get("revenue", 0)), ",.0f")]
         rows += "<tr>" + "".join(f'<td class="{cls}">{v}</td>' for v in cells) + "</tr>"
-    return ('<div><table class="cal"><tr><td class="t" colspan="6">Sales by Week Ending (last %d weeks)</td></tr>'
-            '<tr><th>Week Ending</th><th>Sales</th><th>Activated</th><th>Pending</th><th>Cancelled</th>'
-            '<th>Activation %%</th></tr>' % len(wes) + rows + '</table>'
-            '<div class="note">Sales = apps (port phones, BYODs, Internet Air) by the Monday to Sunday week '
-            'they were sold. * = week in progress.</div></div>')
+    tier_head = "<th>Orders</th><th>Tier</th>" if orders is not None else ""
+    return ('<div><table class="cal"><tr><td class="t" colspan="%d">Sales by Week Ending (last %d weeks)</td></tr>'
+            '<tr><th>Week Ending</th>%s<th>Sales</th><th>Activated</th><th>Pending</th><th>Cancelled</th>'
+            '<th>Activation %%</th><th>Est. Revenue</th></tr>' % (9 if orders is not None else 7, len(wes), tier_head)
+            + rows + '</table></div>')
 
 
-def html_for(rep: str, lines: List[dict], today: dt.date, weekly=None, tier=None) -> str:
+def html_for(rep: str, lines: List[dict], today: dt.date, weekly=None, tier=None, orders=None) -> str:
     """One table so every week's columns line up: a blue band + header per
     pay week with its Total row, the orange Pending / Disconnect / Cancel
     band; then a row of boxes -- the Activation/Pay Week calendar, the
-    payout levels, the tier bonus (`tier` = tier_standing's week + this rep's
-    counts) and the rep's sales by week ending (`weekly` = weekly_sales' week
-    endings + this rep's counters; None = that box is left out)."""
+    payout levels, the tier bonus (`tier` = ((sunday, saturday), (orders, port
+    lines)) for the board's tier week) and the rep's sales by week ending
+    (`weekly` = weekly_sales' week endings + this rep's counters, None = that
+    box is left out; `orders` = {week ending: (tier order count, tier label)}
+    for its Orders and Tier columns)."""
     from automations.uploaded.order_log import (STATUS_COLORS, STATUS_TEXT_COLORS,
                                                 _md, _pay_period_weeks, _week_bounds)
     weeks, pdc = group_weeks(lines)
@@ -377,38 +756,39 @@ def html_for(rep: str, lines: List[dict], today: dt.date, weekly=None, tier=None
 
     body = (f'<div class="rep">{_html.escape(rep.upper())}</div>'
             f'<div class="sub">NDS Order Log &nbsp;•&nbsp; as of {today.strftime("%a %-m/%-d/%Y")}</div>')
-    body += "<table>"
+    blocks = []
     for (ws_, we_, paid) in sorted(weeks):
-        body += (f'<tr><td class="band" colspan="{ncol}">Activated Week {_md(ws_)} to {_md(we_)}'
-                 f'&nbsp;&nbsp;•&nbsp;&nbsp;Paid Friday {_md(paid)}</td></tr>{head}'
-                 + "".join(row(ln) for ln in weeks[(ws_, we_, paid)])
-                 + total_row(weeks[(ws_, we_, paid)]))
+        blocks.append(f'<tr><td class="band" colspan="{ncol}">Activated Week {_md(ws_)} to {_md(we_)}'
+                      f'&nbsp;&nbsp;•&nbsp;&nbsp;Paid Friday {_md(paid)}</td></tr>{head}'
+                      + "".join(row(ln) for ln in weeks[(ws_, we_, paid)])
+                      + total_row(weeks[(ws_, we_, paid)]))
     if pdc:
-        body += (f'<tr><td class="pdc" colspan="{ncol}">Pending / Disconnect / Cancel</td></tr>'
-                 f'{head}' + "".join(row(ln) for ln in pdc))
-    if not weeks and not pdc:
-        body += f'<tr><td colspan="{ncol}">No lines on the log for this rep.</td></tr>'
-    body += "</table>"
-    # the Activation/Pay Week calendar, same as the workbook's
+        blocks.append(f'<tr><td class="pdc" colspan="{ncol}">Pending / Disconnect / Cancel</td></tr>'
+                      f'{head}' + "".join(row(ln) for ln in pdc))
+    if not blocks:
+        blocks.append(f'<tr><td colspan="{ncol}">No lines on the log for this rep.</td></tr>')
+    # a blank row between one block's grey Total and the next band (Carlos 11/20)
+    body += "<table>" + f'<tr class="gap"><td colspan="{ncol}"></td></tr>'.join(blocks) + "</table>"
+    # the Activation/Pay Week calendar: the four weeks before this one, then this one
     this_week = _week_bounds(today)
     cal = ('<div><table class="cal"><tr><td class="t" colspan="3">Activation/Pay Week</td></tr>'
            '<tr><th>Week Start</th><th>Week End</th><th>Pay Date</th></tr>'
            '<tr><th>Sunday</th><th>Saturday</th><th>Friday</th></tr>')
-    for n, week in enumerate(_pay_period_weeks(today)):
+    for n, week in enumerate(_pay_period_weeks(today, back=CAL_WEEKS - 1, total=CAL_WEEKS)):
         cls = "now" if week == this_week else ("alt" if n % 2 else "")
         cal += "<tr>" + "".join(f'<td class="{cls}">{d.month}/{d.day}/{d.year % 100:02d}</td>'
                                 for d in week) + "</tr>"
-    cal += '</table><div class="note">Highlighted = this week</div></div>'
+    cal += '</table></div>'
     body += ('<div class="row">' + cal + payout_box() + tier_box(tier)
-             + (sales_box(weekly, today) if weekly else "") + '</div>')
+             + (sales_box(weekly, today, orders=orders) if weekly else "") + '</div>')
     return (f"<html><head><meta charset='utf-8'>{_CSS}</head><body>"
             f'<div class="board">{body}</div></body></html>')
 
 
 def render_rep_png(rep: str, lines: List[dict], today: dt.date, out: Path,
-                   weekly=None, tier=None) -> Path:
+                   weekly=None, tier=None, orders=None) -> Path:
     from automations.b2b_metrics.rep_boards import _capture_board
-    return _capture_board(html_for(rep, lines, today, weekly=weekly, tier=tier), out, width=2300)
+    return _capture_board(html_for(rep, lines, today, weekly=weekly, tier=tier, orders=orders), out, width=2300)
 
 
 def build(cols, crew: Sequence, today: dt.date, out_dir: Path, reps: Optional[Sequence[str]] = None,
@@ -416,13 +796,48 @@ def build(cols, crew: Sequence, today: dt.date, out_dir: Path, reps: Optional[Se
     """One PNG per rep (every rep with a wireless line on the log, or only
     `reps` -- case-blind substrings). -> {rep: png}."""
     from automations.uploaded.order_log import _md
-    per_rep = rep_lines(cols, crew, today, log=log)
-    wes, sales = weekly_sales(cols, crew, today)
-    try:                                   # the board's own count; the bands print without it
-        tier_week, tier_counts = tier_standing(cols, getattr(cols, "owner_lines", None) or crew, today, log=log)
+    owner = getattr(cols, "owner_lines", None) or crew
+    logins = owner                         # the export as Smart Circle sees it: one rep per LOGIN
+    try:                                   # lines rung under someone else's login go to the real seller
+        rules = sold_under_rules(log=log)
+        crew, moved = apply_sold_under(cols, crew, rules)
+        owner = apply_sold_under(cols, owner, rules)[0]
+        for (frm, to), n in sorted(moved.items()):
+            log(f"[nds] rep order log: sold under -- {n} line(s) {frm} -> {to}")
+    except Exception as e:  # noqa: BLE001 -- the pictures still ship, under the logins
+        log(f"[nds] rep order log: NOTE sold-under moves not applied ({type(e).__name__}: {str(e)[:100]})")
+    tab = TabPlans.read(log=log)           # the plan / device of a line the export has none for yet
+    dbl = double_days(log=log)
+    try:                                   # each port line's tier bonus, at its LOGIN's tier
+        tier_by_line = line_tier_rates(cols, logins, log=log, dbl=dbl)
     except Exception as e:  # noqa: BLE001
-        tier_week, tier_counts = None, {}
-        log(f"[nds] rep order log: NOTE tier standing unavailable ({type(e).__name__}: {str(e)[:100]})")
+        tier_by_line = {}
+        log(f"[nds] rep order log: NOTE tier bonus left out of Est. Revenue ({type(e).__name__}: {str(e)[:100]})")
+    per_rep = rep_lines(cols, crew, today, log=log, tab=tab, tier_by_line=tier_by_line)
+    if tab is not None and (tab.filled or tab.missed):
+        log(f"[nds] rep order log: the export had no Package / Device on some line(s): "
+            f"{tab.filled} cell(s) filled from the NDS Order Log tab, {tab.missed} still blank")
+    wes, sales = weekly_sales(cols, crew, today, tab=tab, tier_by_line=tier_by_line)
+    from automations.nds_metrics import revenue_extras as RX
+    from automations.nds_metrics.activation_by_week import week_ending
+    try:                                   # the board's own count; the bands print without it
+        tiers = tier_weeks(cols, owner, wes, log=log, dbl=dbl)
+    except Exception as e:  # noqa: BLE001
+        tiers = None
+        log(f"[nds] rep order log: NOTE tier counts unavailable ({type(e).__name__}: {str(e)[:100]})")
+    board_we = week_ending(RX.board_day(today))        # Monday's board is still last week's
+    if board_we not in wes:
+        board_we = wes[-1]
+    # What Smart Circle has posted, where it is ahead of our count. Read off the
+    # rows BEFORE the sold-under moves: a posted tier $ is the LOGIN's tier, so a
+    # line moved to its real seller must not hand them the login's tier (11/20:
+    # Jacob's 2-order week read "Tier 2" off a line rung under Aaron's login,
+    # which Aaron's own 5 orders had put at $50).
+    try:
+        paid = posted_tier_rates(cols, logins, wes)
+    except Exception as e:  # noqa: BLE001
+        paid = {}
+        log(f"[nds] rep order log: NOTE posted tier status unread ({type(e).__name__}: {str(e)[:100]})")
     if reps:
         want = [w.lower() for w in reps]
         per_rep = {r: v for r, v in per_rep.items() if any(w in r.lower() for w in want)}
@@ -430,14 +845,24 @@ def build(cols, crew: Sequence, today: dt.date, out_dir: Path, reps: Optional[Se
     for rep, lines in sorted(per_rep.items()):
         slug = "_".join(rep.lower().split())
         png = out_dir / f"nds_rep_order_log_{slug}_{today.isoformat()}.png"
-        tier = (tier_week, tier_counts.get(rep, (0, 0))) if tier_week else None
-        render_rep_png(rep, lines, today, png, weekly=(wes, sales.get(rep, {})), tier=tier)
+        orders = None
+        if tiers is not None:
+            orders = {}
+            for we in wes:
+                n_ord = tiers[we].get(rep, (0, 0))[0]
+                orders[we] = (n_ord, tier_label(n_ord, paid_rate=paid.get(we, {}).get(rep, 0.0)))
+        tier = ((tier_week_of(board_we), tiers[board_we].get(rep, (0, 0))) if tiers is not None else None)
+        render_rep_png(rep, lines, today, png, weekly=(wes, sales.get(rep, {})), tier=tier, orders=orders)
         out[rep] = png
         weeks, _pdc = group_weeks(lines)
         wk = "; ".join("wk %s-%s $%s" % (_md(k[0]), _md(k[1]), format(totals(v)["Est. Revenue"], ",.0f"))
                        for k, v in sorted(weeks.items()))
-        sw = " ".join("%d/%d:%d/%d" % (we.month, we.day, sales.get(rep, {}).get(we, {}).get("activated", 0),
-                                       sales.get(rep, {}).get(we, {}).get("sold", 0)) for we in wes)
+        sw = " ".join("%d/%d:%d/%d $%s" % (we.month, we.day, sales.get(rep, {}).get(we, {}).get("activated", 0),
+                                           sales.get(rep, {}).get(we, {}).get("sold", 0),
+                                           format(sales.get(rep, {}).get(we, {}).get("revenue", 0), ",.0f"))
+                      for we in wes)
         log(f"[nds] rep order log: {rep}: {len(lines)} line(s) [{wk or 'no activated weeks'}] "
-            f"sales act/sold {sw}; tier orders {tier[1][0] if tier else 'n/a'} -> {png.name}")
+            f"sales act/sold {sw}; tier orders "
+            f"{' '.join('%d(%s)' % (orders[we][0], orders[we][1].replace('Tier ', 'T')) for we in wes) if orders is not None else 'n/a'}"
+            f" -> {png.name}")
     return out
