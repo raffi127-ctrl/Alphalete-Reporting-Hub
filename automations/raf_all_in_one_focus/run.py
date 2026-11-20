@@ -18,6 +18,19 @@ What it writes, and what it never touches:
     run for every closed week the ARS has.
   * Cost / Week 1 rows: formulas only on the math rows; input rows left blank.
 
+Raf's Loom 2026-11-20 ("New Focus Report"): the money rows come from Raf's
+"Monthly PNL - Raf's Accounts" -> tab "Hidalgo's finances" (header row
+'Fixed Expenses'), column WE X+7 for this tab's WE X (same shift as the
+RAF PNL 2026 (NEW) Local Office rows). All positive:
+  * Indeed Spending (top block)   = 'Indeed'                     (from WE 8/16/26 on;
+    older weeks are Raf's own history and stay as typed)
+  * Indeed Spend (cost block)     = Indeed Spending, same week
+  * Total Interviewer Spend       = Interviewer #1 .. #5
+  * Aptel                         = 'Aptel - Call Center'
+  * Aisha                         = 'Aisha - Local Recruiter' + 'Recruiting Bonuses (Aisha)'
+Rewritten every run for every week Hidalgo's finances has (Indeed gets
+corrected there a week later).
+
     python -m automations.raf_all_in_one_focus.run --sandbox      # copy tab
     python -m automations.raf_all_in_one_focus.run [--dry-run]    # real tab
 """
@@ -77,7 +90,6 @@ ATT_TO_TARGET = {
     "New Starts Showed - TOTAL": "New Starts Showed - TOTAL",
     "Total Live Accounts": "Total Live Accounts",
     "Total Ads Up": "Total Ads Up",
-    "Indeed Cost": "Indeed Spending",
 }
 
 # --- the three sections from the Loom, inserted under NOTES -----------------
@@ -89,8 +101,10 @@ RECRUIT_ROWS = ["Qualified", "Disqualified", "Declined",
                 "Qualified Retention", "Disqualified Retention", "Declined Retention",
                 "Answered", "Booked", "Not Contacted",
                 "Answered Retention", "Booked Retention", "Not Contacted Retention"]
-COST_ROWS = ["Indeed Spend", "Total 1st Interviewers", "Total Interviewer Spend",
-             "Total Recruiters", "Aptel", "Aisha", "Total Recruiter Spend",
+# layout as Raf reshaped it 2026-11-20 (Total 1st Interviewers / Total
+# Recruiters rows removed, 'Total Recruiters Spend' = Aptel + Aisha below it)
+COST_ROWS = ["Indeed Spend", "Total Interviewer Spend",
+             "Total Recruiters Spend", "Aptel", "Aisha",
              "New Start Goodie Bags", "Total RECRUITING SPEND", "CPA",
              "Cost Per 2nd Rd Scheduled", "Cost Per 2nd Rd Showed",
              "Cost Per New Start Scheduled", "Cost Per New Start Showed"]
@@ -128,7 +142,69 @@ PCT_ROWS = {"Duplicate %", "AI Messaging Retention %", "Qualified Retention",
             "Friday Retention From Thursday", "Saturday Retention From Monday",
             "Saturday Retention From Friday", "Wk 2 New Start Retention",
             "Wk 3 New Start Retention", "Wk 4 New Start Retention"}
-MONEY_ROWS = set(COST_ROWS) - {"Total 1st Interviewers", "Total Recruiters"}
+MONEY_ROWS = set(COST_ROWS)                  # every cost row is dollars
+
+# --- money rows from Hidalgo's finances (Raf Loom 2026-11-20) ---------------
+RAF_PNL_BOOK = "1M2Vy2qo3N1AND1tVuKugtT_FizYw_6lBD3t2tcRLFYg"   # Monthly PNL - Raf's Accounts
+HIDALGO_TAB = "Hidalgo's finances"
+HIDALGO_HDR = "fixed expenses"               # col A of the weekly header row
+INDEED_FROM = dt.date(2026, 8, 16)           # Indeed Spending written from this WE on
+# this tab's label -> Hidalgo's finances labels to add up (absolute values)
+HIDALGO_MAP = {
+    "Indeed Spending": ["Indeed"],
+    "Total Interviewer Spend": [f"Interviewer #{i}" for i in range(1, 6)],
+    "Aptel": ["Aptel - Call Center"],
+    "Aisha": ["Aisha - Local Recruiter", "Recruiting Bonuses (Aisha)"],
+}
+
+
+def _money(s) -> Optional[float]:
+    t = str(s or "").strip().replace("$", "").replace(",", "").replace(" ", "")
+    if t in ("", "-"):
+        return 0.0 if t == "-" else None
+    neg = t.startswith("(") and t.endswith(")")
+    try:
+        v = float(t.strip("()"))
+    except ValueError:
+        return None
+    return -v if neg else v
+
+
+def hidalgo_weeks(gc, log=print) -> Dict[dt.date, Dict[str, float]]:
+    """{this tab's WE: {label: positive amount}} from Hidalgo's finances.
+    Its 'WE m.d' column X+7 belongs to this tab's WE X."""
+    vals = fill.open_by_key(RAF_PNL_BOOK, client=gc).worksheet(HIDALGO_TAB).get_all_values()
+    hi = next(i for i, row in enumerate(vals) if row and norm(row[0]) == HIDALGO_HDR
+              and any(re.match(r"\s*WE\s+\d", x or "") for x in row[1:]))
+    rows = {norm(row[0]): row for row in vals[hi + 1:] if row and row[0].strip()}
+    out: Dict[dt.date, Dict[str, float]] = {}
+    year, prev_m = None, None
+    for j, h in enumerate(vals[hi]):
+        m = re.match(r"\s*WE\s+(\d+)\.(\d+)", h or "")
+        if not m or j == 0:
+            continue
+        mo, d = int(m.group(1)), int(m.group(2))
+        # newest first, no year in the header: walk back from this year
+        if year is None:
+            t = dt.date.today()
+            year = t.year - 1 if mo - t.month > 6 else t.year + 1 if t.month - mo > 6 else t.year
+        elif mo > prev_m:
+            year -= 1
+        prev_m = mo
+        we = dt.date(year, mo, d) - dt.timedelta(days=7)
+        got = {}
+        for dst, srcs in HIDALGO_MAP.items():
+            parts = [_money(rows[norm(s)][j]) if norm(s) in rows and j < len(rows[norm(s)]) else None
+                     for s in srcs]
+            if all(p is None for p in parts):
+                continue
+            got[dst] = round(sum(abs(p) for p in parts if p is not None), 2)
+        if got:
+            out[we] = got
+    if out:
+        log(f"  Hidalgo's finances: {len(out)} week(s) "
+            f"({min(out)} .. {max(out)}, as this tab's WE)")
+    return out
 
 
 def norm(s: str) -> str:
@@ -248,14 +324,13 @@ def formulas_for(col: str, prev2: Optional[str], r: Dict[str, int],
                      ("Not Contacted Retention", "Not Contacted")):
         put(lbl, lambda: f'=IF({c(num)}="","",IFERROR({c(num)}/{c("Qualified")},0))')
 
-    # Indeed spend lags: the bill for this week's applies shows up ~2 weeks
-    # later (Raf), so this week's cost is the Indeed Spending typed 2 weeks back.
-    if prev2 and "indeed spending" in r:
-        put("Indeed Spend", lambda: f'=IF({prev2}{r["indeed spending"]}="","",{prev2}{r["indeed spending"]})')
-    put("Total Recruiter Spend", lambda: f'=IF(COUNT({c("Aptel")},{c("Aisha")})=0,"",SUM({c("Aptel")},{c("Aisha")}))')
+    # Indeed Spend = Indeed Spending of the SAME week (Raf 2026-11-20; the
+    # Hidalgo's finances WE+7 shift already lines the bill up with the week)
+    put("Indeed Spend", lambda: f'=IF({c("Indeed Spending")}="","",{c("Indeed Spending")})')
+    put("Total Recruiters Spend", lambda: f'=IF(COUNT({c("Aptel")},{c("Aisha")})=0,"",SUM({c("Aptel")},{c("Aisha")}))')
     put("New Start Goodie Bags", lambda: f'=IF(OR($A{r[norm("New Start Goodie Bags")]}="",{c("New Starts Showed - TOTAL")}=""),"",$A{r[norm("New Start Goodie Bags")]}*{c("New Starts Showed - TOTAL")})')
     spend = [f"{col}{r[norm(l)]}" for l in ("Indeed Spend", "Total Interviewer Spend",
-             "Total Recruiter Spend", "New Start Goodie Bags") if norm(l) in r]
+             "Total Recruiters Spend", "New Start Goodie Bags") if norm(l) in r]
     put("Total RECRUITING SPEND", lambda: f'=IF(COUNT({",".join(spend)})=0,"",SUM({",".join(spend)}))')
     put("CPA", lambda: f'=IF(OR({c("Indeed Spend")}="",{c("Total Applies")}=""),"",IFERROR({c("Indeed Spend")}/{c("Total Applies")},""))')
     for lbl, den in (("Cost Per 2nd Rd Scheduled", "2ND BOOKED"),
@@ -310,10 +385,10 @@ def style_requests(sheet_id: int, r: Dict[str, int], last_col: int) -> List[dict
         label(l, PURPLE)
     for l in ("Answered", "Booked", "Not Contacted"):
         label(l, ORANGE)
-    for l in ("Indeed Spend", "Total 1st Interviewers", "Total Interviewer Spend",
-              "Total Recruiters", "Aptel", "Aisha", "New Start Goodie Bags"):
+    for l in ("Indeed Spend", "Total Interviewer Spend",
+              "Aptel", "Aisha", "New Start Goodie Bags"):
         label(l, GREEN)
-    for l in ("Total Recruiter Spend", "Total RECRUITING SPEND", "CPA",
+    for l in ("Total Recruiters Spend", "Total RECRUITING SPEND", "CPA",
               "Cost Per 2nd Rd Scheduled", "Cost Per 2nd Rd Showed",
               "Cost Per New Start Scheduled", "Cost Per New Start Showed"):
         label(l, TEAL)
@@ -645,6 +720,20 @@ def main(argv=None) -> int:
     have = [w for w in sorted(totals) if w <= closed]
     log(f"  interviewers: {len(have)} week(s) from ARS "
         f"({have[0] if have else '-'} .. {have[-1] if have else '-'}), {n_ars} cells")
+
+    # 2b) money rows from Hidalgo's finances (rewritten every run)
+    n_h = 0
+    for wk, got in sorted(hidalgo_weeks(gc, log).items()):
+        if wk > closed or wk not in weeks:
+            continue
+        for lbl, v in got.items():
+            if lbl == "Indeed Spending" and wk < INDEED_FROM:
+                continue
+            row = r.get(norm(lbl))
+            if row:
+                updates.append((row, weeks[wk], v))
+                n_h += 1
+    log(f"  money rows: {n_h} cell(s) from {HIDALGO_TAB!r} (WE+7 column)")
 
     # 3) formulas on every week column
     cols = sorted(weeks.items())
