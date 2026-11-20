@@ -572,6 +572,7 @@ def _sync_status(workbook) -> int:
 
 
 def main(argv=None) -> int:
+    from automations.blueink_docs import config as BC
     try:
         return _main(argv)
     except (blueink.BlueInkError, RuntimeError) as exc:
@@ -708,6 +709,12 @@ def _main(argv=None) -> int:
         # is the whole feature today: look at it, confirm the list is the list,
         # and the send gets wired next with its own one-person verification
         # (Megan's standing rule, and a Blue Ink bundle launches on creation).
+        # WHOSE ACCOUNT WOULD THIS GO OUT OF. Asked before the preview, not
+        # after: an office reading a list it could never actually send is
+        # being told the wrong thing, and this is the one failure that
+        # succeeds silently -- a real contract from Alphalete's account with
+        # nothing reporting it.
+        BC.assert_key_belongs_to(args.office.strip().lower())
         if args.send:
             print("--office previews only, for now. The list below is what "
                   "WOULD be sent; the sending half still writes back into a "

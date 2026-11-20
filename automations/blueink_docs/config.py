@@ -111,6 +111,44 @@ def creds_path() -> Path:
     return ECO_CREDS_PATH if ECO_CREDS_PATH.exists() else REPO_ROOT / "blueink-creds.json"
 
 
+# Keys that mean "this IS Alphalete", for whom the repo copy is the right one.
+ALPHALETE_KEYS = ("raf", "alphalete", "")
+
+
+def using_own_key() -> bool:
+    """True when the key being read is this machine's own, not the repo's."""
+    return ECO_CREDS_PATH.exists()
+
+
+def assert_key_belongs_to(office_key: str) -> None:
+    """Refuse to send for an office whose key is not on this machine.
+
+    THE FALLBACK IS SAFE TO READ AND NOT SAFE TO SEND WITH. `creds_path`
+    falls back to the repo copy so that Alphalete's own machines keep working
+    untouched -- but for anybody else that copy is SOMEBODY ELSE'S ACCOUNT,
+    and a Blue Ink bundle launches the moment it is created. The send would
+    SUCCEED: the new start gets a real contract, out of Alphalete's account,
+    with nothing anywhere reporting that the wrong office sent it. That is the
+    worst shape a failure can take, which is why this refuses rather than
+    warns.
+
+    `icd_onboarding.launch_check.check_blueink` asks the same question before
+    an office goes live. This is the same rule at the moment of sending,
+    because a machine can lose its key after it has launched -- and a check
+    that only ran once is not a guard.
+    """
+    key = str(office_key or "").strip().lower()
+    if key in ALPHALETE_KEYS or using_own_key():
+        return
+    raise RuntimeError(
+        "Blue Ink refused for office %r: this machine has no key of its own "
+        "at %s, so the send would go out of ALPHALETE'S account. Put that "
+        "office's own API key and envelope template id there (Blue Ink -> "
+        "Settings -> API, on THEIR account). Never in the repo: it is public "
+        "and a `git pull` destroys anything parked inside it."
+        % (office_key, ECO_CREDS_PATH))
+
+
 CREDS_PATH = creds_path()
 
 API_BASE = "https://api.blueink.com/api/v2"
