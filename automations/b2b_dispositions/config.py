@@ -210,6 +210,9 @@ TEXT_ROUTES = {
     # ON_REQUEST). Carlos 2026-11-19: "as text message to the Aplayer and
     # leaders chat".
     ("NDS METRICS", "nds_teams_board"): [TEXT_GROUP_ATT, TEXT_GROUP_ALL],
+    # NDS Sales Board WEEK 1 table, 10:45 AM Mon-Fri (week_one_text). Carlos
+    # 2026-11-19: "it should be sent on the A Players text chain".
+    ("NDS WEEK 1", "nds_week_one"): [TEXT_GROUP_ALL],
 }
 
 # Seconds to wait after handing Messages an image. TdB proved a group image send

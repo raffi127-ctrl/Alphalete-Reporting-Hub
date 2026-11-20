@@ -16703,6 +16703,27 @@
    "timeout_minutes": 5,
    "verify": null
   },
+  "week_one_text": {
+   "on_scheduler": false,
+   "machine": "Lucy 2",
+   "_note": "Carlos 2026-11-19: 10:45 AM Monday-Friday, a picture of the NDS Sales Board's WEEK 1 table (title row to the last rep, Roll Call across to TODAY's day column) texted to NEW A Players. Fails loudly and sends nothing if WEEK 1's dates don't cover today (board B2 left on an old week); no reps = nothing sent. Real schedule = Report Library card week_one_text_1045. Dry-run by default; --send queues the text (once per day; --force resends).",
+   "display_name": "NDS Week 1 text (10:45am Mon-Fri)",
+   "source_type": "api",
+   "data_sources": [],
+   "command": [
+    "automations.week_one_text.run"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": [],
+    "not_before": "10:45"
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 5,
+   "verify": null
+  },
   "nds_tnc_check": {
    "on_scheduler": false,
    "machine": "Lucy 2",
