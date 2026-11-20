@@ -76,21 +76,66 @@ def is_not_ready(detail: str) -> bool:
     return any(m in str(detail) for m in NOT_READY)
 
 
+# The two board columns that hold a STATE rather than a tick, and the answers
+# that mean the state is finished (bg_status.DONE_STATUSES). "Pending" in a BG
+# cell is a cell somebody filled in and not a step somebody completed, so
+# `_step_done` will not count it towards being ready.
+_STATE_COLUMNS = ("BG Status", "OV BG Status")
+
+
+def _step_done(column: str, said: str) -> bool:
+    """Does this board cell say the step is FINISHED?"""
+    from automations.icd_onboarding import bg_status as BG
+
+    said = str(said or "").strip()
+    if not said or F.is_alert(said):
+        return False
+    if column in _STATE_COLUMNS:
+        return any(d.lower() in said.lower() for d in BG.DONE_STATUSES)
+    return True
+
+
+def readiness(row: Dict, column: str) -> int:
+    """How many of the steps BEFORE `column` this row already shows finished.
+
+    A guess, and only ever used to decide who is asked about FIRST. It reads
+    our own board, which is a sheet people type in -- so it must never be able
+    to cause a press, and it cannot: OwnerVille's own section states remain the
+    only gate.
+    """
+    steps = list(B.STEPS)
+    before = steps[:steps.index(column)] if column in steps else []
+    return sum(1 for c in before if _step_done(c, row.get(c)))
+
+
 def candidates(office_key: str, week_start: dt.date, column: str) -> List[str]:
-    """Who on this week's board has `column` still blank and is not marked off.
+    """Who on this week's board has `column` still blank and is not marked off,
+    READIEST FIRST.
 
     The same filter `_board_names` uses, for the same reason: a lookup is one
     request against a slow server (~23s measured), so asking about people who
     can gain nothing is how a run spends its budget and still leaves somebody
     out. An `ALERT_PREFIX` cell counts as blank — it is an ask, not an answer.
+
+    THE ORDER IS THE DIFFERENCE BETWEEN REACHING SOMEBODY AND NOT. Measured on
+    raf, 2026-11-20: owner_submit spent its whole 9m39s budget on the first
+    eight names in BOARD order -- four not in OwnerVille at all, four with
+    every section PENDING -- and stopped with "20 not reached this run". Jaime
+    Molina, who was ready, whose sections all read COMPLETED and whose Submit
+    box was sitting there unticked, was one of the twenty. Every lookup in that
+    run worked perfectly and the run submitted nobody.
+
+    So the readiest go first (`readiness`), and board order breaks ties. This
+    changes who is ASKED first and nothing else.
     """
     from automations.icd_onboarding import sheet as S
 
     ws = S.open_board(F.workbook_for(office_key), create=False)
     if ws is None:
         return []
-    out = []
-    for r in B.for_week(S.rows_of(ws.get_all_values()), week_start):
+    scored = []
+    for seen, r in enumerate(B.for_week(S.rows_of(ws.get_all_values()),
+                                        week_start)):
         if not (r.get("Name") or r.get("Last Name")):
             continue
         if str(r.get(B.TERMINATED_AT) or "").strip():
@@ -98,9 +143,10 @@ def candidates(office_key: str, week_start: dt.date, column: str) -> List[str]:
         said = str(r.get(column) or "").strip()
         if said and not F.is_alert(said):
             continue
-        out.append(("%s %s" % (r.get("Name", ""),
-                               r.get("Last Name", ""))).strip())
-    return out
+        name = ("%s %s" % (r.get("Name", ""), r.get("Last Name", ""))).strip()
+        scored.append((-readiness(r, column), seen, name))
+    scored.sort()
+    return [name for _, _, name in scored]
 
 
 def _alert(office_key: str, what: str, failures: Sequence, log=print) -> None:
@@ -144,6 +190,7 @@ def _press(office_key: str, week_start: dt.date, *, column: str, what: str,
     something Megan has not switched on, and a gate being on cannot make a dry
     run press anything. Both have to agree.
     """
+    from automations.icd_onboarding import ov_misses as OVM
     from automations.obcl_ov_sweep import config as OVC
     from automations.obcl_ov_sweep.run import PROFILE_DIR
     from automations.shared.tableau_patchright import ownerville_session
@@ -167,17 +214,36 @@ def _press(office_key: str, week_start: dt.date, *, column: str, what: str,
     real = bool(not dry_run and live_gate)
     if not dry_run and not live_gate:
         log("  %s is GATED — dry walk only, nothing pressed" % what)
+    # DON'T PAY TWICE FOR THE SAME ABSENCE. Half of the eight names this step
+    # reached on raf (2026-11-20) cost a full ~27s lookup only to answer "not
+    # found in OwnerVille" -- for people nobody has added there yet, which the
+    # previous run had already discovered. `ov_misses` is the same cooldown the
+    # `ownerville` step uses; the budget it frees goes to names worth asking
+    # about. A remembered miss NEVER means "not in OwnerVille", only "don't
+    # spend the search on them again yet".
+    askable = OVM.fresh(office_key, week_start, wanted)
+    held = len(wanted) - len(askable)
+    if held:
+        log("  %s: %d name(s) held back — OwnerVille said it didn't have them "
+            "in the last %d minutes" % (what, held, OVM.COOLDOWN_MIN))
+    if not askable:
+        log("  %s: every name is on that cooldown — nothing to search for "
+            "this pass" % what)
+        return F.apply(F.workbook_for(office_key), week_start, "ownerville",
+                       {}, dry_run=dry_run, log=log)
     budget = OVC.SEARCH_BUDGET_S if budget_s is None else budget_s
     verdicts: Dict[str, Dict[str, object]] = {}
     failures: List = []
+    missing: List[str] = []
+    found: List[str] = []
     t0 = time.monotonic()
     done = 0
     with ownerville_session(headless=True, verbose=False,
                             profile_dir=PROFILE_DIR) as page:
-        for name in wanted:
+        for name in askable:
             if time.monotonic() - t0 >= budget:
                 log("    time budget reached; %d not reached this run"
-                    % (len(wanted) - done))
+                    % (len(askable) - done))
                 break
             done += 1
             try:
@@ -186,10 +252,19 @@ def _press(office_key: str, week_start: dt.date, *, column: str, what: str,
             except Exception as e:      # noqa: BLE001 — one name, not the run
                 outcome, detail = "refused", "%s: %s" % (type(e).__name__, e)
             log("  %s %s: %s" % (what.upper(), outcome.upper(), detail))
+            # A LOOKUP THAT REACHED THE PERSON IS A HIT, whatever it then said
+            # about them: "not every section is done" is OwnerVille describing
+            # somebody it has. Only the not-found answer is an absence.
+            if "not found in OwnerVille" in str(detail):
+                missing.append(name)
+            else:
+                found.append(name)
             if outcome in ("submitted", "requested", "already"):
                 verdicts[name] = {column: True}
             elif real and outcome == "refused" and not is_not_ready(detail):
                 failures.append((name, detail.split(": ", 1)[-1]))
+    OVM.remember(office_key, week_start, missing)
+    OVM.forget(office_key, week_start, found)
 
     if real:
         _alert(office_key, what, failures, log=log)
