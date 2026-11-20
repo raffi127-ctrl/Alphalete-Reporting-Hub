@@ -10229,7 +10229,7 @@
   },
   "activations_today_fix_index": {
    "on_scheduler": true,
-   "_note": "ONE-OFF (Eve 2026-11-20): edits TODAY's already-posted Metrics headers (Lucy's own) so the index lists 'Activations Scheduled Today (fiber only)' + 'Pending Orders (fiber + wireless, by rep)'. weekdays=[] never auto-runs; `lucy rerun activations_today_fix_index` with no --machine.",
+   "_note": "ONE-OFF (Eve 2026-11-20): TODAY's Metrics threads back to only the fiber image: restores the index line and deletes Lucy's 'Pending Orders (fiber + pending wireless) -> open' pointer replies (Pending Orders posts untouched). weekdays=[] never auto-runs; `lucy rerun activations_today_fix_index` with no --machine.",
    "display_name": "Activations Today — fix today's Metrics index",
    "source_type": "api",
    "data_sources": [],
