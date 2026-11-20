@@ -5,9 +5,24 @@
     <key>Label</key>
     <string>com.alphalete.b2b-dispositions-final</string>
 
-    <!-- The 6:30pm final: the last Today's Activity + Time Tracker shots (tagged
-         "Final") AND the per-territory Dispositions. Path is the laptop
-         placeholder; install_agent.py rewrites it on Lucy 2:
+    <!-- RETIRED 2026-09-29. NOTHING INSTALLS THIS AND NOTHING RUNS IT.
+         Carlos moved everything to one post that day, which
+         com.alphalete.b2b-dispositions-hourly now does (Mon to Fri 6pm,
+         Sat 4pm). schedule_config.json has only remove_b2b_dispositions_final_agent
+         for this label, no install entry; the file is kept so that removal
+         still has something to unload.
+
+         SO THE TIMES BELOW ARE HISTORY, NOT A SCHEDULE. Reading them as live
+         cost two wrong changes on 2026-11-20: first this file's Saturday was
+         moved off 4pm to dodge a clash that no machine has had since
+         September, then the LIVE hourly was nearly moved for the same reason.
+         Saturday's 4pm close now belongs to the hourly. Do not move either
+         one; see test_schedule_collisions.py.
+
+         WHAT IT USED TO DO: the 6:30pm final, the last Today's Activity +
+         Time Tracker shots (tagged "Final") AND the per-territory
+         Dispositions. Path is the laptop placeholder; install_agent.py
+         rewrote it on Lucy 2:
          python -m automations.day_orchestrator.install_agent b2b-dispositions-final -->
     <key>ProgramArguments</key>
     <array>
@@ -29,17 +44,12 @@
         <string>/Users/megan/1st Claude Folder</string>
     </dict>
 
-    <!-- Mon-Fri 7pm. SATURDAY IS 4pm AND MUST STAY 4pm: Carlos asked for it
-         by name (8/6, commit b8b89e6): "Saturday can the last message on
-         slack and text message be at 4pm." Hour/Minute are machine LOCAL
-         time; Lucy 2 is Central.
-
-         It was briefly moved to 17:00 on 2026-11-20 to dodge a clash with
-         the Saturday hourly, which also fires 16:00. That was the wrong end
-         of the clash: it made Carlos's last Saturday message land at 5pm.
-         Reverted the same day. The hourly is the one out of place on
-         Saturday (see the note in test_schedule_collisions.py), and moving
-         it is a decision about his report, not a schedule tidy up.
+    <!-- HISTORICAL. Mon to Fri 7pm, Saturday 4pm, as it ran until 2026-09-29.
+         Saturday was 4pm because Carlos asked for it by name (8/6, commit
+         b8b89e6): "Saturday can the last message on slack and text message
+         be at 4pm." That requirement did not retire with this agent; it now
+         lives on com.alphalete.b2b-dispositions-hourly, Weekday 6 at 16:00.
+         Hour/Minute are machine LOCAL time; Lucy 2 is Central.
 
          NOTE ON COMMENTS IN THIS FILE: never write two hyphens together
          inside an XML comment. It ends the comment early and makes the

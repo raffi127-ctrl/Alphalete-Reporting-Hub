@@ -6,7 +6,7 @@
     <string>com.alphalete.lineup-post</string>
     <!-- Line Up picture + Car Ride names (Raf, Loom 2026-10-22).
          LUCY 1. Path is the laptop placeholder; install_agent.py rewrites it.
-         One agent, both slots: run.py's --auto sends the picture before 4pm CT
+         One agent, both slots: run.py's 'auto' flag sends the picture before 4pm CT
          and the names after. -->
     <key>ProgramArguments</key>
     <array>

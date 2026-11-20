@@ -9,7 +9,7 @@
     <array><string>/bin/bash</string><string>/Users/megan/1st Claude Folder/deploy/spectrum_knocks.sh</string><string>--tick</string></array>
     <key>WorkingDirectory</key><string>/Users/megan/1st Claude Folder</string>
     <key>EnvironmentVariables</key><dict><key>PYTHONPATH</key><string>/Users/megan/1st Claude Folder</string></dict>
-    <!-- Every 15 min; fill.py --tick only works 9 AM-midnight CT (+ closes yesterday at midnight). -->
+    <!-- Every 15 min; fill.py's 'tick' flag only works 9 AM-midnight CT (+ closes yesterday at midnight). -->
     <key>StartInterval</key><integer>900</integer>
     <key>StandardOutPath</key><string>/tmp/com.alphalete.spectrum-knocks.out</string>
     <key>StandardErrorPath</key><string>/tmp/com.alphalete.spectrum-knocks.err</string>

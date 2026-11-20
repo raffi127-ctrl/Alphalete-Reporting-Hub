@@ -38,7 +38,7 @@
 
          Carlos's own office (11580) refreshes every 30 minutes through the
          separate com.alphalete.ad-sales-board-carlos agent
-         (deploy/ad_sales_board_carlos.sh) — single office, --today partial
+         (deploy/ad_sales_board_carlos.sh) — single office, 'today' flag partial
          day pull, no SCI pass. Its pgrep guard makes it step aside while
          this full pass runs.
 
