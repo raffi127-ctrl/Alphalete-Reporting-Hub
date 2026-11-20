@@ -48,15 +48,24 @@ class SelfHeal(unittest.TestCase):
         TP._reuse_ownerville_storage_state = _f
 
     def _refresh(self, ok):
-        import automations.shared.appstream_autorenew as AR
-        self._saved.setdefault("refresh", AR.refresh_ownerville)
+        # The re-mint runs in a CHILD process (a nested sync_playwright cannot
+        # start — Lucy 3, 2026-11-19), so the seam is the child launcher.
+        self._saved.setdefault("refresh", TP._remint_ownerville_in_child)
 
         def _f(verbose=True):
             self.calls.append("refresh")
             return ok
-        AR.refresh_ownerville = _f
-        self.addCleanup(setattr, AR, "refresh_ownerville",
+        TP._remint_ownerville_in_child = _f
+        self.addCleanup(setattr, TP, "_remint_ownerville_in_child",
                         self._saved["refresh"])
+
+    def test_the_remint_never_starts_playwright_in_this_process(self):
+        """11/19: the in-process re-mint raised "Playwright Sync API inside the
+        asyncio loop" 8 of 8 times. It must go through a separate process."""
+        import inspect
+        src = inspect.getsource(TP._ensure_ownerville_logged_in)
+        self.assertIn("_remint_ownerville_in_child", src)
+        self.assertNotIn("refresh_ownerville(", src)
 
     def test_a_dead_session_is_reminted_and_the_run_continues(self):
         self._reuse([False, True])      # dead, then live after the re-mint

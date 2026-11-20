@@ -2276,6 +2276,31 @@ def _action_audit_bot_deploy(args: str) -> tuple[bool, str]:
                   "within 5 min")
 
 
+def _action_night_knocks_resend(args: str) -> tuple[bool, str]:
+    """Mail a PAST night's knocking boards to the offices that never got
+    theirs, with a "sorry, a glitch made this late" line at the top (same
+    subject: owners filter on it).
+
+      night_knocks_resend 2026-11-19
+      night_knocks_resend 2026-11-19 <office name>
+
+    No office = every office whose board failed OR whose whole wave failed
+    that night (11/19: the Pacific wave of seven captainships, ownerville).
+    Anyone already mailed for that night is skipped, so running it twice sends
+    nobody twice. LIVE: it goes to the owners, like the nightly send. Run it
+    on Lucy 3, where the night's state file lives."""
+    parts = (args or "").strip().split(None, 1)
+    if not parts or not re.match(r"^\d{4}-\d{2}-\d{2}$", parts[0]):
+        return False, "usage: night_knocks_resend YYYY-MM-DD [office name]"
+    cmd = [sys.executable, "-u", "-m",
+           "automations.captainship_night_knocks.run",
+           "--resend", parts[0], "--send", "--live"]
+    if len(parts) > 1:
+        cmd += ["--office", parts[1].strip().strip('"').strip("'")]
+    return _run_cmd(cmd, timeout_s=45 * 60,
+                    log_name="night-knocks-resend-%s.log" % parts[0])
+
+
 def _action_install_night_knocks(args: str) -> tuple[bool, str]:
     """Install (or reinstall) the NIGHT KNOCKS sender on THIS machine — the
     daily knocking sheet mailed at 9 PM in each office's own clock, one thread
@@ -10115,6 +10140,7 @@ ACTIONS = {
     "logdump": _action_logdump,
     "approve_office": _action_approve_office,
     "install_night_knocks": _action_install_night_knocks,
+    "night_knocks_resend": _action_night_knocks_resend,
     "install_ad_photo_threads": _action_install_ad_photo_threads,
     "install_jiraiya": _action_install_jiraiya,
     "set_raffi_app_password": _action_set_raffi_app_password,
