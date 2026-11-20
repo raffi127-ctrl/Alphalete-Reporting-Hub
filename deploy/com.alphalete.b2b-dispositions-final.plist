@@ -29,20 +29,22 @@
         <string>/Users/megan/1st Claude Folder</string>
     </dict>
 
-    <!-- Once a day, AFTER the last hourly, never beside it. Hour/Minute are
-         machine LOCAL time; Lucy 2 is Central.
+    <!-- Mon-Fri 7pm. SATURDAY IS 4pm AND MUST STAY 4pm: Carlos asked for it
+         by name (8/6, commit b8b89e6): "Saturday can the last message on
+         slack and text message be at 4pm." Hour/Minute are machine LOCAL
+         time; Lucy 2 is Central.
 
-         The shape every day follows: the gaps sweep ends, the hourly posts
-         30 minutes later, and this final posts an hour after that. Weekdays
-         gaps end 17:30, so hourly is 18:00 and this is 19:00. Saturday gaps
-         end 15:30, so hourly is 16:00 and this is 17:00.
+         It was briefly moved to 17:00 on 2026-11-20 to dodge a clash with
+         the Saturday hourly, which also fires 16:00. That was the wrong end
+         of the clash: it made Carlos's last Saturday message land at 5pm.
+         Reverted the same day. The hourly is the one out of place on
+         Saturday (see the note in test_schedule_collisions.py), and moving
+         it is a decision about his report, not a schedule tidy up.
 
-         SATURDAY WAS 16:00, the hourly's own minute (fixed 2026-11-20). All
-         three b2b jobs run the same module and b2b_dispositions.sh skips
-         itself when it sees that module already running, so every Saturday
-         one of the two died on arrival and which one was a race. Nothing
-         reported it: the loser logs one SKIPPED line and exits 0.
-         Keep this an hour off the hourly. -->
+         NOTE ON COMMENTS IN THIS FILE: never write two hyphens together
+         inside an XML comment. It ends the comment early and makes the
+         plist unreadable to plistlib even though plutil still accepts it,
+         so the job keeps running while our own tooling goes blind to it. -->
     <key>StartCalendarInterval</key>
     <array>
         <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>19</integer><key>Minute</key><integer>0</integer></dict>
@@ -50,7 +52,7 @@
         <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>19</integer><key>Minute</key><integer>0</integer></dict>
         <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>19</integer><key>Minute</key><integer>0</integer></dict>
         <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>19</integer><key>Minute</key><integer>0</integer></dict>
-        <dict><key>Weekday</key><integer>6</integer><key>Hour</key><integer>17</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Weekday</key><integer>6</integer><key>Hour</key><integer>16</integer><key>Minute</key><integer>0</integer></dict>
     </array>
 
     <key>StandardOutPath</key>
