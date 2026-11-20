@@ -288,3 +288,19 @@ class Summaries(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ProbeAnyStatus(unittest.TestCase):
+    """11/20: Nelson Martinez's six lines read Pending Shipment while Carlos
+    thought the phones had arrived -- the probe looks an order up whatever
+    its Line Status says."""
+
+    def test_any_status_picks_a_pending_shipment_order(self):
+        import datetime as dt
+        hdr = ["Line Status", "Ship Date", "Delivered", "Wireless Order #", "Zip", "Email",
+               "Shipping Notes", "Shipping Status", "Customer", "Line", "Phone #", "Rep"]
+        rows = [["Pending Shipment", "", "", "99-7", "75040", "a@b.c", "", "", "NELSON M", "1", "206-555-0101", "R"],
+                ["Pending Shipment", "", "", "99-7", "75040", "a@b.c", "", "", "NELSON M", "2", "206-555-0102", "R"]]
+        self.assertEqual(A.stale_orders(hdr, rows, today=dt.date(2026, 11, 20)), [])
+        got = A.stale_orders(hdr, rows, today=dt.date(2026, 11, 20), any_status=True)
+        self.assertEqual([(o["order"], len(o["lines"])) for o in got], [("99-7", 2)])

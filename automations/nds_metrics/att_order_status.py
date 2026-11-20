@@ -113,7 +113,7 @@ def _cell(row: Sequence[str], cols: Dict[str, int], name: str) -> str:
 
 
 def stale_orders(header: Sequence[str], rows: Sequence[Sequence[str]], *, today: dt.date,
-                 days: int = STALE_DAYS) -> List[Dict]:
+                 days: int = STALE_DAYS, any_status: bool = False) -> List[Dict]:
     """One entry per order with a line Shipped `days`+ days ago and no
     Delivered date: {order, zip, email, customer, rep, lines: [{row, line,
     ship_date, notes}]}. Orders without a ZIP or an e-mail are listed too,
@@ -127,15 +127,16 @@ def stale_orders(header: Sequence[str], rows: Sequence[Sequence[str]], *, today:
     cutoff = today - dt.timedelta(days=days)
     by_order: Dict[str, Dict] = {}
     for n, r in enumerate(rows, start=2):           # sheet row numbers, header is 1
-        if _cell(r, cols, "Line Status").lower() != "shipped":
-            continue
-        if _parse_date(_cell(r, cols, "Delivered")):
-            continue
         sd = _parse_date(_cell(r, cols, "Ship Date"))
-        # a Shipped line with no ship date at all is looked up too (11/11:
-        # six of them a week old); with days > 0 only dated, old ones are
-        if days > 0 and (sd is None or sd > cutoff):
-            continue
+        if not any_status:
+            if _cell(r, cols, "Line Status").lower() != "shipped":
+                continue
+            if _parse_date(_cell(r, cols, "Delivered")):
+                continue
+            # a Shipped line with no ship date at all is looked up too (11/11:
+            # six of them a week old); with days > 0 only dated, old ones are
+            if days > 0 and (sd is None or sd > cutoff):
+                continue
         order = _cell(r, cols, "Wireless Order #")
         if not order:
             continue
@@ -774,7 +775,7 @@ def status_sync(header: Sequence[str], rows: Sequence[Sequence[str]]) -> List[Di
 
 def run(today: Optional[dt.date] = None, *, live: bool = False, limit: Optional[int] = None,
         only: Sequence[str] = (), days: int = STALE_DAYS, headless: bool = True,
-        status_only: bool = False, log=print) -> int:
+        status_only: bool = False, probe: bool = False, log=print) -> int:
     from patchright.sync_api import sync_playwright
     from automations.nds_metrics import order_log_tab as T
     from automations.recruiting_report.fill import open_by_key, _retry
@@ -789,7 +790,15 @@ def run(today: Optional[dt.date] = None, *, live: bool = False, limit: Optional[
     header = rows[0]
     # the status column follows the notes first (lines no longer in Shipped
     # keep their last note; a weak status beside a real reading is lifted)
-    fixes = status_sync(header, rows[1:])
+    if probe:
+        # 11/20, Carlos: "Is it still showing pending shipment for him? ... I
+        # think he already got the phone" -- look the named orders up whatever
+        # their Line Status says, and write NOTHING (the wrapper's --live loses)
+        live = False
+        if not only:
+            log("[att] --probe needs --order")
+            return 1
+    fixes = [] if probe else status_sync(header, rows[1:])
     log("[att] status from notes: %d line(s) to set" % len(fixes))
     if fixes and live:
         import gspread
@@ -800,7 +809,7 @@ def run(today: Optional[dt.date] = None, *, live: bool = False, limit: Optional[
         if not live:
             log("[att] dry run -- nothing written (pass --live)")
         return 0
-    orders = stale_orders(header, rows[1:], today=today, days=days)
+    orders = stale_orders(header, rows[1:], today=today, days=days, any_status=probe)
     if only:
         keep = {_norm(x) for x in only}
         orders = [o for o in orders if o["order"] in keep]
@@ -950,12 +959,15 @@ def main(argv=None) -> int:
     ap.add_argument("--days", type=int, default=STALE_DAYS,
                     help="only lines shipped at least this many days ago (default 0: every Shipped line)")
     ap.add_argument("--headed", action="store_true")
+    ap.add_argument("--probe", action="store_true",
+                    help="READ-ONLY: look up the --order(s) whatever their Line Status, print what "
+                         "AT&T and FedEx say, write nothing (beats --live)")
     ap.add_argument("--status-only", action="store_true",
                     help="only set Shipping Status from the Shipping Notes already on the tab (no lookups)")
     ap.add_argument("--today", default=None, help="YYYY-MM-DD (default: today)")
     a = ap.parse_args(argv)
     today = dt.datetime.strptime(a.today, "%Y-%m-%d").date() if a.today else dt.date.today()
-    rc = run(today, live=a.live, limit=a.limit, only=a.order, days=a.days, headless=not a.headed,
+    rc = run(today, live=a.live, limit=a.limit, only=a.order, days=a.days, headless=not a.headed, probe=a.probe,
              status_only=a.status_only)
     print("=== done ===", flush=True)
     return rc
