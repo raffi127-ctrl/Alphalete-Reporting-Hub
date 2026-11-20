@@ -176,6 +176,43 @@ before making a similar change.**
 - Fleet history: org is complete (all 17); the 11 captainship-only offices
   still have ~16 empty weeks each before May 25 — overnight batch on request.
 
+## 4b. Billing holds and the live-ads numbers (added 11/19)
+
+The `carlos' live ads` tab prices every ad as **Daily Budget × days** (Ad CPA
+= budget × days ÷ Ad Pull; Cost / 2nd Booked = budget × days ÷ SR Booked).
+When an Indeed account goes on a billing hold ("Sponsored Job benefits are
+unavailable until you add payment information"), the sponsorship stops and
+so does the spend, but the day count kept running — CPA and Cost / 2nd
+Booked read too high for every ad on that account.
+
+Since 11/19 (Carlos: "check the email tab to see when we got the billing
+issue email ... so that the CPAs and all those numbers are properly adjusted
+for whatever time was missed"):
+- **`Billing Holds` tab** (same workbook): `Indeed Account | Hold From | Hold
+  Until | Source / note`, one row per hold episode. Account spelled as column D
+  of the live-ads tab ("Ascendra", not "New Ascendra"). A blank **Hold Until**
+  means still on hold (the formula uses NOW()). Times come from the account's
+  own Gmail (the Gmail tab inside its Octo profile): Indeed's "Payment
+  declined: Update your billing information" starts a hold, "We received your
+  payment of $…" ends it. Rows marked ESTIMATED were read off the 5am/1pm
+  billing checks instead (W Edge's Gmail is signed out; Peak's profile was open
+  elsewhere) — replace them when the emails can be read.
+- **`Days Down` (column N)** on the live-ads tab: per row, the overlap of
+  [posted, closed-or-now] with every hold of that row's account, in days.
+  **Days Live (J)**, **Ad CPA (L)** and **Cost / 2nd Booked (M)** subtract it
+  (`bud*MAX(en-st-N(dd),1)`). Ad Pull (K) is untouched. Originals of J1/L1/M1
+  are in the session scratchpad `live_ads_formulas_backup.json` and in git
+  history of this README's author notes.
+- Verify: `Days Down` on a held account's rows > 0 and equal across that
+  account's rows in every week block; a clean account reads 0.00; CPA drops.
+- AUTOMATED since the evening of 11/19 (release 2026.11.19.2): the office
+  computer's 5am/1pm check also reads the account's Gmail tab for the decline
+  / payment mails and files their times with the check; Lucy 1's poster
+  (`automations/icd_alerts/billing_holds.py`) opens a row here when an
+  account goes on hold, fills Hold Until when it comes back, and DMs the
+  office group "ads back live". A signed-out Gmail falls back to the check
+  time, marked estimated. Hand-typed rows are kept and reused.
+
 ## 5. How to verify (never trust "done")
 
 - Every run prints a **reconciliation**: each finished week's day cells must
