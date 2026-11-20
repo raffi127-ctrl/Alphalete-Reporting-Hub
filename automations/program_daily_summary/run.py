@@ -67,8 +67,8 @@ def _country_specs():
 
 
 def tableau_days(today: dt.date, logfn=print) -> dict:
-    """{campaign: {date: n}} for the AT&T campaigns, this week + last week
-    (last week so a Tuesday roll freezes the closing week's final Sunday)."""
+    """{campaign: {date: n}} for the AT&T campaigns. Fiber reads this week +
+    last week; NDS/B2B read the reporting week only (see below)."""
     import dataclasses
     from automations.shared.tableau_patchright import tableau_session
     from automations.country_sales_board import pull as fiber
@@ -85,7 +85,12 @@ def tableau_days(today: dt.date, logfn=print) -> dict:
         got["ATT Fiber"] = days
         for camp, spec in _country_specs().items():
             days = {}
-            for back in (7, 0):                 # last week first, then this one
+            # ONE pull, pinned to the REPORTING week (Tuesday-rolling): on a
+            # Monday that is the closing week, so Sunday lands before Tuesday's
+            # roll freezes it. A last-week pin on these BASE views renders the
+            # worksheet empty (Tableau drops it from the Crosstab dialog —
+            # verified on Lucy 1 2026-11-20), so there is no second pull.
+            for back in (0,):
                 when = today - dt.timedelta(days=back)
                 s = dataclasses.replace(
                     spec, out_name=spec.out_name.replace(".csv", f"_{back}.csv"))
