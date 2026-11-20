@@ -424,7 +424,7 @@ def post_pending_thread(mine, owner: str, day: dt.date, *, dry_run: bool,
         span = " — reps {}".format(label) if label else ""
         # Eve 11/20: it read too much like the Order Log post right above it
         # -> orange marks + CAPS. No description line (too wordy, Eve).
-        title = "{}🟧⏳ *PENDING ORDERS {}{}* ⏳🟧".format(tag, md, span)
+        title = "{}🟧⏳ *PENDING ORDERS {}{}*".format(tag, md, span)
         ts = _text(None, "{}\nOpen the thread 👇 and tap your name".format(title))
         index_ts = _text(ts, "👉 *Tap your name:* (names loading...)")
         links = []
