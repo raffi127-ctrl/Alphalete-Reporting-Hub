@@ -4371,6 +4371,27 @@
    "depends_on": [],
    "verify": null
   },
+  "onboarding_seed_write": {
+   "on_scheduler": false,
+   "machine": null,
+   "_note": "on_scheduler:false and no machine -- a build/fix rerun, so it goes to the least-loaded Lucy that has the AppStream login (routing.py). THE SEED, FOR REAL: probe_onboarding_seed is the same step dry, this is the one that writes. Not a second clock -- the hourly com.alphalete.icd-onboarding agent already runs the whole board with MODE=write; this is how to land a seed NOW rather than wait for the hour, which is what you want straight after changing WHO gets seeded. Added 2026-11-20 with the multi-funnel seed: raf reads 11280 AND 23965 (Algemar), and the first write is what creates the `Funnel` column and draws the labelled dividers. Safe to re-run: the seed is idempotent, skips anybody already on the week, and never rewrites a row that exists.",
+   "display_name": "Onboarding Board \u00b7 Seed (write)",
+   "source_type": "appstream",
+   "data_sources": [],
+   "command": [
+    "automations.icd_onboarding.run"
+   ],
+   "base_args": [
+    "--office",
+    "raf",
+    "--only",
+    "seed",
+    "--write"
+   ],
+   "cadence": {
+    "weekdays": []
+   }
+  },
   "probe_appstream_office": {
    "_note": "READ-ONLY probe (2026-11-09): logs into AppStream like the Focus fill (rcaptain profile) and reports, per office id, the switcher dropdown, the account's office list, whether the switch lands, and what the Retention Report returns for the week. Writes nothing. Built for Nigel Marshall's 23515, which the Focus refill skipped silently twice. Pinned to Lucy 1 on purpose: the fill runs there, and the question is what THAT login sees.",
    "machine": "Lucy 1",
