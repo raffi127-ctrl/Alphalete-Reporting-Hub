@@ -5,6 +5,7 @@ Jacob Ortega's sale under Sebastian's login pays Jacob when it posts).
 """
 from __future__ import annotations
 
+import datetime as dt
 import unittest
 
 from automations.vantura_payroll import run as R
@@ -90,3 +91,56 @@ class Matching(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SoldUnder(unittest.TestCase):
+    """Carlos 2026-11-19: all of Esmeralda's sales the week of 11/16 are
+    Jacob's -- a rule per customer off the order log, marked on the CS tab."""
+
+    OL = [["Week Ending", "Pay Period", "Order Date", "Last Updated", "Rep", "Line", "Line Status", "Customer"],
+          ["11/22/2026", "Pending", "11/19/2026", "", "Esmeralda Gonzalez", "1", "", "Ana Lopez"],
+          ["11/22/2026", "Pending", "11/19/2026", "", "Esmeralda Gonzalez", "2", "", "Ana Lopez"],
+          ["11/22/2026", "Pending", "11/20/2026", "", "Esmeralda Gonzalez", "1", "", "Bo Diaz"],
+          ["11/15/2026", "Pending", "11/11/2026", "", "Esmeralda Gonzalez", "1", "", "Old Customer"],
+          ["11/22/2026", "Pending", "11/19/2026", "", "Roseanna Jurado", "1", "", "Not Hers"]]
+
+    def test_customers_in_range_once_each(self):
+        got = R.sold_under_customers(self.OL, "Esmeralda Gonzalez",
+                                       dt.date(2026, 11, 16), dt.date(2026, 11, 22))
+        self.assertEqual(got, [("Ana Lopez", dt.date(2026, 11, 19)),
+                               ("Bo Diaz", dt.date(2026, 11, 20))])
+
+    def test_sync_adds_only_new_customers_and_only_when_writing(self):
+        from unittest import mock
+        tr = [["Customer", "Sale Date", "From Rep", "To Rep", "Note", "Added", "Last applied"],
+              ["Ana Lopez", "", "Esmeralda Gonzalez", "Jacob Isaiah Ortega", "", "", ""]]
+        ws_tr, ws_ol = mock.Mock(), mock.Mock()
+        ws_tr.get_all_values.return_value = tr
+        ws_ol.get_all_values.return_value = self.OL
+        sh = mock.Mock()
+        sh.worksheet.side_effect = lambda n: {"Payroll Transfers": ws_tr, "NDS Order Log": ws_ol}[n]
+        rows = R.sync_sold_under(sh, write=False, log=lambda m: None, today=dt.date(2026, 11, 20))
+        self.assertEqual([r[0] for r in rows], ["Bo Diaz"])
+        self.assertEqual(rows[0][2:4], ["Esmeralda Gonzalez", "Jacob Isaiah Ortega"])
+        ws_tr.append_rows.assert_not_called()
+        R.sync_sold_under(sh, write=True, log=lambda m: None, today=dt.date(2026, 11, 20))
+        ws_tr.append_rows.assert_called_once()
+        # the rule it wrote moves the DD line, whatever week it lands in
+        rule = R.rules_from_values([tr[0], rows[0]], log=lambda m: None)[0]
+        self.assertTrue(R._transfer_matches(rule, "Esmeralda Gonzalez", "12/03/2026", "BO DIAZ"))
+        self.assertFalse(R._transfer_matches(rule, "Roseanna Jurado", "12/03/2026", "BO DIAZ"))
+
+    def test_the_commission_sheet_marks_the_moved_lines_only(self):
+        hdr = ["Rep", "Brought In", "Commission", "Profit/Loss", "NPA's", "",
+               "REP Name", "Sale Date", "Activation Date", "Description", "Product",
+               "Description Detail", "Customer Name", "Total $ to ICD", "Commission"]
+        mat = [["Pick", "11.29"] + [""] * 13, hdr,
+               ["", "", "", "", "", "", "Jacob Isaiah Ortega", "11/19/2026", "", "OOF", "Port Line", "", "ANA LOPEZ", "$213", "$85"],
+               ["", "", "", "", "", "", "Jacob Isaiah Ortega", "11/19/2026", "", "OOF", "Port Line", "", "HIS OWN", "$213", "$85"],
+               ["", "", "", "", "", "", "Nicholas Smedra", "11/19/2026", "", "OOF", "Port Line", "", "SOMEONE", "$213", "$85"]]
+        rules = [{"row": 2, "customer": "Ana Lopez", "sale_date": "", "from_rep": "Esmeralda Gonzalez",
+                  "to_rep": "Jacob Isaiah Ortega", "hits": 0},
+                 {"row": 5, "customer": "", "sale_date": "", "from_rep": "Nicholas Paul Smedra",
+                  "to_rep": "Nicholas Smedra", "hits": 0}]
+        self.assertEqual(R.moved_line_notes(mat, rules),
+                         {2: "Moved from Esmeralda Gonzalez (sold under their login)"})

@@ -1024,3 +1024,21 @@ class ReadSaraTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SoldUnderRow(unittest.TestCase):
+    """Carlos 2026-11-19: Esmeralda's login is Jacob's the week of 11/16 on the board."""
+
+    def test_swap_days_land_on_the_real_sellers_row(self):
+        import datetime as dt
+        from unittest import mock
+        from automations.icd_alerts import rep_names as RN
+        from automations.vantura_nds_sara import run as NS
+        rows = {"esmeralda gonzalez": 12, "jacob ortega": 29}
+        with mock.patch.dict(RN.SOLD_UNDER, {("carlos-b2batt", "2026-11-19"):
+                                             {"ESMERALDA": "Jacob Ortega"}}, clear=True):
+            self.assertEqual(NS.board_key("ESMERALDA GONZALEZ", rows, dt.date(2026, 11, 19)),
+                             "jacob ortega")
+            self.assertEqual(NS.board_key("ESMERALDA GONZALEZ", rows, dt.date(2026, 11, 23)),
+                             "esmeralda gonzalez")
+            self.assertEqual(NS.board_key("ESMERALDA GONZALEZ", rows), "esmeralda gonzalez")

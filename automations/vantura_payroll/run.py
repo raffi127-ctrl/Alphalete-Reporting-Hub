@@ -447,6 +447,7 @@ def _load_raw(xlsx: Path, week: dt.date, *, write: bool, sheet_id: str, log=_log
         out_rows.append([wnum, cell("B"), cell("C"), cell("D"),
                          cell("E"), cell("F"), cell("G"), cell("H")])
         jn_rows.append([cell("J"), cell("K"), cell("L"), cell("M"), cell("N")])
+    sync_sold_under(sh, write=write, log=log)
     rules = _transfer_rules(sh, log=log)
     moved = _apply_transfers(out_rows, rules, where="DD load", log=log) if rules else 0
     log(f"transfers: {len(rules)} rule(s), {moved} line(s) moved")
@@ -525,6 +526,25 @@ def _dd_norm(v) -> str:
 # are not checked; a rule with no key or no To Rep is skipped and logged. The
 # RESUME path (week already in RAW) never re-applies -- move those by hand.
 TRANSFERS_TAB = "Payroll Transfers"
+
+# A WHOLE STRETCH SOLD UNDER SOMEONE ELSE'S LOGIN (Carlos 2026-11-19: "All of
+# Esmeralda's sales this week are Jacob's ... whenever those sales activate and
+# they hit the direct deposit, they should get moved to Jacob ... On the
+# commission sheet, something on there should show that they originally came
+# in under Esmeralda but they were moved to Jacob"). Each entry below turns
+# into one Payroll Transfers rule PER CUSTOMER, read off the NDS Order Log
+# (Rep + Order Date in range): Customer + From Rep keyed, so the DD line is
+# moved whenever it lands, weeks later. Synced by `--sold-under-sync`
+# (`--live` writes) and automatically at the start of every live payroll run.
+# The commission sheet (CS tab) marks every moved line (_mark_moved_lines).
+SOLD_UNDER_PAYROLL = [
+    # (from rep as the order log spells it, to rep as RAW spells it,
+    #  first order date, last order date, why)
+    ("Esmeralda Gonzalez", "Jacob Isaiah Ortega",
+     dt.date(2026, 11, 16), dt.date(2026, 11, 22),
+     "Jacob sold under Esmeralda's SaraPlus login, week of 11/16 (Carlos 11/19)"),
+]
+ORDER_LOG_TAB = "NDS Order Log"
 _TRANSFERS_NOTE: list = []          # this run's applied transfers, for the kickoff DM
 _TRANSFERS_RULES_N: list = [0]      # rules seen this run (0 = the tab is empty/missing)
 
@@ -624,6 +644,122 @@ def _stamp_transfers(sh, rules: list, wnum, log=_log) -> None:
             ws.update_cell(r["row"], c, f"{wnum}: {r['hits']} line(s)")
     except Exception as e:  # noqa: BLE001
         log(f"transfers: could not stamp Last applied ({type(e).__name__}: {e})")
+
+
+def _parse_mdy(v):
+    try:
+        return dt.datetime.strptime(str(v).strip(), "%m/%d/%Y").date()
+    except ValueError:
+        return None
+
+
+def sold_under_customers(order_vals, from_rep: str, start: dt.date,
+                         end: dt.date) -> list:
+    """[(customer, first order date)] for `from_rep`'s order-log lines with an
+    Order Date in [start, end]. Columns by header; one entry per customer."""
+    if not order_vals:
+        return []
+    hdr = [str(h).strip().lower() for h in order_vals[0]]
+    try:
+        ir, ic, io = hdr.index("rep"), hdr.index("customer"), hdr.index("order date")
+    except ValueError:
+        return []
+    want = _words(from_rep)
+    out, seen = [], set()
+    for r in order_vals[1:]:
+        g = lambda i: str(r[i]).strip() if i < len(r) else ""
+        od = _parse_mdy(g(io))
+        cust = g(ic)
+        if not (cust and od and start <= od <= end):
+            continue
+        if _words(g(ir)) != want:
+            continue
+        k = tuple(_words(cust))
+        if k in seen:
+            continue
+        seen.add(k)
+        out.append((cust, od))
+    return out
+
+
+def sync_sold_under(sh, *, write: bool, log=_log, today=None) -> list:
+    """Add a Payroll Transfers rule (Customer + From Rep -> To Rep) for every
+    customer SOLD_UNDER_PAYROLL covers that the tab does not have yet. Returns
+    the new rows. Never raises into payroll."""
+    added = []
+    try:
+        ol = sh.worksheet(ORDER_LOG_TAB).get_all_values()
+        ws = sh.worksheet(TRANSFERS_TAB)
+        vals = ws.get_all_values()
+        have = {(tuple(_words(r["customer"])), tuple(_words(r["from_rep"])))
+                for r in rules_from_values(vals, log=lambda m: None)}
+        stamp = (today or dt.date.today()).strftime("%m/%d/%Y")
+        for frm, to, start, end, why in SOLD_UNDER_PAYROLL:
+            found = sold_under_customers(ol, frm, start, end)
+            log(f"sold-under: {frm} -> {to}, orders {start:%m/%d}-{end:%m/%d}: "
+                f"{len(found)} customer(s) on {ORDER_LOG_TAB!r}")
+            for cust, od in found:
+                if (tuple(_words(cust)), tuple(_words(frm))) in have:
+                    log(f"  {cust} ({od:%m/%d}) -- rule already there")
+                    continue
+                note = f"{why}. Order {od:%m/%d}; DD may land weeks later."
+                added.append([cust, "", frm, to, note, stamp, ""])
+                log(f"  {cust} ({od:%m/%d}) -- {'ADDED' if write else 'would add'}")
+        if added and write:
+            ws.append_rows(added, value_input_option="RAW")
+    except Exception as e:  # noqa: BLE001
+        log(f"sold-under sync FAILED ({type(e).__name__}: {e}) -- no rules added")
+        return []
+    return added
+
+
+def moved_line_notes(mat, rules) -> dict:
+    """{0-based row in the commission grid: note} for every sale line that a
+    customer-keyed transfer rule moved: To Rep in col G, customer in col M.
+    Spelling-only rules (no customer) are not marked."""
+    hdr_row = None
+    out = {}
+    for i, row in enumerate(mat):
+        cells = [str(c).strip().lower() for c in row]
+        if len(cells) > 12 and cells[6] == "rep name" and cells[12] == "customer name":
+            hdr_row = i
+            continue
+        if hdr_row is None or len(row) < 13:
+            continue
+        rep, cust, sale = str(row[6]), str(row[12]), str(row[7])
+        if not (rep.strip() and cust.strip()):
+            continue
+        for rule in rules:
+            if not (rule["customer"] and rule["from_rep"]):
+                continue
+            if _words(rule["customer"]) != _words(cust):
+                continue
+            if rule["sale_date"] and _dd_norm(rule["sale_date"]) != _dd_norm(sale):
+                continue
+            if not all(w in set(_words(rep)) for w in _words(rule["to_rep"])):
+                continue
+            out[i] = f"Moved from {rule['from_rep']} (sold under their login)"
+            break
+    return out
+
+
+def _mark_moved_lines(ws, mat, rules, log=_log) -> int:
+    """Write the moved-line note into column L ('Description Detail') of the
+    CS tab, after what is already there. Never raises into payroll."""
+    try:
+        notes = moved_line_notes(mat, rules)
+        data = []
+        for i, note in sorted(notes.items()):
+            cur = str(mat[i][11]).strip() if len(mat[i]) > 11 else ""
+            data.append({"range": f"L{i + 1}",
+                         "values": [[f"{cur} · {note}" if cur else note]]})
+        if data:
+            ws.batch_update(data, value_input_option="RAW")
+        log(f"commission sheet: {len(data)} moved line(s) marked")
+        return len(data)
+    except Exception as e:  # noqa: BLE001
+        log(f"commission sheet: moved-line marks SKIPPED ({type(e).__name__}: {e})")
+        return 0
 
 
 def _transfers_probe(sheet_id: str, log=_log) -> int:
@@ -1359,6 +1495,7 @@ def _snapshot_commission(week: dt.date, *, write: bool, sheet_id: str,
     nws.update(mat, "A1", raw=True)
     if grid["rowCount"] > len(mat):  # clear any stray formulas below
         nws.batch_clear([f"A{len(mat) + 1}:{grid['rowCount']}"])
+    _mark_moved_lines(nws, mat, _transfer_rules(sh, log=log), log=log)
     log(f"commission sheet: snapped {name} on the board ({len(mat)}x{width} cells)")
     return name
 
@@ -2352,6 +2489,10 @@ def main(argv: list[str] | None = None) -> int:
                          "owners) and log every cl.ICD Owner Name value plus "
                          "which allowlist reps appear under which owner. "
                          "Never writes.")
+    ap.add_argument("--sold-under-sync", action="store_true",
+                    help="add a Payroll Transfers rule per customer that "
+                         "SOLD_UNDER_PAYROLL covers (off the NDS Order Log); "
+                         "preview unless --live")
     ap.add_argument("--transfers-probe", action="store_true",
                     help="read-only: list the 'Payroll Transfers' rules and what the newest RAW week would move")
     args = ap.parse_args(argv)
@@ -2381,6 +2522,12 @@ def main(argv: list[str] | None = None) -> int:
                                skip_discover=args.skip_discover,
                                tab_suffix=args.dd_tab_suffix)
 
+    if args.sold_under_sync:
+        from automations.recruiting_report.fill import open_by_key
+        added = sync_sold_under(open_by_key(SHEET_ID), write=bool(args.live))
+        _log(f"sold-under sync: {len(added)} rule(s) "
+             f"{'added' if args.live else 'would be added (preview -- add --live)'}")
+        return 0
     if args.transfers_probe:
         return _transfers_probe(SHEET_ID)
     if args.rafdd_probe:
