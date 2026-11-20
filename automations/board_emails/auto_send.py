@@ -142,6 +142,9 @@ TABLEAU_DEADLINE = dt.time(12, 0)       # Central
 # a la mañana siempre"). It normally leaves ~7:15; a late Just Energy view had it
 # waiting until noon. A real problem still holds it.
 ORG_TABLEAU_DEADLINE = dt.time(8, 0)    # Central
+# day_is_clean's wording for "an upstream job has not reached DONE" (step 2).
+# Matched, not re-derived, so this gate can never disagree with it.
+UPSTREAM_PENDING_PHRASE = "no llego a DONE"
 TABLEAU_DEADLINE_REBUILD = ("Tableau still behind at the cutoff — rebuilt with "
                             "the latest numbers it had")
 
@@ -757,10 +760,19 @@ def judge(t: Target, day: dt.date, state: dict, *,
         return v
 
     ok, why = clean()
-    if not ok:
-        v.blocked.append(f"the day's run is not clean: {why}")
     late[:] = []
     must_wait: List[str] = []
+    if not ok:
+        if UPSTREAM_PENDING_PHRASE in why:
+            # 2026-11-20: org_sales_board sat STILL_TRYING (waiting on the
+            # SaraPlus by-day Tableau) and the email held + tagged Eve at
+            # 9:15 CT. A board that has not FINISHED yet is a late source, not
+            # a failure (Eve 2026-10-21): wait quietly until the cutoff, then
+            # rebuild once with what is there. Step 2 of day_is_clean only
+            # runs after step 1 found no real failure, so this never hides one.
+            must_wait.append(f"upstream still running: {why}")
+        else:
+            v.blocked.append(f"the day's run is not clean: {why}")
     for s in tableau():
         line = f"Tableau not updated: {s}"
         section = next((sec for mark, sec in t.no_wait_sources
