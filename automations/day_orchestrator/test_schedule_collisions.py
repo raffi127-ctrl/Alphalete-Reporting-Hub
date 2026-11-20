@@ -19,6 +19,7 @@ heartbeat, which reads the same as a job nobody installed.
 """
 from __future__ import annotations
 
+import json
 import re
 import unittest
 from pathlib import Path
@@ -75,10 +76,51 @@ def _wrapper_of(plist: Path):
     return None
 
 
+CONFIG = (Path(__file__).resolve().parent / "schedule_config.json")
+
+
+def _retired_labels() -> set:
+    """Plists that exist in deploy/ but are installed NOWHERE.
+
+    `install_agent` is the only thing that loads these, and every job it can
+    run is a `reports` entry whose base_args start with the plist's label.
+    A label that has a `--remove` entry and NO install entry is retired: the
+    file is kept so `--remove` still has something to unload, and so the next
+    person can read why it went away.
+
+    A RETIRED PLIST CANNOT CLASH WITH ANYTHING. Scanning it anyway is how
+    this check reported a Saturday collision between b2b-dispositions-final
+    (retired 2026-09-29) and b2b-dispositions-hourly that no machine has run
+    since September -- and nearly got the LIVE job moved to "fix" it.
+
+    Plists with neither entry stay in scope: something else may install them,
+    and guessing them retired would make this check quietly blind.
+    """
+    reports = (json.loads(CONFIG.read_text()).get("reports") or {})
+    installs, removes = set(), set()
+    for job in reports.values():
+        if not isinstance(job, dict):
+            continue
+        if job.get("command") != ["automations.day_orchestrator.install_agent"]:
+            continue
+        args = job.get("base_args") or []
+        if not args:
+            continue
+        (removes if "--remove" in args else installs).add(args[0])
+    return removes - installs
+
+
+def _label_of(plist: Path) -> str:
+    return plist.name[len("com.alphalete."):-len(".plist")]
+
+
 def _jobs():
     """[(plist, wrapper text, modules it runs, modules it refuses to overlap)]"""
     out = []
+    retired = _retired_labels()
     for plist in sorted(DEPLOY.glob("*.plist")):
+        if _label_of(plist) in retired:
+            continue
         wrapper = _wrapper_of(plist)
         if wrapper is None or not wrapper.exists():
             continue
@@ -97,27 +139,34 @@ def _say(fire):
     return "%s %02d:%02d" % (day, h, m)
 
 
-# KNOWN AND UNFIXED. b2b-dispositions-final and b2b-dispositions-hourly both
-# fire Sat 16:00 and run the same module through a wrapper that skips itself,
-# so one of them dies on arrival every Saturday and which one is a race.
+# Empty, and the story of why it is empty is worth more than the entry was.
 #
-# THE FINAL IS NOT THE ONE TO MOVE, and this note exists because that mistake
-# was made here on 2026-11-20: the Saturday final was moved to 17:00 to clear
-# the clash, which broke an explicit request from Carlos (8/6, commit b8b89e6)
-# that Saturday's last message land at 4pm. Reverted the same day.
+# This check first reported b2b-dispositions-final and b2b-dispositions-hourly
+# both firing Sat 16:00 through a wrapper that skips itself. Two attempts were
+# made on 2026-11-20 to "fix" that, and BOTH were wrong:
 #
-# The hourly is what looks out of place: Saturday gaps end 15:30 and the final
-# closes at 16:00, so a 16:00 hourly has nothing between it and the close.
-# Moving or dropping it is a decision about Carlos's report, not a schedule
-# tidy up, so it waits for Megan.
+#   1. Move the final to 17:00. It broke Carlos's explicit request (8/6,
+#      commit b8b89e6) that Saturday's last message land at 4pm. Reverted.
+#   2. Move the hourly earlier. Worse -- see below.
 #
-# An entry here is a bug with a name, not permission.
+# There was never a clash. b2b-dispositions-final was RETIRED on 2026-09-29
+# when Carlos moved everything to one post, and `remove_b2b_dispositions_final_agent`
+# took it off Lucy 2. The plist stays in deploy/ so that removal still has a
+# file to unload, but nothing installs it. The scan was reading a dead file.
+#
+# Which makes the Saturday hourly at 16:00 the ONE message Carlos asked for by
+# name -- it IS the 4pm close, not a stray run in front of it. Moving it earlier
+# would have broken the exact request that reverting #1 restored, in the same
+# session, from the opposite direction.
+#
+# THE LESSON, because it cost two wrong changes: a plist in deploy/ is not a
+# running job. Check whether anything installs it before reading its schedule
+# as fact. _retired_labels() now does that, which is why this set is empty.
+#
+# An entry here would be a bug with a name, not permission.
 # test_every_known_clash_is_still_a_real_clash fails on any entry that has
 # quietly stopped being one, so this cannot rot into a waiver list.
-_KNOWN_CLASHES = {
-    frozenset({"com.alphalete.b2b-dispositions-final.plist",
-               "com.alphalete.b2b-dispositions-hourly.plist"}),
-}
+_KNOWN_CLASHES = set()
 
 
 class GuardedJobsDoNotShareAFireTime(unittest.TestCase):
@@ -171,3 +220,32 @@ class GuardedJobsDoNotShareAFireTime(unittest.TestCase):
         """A test that silently matches nothing would pass forever."""
         names = {p.name for p, _r, refuses, _m in _jobs() if refuses}
         self.assertIn("com.alphalete.icd-onboarding-no-shows.plist", names)
+
+
+class RetiredPlistsAreNotRunningJobs(unittest.TestCase):
+
+    def test_the_retired_final_is_out_of_scope(self):
+        """The dead file that nearly got the live job moved."""
+        self.assertIn("b2b-dispositions-final", _retired_labels(),
+                      "b2b-dispositions-final has an install entry again -- "
+                      "if it is live, its Saturday 16:00 really does clash "
+                      "with the hourly and one of them needs to move")
+        scanned = {p.name for p, _r, _g, _m in _jobs()}
+        self.assertNotIn("com.alphalete.b2b-dispositions-final.plist", scanned)
+
+    def test_a_live_plist_is_still_in_scope(self):
+        """The retired filter must not swallow jobs that do run."""
+        scanned = {p.name for p, _r, _g, _m in _jobs()}
+        self.assertIn("com.alphalete.b2b-dispositions-hourly.plist", scanned)
+
+    def test_saturday_hourly_is_carloss_4pm_close(self):
+        """DO NOT MOVE THIS. Carlos asked for 4pm by name (commit b8b89e6).
+
+        With the final retired, the hourly's Sat 16:00 is the last B2B message
+        of the day. Twice on 2026-11-20 a schedule tidy-up tried to move one
+        end of this or the other; this test is the stop.
+        """
+        fires = _fire_minutes(DEPLOY / "com.alphalete.b2b-dispositions-hourly.plist")
+        self.assertIn((6, 16, 0), fires,
+                      "Saturday's B2B close moved off 16:00 -- Carlos asked "
+                      "for 4pm by name; put it back")
