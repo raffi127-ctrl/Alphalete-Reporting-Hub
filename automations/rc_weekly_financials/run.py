@@ -57,7 +57,7 @@ MANUAL = {
         "Recruiting Bonuses (Aisha)": "Apex",
         "Zach's Pay (overrides)": "you fill it",
         "Zach's Pay (true up + taxes)": "Slack DM Raf ↔ Zach, last one sent",   # label's "- 22/24" part changes
-        "Profit Share": "left blank for now (Maud 2026-10-23)",
+        "Profit Share": "blank — only filled the week a period's profit share is paid (Running TOTALS 2026 table)",
     },
 }
 # Rows kept as copied from last week but worth a look.
@@ -125,6 +125,29 @@ def vantura(week: dt.date) -> dict:
     return {"Local Office Profits (week prior)": lo, "Captainship (week prior)": cap}
 
 
+LANDLORD = "ccinorthhwy360lp"   # Carlos's office rent payee (Online ACH Payment to CCINorthHwy360LP)
+
+
+def carlos_rent(lo: dt.date, hi: dt.date) -> list | None:
+    """Payments [(date, amount)] to the landlord between lo..hi in Carlos's Tiller; None if Tiller can't be read.
+    CCINorthHwy360LP is ALWAYS rent (Maud 2026-11-20), whatever the month tab labels it."""
+    try:
+        tx = bank.sheets().values().get(spreadsheetId=bank.PEOPLE["carlos"]["tiller"], range="Transactions!A1:T40000",
+                                        valueRenderOption="UNFORMATTED_VALUE").execute().get("values", [])
+        h = tx[0]
+        d_, de, am = h.index("Date"), h.index("Description"), h.index("Amount")
+    except Exception as e:  # noqa: BLE001
+        print(f"  Carlos rent: Tiller not readable ({str(e)[:80]}) — using the month tab")
+        return None
+    out = []
+    for r in tx[1:]:
+        r = r + [""] * len(h)
+        if isinstance(r[d_], (int, float)) and LANDLORD in str(r[de]).lower().replace(" ", "") \
+                and isinstance(r[am], (int, float)) and r[am] < 0 and lo <= EPOCH + dt.timedelta(days=int(r[d_])) <= hi:
+            out.append((EPOCH + dt.timedelta(days=int(r[d_])), round(-r[am], 2)))
+    return out
+
+
 def carlos_red_rows(week: dt.date) -> tuple[dict, list]:
     """Carlos rows 30-36 for the column AFTER `week`, from that week in his month tab ('September 2026', …).
     Same math as output/carlos_pnl/finances.py: Investment = -(Carlos-only weekly - travel - indeed - 850 - rent).
@@ -148,17 +171,28 @@ def carlos_red_rows(week: dt.date) -> tuple[dict, list]:
         if not all(isinstance(x, (int, float)) for x in (indeed, food, travel, outside, co)):
             notes.append(f"Carlos red rows: {tab} {want} isn't finished yet — kept last week's placeholders")
             return {}, notes
-        lo, rent = week - dt.timedelta(days=6), 0.0
+        lo, in_tab = week - dt.timedelta(days=6), 0.0
+        # the Rent row itself = every payment to the landlord in the week, straight from his Tiller
+        # (Nov 2026 rent came as split $2,161.25 payments, one labelled "Maudy's Bonus" in the month tab)
+        pays = carlos_rent(lo, week)
+        # rent that's in his Carlos-only total (marked x) comes back out of Investment — matched by the
+        # landlord's name OR by a Tiller landlord payment's date + amount (the month-tab label can be wrong)
+        left = list(pays or [])
         for r in v:
             if isinstance(r[2], (int, float)) and r[2] > 40000 and str(r[4]).strip().lower() == "x" \
-                    and str(r[1]).lower().startswith("online ach pay") and isinstance(r[3], (int, float)) and r[3] >= 5000 \
-                    and lo <= EPOCH + dt.timedelta(days=int(r[2])) <= week:
-                rent += r[3]
+                    and isinstance(r[3], (int, float)) and lo <= EPOCH + dt.timedelta(days=int(r[2])) <= week:
+                d, amt = EPOCH + dt.timedelta(days=int(r[2])), round(r[3], 2)
+                hit = next((p for p in left if p == (d, amt)), None)
+                if hit or LANDLORD in _n(r[1]).replace(" ", ""):
+                    in_tab += r[3]
+                    if hit:
+                        left.remove(hit)
+        rent = round(sum(a for _, a in pays), 2) if pays is not None else in_tab
         if rent:
-            notes.append(f"Carlos Rent/Utilities: found {rent:,.2f} (Online ACH Payment in {want}) — confirm it's rent")
+            notes.append(f"Carlos Rent/Utilities: {rent:,.2f} paid to the landlord in {want}")
         out = {"Indeed Charges": round(indeed, 2), "Outside Deals": -round(outside, 2), "ARS - interviewers": -850,
                "Rent/Utilities": -round(rent, 2) if rent else 0, "Food/Team Nights": round(food, 2), "Travel/Entertainment": round(travel, 2),
-               "Investment into local office": round(-(co + travel + indeed - 850 - rent), 2)}
+               "Investment into local office": round(-(co + travel + indeed - 850 - in_tab), 2)}
         print(f"  {tab} {want} -> red rows {out}")
         return out, notes
     notes.append(f"Carlos red rows: no month tab has {want} yet — kept last week's placeholders")
@@ -217,6 +251,42 @@ def raf_indeed(we: dt.date) -> tuple[dict, dict, list]:
     prev = {"Indeed": -round(abs(ind[old]), 2)} if old in ind else {}
     print(f"  Double Entry Indeed: wk {new} {ind[new]:,.2f}" + (f", wk {old} {ind[old]:,.2f}" if prev else ""))
     return cur, prev, []
+
+
+def raf_profit_share(we: dt.date) -> tuple[dict, list]:
+    """Raf Profit Share: 'Running TOTALS 2026' → 2026 PERIODS table → 'Profit Sharing' (filled once per 4-week period).
+    It goes in the WE column of the week it was paid — the 'Profit Sharing Override 2026-N' row in Raf's month tab
+    gives the date (P10 = 24,246 paid Mon 11/9 → WE 11.15). Returns {WE date: amount} for the 4 newest weeks."""
+    s, sid = bank.sheets(), PEOPLE["raf"]["sheet"]
+    v = s.values().get(spreadsheetId=sid, range="'Running TOTALS 2026'!A1:H60",
+                       valueRenderOption="UNFORMATTED_VALUE").execute().get("values", [])
+    top = next((i for i, r in enumerate(v) if r and _n(r[0]) == "2026 periods"), None)
+    if top is None:
+        return {}, ["raf Profit Share: no '2026 PERIODS' table on Running TOTALS 2026"]
+    pc = [_n(x) for x in v[top]].index("profit sharing")
+    filled = {int(r[0]): r[pc] for r in v[top + 1:] if r and isinstance(r[0], (int, float))
+              and len(r) > pc and isinstance(r[pc], (int, float)) and r[pc]}
+    if not filled:
+        return {}, []
+    titles = [sh["properties"]["title"] for sh in s.get(spreadsheetId=sid, fields="sheets.properties.title").execute()["sheets"]]
+    paid = {}   # period -> date paid
+    for tab in [t for t in titles if re.match(r"^[A-Z][a-z]+ \d{4}$", t)][:3]:
+        for r in s.values().get(spreadsheetId=sid, range=f"'{tab}'!A1:L400",
+                                valueRenderOption="UNFORMATTED_VALUE").execute().get("values", []):
+            r = r + [""] * 4
+            m = re.match(r"profit shar\w* override \d{4}-(\d+)", _n(r[1]))
+            if m and isinstance(r[2], (int, float)):
+                paid.setdefault(int(m.group(1)), EPOCH + dt.timedelta(days=int(r[2])))
+    out, notes = {}, []
+    for n, amt in filled.items():
+        d = paid.get(n)
+        if d is None:
+            continue   # older periods (already off the 4-week window) or not in the month tab yet
+        wk = d + dt.timedelta(days=(6 - d.weekday()) % 7)   # the Sunday that ends the week it was paid
+        if we - dt.timedelta(days=21) <= wk <= we:
+            out[wk] = round(out.get(wk, 0) + amt, 2)
+            print(f"  Profit Share P{n}: {amt:,.2f} paid {d} -> {hdr(wk)}")
+    return out, notes
 
 
 def raf_local_office(week: dt.date) -> dict:
@@ -385,6 +455,13 @@ def pull(we: dt.date) -> Path:
     notes += n2
     if ind_prev:
         data["prior"]["raf"].setdefault(hdr(prior), {}).update(ind_prev)
+    ps, n3 = raf_profit_share(we)
+    notes += n3
+    for wk, amt in ps.items():   # blank (turquoise) unless a period's profit share was paid that week
+        if wk == we:
+            r["Profit Share"] = amt
+        else:
+            data["prior"]["raf"].setdefault(hdr(wk), {})["Profit Share"] = amt
     r["NC over rides"] = 0
     r["ATT Program over ride"] = 0
     # a Bas override lands every 4 weeks (8.2, 8.30, 9.27, 10.25 …): leave that week blank for Maud, else 0
