@@ -679,9 +679,16 @@ function _upsertFault(office, day, stage, summary, detail, localTime,
 // own. Kept as sent: undefined (an older agent) stays absent rather than
 // turning into false, because "never asked" must not read as "answered no".
 function _restartFacts(body) {
+  // agent_release rides in this bag ON PURPOSE: _mergeMachine merges whatever
+  // keys are here into the per-machine blob in column 11, so the one fact we
+  // most need -- which release this office is actually RUNNING -- is kept
+  // without adding a column or redeploying the sheet's shape. An empty string
+  // is kept and means "asked, has no self-update stamp yet"; a MISSING key
+  // means the agent is too old to have been asked. Those read differently and
+  // both are useful, so neither is turned into the other.
   return {starts_itself: body.starts_itself, sleep_off: body.sleep_off,
           powers_back_on: body.powers_back_on, auto_login: body.auto_login,
-          filevault: body.filevault};
+          filevault: body.filevault, agent_release: body.agent_release};
 }
 
 function _mergeMachine(sh, rowNum, machine, machineName, desktop, osName, facts) {
