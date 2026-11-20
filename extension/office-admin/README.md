@@ -12,7 +12,11 @@ people to the office's ECO computer, which signs in to Sterling and bulk-uploads
    reading the folder you picked, so a copy goes stale the next `git pull`, and
    deleting the copy later leaves a dead card and no button (Megan, 2026-11-19).
    `python -m automations.shared.extension_doctor` says which folder Chrome is
-   actually reading.
+   actually reading, and compares that copy's files against this folder's.
+   A Chrome Web Store / packed install counts as a copy too: Raf's said
+   version 1.1.5 against a repo that also said 1.1.5 while his `content.js`
+   was missing the one-click-one-send guard (2026-11-20). The version number
+   cannot show that; the doctor compares the bytes and exits non-zero.
 3. Pin it (puzzle icon → pin **Lucy BG✔️ Send**).
 4. Click the icon → sign in **once** (this computer stays signed in 90 days; turning the
    login off with `relay_admins --disable` ends it at once). Logins come from
