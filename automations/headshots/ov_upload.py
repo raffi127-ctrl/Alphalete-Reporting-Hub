@@ -404,7 +404,7 @@ def owner_submitted(row) -> dict:
     'unknown', and a redo treats unknown as submitted -- it refuses."""
     try:
         got = row.evaluate(
-            """el => {
+            r"""el => {
                  const t = el.closest('table');
                  if (!t) return {state: 'unknown', why: 'no table'};
                  const heads = [...t.querySelectorAll('thead th')]
