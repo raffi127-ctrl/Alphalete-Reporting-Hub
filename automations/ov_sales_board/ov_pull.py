@@ -54,9 +54,35 @@ def find_board_frame(page, wait_s=90):
             except Exception:
                 pass
         time.sleep(2)
-    frames = [f.url.split("?")[0] for f in page.frames]
+    frames = [_page_of(f.url) for f in page.frames]
     raise RuntimeError("no CEO Dashboard frame with callApi after %ds (page %s, frames %s)"
-                       % (wait_s, page.url.split("?")[0], frames))
+                       % (wait_s, _page_of(page.url), frames))
+
+
+def _page_of(url):
+    """'p=9197' for an OwnerVille URL -- never the rqst session token."""
+    import re
+    m = re.search(r"[?&]p=(\d+)", url or "")
+    return "p=%s" % m.group(1) if m else (url or "").split("?")[0]
+
+
+def open_ceo_dashboard(page, rqst):
+    """A bare p=9197 can land on Welcome (seen in Chrome and on Lucy 3, 11/20). Go there, and if the
+    page is not the dashboard, click the sidebar's 'CEO Dashboard' link the way a person does."""
+    page.goto("https://v2.ownerville.com/index.cfm?p=9197&rqst=%s" % rqst, wait_until="domcontentloaded",
+              timeout=60000)
+    page.wait_for_timeout(4000)
+    if "p=9197" in (page.url or ""):
+        return
+    link = page.locator("a", has_text="CEO Dashboard").first
+    href = link.get_attribute("href", timeout=20000) or ""
+    if href and not href.lower().startswith("javascript"):
+        page.goto(href if href.startswith("http") else "https://v2.ownerville.com/" + href.lstrip("/"),
+                  wait_until="domcontentloaded", timeout=60000)
+    else:
+        link.click(timeout=20000, force=True)
+    page.wait_for_timeout(6000)
+    print("-> CEO Dashboard opened from the sidebar link (%s)" % _page_of(page.url), flush=True)
 
 
 def pull(headless=True):
@@ -67,8 +93,7 @@ def pull(headless=True):
             % (js, json.dumps({"officeId": OFFICE_ID, "weeks": WEEKS, "officeLabel": OFFICE_LABEL})))
     with ownerville_session(headless=headless) as page:
         rqst = capture_rqst(page)
-        page.goto("https://v2.ownerville.com/index.cfm?p=9197&rqst=%s" % rqst, wait_until="domcontentloaded",
-                  timeout=60000)
+        open_ceo_dashboard(page, rqst)
         frame = find_board_frame(page)
         data = frame.evaluate(call)
     if not data or not data.get("knocks") or not data.get("sales"):
