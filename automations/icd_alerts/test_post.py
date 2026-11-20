@@ -1209,7 +1209,9 @@ class AnOwnerCanDeclineTheCreditCheckLines(unittest.TestCase):
 
     def test_run_drops_the_lines_through_the_same_gate_as_box(self):
         import inspect
-        src = inspect.getsource(P.run)
+        # The pass lives in _run since 2026-11-19; run() only wraps it so the
+        # queued texts are always waited for.
+        src = inspect.getsource(P._run)
         self.assertIn("presale_ping or not credit_checks_wanted(key)", src)
 
 

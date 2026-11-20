@@ -25,8 +25,10 @@ import argparse
 import datetime as dt
 import json
 import os
+import queue
 import re
 import sys
+import threading
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
 
@@ -1923,8 +1925,112 @@ LINE_PREFIX = {"carlos": "Box — ", "carlos-b2batt": "AT&T — ",
                "nicolas": "VZ — "}
 
 
+class _TextSender:
+    """The pass's texts, sent BESIDE the pass instead of in front of it.
+
+    WHY (Carlos 2026-11-19, "the sales alert text messages getting sent out
+    faster"): each office's texts used to go out inline, BEFORE its Slack
+    alert, so one text waiting on Messages held up that office's Slack line
+    and every office after it. Lucy 1 is the fleet's only iMessage box and a
+    knocks-board picture holds Messages for ~18s, so the 5:26 PM pass that
+    day stalled 17-37s at a time behind the 5:21-5:27 board pictures.
+
+    Now a text is queued and one worker thread sends the queue in order while
+    the loop goes straight on to Slack. Order is kept (one worker, FIFO), so a
+    group never gets the 3-sale board after the 4-sale one. While it has a
+    text in hand it holds messages_lock.priority(), which makes every other
+    sender on the machine -- the knocks boards, call-outs, the text lane --
+    let it go next.
+
+    finish() waits for the queue to empty, so run() still returns only once
+    every text is sent or has failed: the tick is no longer than before, and
+    the process never exits half-way through a send. Only the worker touches
+    Messages in this process, which keeps messages_lock's in-process
+    reentrancy (a plain counter) correct.
+    """
+
+    def __init__(self, *, send: bool, log=print,
+                 sender: Optional[Callable] = None):
+        self._send = send
+        self._log = log
+        self._sender = sender           # tests swap the real one out
+        self._q: "queue.Queue" = queue.Queue()
+        self._thread: Optional[threading.Thread] = None
+        self.sent = 0
+        self.failed = 0
+
+    def add(self, key: str, what: str, group: str, text: str,
+            dest: Optional[Dict] = None) -> None:
+        self._q.put((key, what, group, text, dest))
+        if self._thread is None:
+            self._thread = threading.Thread(target=self._drain,
+                                            name="icd-alert-texts", daemon=True)
+            self._thread.start()
+
+    def _one(self, item) -> None:
+        key, what, group, text, dest = item
+        send = self._sender
+        if send is None:
+            from automations.b2b_dispositions import text_post as tp
+            send = tp.send_text_to_group
+        try:
+            send(group, text, dry_run=not self._send, dest=dest)
+            self.sent += 1
+            self._log("%-10s %s -> text group %r%s"
+                      % (key, what, group, "" if self._send else "  (dry run)"))
+        except Exception as e:  # noqa: BLE001 -- one group must not cost the rest
+            self.failed += 1
+            self._log("%-10s FAILED to text %s to %r: %s: %s"
+                      % (key, what, group, type(e).__name__, str(e)[:120]))
+
+    def _drain(self) -> None:
+        from automations.shared import messages_lock as ML
+        while True:
+            item = self._q.get()
+            if item is None:
+                return
+            # PRIORITY ONLY WHILE A TEXT IS IN HAND, not for the whole pass:
+            # a pass can run minutes after its last text, and the boards must
+            # not stand aside for nothing. A dry run asks for nothing.
+            with (ML.priority("icd sale alerts") if self._send
+                  else _no_priority()):
+                while item is not None:
+                    self._one(item)
+                    try:
+                        item = self._q.get_nowait()
+                    except queue.Empty:
+                        item = None
+                    else:
+                        if item is None:        # finish() arrived mid-burst
+                            return
+
+    def finish(self) -> None:
+        if self._thread is None:
+            return
+        self._q.put(None)
+        self._thread.join()
+        self._thread = None
+
+
+class _no_priority:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
 def run(day: Optional[dt.date] = None, *, send: bool = False,
         only: Optional[str] = None, log=print) -> Dict:
+    texts_out = _TextSender(send=send, log=log)
+    try:
+        return _run(day, send=send, only=only, log=log, texts_out=texts_out)
+    finally:
+        texts_out.finish()
+
+
+def _run(day: Optional[dt.date], *, send: bool, only: Optional[str], log,
+         texts_out: "_TextSender") -> Dict:
     day = day or dt.date.today()
     tab = _relay_tab()
     approved = approved_channels(tab.spreadsheet)
@@ -2081,9 +2187,12 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
         # THE STANDINGS TO THEIR TEXT GROUP, the way Raf's partners get them:
         # whenever a rep's count moves, the whole day's board with a flame on
         # who moved; a backlog baseline sends the standings once, no flames.
-        # AFTER the Slack rooms and never blocking them -- a group that
-        # cannot be resolved must not cost the channel its alert, and must
-        # not stop 'Last Posted' being written (a retry would re-announce).
+        # HANDED TO texts_out, NEVER SENT HERE: the text goes out beside the
+        # pass while this office's Slack alert -- and every office after it --
+        # carries on without waiting for Messages (Carlos 2026-11-19; see
+        # _TextSender). A group that cannot be resolved must not cost the
+        # channel its alert, and must not stop 'Last Posted' being written (a
+        # retry would re-announce).
         if (sold or (sales_baseline and merged_sales)) and texts.get(key)                 and key in TEXT_PAUSED:
             log("%-10s standings text paused -- %s" % (key, TEXT_PAUSED[key]))
         elif (sold or (sales_baseline and merged_sales)) and texts.get(key):
@@ -2094,23 +2203,15 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
                 log("%-10s standings text skipped -- this machine cannot "
                     "send iMessage" % key)
             elif board:
-                from automations.b2b_dispositions import text_post as tp
                 for t in texts[key]:
-                    group = t.get("channel_name") or ""
-                    try:
-                        # `dest=` so a participant-pinned group resolves by
-                        # its handles; a name-keyed one is unchanged.
-                        tp.send_text_to_group(group, board, dry_run=not send,
-                                              dest=t)
-                        log("%-10s standings -> text group %r%s"
-                            % (key, group, "" if send else "  (dry run)"))
-                    except Exception as e:  # noqa: BLE001
-                        log("%-10s FAILED to text standings to %r: %s: %s"
-                            % (key, group, type(e).__name__, str(e)[:120]))
+                    # `dest=` so a participant-pinned group resolves by its
+                    # handles; a name-keyed one is unchanged.
+                    texts_out.add(key, "standings", t.get("channel_name") or "",
+                                  board, t)
         # THE SARA LIST to a group that asked for it (Frank, 2026-11-09):
         # whenever a rep's credit-check count moves, the whole day's list
-        # with the office total -- what he was typing by hand. Same place in
-        # the pass as the standings: after Slack, never blocking it.
+        # with the office total -- what he was typing by hand. Same road as
+        # the standings: handed to texts_out, never blocking Slack.
         sara_groups = [t for t in (texts.get(key) or []) if t.get("sara_standings")]
         if sara_groups and records and _sara_moved(records, last) and key not in TEXT_PAUSED:
             sara_text = sara_standings_text(records, show)
@@ -2118,16 +2219,9 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
                 log("%-10s Sara standings text skipped -- this machine cannot "
                     "send iMessage" % key)
             elif sara_text:
-                from automations.b2b_dispositions import text_post as tp
                 for t in sara_groups:
-                    group = t.get("channel_name") or ""
-                    try:
-                        tp.send_text_to_group(group, sara_text, dry_run=not send, dest=t)
-                        log("%-10s Sara standings -> text group %r%s"
-                            % (key, group, "" if send else "  (dry run)"))
-                    except Exception as e:  # noqa: BLE001
-                        log("%-10s FAILED to text Sara standings to %r: %s: %s"
-                            % (key, group, type(e).__name__, str(e)[:120]))
+                    texts_out.add(key, "Sara standings",
+                                  t.get("channel_name") or "", sara_text, t)
         # THE STANDINGS TO SLACK EVERY N SALES, for an office that asked
         # (Jairo Ruiz 2026-11-12 via Megan: "post this on slack through the
         # day as well not just iMessage" -- every 3 sales). Opt-in per office:
