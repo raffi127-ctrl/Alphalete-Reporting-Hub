@@ -218,6 +218,10 @@ TEXT_ROUTES = {
     ("VZ WEEK 1", "vz_week_one"): [TEXT_GROUP_ALL],
     ("NDS WEEKS 1-4", "nds_weeks"): [TEXT_GROUP_ALL],
     ("VZ WEEKS 1-4", "vz_weeks"): [TEXT_GROUP_ALL],
+    # ... and the boards' TERMINATED tables, on request only (Carlos 2026-11-19:
+    # "Send it out as a text message on the new A players text chain").
+    ("NDS TERMINATED", "nds_terminated"): [TEXT_GROUP_ALL],
+    ("VZ TERMINATED", "vz_terminated"): [TEXT_GROUP_ALL],
 }
 
 # Seconds to wait after handing Messages an image. TdB proved a group image send

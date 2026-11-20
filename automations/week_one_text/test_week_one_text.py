@@ -64,6 +64,12 @@ def test_weeks_shot_with_fewer_tables():
     assert R.find_weeks(g)[1] == 67
 
 
+def test_terminated_shot_is_the_terminated_table_only():
+    top, last, col, reps, title = R.find_terminated(GRID)
+    assert (top, last, R._letter(col), reps) == (80, 82, "E", 1)          # B80:E82
+    assert title.startswith("WEEK 1")       # the stale-week check reads WEEK 1's dates
+
+
 def test_table_with_no_reps():
     g = [[]] * 55 + [["", "WEEK 1   ·   11/23 – 11/29   ·   0 reps"], HDR, [],
                      ["", "WEEK 2   ·   11/16 – 11/22"]]
@@ -99,6 +105,7 @@ def test_text_titles():
     d = dt.date(2026, 11, 20)
     assert R.text_title("nds", "week1", d) == "AT&T Week 1s — Friday 11/20"
     assert R.text_title("verizon", "weeks", d) == "Verizon Weeks 1–4 — Friday 11/20"
+    assert R.text_title("nds", "terminated", d) == "AT&T Terminated, last 4 weeks — Friday 11/20"
 
 
 def test_monday_to_friday_only():

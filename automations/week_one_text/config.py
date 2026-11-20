@@ -13,6 +13,11 @@ NEW A Players chain, Monday-Friday:
 
 Both shots go out for BOTH boards: AT&T (the NDS Sales Board) and Verizon
 ("you'll do it both for AT&T and Verizon").
+
+* On request only -- the TERMINATED table (shot "terminated", last 4 weeks:
+  Roll Call / Days Lasted / Total Orders / Trainer). Carlos 2026-11-19: "the
+  last 4 weeks' terminated list for AT&T and for Verizon. Send it out as a
+  text message on the new A players text chain." No timer.
 """
 from __future__ import annotations
 
@@ -29,8 +34,8 @@ BOARDS = {
 }
 BOARD_ORDER = ["nds", "verizon"]
 
-SHOTS = ["week1", "weeks"]
-SEND_TIMES = {"week1": (10, 45), "weeks": (11, 30)}
+SHOTS = ["week1", "weeks", "terminated"]
+SEND_TIMES = {"week1": (10, 45), "weeks": (11, 30)}   # terminated: on request
 WEEKS_SHOWN = 4               # the "weeks" shot: WEEK 1 .. WEEK 4, never TERMINATED
 
 # (board, shot) -> routing key in b2b_dispositions.config.TEXT_ROUTES.
@@ -39,6 +44,8 @@ ROUTES = {
     ("verizon", "week1"): ("VZ WEEK 1", "vz_week_one"),
     ("nds", "weeks"): ("NDS WEEKS 1-4", "nds_weeks"),
     ("verizon", "weeks"): ("VZ WEEKS 1-4", "vz_weeks"),
+    ("nds", "terminated"): ("NDS TERMINATED", "nds_terminated"),
+    ("verizon", "terminated"): ("VZ TERMINATED", "vz_terminated"),
 }
 
 WEEKDAYS = [0, 1, 2, 3, 4]              # Monday .. Friday (python weekday)

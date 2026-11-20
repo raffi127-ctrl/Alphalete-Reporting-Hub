@@ -5,6 +5,7 @@ Monday-Friday (Carlos 2026-11-19). See config.py for his words.
     lucy rerun week_one_text --shot weeks           # DRY RUN: the 11:30 shot
     lucy rerun week_one_text --send                 # queue the 10:45 texts (once per day)
     lucy rerun week_one_text --shot weeks --send    # queue the 11:30 texts
+    lucy rerun week_one_text --shot terminated --send      # the TERMINATED tables (on request)
     lucy rerun week_one_text --shot all --dm U046G04P5LG   # Slack DM preview, texts nothing
     ... --board nds|verizon   one board only;   --force   resend today's
 
@@ -130,6 +131,20 @@ def find_weeks(g: List[List[str]], upto: int = C.WEEKS_SHOWN) -> Tuple[int, int,
             sum(t["reps"] for t in weeks), w1["text"])
 
 
+def find_terminated(g: List[List[str]]) -> Tuple[int, int, int, int, str]:
+    """(TERMINATED title row, its last rep row, its last header column, reps,
+    WEEK 1 title text) -- the on-request shot. The TERMINATED title has no
+    dates, so the stale-week check uses WEEK 1's title from the same block."""
+    tables = parse_tables(g)
+    w1 = _week_one(tables)
+    t = next((t for t in tables if t["num"] == 0 and t["title"] > w1["title"]), None)
+    if t is None:
+        raise RuntimeError("no 'TERMINATED' table under the week tables")
+    hdr = g[t["title"]]
+    last_col = max(i for i, v in enumerate(hdr, start=1) if _norm(v))
+    return t["title"], t["last"], last_col, t["reps"], w1["text"]
+
+
 _RANGE = re.compile(r"(\d{1,2})/(\d{1,2})\s*[–—-]\s*(\d{1,2})/(\d{1,2})")
 
 
@@ -152,7 +167,8 @@ def title_covers(title_text: str, day: dt.date) -> bool:
 
 
 def text_title(board: str, shot: str, day: dt.date) -> str:
-    what = "Week 1s" if shot == "week1" else "Weeks 1–4"
+    what = {"week1": "Week 1s", "weeks": "Weeks 1–4",
+            "terminated": "Terminated, last 4 weeks"}[shot]
     return "%s %s — %s %d/%d" % (C.BOARDS[board]["label"], what,
                                      C.DAY_NAMES[day.weekday()], day.month, day.day)
 
@@ -217,6 +233,8 @@ def render(board: str, shot: str, day: dt.date, out_path: Path) -> Tuple[Path, i
     g = _retry(lambda: ws.get(C.READ_RANGE))
     if shot == "week1":
         top, last, last_col, reps, title_text = find_week_one(g, day)
+    elif shot == "terminated":
+        top, last, last_col, reps, title_text = find_terminated(g)
     else:
         top, last, last_col, reps, title_text = find_weeks(g)
     if not title_covers(title_text, day):
@@ -254,18 +272,21 @@ def queue_picture(png: Path, board: str, shot: str, day: dt.date, now: dt.dateti
 
 def dm_preview(png: Path, board: str, shot: str, day: dt.date, user: str) -> None:
     from automations.shared import slack_metrics_post as smp
-    hh, mm = C.SEND_TIMES[shot]
-    when = "%d:%02d AM" % (hh, mm) if hh < 12 else "%d:%02d PM" % (hh - 12 if hh > 12 else 12, mm)
+    if shot in C.SEND_TIMES:
+        hh, mm = C.SEND_TIMES[shot]
+        when = "the %d:%02d AM text to NEW A Players, Mon–Fri" % (hh, mm)
+    else:
+        when = "the on-request text to NEW A Players"
     smp.dm_user_with_file(
         png, user=user, file_name=png.name,
-        comment="PREVIEW (not texted) — the %s text to NEW A Players, Mon–Fri: *%s*"
-                % (when, text_title(board, shot, day)))
+        comment="PREVIEW (not texted) — %s: *%s*" % (when, text_title(board, shot, day)))
 
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--shot", choices=C.SHOTS + ["all"], default="week1",
-                    help="week1 = the 10:45 WEEK 1 cut at today; weeks = the 11:30 WEEK 1-4")
+                    help="week1 = the 10:45 WEEK 1 cut at today; weeks = the 11:30 WEEK 1-4; "
+                         "terminated = the TERMINATED table (on request)")
     ap.add_argument("--board", choices=C.BOARD_ORDER + ["all"], default="all")
     ap.add_argument("--date", help="YYYY-MM-DD (default today)")
     ap.add_argument("--send", action="store_true", help="queue the text(s) (default: dry run)")
