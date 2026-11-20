@@ -153,6 +153,48 @@ def open_week(workbook, week_start=None, *, create: bool = True):
     return open_board(workbook, create=create)
 
 
+def backfill_funnels(ws, week_start: dt.date, fresh: List[Dict],
+                     log=print) -> int:
+    """Write `Funnel` onto rows that are ALREADY on the board.
+
+    WITHOUT THIS THE LABEL ONLY EVER REACHES NEW PEOPLE. The dividers are
+    drawn above a block of rows the seed is appending, so a week whose people
+    were all seeded before the funnel was known -- which is every week that
+    already existed on 2026-11-20 -- keeps a blank Funnel column and no
+    dividers at all, for good.
+
+    Only ever fills an EMPTY cell, by the same rule as every tick: a value
+    somebody typed, or an earlier run wrote, is never overwritten.
+    """
+    cols = layout(_values(ws))
+    if not cols or B.FUNNEL not in cols:
+        return 0
+    want = {}
+    for r in fresh:
+        label = str(r.get(B.FUNNEL) or "").strip()
+        if label:
+            want[B._fold("%s%s" % (r.get("Name", ""), r.get("Last Name", "")))] = label
+    if not want:
+        return 0
+    grid = _values(ws)
+    data = []
+    for n, raw in enumerate(grid[HEADER_ROW:], HEADER_ROW + 1):
+        raw = list(raw) + [""] * (max(cols.values()) + 1)
+        if str(raw[cols[B.WEEK]]).strip() != B.week_label(week_start):
+            continue
+        if str(raw[cols[B.FUNNEL]]).strip():
+            continue                       # already said; never overwritten
+        key = B._fold("%s%s" % (raw[cols["Name"]], raw[cols["Last Name"]]))
+        if key in want:
+            data.append({"range": "%s%d" % (_a1(cols[B.FUNNEL] + 1), n),
+                         "values": [[want[key]]]})
+    if data:
+        ws.batch_update(data, value_input_option="USER_ENTERED")
+        log("  board: labelled %d row(s) with the funnel they came from"
+            % len(data))
+    return len(data)
+
+
 def seed(workbook, week_start: dt.date, people: List[Dict],
          *, dry_run: bool = False, log=print) -> Dict:
     """Put this week's training-calendar people on the board.
@@ -174,7 +216,20 @@ def seed(workbook, week_start: dt.date, people: List[Dict],
     log("  week of %s: %d already there, %d to add%s"
         % (B.week_label(week_start), plan["keep"], len(plan["add"]),
            ", %d marked off" % len(plan["left"]) if plan["left"] else ""))
-    if dry_run or not plan["add"]:
+    if dry_run:
+        return plan
+    # THE SEED CREATES ITS OWN COLUMNS. It used to rely on `fillers.apply`
+    # running later and calling this -- so a column the seed itself writes
+    # (`Funnel`, 2026-11-20) never appeared on a board whose people were all
+    # already there, because `apply` had nothing to tick and the seed returned
+    # before laying a single cell. The value was then silently dropped: `_line`
+    # skips any key the layout has no column for.
+    try:
+        ensure_columns(ws, log=log)
+    except Exception as e:   # noqa: BLE001 — never fail a seed over a header
+        log("  (could not add missing columns: %s)" % type(e).__name__)
+    backfill_funnels(ws, week_start, fresh, log=log)
+    if not plan["add"]:
         return plan
     cols = layout(_values(ws)) or {n: i for i, n in enumerate(B.COLUMNS)}
     width = max(cols.values()) + 1
