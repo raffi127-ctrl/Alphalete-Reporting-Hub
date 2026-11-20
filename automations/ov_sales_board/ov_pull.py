@@ -28,19 +28,35 @@ PIECE = 45000            # a sheet cell holds 50,000 characters
 OUT = Path("output/ov_sales_board/data.json")
 
 
-def find_board_frame(page, wait_s=60):
-    """The frame of the CEO Dashboard that has OwnerVille's callApi + KnockReport."""
-    probe = "() => typeof window.callApi === 'function' && !!window.KnockReport"
+KNOCK_JS = "/prototypes/captainDash/assets/knockReport.js"
+# OwnerVille loads knockReport.js only when someone opens a knocks tab, so on a fresh dashboard the
+# frame has callApi but no KnockReport yet: load OwnerVille's own file into that frame (Lucy 3, 11/20).
+LOAD_KNOCKS = ("(src) => window.KnockReport ? true : new Promise(function (ok, bad) {"
+               " var s = document.createElement('script'); s.src = src;"
+               " s.onload = function () { ok(!!window.KnockReport); };"
+               " s.onerror = function () { bad(new Error('could not load ' + src)); };"
+               " document.head.appendChild(s); })")
+
+
+def find_board_frame(page, wait_s=90):
+    """The frame of the CEO Dashboard that has OwnerVille's callApi, with KnockReport loaded."""
+    probe = "() => typeof window.callApi === 'function'"
     end = time.time() + wait_s
     while time.time() < end:
         for fr in page.frames:
             try:
                 if fr.evaluate(probe):
+                    if not fr.evaluate(LOAD_KNOCKS, KNOCK_JS):
+                        raise RuntimeError("knockReport.js loaded but window.KnockReport is missing")
                     return fr
+            except RuntimeError:
+                raise
             except Exception:
                 pass
         time.sleep(2)
-    raise RuntimeError("CEO Dashboard frame with KnockReport/callApi not found in %ds" % wait_s)
+    frames = [f.url.split("?")[0] for f in page.frames]
+    raise RuntimeError("no CEO Dashboard frame with callApi after %ds (page %s, frames %s)"
+                       % (wait_s, page.url.split("?")[0], frames))
 
 
 def pull(headless=True):
