@@ -276,6 +276,42 @@ def test_a_missing_column_is_appended(monkeypatch):
     assert where == "%s%d" % (S._a1(len(head) + 1), S.HEADER_ROW)
 
 
+class _NarrowWS(_FakeWS):
+    """A sheet at its column limit, the way a real one reports itself."""
+
+    def __init__(self, head, col_count=None):
+        super().__init__(head)
+        self.col_count = len(head) if col_count is None else col_count
+        self.grown = []
+
+    def add_cols(self, n):
+        self.grown.append(n)
+        self.col_count += n
+
+
+def test_the_grid_is_widened_before_the_header_is_written():
+    """A Sheet has a fixed column count and a write one cell past it is
+    REFUSED -- "Range (Onboarding!W1) exceeds grid limits. Max columns: 22".
+    Both callers swallow that into a one-line log of the exception type, so
+    for every board already at its limit the column silently never appeared
+    (2026-11-20, `Funnel`)."""
+    head = [c for c in B.COLUMNS if c != B.GENDER] + list(S.PAST_THE_CHART)
+    ws = _NarrowWS(head)
+    assert S.ensure_columns(ws, log=lambda *a: None) == [B.GENDER]
+    assert ws.grown == [1], "the grid has to grow by exactly what is missing"
+    assert ws.col_count == len(head) + 1
+    # and only then is the header written
+    (where, _), = ws.updates
+    assert where == "%s%d" % (S._a1(len(head) + 1), S.HEADER_ROW)
+
+
+def test_a_wide_enough_grid_is_not_grown():
+    head = [c for c in B.COLUMNS if c != B.GENDER] + list(S.PAST_THE_CHART)
+    ws = _NarrowWS(head, col_count=len(head) + 10)
+    S.ensure_columns(ws, log=lambda *a: None)
+    assert ws.grown == []
+
+
 def test_nothing_is_moved_or_removed(monkeypatch):
     """Somebody may have added a column of their own."""
     head = list(B.COLUMNS) + list(S.PAST_THE_CHART) + ["Megan's note"]

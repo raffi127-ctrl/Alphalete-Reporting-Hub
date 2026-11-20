@@ -122,6 +122,20 @@ def ensure_columns(ws, log=print) -> List[str]:
     if not missing:
         return []
     at = len(head) + 1
+    # WIDEN THE GRID FIRST. A Sheet has a fixed column count, and writing one
+    # cell past it is refused outright -- "Range (Onboarding!W1) exceeds grid
+    # limits. Max columns: 22". Both callers wrap this in a try/except that
+    # logs the exception TYPE and carries on, so the failure looked like
+    # nothing at all: every run said it was adding the column, every run was
+    # refused, and the column never appeared (2026-11-20, `Funnel`).
+    have = int(getattr(ws, "col_count", 0) or 0)
+    need = (at + len(missing) - 1) - have
+    # Only when the sheet both reports its width and can grow. A worksheet
+    # that does not say how wide it is cannot be widened on a guess -- and
+    # the write below is what finds out, loudly, rather than this inventing
+    # a number.
+    if have and need > 0 and hasattr(ws, "add_cols"):
+        sheets_retry.call(lambda: ws.add_cols(need), tries=4)
     ws.update(values=[missing],
               range_name="%s%d" % (_a1(at), HEADER_ROW))
     log("  board: added the %s column(s)" % ", ".join(missing))
