@@ -60,6 +60,48 @@ PY
 run_one raf_daily_update "Raf Daily Update" raf-daily-update \
     --write --test-sheet --post --channel C0BH637AM8F
 ST_RAF=$?
+
+# SHOWED TO DAY 1 (column K), the one column the daily write cannot fill: a
+# row is about an interview day, the column is about that person's start day
+# a week later. This comes back for the ones whose start has passed and asks
+# the sales board's New Starts block, then the OBCL, who turned up (Megan's
+# rule, 2026-10-01). Raf's sheet only -- the other four offices are
+# Slack-post-only and have no sheet to fill. Re-runnable and additive: it
+# only ever fills an EMPTY cell, so a person neither source has decided yet
+# is picked up by a later evening's run.
+#
+# NOT through run_one, so it publishes NO Hub phase. The Daily Update card
+# derives daily_runs from the number of OFFICES and reads "the pill is green
+# only when EVERY office posted" -- a sixth phase that is not an office post
+# would leave that card permanently unclosable. It still alerts on failure,
+# which is the part that matters, and its own log says what it filled.
+run_day1() {
+    local LOG_FILE="$LOG_DIR/raf-daily-update-day1-$(date +%Y-%m-%d-%H%M%S).log"
+    "$VENV_PY" -u -m automations.raf_daily_update.day1 "$@" >> "$LOG_FILE" 2>&1
+    local ST=$?
+    if [ $ST -ne 0 ]; then
+        "$VENV_PY" - "$LOG_FILE" <<'PY'
+import sys
+from pathlib import Path
+try:
+    from automations.day_orchestrator import notify
+    from automations.day_orchestrator.registry import load_config
+    tail = Path(sys.argv[1]).read_text().splitlines()[-15:]
+    notify.post_alert(
+        ":rotating_light: *Raf Daily Update · Showed To Day 1* failed",
+        ["```"] + tail + ["```",
+         "Re-run: `lucy rerun raf_daily_update_day1`"],
+        tag="raf-daily-update-day1-failed", cfg=load_config(),
+        incident="standalone-raf_daily_update_day1")
+except Exception as e:
+    print("alert failed:", e)
+PY
+    fi
+    return $ST
+}
+run_day1 --write --test-sheet
+ST_DAY1=$?
+
 run_one daily_update_omar "Omar Daily Update Post" omar-daily-update-post \
     --office omar --post
 ST_OMAR=$?
@@ -88,5 +130,5 @@ run_one daily_update_vincent "Vincent Daily Update Post" vincent-daily-update-po
     --office vincent --post --channel "$MEGAN_DM"
 ST_VINCENT=$?
 
-[ $ST_RAF -eq 0 ] && [ $ST_OMAR -eq 0 ] && [ $ST_ALGEMAR -eq 0 ] \
-    && [ $ST_CYRUS -eq 0 ] && [ $ST_VINCENT -eq 0 ]
+[ $ST_RAF -eq 0 ] && [ $ST_DAY1 -eq 0 ] && [ $ST_OMAR -eq 0 ] \
+    && [ $ST_ALGEMAR -eq 0 ] && [ $ST_CYRUS -eq 0 ] && [ $ST_VINCENT -eq 0 ]
