@@ -339,7 +339,6 @@ table.att .th th { background: #0B3A6E; color: #fff; } table.vz .th th { backgro
 table.chk .th th { background: #3d4a57; color: #fff; }
 th.grp { font-size: 13px; letter-spacing: .5px; }
 tr.tot td { font-weight: 700; background: #eee; }
-td.asc { font-size: 13px; white-space: nowrap; }
 td.pc { font-weight: 700; }
 td.ok { color: #1b7f3b; font-weight: 700; } td.diff { color: #b25b00; font-weight: 700; }
 .foot { margin: 10px 28px 0; padding: 10px 14px; background: #f3f6f9; border-left: 5px solid #00A8E0; font-size: 14px; line-height: 1.55; }
@@ -615,48 +614,29 @@ def leaders_summary(rows: List[Dict], lo: dt.date, hi: dt.date, as_rows: List[Di
     return out
 
 
-def _as_cell(kinds: Dict[str, int], have_as: bool) -> str:
-    if not have_as:
-        return "<td>—</td>"
-    parts = []
-    if kinds.get("same"):
-        parts.append("&#10003; %d" % kinds["same"])
-    if kinds.get("carlos"):
-        parts.append("Carlos %d" % kinds["carlos"])
-    if kinds.get("other"):
-        parts.append("<b>&ne; %d</b>" % kinds["other"])
-    if kinds.get("blank"):
-        parts.append("blank %d" % kinds["blank"])
-    if kinds.get("not found"):
-        parts.append("not found %d" % kinds["not found"])
-    return "<td class='asc'>%s</td>" % (" &middot; ".join(parts) or "—")
-
-
 def render_leaders(L: Dict, through: dt.date, weeks: int) -> str:
-    """The by-leader picture: the AT&T and Verizon tables only. Carlos 11/20,
-    on the AppStream notes box under them: "Remove this bottom section." -- the
-    done-by detail (who AppStream names instead, who is on one list only) is in
-    the run log, not the picture."""
-    show_as = L["have_as"]
+    """The by-leader picture: the AT&T and Verizon tables, Daily Update numbers
+    only. Carlos 11/20: "Remove this bottom section" (the AppStream notes box),
+    then "Remove the app stream done by column on the far right". The AppStream
+    done-by comparison (`--pull`) goes to the run log only."""
     def table(team, cls):
         T = L["teams"].get(team) or {"leaders": [], "total": second_block([]), "ns": ns_block([])}
         rows = ""
-        for name, b, n, kinds in T["leaders"]:
+        for name, b, n, _kinds in T["leaders"]:
             rows += ("<tr><td class='nm'>%s</td><td>%d</td><td>%d</td><td>%d</td><td class='pc'>%s</td>"
-                     "<td>%d</td><td>%d</td><td class='pc'>%s</td>%s</tr>"
+                     "<td>%d</td><td>%d</td><td class='pc'>%s</td></tr>"
                      % (html.escape(name), b["conducted"], b["offered"], b["accepted"],
                         pct(b["close_pct"]) if b["conducted"] else "—", n["scheduled"], n["showed"],
-                        pct(n["show_pct"]) if n["scheduled"] else "—",
-                        _as_cell(kinds, True) if show_as else ""))
+                        pct(n["show_pct"]) if n["scheduled"] else "—"))
         b, n = T["total"], T["ns"]
         rows += ("<tr class='tot'><td class='nm'>%s total</td><td>%d</td><td>%d</td><td>%d</td><td class='pc'>%s</td>"
-                 "<td>%d</td><td>%d</td><td class='pc'>%s</td>%s</tr>"
+                 "<td>%d</td><td>%d</td><td class='pc'>%s</td></tr>"
                  % (team, b["conducted"], b["offered"], b["accepted"], pct(b["close_pct"]),
-                    n["scheduled"], n["showed"], pct(n["show_pct"]), "<td></td>" if show_as else ""))
+                    n["scheduled"], n["showed"], pct(n["show_pct"])))
         return ("<table class='%s'><tr class='th'><th class='nm'>%s leader</th><th>2nd rounds<br>conducted</th>"
                 "<th>Offered</th><th>Accepted</th><th>Closing %%</th><th>New starts<br>scheduled</th>"
-                "<th>New starts<br>showed</th><th>NS show %%</th>%s</tr>%s</table>"
-                % (cls, team, "<th>AppStream<br>done by</th>" if show_as else "", rows))
+                "<th>New starts<br>showed</th><th>NS show %%</th></tr>%s</table>"
+                % (cls, team, rows))
     body = ("<div class='band'><h1>BY LEADER <span>&middot; 2ND ROUNDS &amp; NEW STARTS</span></h1>"
             "<div class='wk'>%s – %s</div></div>"
             "<div class='sub1'>Last %d weeks through %s, by the leader who did the 2nd round on the Daily Update. "
@@ -767,6 +747,30 @@ def through_day(arg: Optional[str], today: dt.date) -> dt.date:
     return dt.date.fromisoformat(arg)
 
 
+def week_window(through: dt.date, n_weeks: int) -> Tuple[dt.date, dt.date]:
+    """(Monday of `through`'s week, first day of the n Mon-Sun weeks ending with it)."""
+    monday = through - dt.timedelta(days=through.weekday())
+    return monday, monday - dt.timedelta(days=7 * (n_weeks - 1))
+
+
+def caught_up_through(rows: List[Dict], appstream: Dict, last: dt.date, max_back: int = 7) -> dt.date:
+    """The latest day on or before `last` that is on the Daily Update: its 2nd
+    rounds marked Showed are at most one short of AppStream's '2nd Showed' that
+    day (a day AppStream shows none counts as there). The Daily Update is typed
+    by hand -- its fill was retired 11/3 -- so at 9am yesterday may not be in yet
+    (11/20: Thursday had 0 rows, AppStream 11). Steps back at most a week."""
+    d = last
+    for _ in range(max_back):
+        du_n = sum(1 for r in rows if r["showed"] and r["date2"] == d)
+        as_n = int((appstream.get(d) or {}).get("s2", 0) or 0)
+        if du_n + 1 >= as_n:
+            return d
+        _log("%s is not on the Daily Update yet (2nd rounds showed: Daily Update %d, AppStream %d) "
+             "-- the picture stops the day before" % (d, du_n, as_n))
+        d -= dt.timedelta(days=1)
+    return d
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--view", choices=["week", "weeks", "leaders"], default="week")
@@ -794,11 +798,13 @@ def main(argv=None) -> int:
         _log("--only-on %s: today is %s -- nothing to do" % (a.only_on, dt.date.today()))
         return 0
 
-    through = through_day(a.through, dt.date.today())
-    monday = through - dt.timedelta(days=through.weekday())
-    first = monday - dt.timedelta(days=7 * ((a.weeks if a.view in ("weeks", "leaders") else 1) - 1))
-    stamp = through.isoformat()
-    text_key = "%s|%s|%s|%s" % (a.view, a.weeks, stamp, "cards" if a.cards_only else "full")
+    # `asked` keys the once-a-day text; `through` is the last day the picture
+    # counts -- for 'yesterday', the last day that is on the Daily Update.
+    asked = through_day(a.through, dt.date.today())
+    n_weeks = a.weeks if a.view in ("weeks", "leaders") else 1
+    through = asked
+    monday, first = week_window(through, n_weeks)
+    text_key = "%s|%s|%s|%s" % (a.view, a.weeks, asked.isoformat(), "cards" if a.cards_only else "full")
     picture = "leaders" if a.view == "leaders" else ("cards" if a.cards_only else "")
     chains = [c.strip() for c in a.to.split(",") if c.strip()]
     bad = [c for c in chains if c not in CHAINS]
@@ -821,9 +827,14 @@ def main(argv=None) -> int:
     rosters = read_rosters(sh)
     rows = read_du(sh, through.year)
     assign_teams(rows, rosters)
-    appstream = read_appstream(first, through)
-    _log("rosters: AT&T %d, Verizon %d | Daily Update rows %d | AppStream days %d"
-         % (len(rosters["AT&T"]), len(rosters["Verizon"]), len(rows), len(appstream)))
+    appstream = read_appstream(first - dt.timedelta(days=7), through)   # a week spare for the step back
+    if a.through == "yesterday":
+        through = caught_up_through(rows, appstream, asked)
+        if through != asked:
+            monday, first = week_window(through, n_weeks)
+    stamp = through.isoformat()
+    _log("rosters: AT&T %d, Verizon %d | Daily Update rows %d | AppStream days %d | %s .. %s"
+         % (len(rosters["AT&T"]), len(rosters["Verizon"]), len(rows), len(appstream), first, through))
     unmapped = sorted({(r["who"], r["camp"]) for r in rows if r["showed"] and r["how"] == "campaign"
                        and in_range(r["date2"], first, through)})
     if unmapped:
@@ -850,29 +861,24 @@ def main(argv=None) -> int:
                 _log("note NOT sent (pass --send-note) -- would go to %s" % users)
     elif a.view == "leaders":
         from automations.second_round_report import appstream_people as AP
-        pulled = True
-        if a.pull:
+        as_rows: List[Dict] = []
+        if a.pull:   # AppStream's per-person lists -> the done-by lines in this log (not on the picture)
             try:
                 AP.write_tab(AP.pull(first, through, OFFICE, log=_log), first, through, log=_log)
-            except Exception as e:  # noqa: BLE001 -- AppStream down: the Daily Update numbers still go out
-                pulled = False
-                _log("AppStream pull failed -- %s: %s -- picture goes out without the AppStream column"
-                     % (type(e).__name__, str(e).splitlines()[0][:160] if str(e) else ""))
-        as_rows = AP.read_tab() if pulled else []
-        if as_rows and not AP.covers(as_rows, first, through):
-            # an older pull for another window would read as "not found" -- leave the column off
-            _log("the '2R AppStream Pull' tab is %s -- not this window (%s .. %s); no AppStream column"
-                 % (AP.window(as_rows) or "from before the window was recorded", first, through))
-            as_rows = []
+                as_rows = AP.read_tab()
+            except Exception as e:  # noqa: BLE001 -- AppStream down: the picture doesn't need it
+                _log("AppStream pull failed -- %s: %s" % (type(e).__name__, str(e).splitlines()[0][:160] if str(e) else ""))
         L = leaders_summary(rows, first, through, as_rows, rosters)
         for team in TEAMS:
             for name, b, n, kinds in L["teams"][team]["leaders"]:
-                _log("%-8s %-28s 2nd %2d off %2d acc %2d  NS %2d/%2d  AS %s"
-                     % (team, name, b["conducted"], b["offered"], b["accepted"], n["scheduled"], n["showed"], kinds))
-        _log("AppStream done-by: %s | others: %s" % (L["kinds"], [(r["cand"], str(r["date2"]), r["who"], r["as_who"])
-                                                             for r in L["others"]]))
-        for d in L["diffs"]:
-            _log("diff %s: AS %d DU %d only AS %s only DU %s" % d)
+                _log("%-8s %-28s 2nd %2d off %2d acc %2d  NS %2d/%2d%s"
+                     % (team, name, b["conducted"], b["offered"], b["accepted"], n["scheduled"], n["showed"],
+                        "  AS %s" % kinds if L["have_as"] else ""))
+        if L["have_as"]:
+            _log("AppStream done-by: %s | others: %s" % (L["kinds"], [(r["cand"], str(r["date2"]), r["who"], r["as_who"])
+                                                                 for r in L["others"]]))
+            for d in L["diffs"]:
+                _log("diff %s: AS %d DU %d only AS %s only DU %s" % d)
         page = render_leaders(L, through, a.weeks)
         out = Path(a.out) if a.out else OUT_DIR / ("second_rounds_leaders_%dweeks_%s.png" % (a.weeks, stamp))
         caption = ("2nd rounds & new starts by leader — last %d weeks (%s – %s)"

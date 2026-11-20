@@ -76,10 +76,10 @@ def test_leaders_with_appstream_done_by():
     att = dict((n, (b, k)) for n, b, ns, k in L["teams"]["AT&T"]["leaders"])
     assert att["Nick Smedra"][0]["conducted"] == 2 and att["Nick Smedra"][1] == {"same": 1, "carlos": 1}
     assert [r["cand"] for r in L["others"]] == ["Cy Do"]
-    assert "Carlos 1" in R._as_cell({"same": 1, "carlos": 1}, True)
     page = R.render_leaders(L, d, 4)
-    assert "AppStream<br>done by" in page and "Nick Smedra" in page
-    assert "class='foot'" not in page and "Done By 2nd" not in page    # Carlos 11/20: no bottom section
+    assert "Nick Smedra" in page and "Will Bautista" in page
+    # Carlos 11/20: no bottom notes box, no AppStream done-by column -- Daily Update numbers only
+    assert "class='foot'" not in page and "AppStream" not in page and "Done By" not in page
 
 
 def test_through_day():
@@ -89,14 +89,16 @@ def test_through_day():
     assert R.through_day("2026-11-18", fri) == dt.date(2026, 11, 18)
 
 
-def test_appstream_window_covers():
-    from automations.second_round_report import appstream_people as AP
-    rows = [{"Day": "2026-11-02", "Pulled From": "2026-10-26", "Pulled Through": "2026-11-19"}]
-    assert AP.covers(rows, dt.date(2026, 10, 26), dt.date(2026, 11, 19))
-    assert AP.covers(rows, dt.date(2026, 11, 2), dt.date(2026, 11, 18))
-    assert not AP.covers(rows, dt.date(2026, 10, 26), dt.date(2026, 11, 20))      # tomorrow's window
-    assert not AP.covers([{"Day": "2026-11-02", "Pulled At": "x"}], dt.date(2026, 11, 2), dt.date(2026, 11, 2))
-    assert not AP.covers([], dt.date(2026, 11, 2), dt.date(2026, 11, 2))
+def test_caught_up_through_stops_at_the_last_day_on_the_daily_update():
+    wed, thu = dt.date(2026, 11, 18), dt.date(2026, 11, 19)
+    rows = [{"showed": True, "date2": wed}] * 11
+    asd = {wed: {"s2": 11}, thu: {"s2": 11}}
+    assert R.caught_up_through(rows, asd, thu) == wed                      # 11/20: Thursday not typed in yet
+    assert R.caught_up_through(rows + [{"showed": True, "date2": thu}] * 10, asd, thu) == thu   # one short is fine
+    assert R.caught_up_through(rows, {wed: {"s2": 11}}, thu) == thu        # AppStream shows nothing Thursday
+    assert R.caught_up_through(rows, {}, thu) == thu                       # no AppStream log: no step back
+    assert R.week_window(wed, 4) == (dt.date(2026, 11, 16), dt.date(2026, 10, 26))
+    assert R.week_window(dt.date(2026, 11, 23), 4) == (dt.date(2026, 11, 23), dt.date(2026, 11, 2))
 
 
 def test_text_routes_one_chain_each():

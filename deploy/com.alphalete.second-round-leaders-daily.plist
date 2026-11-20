@@ -6,12 +6,13 @@
     <string>com.alphalete.second-round-leaders-daily</string>
 
     <!-- Carlos 2026-11-20: "Send daily in the morning on the Aplayers and leaders
-         text chain" / "Leaders you can send at 9am". Mon-Sat 9:00 (9:20 = retry):
-         pull AppStream's per-person 2nd-round lists (best effort), build the
-         BY LEADER 2nd rounds and new starts picture for the last 4 Mon-Sun weeks
-         through yesterday, text it to NEW A Players and ATT B2B Leaders. Each
-         chain texts once a day (second_round_text_state.json), so the retry and
-         a hand send never double up. Install: install_second_round_leaders_daily_agent. -->
+         text chain" / "Leaders you can send at 9am" / no AppStream notes box and
+         no AppStream done-by column. Mon-Sat 9:00 (9:20 = retry): build the
+         BY LEADER 2nd rounds and new starts picture off the Daily Update for the
+         last 4 Mon-Sun weeks through yesterday (or the last day on the Daily
+         Update), text it to NEW A Players and ATT B2B Leaders. No AppStream walk.
+         Each chain texts once a day (second_round_text_state.json), so the retry
+         and a hand send never double up. Install: install_second_round_leaders_daily_agent. -->
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
@@ -22,7 +23,6 @@
         <string>4</string>
         <string>--through</string>
         <string>yesterday</string>
-        <string>--pull</string>
         <string>--text</string>
     </array>
 

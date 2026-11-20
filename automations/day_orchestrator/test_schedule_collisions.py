@@ -97,14 +97,23 @@ def _say(fire):
     return "%s %02d:%02d" % (day, h, m)
 
 
-# KNOWN AND UNFIXED, 2026-11-20. b2b-dispositions-final and
-# b2b-dispositions-hourly both fire Sat 16:00 and refuse to run beside each
-# other, so one of them skips every Saturday and which one is a race. It is
-# the same defect as the no-shows walk and it is NOT fixed here: the right
-# answer is an order (the final post belongs AFTER the last hourly, not racing
-# it), and that is a call about the B2B report, not about this check. Left
-# visible on purpose -- an entry here is a bug with a name, not permission.
-# Delete this line when the B2B schedule is ordered.
+# KNOWN AND UNFIXED. b2b-dispositions-final and b2b-dispositions-hourly both
+# fire Sat 16:00 and run the same module through a wrapper that skips itself,
+# so one of them dies on arrival every Saturday and which one is a race.
+#
+# THE FINAL IS NOT THE ONE TO MOVE, and this note exists because that mistake
+# was made here on 2026-11-20: the Saturday final was moved to 17:00 to clear
+# the clash, which broke an explicit request from Carlos (8/6, commit b8b89e6)
+# that Saturday's last message land at 4pm. Reverted the same day.
+#
+# The hourly is what looks out of place: Saturday gaps end 15:30 and the final
+# closes at 16:00, so a 16:00 hourly has nothing between it and the close.
+# Moving or dropping it is a decision about Carlos's report, not a schedule
+# tidy up, so it waits for Megan.
+#
+# An entry here is a bug with a name, not permission.
+# test_every_known_clash_is_still_a_real_clash fails on any entry that has
+# quietly stopped being one, so this cannot rot into a waiver list.
 _KNOWN_CLASHES = {
     frozenset({"com.alphalete.b2b-dispositions-final.plist",
                "com.alphalete.b2b-dispositions-hourly.plist"}),

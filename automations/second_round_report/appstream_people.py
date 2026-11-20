@@ -178,24 +178,6 @@ def read_tab() -> List[Dict[str, str]]:
     return [dict(zip(hdr, list(r) + [""] * len(hdr))) for r in vals[1:] if r]
 
 
-def window(as_rows: List[Dict[str, str]]) -> Optional[str]:
-    """'YYYY-MM-DD .. YYYY-MM-DD' the pull covered; None for a pull from before
-    the window was recorded (11/20 6:30 and earlier)."""
-    if not as_rows:
-        return None
-    a, b = as_rows[0].get("Pulled From", ""), as_rows[0].get("Pulled Through", "")
-    return "%s .. %s" % (a, b) if a and b else None
-
-
-def covers(as_rows: List[Dict[str, str]], lo: dt.date, hi: dt.date) -> bool:
-    """True when the pull in the tab covered every day of lo..hi."""
-    w = window(as_rows)
-    if not w:
-        return False
-    a, b = (dt.date.fromisoformat(x) for x in w.split(" .. "))
-    return a <= lo and hi <= b
-
-
 def loose(s: str) -> str:
     return re.sub(r"[^a-z]", "", (s or "").lower())
 
