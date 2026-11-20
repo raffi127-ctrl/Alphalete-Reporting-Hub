@@ -767,6 +767,30 @@ def through_day(arg: Optional[str], today: dt.date) -> dt.date:
     return dt.date.fromisoformat(arg)
 
 
+def week_window(through: dt.date, n_weeks: int) -> Tuple[dt.date, dt.date]:
+    """(Monday of `through`'s week, first day of the n Mon-Sun weeks ending with it)."""
+    monday = through - dt.timedelta(days=through.weekday())
+    return monday, monday - dt.timedelta(days=7 * (n_weeks - 1))
+
+
+def caught_up_through(rows: List[Dict], appstream: Dict, last: dt.date, max_back: int = 7) -> dt.date:
+    """The latest day on or before `last` that is on the Daily Update: its 2nd
+    rounds marked Showed are at most one short of AppStream's '2nd Showed' that
+    day (a day AppStream shows none counts as there). The Daily Update is typed
+    by hand -- its fill was retired 11/3 -- so at 9am yesterday may not be in yet
+    (11/20: Thursday had 0 rows, AppStream 11). Steps back at most a week."""
+    d = last
+    for _ in range(max_back):
+        du_n = sum(1 for r in rows if r["showed"] and r["date2"] == d)
+        as_n = int((appstream.get(d) or {}).get("s2", 0) or 0)
+        if du_n + 1 >= as_n:
+            return d
+        _log("%s is not on the Daily Update yet (2nd rounds showed: Daily Update %d, AppStream %d) "
+             "-- the picture stops the day before" % (d, du_n, as_n))
+        d -= dt.timedelta(days=1)
+    return d
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--view", choices=["week", "weeks", "leaders"], default="week")
@@ -794,11 +818,13 @@ def main(argv=None) -> int:
         _log("--only-on %s: today is %s -- nothing to do" % (a.only_on, dt.date.today()))
         return 0
 
-    through = through_day(a.through, dt.date.today())
-    monday = through - dt.timedelta(days=through.weekday())
-    first = monday - dt.timedelta(days=7 * ((a.weeks if a.view in ("weeks", "leaders") else 1) - 1))
-    stamp = through.isoformat()
-    text_key = "%s|%s|%s|%s" % (a.view, a.weeks, stamp, "cards" if a.cards_only else "full")
+    # `asked` keys the once-a-day text; `through` is the last day the picture
+    # counts -- for 'yesterday', the last day that is on the Daily Update.
+    asked = through_day(a.through, dt.date.today())
+    n_weeks = a.weeks if a.view in ("weeks", "leaders") else 1
+    through = asked
+    monday, first = week_window(through, n_weeks)
+    text_key = "%s|%s|%s|%s" % (a.view, a.weeks, asked.isoformat(), "cards" if a.cards_only else "full")
     picture = "leaders" if a.view == "leaders" else ("cards" if a.cards_only else "")
     chains = [c.strip() for c in a.to.split(",") if c.strip()]
     bad = [c for c in chains if c not in CHAINS]
@@ -821,9 +847,14 @@ def main(argv=None) -> int:
     rosters = read_rosters(sh)
     rows = read_du(sh, through.year)
     assign_teams(rows, rosters)
-    appstream = read_appstream(first, through)
-    _log("rosters: AT&T %d, Verizon %d | Daily Update rows %d | AppStream days %d"
-         % (len(rosters["AT&T"]), len(rosters["Verizon"]), len(rows), len(appstream)))
+    appstream = read_appstream(first - dt.timedelta(days=7), through)   # a week spare for the step back
+    if a.through == "yesterday":
+        through = caught_up_through(rows, appstream, asked)
+        if through != asked:
+            monday, first = week_window(through, n_weeks)
+    stamp = through.isoformat()
+    _log("rosters: AT&T %d, Verizon %d | Daily Update rows %d | AppStream days %d | %s .. %s"
+         % (len(rosters["AT&T"]), len(rosters["Verizon"]), len(rows), len(appstream), first, through))
     unmapped = sorted({(r["who"], r["camp"]) for r in rows if r["showed"] and r["how"] == "campaign"
                        and in_range(r["date2"], first, through)})
     if unmapped:

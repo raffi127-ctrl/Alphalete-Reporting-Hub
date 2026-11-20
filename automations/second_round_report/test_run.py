@@ -89,6 +89,18 @@ def test_through_day():
     assert R.through_day("2026-11-18", fri) == dt.date(2026, 11, 18)
 
 
+def test_caught_up_through_stops_at_the_last_day_on_the_daily_update():
+    wed, thu = dt.date(2026, 11, 18), dt.date(2026, 11, 19)
+    rows = [{"showed": True, "date2": wed}] * 11
+    asd = {wed: {"s2": 11}, thu: {"s2": 11}}
+    assert R.caught_up_through(rows, asd, thu) == wed                      # 11/20: Thursday not typed in yet
+    assert R.caught_up_through(rows + [{"showed": True, "date2": thu}] * 10, asd, thu) == thu   # one short is fine
+    assert R.caught_up_through(rows, {wed: {"s2": 11}}, thu) == thu        # AppStream shows nothing Thursday
+    assert R.caught_up_through(rows, {}, thu) == thu                       # no AppStream log: no step back
+    assert R.week_window(wed, 4) == (dt.date(2026, 11, 16), dt.date(2026, 10, 26))
+    assert R.week_window(dt.date(2026, 11, 23), 4) == (dt.date(2026, 11, 23), dt.date(2026, 11, 2))
+
+
 def test_appstream_window_covers():
     from automations.second_round_report import appstream_people as AP
     rows = [{"Day": "2026-11-02", "Pulled From": "2026-10-26", "Pulled Through": "2026-11-19"}]
