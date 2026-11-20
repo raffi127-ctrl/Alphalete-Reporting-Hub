@@ -26,7 +26,7 @@ from typing import Dict, List, Optional
 CONTROL_SHEET = "1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw"
 TAB = "2R AppStream Pull"
 HEADER = ["Day", "Row", "First", "Last", "Email", "Phone", "Done By 1st", "Done By 2nd",
-          "Date/Time", "Pulled At"]
+          "Date/Time", "Pulled At", "Pulled From", "Pulled Through"]
 # Retention Details rows read (label prefixes, matched like the report reads them).
 LABELS = ["Total Second Interviews", "Second Interviews Showed Up", "Offered Job From Second Round",
           "Brought on Board Booked", "Total New Starts Scheduled", "New Starts Showed Up"]
@@ -145,8 +145,11 @@ def pull(lo: dt.date, hi: dt.date, office: str = "11580", log=print) -> List[Lis
     return rows
 
 
-def write_tab(rows: List[List[str]], log=print) -> None:
+def write_tab(rows: List[List[str]], lo: dt.date, hi: dt.date, log=print) -> None:
+    """Rewrite the tab with this pull; every row carries the window it came from
+    (Pulled From / Pulled Through), so a report for another window can tell."""
     from automations.recruiting_report.fill import open_by_key, _retry
+    rows = [list(r) + [lo.isoformat(), hi.isoformat()] for r in rows]
     sh = open_by_key(CONTROL_SHEET)
     try:
         ws = sh.worksheet(TAB)
@@ -155,8 +158,10 @@ def write_tab(rows: List[List[str]], log=print) -> None:
     _retry(lambda: ws.clear())
     if ws.row_count < len(rows) + 5:
         ws.add_rows(len(rows) + 5 - ws.row_count)
+    if ws.col_count < len(HEADER):
+        ws.add_cols(len(HEADER) - ws.col_count)
     _retry(lambda: ws.update("A1", [HEADER] + rows, value_input_option="RAW"))
-    log("[2R pull] wrote %d row(s) to '%s'" % (len(rows), TAB))
+    log("[2R pull] wrote %d row(s) to '%s' (%s .. %s)" % (len(rows), TAB, lo, hi))
 
 
 def read_tab() -> List[Dict[str, str]]:
@@ -166,11 +171,29 @@ def read_tab() -> List[Dict[str, str]]:
         ws = open_by_key(CONTROL_SHEET).worksheet(TAB)
     except Exception:  # noqa: BLE001
         return []
-    vals = _retry(lambda: ws.get("A1:J5000"))
+    vals = _retry(lambda: ws.get("A1:L5000"))
     if not vals:
         return []
     hdr = vals[0]
     return [dict(zip(hdr, list(r) + [""] * len(hdr))) for r in vals[1:] if r]
+
+
+def window(as_rows: List[Dict[str, str]]) -> Optional[str]:
+    """'YYYY-MM-DD .. YYYY-MM-DD' the pull covered; None for a pull from before
+    the window was recorded (11/20 6:30 and earlier)."""
+    if not as_rows:
+        return None
+    a, b = as_rows[0].get("Pulled From", ""), as_rows[0].get("Pulled Through", "")
+    return "%s .. %s" % (a, b) if a and b else None
+
+
+def covers(as_rows: List[Dict[str, str]], lo: dt.date, hi: dt.date) -> bool:
+    """True when the pull in the tab covered every day of lo..hi."""
+    w = window(as_rows)
+    if not w:
+        return False
+    a, b = (dt.date.fromisoformat(x) for x in w.split(" .. "))
+    return a <= lo and hi <= b
 
 
 def loose(s: str) -> str:

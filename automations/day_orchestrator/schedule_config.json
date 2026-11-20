@@ -10227,6 +10227,29 @@
     "type": "not_configured"
    }
   },
+  "activations_today_fix_index": {
+   "on_scheduler": true,
+   "_note": "ONE-OFF (Eve 2026-11-20): TODAY's Metrics threads back to only the fiber image: restores the index line and deletes Lucy's 'Pending Orders (fiber + pending wireless) -> open' pointer replies (Pending Orders posts untouched). weekdays=[] never auto-runs; `lucy rerun activations_today_fix_index` with no --machine.",
+   "display_name": "Activations Today — fix today's Metrics index",
+   "source_type": "api",
+   "data_sources": [],
+   "command": [
+    "automations.activations_today.fix_index"
+   ],
+   "base_args": [
+    "--live"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 10,
+   "verify": {
+    "type": "not_configured"
+   }
+  },
   "activations_today_owner_mail_sample": {
    "on_scheduler": true,
    "_note": "SAMPLE (Eve 2026-11-10): the owner-mail version of Activations Scheduled Today, for the owners with NO Metrics thread. --sample sends up to 3 owner mails + the summary (who has no email on file) to EVE ONLY, subject [SAMPLE]. weekdays=[] never auto-runs; `lucy rerun activations_today_owner_mail_sample` with no --machine.",
@@ -16771,7 +16794,7 @@
   "second_round_report": {
    "on_scheduler": false,
    "machine": "Lucy 2",
-   "_note": "Carlos 2026-11-19: 2nd rounds this week (conducted / offered / accepted / closing %) AT&T vs Verizon by WHO DID the 2nd round (Sales Board rosters), off the Vantura Daily Update, checked day by day against AppStream Retention Details for office 11580 (funnel board 'Daily Log'). --view weeks --weeks 4 adds new starts scheduled / showed per week. Picture only by default; --dm U... sends it from Lucy; --note-to U1,U2 --send-note sends the offers-gap note. No timer (on request). --appstream-pull --from D --through D reads AppStream's per-person lists (Done By 2nd etc.) for office 11580 into the control sheet's '2R AppStream Pull' tab; --view leaders = by leader with the AppStream done-by check (Carlos Hidalgo in AppStream = left as the Daily Update has it, on purpose). --cards-only --text = the top cards to NEW A Players.",
+   "_note": "Carlos 2026-11-19: 2nd rounds this week (conducted / offered / accepted / closing %) AT&T vs Verizon by WHO DID the 2nd round (Sales Board rosters), off the Vantura Daily Update, checked day by day against AppStream Retention Details for office 11580 (funnel board 'Daily Log'). --view weeks --weeks 4 adds new starts scheduled / showed per week. Picture only by default; --dm U... sends it from Lucy; --note-to U1,U2 --send-note sends the offers-gap note. No timer (on request). --appstream-pull --from D --through D reads AppStream's per-person lists (Done By 2nd etc.) for office 11580 into the control sheet's '2R AppStream Pull' tab; --view leaders = by leader with the AppStream done-by check (Carlos Hidalgo in AppStream = left as the Daily Update has it, on purpose). --cards-only --text = the top cards to NEW A Players. --view leaders --through yesterday --pull --text = the daily BY LEADER text (Mon-Sat 9:00, launchd com.alphalete.second-round-leaders-daily) to NEW A Players + ATT B2B Leaders, once per chain per day; --to aplayers|leaders picks one chain.",
    "display_name": "2nd rounds + new starts report (AT&T vs Verizon)",
    "source_type": "api",
    "data_sources": [],
@@ -16823,6 +16846,28 @@
    ],
    "base_args": [
     "second-round-leaders-1120"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 15,
+   "machine": "Lucy 2"
+  },
+  "install_second_round_leaders_daily_agent": {
+   "on_scheduler": false,
+   "_note": "Installer for com.alphalete.second-round-leaders-daily on Lucy 2 (Carlos 2026-11-20: 'Send daily in the morning on the Aplayers and leaders text chain' / 'Leaders you can send at 9am'). Mon-Sat 9:00 + 9:20 retry: deploy/second_round_report.sh --view leaders --weeks 4 --through yesterday --pull --text = AppStream pull (best effort; picture goes without the AppStream column if it fails), the BY LEADER picture (no notes box under the tables since 11/20), texted to NEW A Players + ATT B2B Leaders, once per chain per day. `lucy rerun install_second_round_leaders_daily_agent` after `lucy update`; `... --remove` to stop it.",
+   "display_name": "Install 2nd-round by-leader daily text (Mon-Sat 9am)",
+   "source_type": "none",
+   "data_sources": [],
+   "command": [
+    "automations.day_orchestrator.install_agent"
+   ],
+   "base_args": [
+    "second-round-leaders-daily"
    ],
    "cadence": {
     "weekdays": []

@@ -43,13 +43,23 @@
 
          ONCE A DAY, not hourly, because it is the seven page calendar walk the
          hourly board run deliberately stopped doing. TIME KNOB: edit
-         StartCalendarInterval here, not the wrapper. -->
+         StartCalendarInterval here, not the wrapper.
+
+         21:15, NOT ON THE HALF HOUR. com.alphalete.icd-onboarding fires at
+         :30 of every hour from 6:30 to 20:30 and drives the same
+         ApplicantStream profile, so the wrapper's own overlap guard skips
+         this walk whenever the two meet. Set to 19:30 it met the board run
+         every single night: it fired on time on 2026-11-19 at 19:30:05,
+         skipped, and would have gone on skipping forever while looking
+         installed. 21:15 is 45 minutes past the last board run of the day,
+         still the same evening, and still ahead of Blue Ink at 7:30am.
+         Any new time here goes BETWEEN the :30 fires, never on one. -->
     <key>StartCalendarInterval</key>
     <dict>
         <key>Hour</key>
-        <integer>19</integer>
+        <integer>21</integer>
         <key>Minute</key>
-        <integer>30</integer>
+        <integer>15</integer>
     </dict>
 
     <key>StandardOutPath</key>

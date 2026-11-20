@@ -77,3 +77,53 @@ def test_leaders_with_appstream_done_by():
     assert att["Nick Smedra"][0]["conducted"] == 2 and att["Nick Smedra"][1] == {"same": 1, "carlos": 1}
     assert [r["cand"] for r in L["others"]] == ["Cy Do"]
     assert "Carlos 1" in R._as_cell({"same": 1, "carlos": 1}, True)
+    page = R.render_leaders(L, d, 4)
+    assert "AppStream<br>done by" in page and "Nick Smedra" in page
+    assert "class='foot'" not in page and "Done By 2nd" not in page    # Carlos 11/20: no bottom section
+
+
+def test_through_day():
+    fri = dt.date(2026, 11, 20)
+    assert R.through_day("yesterday", fri) == dt.date(2026, 11, 19)
+    assert R.through_day(None, fri) == fri and R.through_day("today", fri) == fri
+    assert R.through_day("2026-11-18", fri) == dt.date(2026, 11, 18)
+
+
+def test_appstream_window_covers():
+    from automations.second_round_report import appstream_people as AP
+    rows = [{"Day": "2026-11-02", "Pulled From": "2026-10-26", "Pulled Through": "2026-11-19"}]
+    assert AP.covers(rows, dt.date(2026, 10, 26), dt.date(2026, 11, 19))
+    assert AP.covers(rows, dt.date(2026, 11, 2), dt.date(2026, 11, 18))
+    assert not AP.covers(rows, dt.date(2026, 10, 26), dt.date(2026, 11, 20))      # tomorrow's window
+    assert not AP.covers([{"Day": "2026-11-02", "Pulled At": "x"}], dt.date(2026, 11, 2), dt.date(2026, 11, 2))
+    assert not AP.covers([], dt.date(2026, 11, 2), dt.date(2026, 11, 2))
+
+
+def test_text_routes_one_chain_each():
+    from automations.b2b_dispositions import config as C
+    want = {("cards", "aplayers"): [C.TEXT_GROUP_ALL], ("leaders", "aplayers"): [C.TEXT_GROUP_ALL],
+            ("leaders", "leaders"): [C.TEXT_GROUP_ATT]}
+    assert set(R.TEXT_KINDS) == set(want)
+    for pc, groups in want.items():
+        assert C.TEXT_ROUTES[(R.TEXT_CAMPAIGN, R.TEXT_KINDS[pc])] == groups, pc
+
+
+def test_text_retry_stops_early_once_every_chain_is_sent():
+    """The 9:20 retry after a good 9:00 send returns before any sheet / AppStream read."""
+    import json, tempfile
+    from pathlib import Path
+    from unittest import mock
+    state = Path(tempfile.mkdtemp()) / "state.json"
+    key = "leaders|4|2026-11-19|full"
+    boom = mock.Mock(side_effect=AssertionError("read a sheet"))
+    with mock.patch.object(R, "TEXT_STATE", state), mock.patch.object(R, "_sheet", boom):
+        state.write_text(json.dumps({key + "|aplayers": "07:45", key + "|leaders": "09:04"}))
+        assert R.main(["--view", "leaders", "--through", "2026-11-19", "--text"]) == 0
+        state.write_text(json.dumps({key + "|aplayers": "07:45"}))       # A Players only, sent by hand
+        assert R.main(["--view", "leaders", "--through", "2026-11-19", "--text", "--to", "aplayers"]) == 0
+        try:                                                               # leaders still owed -> does the work
+            R.main(["--view", "leaders", "--through", "2026-11-19", "--text"])
+            raise RuntimeError("should have read the sheet")
+        except AssertionError:
+            pass
+    assert boom.call_count == 1

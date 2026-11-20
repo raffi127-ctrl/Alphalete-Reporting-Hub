@@ -632,7 +632,11 @@ def _as_cell(kinds: Dict[str, int], have_as: bool) -> str:
     return "<td class='asc'>%s</td>" % (" &middot; ".join(parts) or "—")
 
 
-def render_leaders(L: Dict, through: dt.date, weeks: int, as_err: str = "") -> str:
+def render_leaders(L: Dict, through: dt.date, weeks: int) -> str:
+    """The by-leader picture: the AT&T and Verizon tables only. Carlos 11/20,
+    on the AppStream notes box under them: "Remove this bottom section." -- the
+    done-by detail (who AppStream names instead, who is on one list only) is in
+    the run log, not the picture."""
     show_as = L["have_as"]
     def table(team, cls):
         T = L["teams"].get(team) or {"leaders": [], "total": second_block([]), "ns": ns_block([])}
@@ -653,72 +657,55 @@ def render_leaders(L: Dict, through: dt.date, weeks: int, as_err: str = "") -> s
                 "<th>Offered</th><th>Accepted</th><th>Closing %%</th><th>New starts<br>scheduled</th>"
                 "<th>New starts<br>showed</th><th>NS show %%</th>%s</tr>%s</table>"
                 % (cls, team, "<th>AppStream<br>done by</th>" if show_as else "", rows))
-    notes = []
-    k = L["kinds"]
-    if L["have_as"]:
-        notes.append("<b>AppStream &ldquo;Done By 2nd&rdquo;</b> for the %d 2nd rounds: &#10003; same leader %d &middot; "
-                     "Carlos Hidalgo %d (left as the Daily Update has it, on purpose) &middot; a different leader %d "
-                     "&middot; blank %d &middot; not found %d."
-                     % (sum(k.values()), k.get("same", 0), k.get("carlos", 0), k.get("other", 0),
-                        k.get("blank", 0), k.get("not found", 0)))
-        for r in L["others"][:10]:
-            notes.append("&ne; %s (%s): Daily Update <b>%s</b>, AppStream %s."
-                         % (html.escape(r["cand"]), _md(r["date2"]), html.escape(r["who"] or "?"), html.escape(r["as_who"])))
-        for label, n_as, n_du, only_as, only_du in L["diffs"]:
-            if not only_as and not only_du:
-                notes.append("%s: AppStream %d, Daily Update %d &mdash; same people." % (label, n_as, n_du))
-                continue
-            bits = []
-            if only_as:
-                bits.append("only in AppStream: %s" % ", ".join(html.escape(n) for n in only_as[:8])
-                            + (" +%d more" % (len(only_as) - 8) if len(only_as) > 8 else ""))
-            if only_du:
-                bits.append("only on the Daily Update: %s" % ", ".join(html.escape(n) for n in only_du[:8])
-                            + (" +%d more" % (len(only_du) - 8) if len(only_du) > 8 else ""))
-            notes.append("%s: AppStream %d, Daily Update %d &mdash; %s." % (label, n_as, n_du, "; ".join(bits)))
-    else:
-        notes.append("AppStream &ldquo;Done By 2nd&rdquo; check: %s"
-                     % ("AppStream couldn't be reached (%s) &mdash; not in this picture yet." % html.escape(as_err[:90])
-                        if as_err else "not loaded yet."))
-    none = L["teams"].get("none")
-    if none and none["total"]["conducted"]:
-        notes.append("Not on a team (no interviewer, no campaign): %d." % none["total"]["conducted"])
     body = ("<div class='band'><h1>BY LEADER <span>&middot; 2ND ROUNDS &amp; NEW STARTS</span></h1>"
             "<div class='wk'>%s – %s</div></div>"
             "<div class='sub1'>Last %d weeks through %s, by the leader who did the 2nd round on the Daily Update. "
             "New starts count for the leader who did their 2nd round. Accepted = BOB.</div>"
-            "<div class='stack'>%s%s</div><div class='foot'>%s</div>"
+            "<div class='stack'>%s%s</div>"
             % (L["lo"].strftime("%b %-d"), through.strftime("%b %-d, %Y"), weeks, _md(through),
-               table("AT&T", "att"), table("Verizon", "vz"), "<br>".join(notes)))
+               table("AT&T", "att"), table("Verizon", "vz")))
     return _doc(body)
 
 
 # ------------------------------------------------------ the text -----
 
-TEXT_CAMPAIGN, TEXT_KIND = "2ND ROUNDS", "second_rounds_cards"
+TEXT_CAMPAIGN = "2ND ROUNDS"
+# (picture, chain) -> TEXT_ROUTES kind (b2b_dispositions.config). One kind per
+# chain, so each chain texts once a day on its own: Carlos 11/20, "Send daily in
+# the morning on the Aplayers and leaders text chain" -- then "On the A Players
+# you can send now. Leaders you can send at 9am".
+CHAINS = ("aplayers", "leaders")        # NEW A Players, ATT B2B Leaders
+TEXT_KINDS = {("cards", "aplayers"): "second_rounds_cards",
+              ("leaders", "aplayers"): "second_rounds_leaders_ap",
+              ("leaders", "leaders"): "second_rounds_leaders_att"}
 TEXT_STATE = Path.home() / ".config" / "recruiting-report" / "second_round_text_state.json"
 
 
-def queue_text(png: Path, title: str, key: str, now: dt.datetime, force: bool = False) -> bool:
-    """Text the picture to NEW A Players through the local text outbox, once per
-    `key` (b2b_dispositions.config.TEXT_ROUTES[("2ND ROUNDS", ...)])."""
+def _text_state() -> Dict[str, str]:
+    import json
+    try:
+        return json.loads(TEXT_STATE.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def queue_text(png: Path, title: str, key: str, kind: str, now: dt.datetime, force: bool = False) -> bool:
+    """Text the picture through the local text outbox to the groups routed for
+    ("2ND ROUNDS", kind), once per `key`."""
     import json
     from automations.b2b_dispositions import text_post as tp
     from automations.b2b_dispositions import run as bd_run
     from automations.day_orchestrator import text_outbox as tob
-    try:
-        state = json.loads(TEXT_STATE.read_text(encoding="utf-8"))
-    except Exception:  # noqa: BLE001
-        state = {}
+    state = _text_state()
     if state.get(key) and not force:
         _log("text %s already sent at %s -- not again (--force)" % (key, state[key]))
         return False
-    spec = {"kind": TEXT_KIND, "title": title, "by_campaign": {TEXT_CAMPAIGN: [str(png)]}}
+    spec = {"kind": kind, "title": title, "by_campaign": {TEXT_CAMPAIGN: [str(png)]}}
     if not tp.spec_has_routes(spec):
-        _log("no route for %s/%s in TEXT_ROUTES -- not queued" % (TEXT_CAMPAIGN, TEXT_KIND))
+        _log("no route for %s/%s in TEXT_ROUTES -- not queued" % (TEXT_CAMPAIGN, kind))
         return False
     day = now.date()
-    mp = tp.write_manifest(spec, bd_run.OUTPUT_DIR / day.isoformat(), "%s-%s" % (TEXT_KIND, now.strftime("%H%M")))
+    mp = tp.write_manifest(spec, bd_run.OUTPUT_DIR / day.isoformat(), "%s-%s" % (kind, now.strftime("%H%M")))
     tob.drop(mp, by="second_round_report", day=day.isoformat())
     state[key] = now.isoformat(timespec="seconds")
     TEXT_STATE.parent.mkdir(parents=True, exist_ok=True)
@@ -771,17 +758,30 @@ def group_text(users: List[str], text: str) -> str:
 
 # ----------------------------------------------------------------- main -----
 
+def through_day(arg: Optional[str], today: dt.date) -> dt.date:
+    """--through: a date, 'yesterday' (the daily morning text), or today."""
+    if not arg or arg == "today":
+        return today
+    if arg == "yesterday":
+        return today - dt.timedelta(days=1)
+    return dt.date.fromisoformat(arg)
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--view", choices=["week", "weeks", "leaders"], default="week")
     ap.add_argument("--weeks", type=int, default=4, help="--view weeks: how many Mon-Sun weeks")
-    ap.add_argument("--through", help="YYYY-MM-DD, last day counted (default today)")
+    ap.add_argument("--through", help="YYYY-MM-DD or 'yesterday' (the daily timer), last day counted (default today)")
     ap.add_argument("--out", help="picture path (default output/second_round_report/)")
     ap.add_argument("--dm", metavar="U...", help="Slack-DM the picture to this user (from Lucy)")
     ap.add_argument("--note-to", metavar="U1,U2", help="--view week: the offers note's recipients")
     ap.add_argument("--send-note", action="store_true", help="actually send the note (else print it)")
     ap.add_argument("--cards-only", action="store_true", help="only the top cards (office / AT&T / Verizon)")
-    ap.add_argument("--text", action="store_true", help="text the picture to NEW A Players (once)")
+    ap.add_argument("--text", action="store_true",
+                    help="text the picture, once per chain per day: --cards-only -> NEW A Players; "
+                         "--view leaders -> NEW A Players + ATT B2B Leaders")
+    ap.add_argument("--to", default=",".join(CHAINS),
+                    help="--text: which chains, comma list of aplayers / leaders (default both)")
     ap.add_argument("--force", action="store_true", help="--text: send again")
     ap.add_argument("--only-on", help="YYYY-MM-DD: do nothing unless today is that day (one-shot timers)")
     ap.add_argument("--appstream-pull", action="store_true",
@@ -794,13 +794,28 @@ def main(argv=None) -> int:
         _log("--only-on %s: today is %s -- nothing to do" % (a.only_on, dt.date.today()))
         return 0
 
-    through = dt.date.fromisoformat(a.through) if a.through else dt.date.today()
+    through = through_day(a.through, dt.date.today())
     monday = through - dt.timedelta(days=through.weekday())
     first = monday - dt.timedelta(days=7 * ((a.weeks if a.view in ("weeks", "leaders") else 1) - 1))
+    stamp = through.isoformat()
+    text_key = "%s|%s|%s|%s" % (a.view, a.weeks, stamp, "cards" if a.cards_only else "full")
+    picture = "leaders" if a.view == "leaders" else ("cards" if a.cards_only else "")
+    chains = [c.strip() for c in a.to.split(",") if c.strip()]
+    bad = [c for c in chains if c not in CHAINS]
+    if bad:
+        ap.error("--to: unknown chain(s) %s (use %s)" % (bad, ", ".join(CHAINS)))
+    chains = [c for c in chains if (picture, c) in TEXT_KINDS]
+    if a.text and not chains:
+        _log("--text: this picture has no text chain (cards: aplayers; leaders: aplayers, leaders)")
+    sent = _text_state()
+    if a.text and chains and not a.force and not a.dm and all(sent.get("%s|%s" % (text_key, c)) for c in chains):
+        # the retry timer after a good send: don't walk AppStream again for nothing
+        _log("text %s already sent to %s -- nothing to do" % (text_key, ", ".join(chains)))
+        return 0
     if a.appstream_pull:
         from automations.second_round_report import appstream_people as AP
         lo = dt.date.fromisoformat(a.from_) if a.from_ else first
-        AP.write_tab(AP.pull(lo, through, OFFICE, log=_log), log=_log)
+        AP.write_tab(AP.pull(lo, through, OFFICE, log=_log), lo, through, log=_log)
         return 0
     sh = _sheet(VANTURA)
     rosters = read_rosters(sh)
@@ -814,7 +829,6 @@ def main(argv=None) -> int:
     if unmapped:
         _log("interviewers not on a board (team from campaign): %s" % unmapped)
 
-    stamp = through.isoformat()
     if a.view == "week":
         s = summarize(rows, monday, through, appstream)
         for team in TEAMS:
@@ -836,14 +850,21 @@ def main(argv=None) -> int:
                 _log("note NOT sent (pass --send-note) -- would go to %s" % users)
     elif a.view == "leaders":
         from automations.second_round_report import appstream_people as AP
-        as_err = ""
+        pulled = True
         if a.pull:
             try:
-                AP.write_tab(AP.pull(first, through, OFFICE, log=_log), log=_log)
+                AP.write_tab(AP.pull(first, through, OFFICE, log=_log), first, through, log=_log)
             except Exception as e:  # noqa: BLE001 -- AppStream down: the Daily Update numbers still go out
-                as_err = "%s: %s" % (type(e).__name__, str(e).splitlines()[0][:160] if str(e) else "")
-                _log("AppStream pull failed -- %s" % as_err)
-        L = leaders_summary(rows, first, through, AP.read_tab(), rosters)
+                pulled = False
+                _log("AppStream pull failed -- %s: %s -- picture goes out without the AppStream column"
+                     % (type(e).__name__, str(e).splitlines()[0][:160] if str(e) else ""))
+        as_rows = AP.read_tab() if pulled else []
+        if as_rows and not AP.covers(as_rows, first, through):
+            # an older pull for another window would read as "not found" -- leave the column off
+            _log("the '2R AppStream Pull' tab is %s -- not this window (%s .. %s); no AppStream column"
+                 % (AP.window(as_rows) or "from before the window was recorded", first, through))
+            as_rows = []
+        L = leaders_summary(rows, first, through, as_rows, rosters)
         for team in TEAMS:
             for name, b, n, kinds in L["teams"][team]["leaders"]:
                 _log("%-8s %-28s 2nd %2d off %2d acc %2d  NS %2d/%2d  AS %s"
@@ -852,7 +873,7 @@ def main(argv=None) -> int:
                                                              for r in L["others"]]))
         for d in L["diffs"]:
             _log("diff %s: AS %d DU %d only AS %s only DU %s" % d)
-        page = render_leaders(L, through, a.weeks, as_err=as_err)
+        page = render_leaders(L, through, a.weeks)
         out = Path(a.out) if a.out else OUT_DIR / ("second_rounds_leaders_%dweeks_%s.png" % (a.weeks, stamp))
         caption = ("2nd rounds & new starts by leader — last %d weeks (%s – %s)"
                    % (a.weeks, first.strftime("%b %-d"), through.strftime("%b %-d")))
@@ -878,8 +899,9 @@ def main(argv=None) -> int:
     to_png(page, out)
     _log("picture: %s" % out)
     if a.text:
-        queue_text(out, caption, "%s|%s|%s|%s" % (a.view, a.weeks, stamp, "cards" if a.cards_only else "full"),
-                   dt.datetime.now(), force=a.force)
+        for c in chains:
+            queue_text(out, caption, "%s|%s" % (text_key, c), TEXT_KINDS[(picture, c)], dt.datetime.now(),
+                       force=a.force)
     if a.dm:
         dm_picture(out, a.dm, caption)
         _log("DM'd to %s" % a.dm)
