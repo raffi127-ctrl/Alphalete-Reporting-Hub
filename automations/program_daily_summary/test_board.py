@@ -42,6 +42,49 @@ class Cells(unittest.TestCase):
         self.assertEqual(rows[0][9], 7)
 
 
+class _FakeData:
+    def __init__(self, grid):
+        self.grid, self.inserted = grid, []
+
+    def get(self, *_a, **_k):
+        return self.grid
+
+    def insert_rows(self, rows, row, **_k):
+        self.inserted.append((row, rows))
+
+
+class Backfill(unittest.TestCase):
+    MON = D(2026, 11, 9)
+
+    def _data(self, camps):
+        return {c: {self.MON + dt.timedelta(days=k): 10 for k in range(7)}
+                for c in camps}
+
+    def test_adds_only_missing_campaigns_and_the_all_row(self):
+        we = 46341                                   # 11/15/2026 serial
+        stored = [[we, c] + [10] * 7 + [70] for c in ("Frontier", "Fios")]
+        fake = _FakeData(stored)
+        B.backfill_week(self.MON, self._data(L.CAMPAIGNS), data_ws=fake,
+                        logfn=lambda *_: None)
+        (row, rows), = fake.inserted
+        names = [r[2] for r in rows]                 # col A pad, then WE, camp
+        self.assertEqual(names, [L.ALL, "ATT Fiber", "ATT NDS", "B2B"])
+        self.assertEqual(rows[0][-1], 350)           # 5 campaigns x 70
+
+    def test_partial_week_gets_no_all_row(self):
+        fake = _FakeData([])
+        B.backfill_week(self.MON, self._data(["ATT Fiber"]), data_ws=fake,
+                        logfn=lambda *_: None)
+        (_, rows), = fake.inserted
+        self.assertEqual([r[2] for r in rows], ["ATT Fiber"])
+
+    def test_nothing_new_inserts_nothing(self):
+        fake = _FakeData([[46341, "ATT Fiber"] + [10] * 7 + [70]])
+        B.backfill_week(self.MON, self._data(["ATT Fiber"]), data_ws=fake,
+                        logfn=lambda *_: None)
+        self.assertEqual(fake.inserted, [])
+
+
 class Locate(unittest.TestCase):
     def test_rows_by_label(self):
         col = ["", "COUNTRY", L.WE_LABEL, L.PS_BAR, "Product Type",

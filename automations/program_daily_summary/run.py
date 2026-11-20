@@ -123,6 +123,9 @@ def main() -> int:
                     help="skip the AT&T pulls (no Tableau session here)")
     ap.add_argument("--no-verify", action="store_true")
     ap.add_argument("--today", help="YYYY-MM-DD, for testing")
+    ap.add_argument("--backfill-last-week", action="store_true",
+                    help="also add LAST week to the history for every campaign "
+                         "whose full week came back and isn't stored yet")
     args = ap.parse_args()
     today = dt.date.fromisoformat(args.today) if args.today else dt.date.today()
 
@@ -139,6 +142,9 @@ def main() -> int:
 
     monday = board.run(data, today=today, dry_run=args.dry_run,
                        enable_rollover=args.enable_rollover)
+    if args.backfill_last_week:
+        board.backfill_week(monday - dt.timedelta(days=7), data,
+                            dry_run=args.dry_run)
     if args.dry_run or args.no_verify:
         return 0
     expected = [c for c in L.CAMPAIGNS

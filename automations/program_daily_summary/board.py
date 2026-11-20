@@ -239,6 +239,34 @@ def verify(ws, monday: dt.date, today: dt.date) -> List[str]:
             if not (v and v[0] and isinstance(v[0][0], (int, float)))]
 
 
+def backfill_week(monday: dt.date, data: Data, *, dry_run: bool = False,
+                  logfn=print, data_ws=None) -> None:
+    """Add the campaigns a CLOSED week is still missing on the data tab,
+    without touching (or duplicating) the ones already there. When that makes
+    the week complete (all 5), its 'All Campaigns' row is added too, built
+    from the stored rows + the new ones. Only full 7-day weeks are added."""
+    data_ws = _data_tab(data_ws)
+    we = monday + dt.timedelta(days=6)
+    grid = data_ws.get("B2:K", value_render_option="UNFORMATTED_VALUE")
+    have = {}
+    for r in grid:
+        r = list(r) + [""] * (10 - len(r))
+        if parse_we(r[0]) == we:
+            have[r[1]] = [v if isinstance(v, (int, float)) else "" for v in r[2:9]]
+    new = {c: v for c, v in day_cells(monday, data, dt.date.max).items()
+           if "" not in v and c not in have}
+    if not new:
+        logfn(f"  WE {we}: nothing new to add (have {sorted(have)})")
+        return
+    rows = [r for r in history_rows(monday, new) if r[1] != L.ALL]
+    merged = {**{c: v for c, v in have.items() if c in L.CAMPAIGNS}, **new}
+    if L.ALL not in have and all(c in merged for c in L.CAMPAIGNS):
+        rows = [r for r in history_rows(monday, merged) if r[1] == L.ALL] + rows
+    logfn(f"  WE {we}: adding " + ", ".join(f"{r[1]} {r[9]}" for r in rows))
+    if not dry_run:
+        _insert_history(data_ws, rows)
+
+
 def seed_history(weeks: List[dt.date], data: Data, *, dry_run: bool = False,
                  logfn=print, data_ws=None) -> None:
     """Add closed weeks (their Mondays) to the history, newest ending on top.
