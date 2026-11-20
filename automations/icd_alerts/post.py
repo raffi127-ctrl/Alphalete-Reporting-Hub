@@ -791,6 +791,27 @@ def _text_teams(key, office, day, log=print):
     return _KP._teams_for(office, day)
 
 
+def _week_team_block(key, day, office, sales, show, teams, log=print) -> str:
+    """Carlos's 8:30pm-and-after week-by-team section (vantura_teams), or ''.
+    Units count the way the text's TOTALS does. Never raises."""
+    try:
+        from automations.icd_alerts import vantura_teams as VT
+        if key not in VT.OFFICE_KEYS or teams is None or not VT.week_due():
+            return ""
+        from automations.alphalete_sales_board import notify as N
+        nds = str(office.campaign or "").strip().lower() == "nds"
+        today = []
+        for rep, m in (sales or {}).items():
+            m = m or {}
+            n = (int(m.get("Air", 0) or 0) + int(m.get("NL", 0) or 0)) if nds \
+                else N.rep_total(m)
+            today.append(((show(rep) if show else rep), n))
+        return "\n" + "\n".join(VT.week_lines(teams, today, day))
+    except Exception as e:  # noqa: BLE001 -- the block, never the text
+        log("%-10s week team block skipped: %s: %s" % (key, type(e).__name__, str(e)[:120]))
+        return ""
+
+
 def _standings_board(key, day, office, board_sales, flames, show, tab,
                      knocks_today, log=print):
     """The whole day's standings the text group gets -- the scoreboard plus
@@ -798,10 +819,12 @@ def _standings_board(key, day, office, board_sales, flames, show, tab,
     knocks_today) so the knocks are read at most once a pass."""
     from automations.icd_alerts import config as _CFG
     from automations.icd_alerts import knocks_post as _KP
+    teams = _text_teams(key, office, day, log=log)
     board = scoreboard_text(board_sales, flames, office.campaign, show,
-                            teams=_text_teams(key, office, day, log=log))
+                            teams=teams)
     if not board:
         return board, knocks_today
+    board += _week_team_block(key, day, office, board_sales, show, teams, log)
     # RAF'S HEADCOUNT BLOCK under the totals, same as his partner chat
     # (Megan 2026-10-22). Knocks read once, on first need.
     if knocks_today is None:
