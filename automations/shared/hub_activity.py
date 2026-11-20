@@ -25,6 +25,8 @@ import socket
 import uuid
 from typing import Optional
 
+from automations.shared.hub_identity import activity_machine as _activity_machine
+
 # The Hub's backend workbook (the "Automation Backlog" intake Sheet), mirroring
 # dashboard.HUB_ACTIVITY_SHEET_ID / _TAB. Kept in sync by hand; a mismatch
 # means the row lands somewhere the Hub doesn't read.
@@ -85,7 +87,7 @@ def log_completed(report_id: str, report_name: str, *,
         started = (started_at or now).isoformat(timespec="seconds")
         _retry(lambda: ws.append_row(
             [uuid.uuid4().hex[:12], started, report_id, report_name,
-             user, socket.gethostname(), "", status,
+             user, _activity_machine(), "", status,
              now.isoformat(timespec="seconds")],
             value_input_option="RAW"))
         return True

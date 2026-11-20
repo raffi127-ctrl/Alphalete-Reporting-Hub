@@ -229,6 +229,25 @@ class Config(unittest.TestCase):
             C.Office(key="x", appstream_id="1", owner="y")      # no company name
         self.assertIs(C.office("11280"), C.OFFICES["raf"])
 
+    def test_group_approved_on_another_row(self):
+        """11/20: Carlos's NEW A Players is approved on 'carlos-b2batt', and the
+        'carlos' row only holds Box B2B -- the lookup must read the row that
+        actually holds the approval, and still refuse an unapproved group."""
+        from unittest import mock
+        from automations.recruiting_day_texts import run as RUN
+        approved = {
+            "carlos": [{"group": "Box B2B", "chat_guid": "g1"}],
+            "carlos-b2batt": [{"group": "NEW A Players", "chat_guid": "g2",
+                               "require_handles": ["+1"]}],
+        }
+        with mock.patch("automations.icd_alerts.post.approved_texts",
+                        return_value=approved):
+            self.assertEqual(RUN.dest_for(C.OFFICES["carlos"])["group"], "NEW A Players")
+            stray = C.Office(key="carlos", appstream_id="1", owner="y", team="z",
+                             group="NEW A Players")
+            with self.assertRaises(RuntimeError):
+                RUN.dest_for(stray)
+
 
 class Clock(unittest.TestCase):
     def setUp(self):

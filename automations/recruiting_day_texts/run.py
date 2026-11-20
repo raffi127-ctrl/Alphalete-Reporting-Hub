@@ -116,12 +116,13 @@ def dest_for(o: C.Office) -> dict:
     """The ONE approved group this ICD chose, off the relay's Office Channels
     tab (found by its pinned people, not its name)."""
     from automations.icd_alerts import post as P
-    dests = P.approved_texts().get(o.key) or []
+    dests = P.approved_texts().get(o.approval_key) or []
     hit = [d for d in dests if d.get("group") == o.group] if o.group else dests[:1]
     if not hit:
         raise RuntimeError("%s: group %r is not an approved text destination on "
-                           "Office Channels (has: %s)"
-                           % (o.key, o.group, [d.get("group") for d in dests]))
+                           "Office Channels row %r (has: %s)"
+                           % (o.key, o.group, o.approval_key,
+                              [d.get("group") for d in dests]))
     d = hit[0]
     return {k: d[k] for k in ("group", "chat_guid", "require_handles") if d.get(k)}
 

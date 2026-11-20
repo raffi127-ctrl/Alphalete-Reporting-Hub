@@ -23,6 +23,7 @@ import uuid
 from pathlib import Path
 
 from automations.recruiting_report import fill as _fill
+from automations.shared.hub_identity import activity_machine as _activity_machine
 
 # The Hub Activity tab lives on the intake/backlog workbook (matches
 # dashboard.HUB_ACTIVITY_SHEET_ID / HUB_ACTIVITY_TAB).
@@ -506,7 +507,7 @@ def publish_running(report_id: str, report_name: str, *, manual: bool = False):
         _ws().append_row(
             [run_id, dt.datetime.now().isoformat(timespec="seconds"), card,
              report_name, RERUN_USER if manual else "Mini (auto)",
-             socket.gethostname(), "", "started", ""],
+             _activity_machine(), "", "started", ""],
             value_input_option="RAW")     # column shape matches dashboard.HUB_ACTIVITY_HEADERS
         if manual:
             _mark_working(report_id)
@@ -847,7 +848,7 @@ def _alert_failure(report_id: str, report_name: str) -> None:
         notify.post_alert(
             f"❌ {report_name} failed",
             ([f"`{report_id}` closed a run with status **FAILED** on "
-              f"{socket.gethostname()}."]
+              f"{_activity_machine()}."]
              + ([f"*Why:* {_failure_reason(report_id)}"]
                 if _failure_reason(report_id) else [])
              + ["Open its Hub card for the log, then re-run it."]),
@@ -1055,7 +1056,7 @@ def publish_done(report_id: str, report_name: str, status: str = "success",
         else:
             ws.append_row(
                 [uuid.uuid4().hex[:12], now, card, report_name, user,
-                 socket.gethostname(), "", status, now],
+                 _activity_machine(), "", status, now],
                 value_input_option="RAW")
         # A hard failure alerts Slack (deduped) so it can't fail silently. Only
         # 'failed' — NOT 'partial' (mostly worked) or 'skipped'/'scanned' (healthy
