@@ -1,4 +1,5 @@
 """The office-release reading: what each group means, and what it must not say."""
+import inspect
 import unittest
 from unittest import mock
 
@@ -142,3 +143,31 @@ class Payload(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class WhenIsLocalAndPortable(unittest.TestCase):
+    """The last-heard clock. Both of these were real bugs on 2026-11-20."""
+
+    def test_utc_stamp_is_converted_not_printed_raw(self):
+        """A UTC stamp printed raw reads as the future and hides a quiet office."""
+        import datetime as dt
+        stamp = "2026-11-20T09:02:11.400Z"
+        shown = FR._when(stamp)
+        expect = (dt.datetime(2026, 11, 20, 9, 2, 11,
+                              tzinfo=dt.timezone.utc).astimezone())
+        self.assertIn(expect.strftime("%H:%M"), shown)
+        self.assertIn(expect.strftime("%b"), shown)
+
+    def test_no_glibc_only_strftime(self):
+        """`%-d` is glibc-only; these reports run on Windows too."""
+        src = inspect.getsource(FR._when)
+        # the format string itself, not the docstring that explains the ban
+        self.assertNotIn('strftime("%-', src)
+
+    def test_day_has_no_leading_zero(self):
+        self.assertFalse(FR._when("2026-11-05T12:00:00Z")
+                         .split()[0].startswith("0"))
+
+    def test_junk_stamp_is_a_question_mark(self):
+        for junk in (None, "", "not a date", 17):
+            self.assertEqual(FR._when(junk), "?")

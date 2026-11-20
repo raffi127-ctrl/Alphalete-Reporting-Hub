@@ -79,11 +79,29 @@ def machine_releases(book=None) -> List[Dict]:
 
 
 def _when(stamp: str) -> str:
+    """A machine's last-heard time, in the reader's OWN clock.
+
+    The stamp arrives UTC ("...Z"). Printing it unconverted was worse than
+    useless: on 2026-11-20 at 06:59 CST the report said a machine was last
+    heard at 09:02, which reads as two hours into the future and makes a
+    quiet office look busy. So it is converted to local time and labelled.
+
+    No `%-d`/`%-H`: those are glibc-only and blow up on Windows, and every
+    report here has to run on both. lstrip("0") does the same job everywhere.
+    """
     try:
-        return dt.datetime.fromisoformat(
-            stamp.replace("Z", "")[:19]).strftime("%-d %b %H:%M")
-    except (TypeError, ValueError):
+        when = dt.datetime.fromisoformat(
+            stamp.replace("Z", "")[:19]).replace(tzinfo=dt.timezone.utc)
+    except (AttributeError, TypeError, ValueError):
+        # AttributeError: a blob with no `last` at all -- .replace on None.
+        # A machine that never stamped a time is "?", not a crash that takes
+        # the whole fleet report down with it.
         return "?"
+    local = when.astimezone()
+    day = local.strftime("%d").lstrip("0") or "0"
+    hour = local.strftime("%H")
+    return "%s %s %s:%s" % (day, local.strftime("%b"), hour,
+                            local.strftime("%M"))
 
 
 # `published=None` has to MEAN "we could not tell" -- that is what
