@@ -38,6 +38,16 @@ LOAD_KNOCKS = ("(src) => window.KnockReport ? true : new Promise(function (ok, b
                " document.head.appendChild(s); })")
 
 
+def _main_world(frame, expr, arg=None):
+    """Run JS where the PAGE's own globals live. The Lucys' browser (patchright) evaluates in an
+    isolated world by default, which cannot see OwnerVille's callApi / KnockReport (Lucy 3, 11/20:
+    four runs found 'no frame with callApi' on the right page). Same switch as terminated_reps/ov_retire."""
+    try:
+        return frame.evaluate(expr, arg, isolated_context=False)
+    except TypeError:          # plain Playwright has no such switch and is already in the main world
+        return frame.evaluate(expr, arg)
+
+
 def find_board_frame(page, wait_s=90):
     """The frame of the CEO Dashboard that has OwnerVille's callApi, with KnockReport loaded."""
     probe = "() => typeof window.callApi === 'function'"
@@ -51,8 +61,8 @@ def find_board_frame(page, wait_s=90):
             clicked = _click_sales_board_tab(page)
         for fr in page.frames:
             try:
-                if fr.evaluate(probe):
-                    if not fr.evaluate(LOAD_KNOCKS, KNOCK_JS):
+                if _main_world(fr, probe):
+                    if not _main_world(fr, LOAD_KNOCKS, KNOCK_JS):
                         raise RuntimeError("knockReport.js loaded but window.KnockReport is missing")
                     return fr
             except RuntimeError:
@@ -123,7 +133,7 @@ def pull(headless=True):
         rqst = capture_rqst(page)
         open_ceo_dashboard(page, rqst)
         frame = find_board_frame(page)
-        data = frame.evaluate(call)
+        data = _main_world(frame, call)
     if not data or not data.get("knocks") or not data.get("sales"):
         raise SystemExit("OwnerVille returned no knocks or no sales -- not replacing the board's data")
     return data
