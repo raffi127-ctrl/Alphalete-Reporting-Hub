@@ -34,10 +34,17 @@ class TextSections(unittest.TestCase):
 
     def test_route_goes_to_both_chains(self):
         from automations.b2b_dispositions import config as B
-        for sid in ("customer_churn", "churn_rates", "churn_by_rep", "teams_board"):
+        for sid in ("customer_churn", "churn_rates", "churn_by_rep"):
             self.assertIn(sid, R.TEXT_SECTIONS)
             self.assertEqual(B.TEXT_ROUTES[("NDS METRICS", "nds_" + sid)],
                              [B.TEXT_GROUP_ATT, B.TEXT_GROUP_ALL])
+
+    def test_teams_board_goes_to_leaders_only(self):
+        """Carlos 2026-11-20: the Teams board texts the B2B leaders chain."""
+        from automations.b2b_dispositions import config as B
+        self.assertIn("teams_board", R.TEXT_SECTIONS)
+        self.assertEqual(B.TEXT_ROUTES[("NDS METRICS", "nds_teams_board")],
+                         [B.TEXT_GROUP_ATT])
 
 
 class OnRequest(unittest.TestCase):
