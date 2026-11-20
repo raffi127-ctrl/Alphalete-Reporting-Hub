@@ -719,3 +719,48 @@ class HeadcountTargetTest(unittest.TestCase):
         text = A._visual_content(t, THU, [])[0]["text"]
         self.assertIn("HEADCOUNT BOARD", text)
         self.assertIn("DAY_BEHIND: (none)", text)
+
+
+class UpstreamStillRunningTest(unittest.TestCase):
+    """2026-11-20: org_sales_board was STILL_TRYING (waiting on Tableau) at
+    9:15 CT and the Org email held + tagged Eve. An upstream board that has
+    not finished is a late source: wait quietly, rebuild once at the cutoff.
+    A FAILED upstream still holds."""
+
+    def judge_at(self, up_status, hour):
+        rid = "org_sales_board_email"
+        state = {"reports": {"org_sales_board": {"status": up_status},
+                             "all_campaigns_board": {"status": "PENDING"},
+                             rid: {"status": "PENDING"}}}
+        t = A.Target(key="org", name="Org Sales Board", report_id=rid,
+                     images=lambda d: [], grid=lambda: [],
+                     tableau_deadline=A.ORG_TABLEAU_DEADLINE)
+        chain = ["org_sales_board", "all_campaigns_board", rid]
+
+        def visual(new, prior):
+            raise AssertionError("not reached")
+
+        with mock.patch.object(A.wr, "_state", return_value=state), \
+                mock.patch.object(A.wr, "dependency_closure",
+                                  return_value=chain), \
+                mock.patch.object(A.wr, "_scheduled_today",
+                                  return_value=set(chain)), \
+                mock.patch.object(A.wr, "is_travel_day", return_value=False), \
+                mock.patch.object(A, "_ct_now", lambda: dt.datetime.combine(
+                    THU, dt.time(hour))):
+            return A.judge(t, THU, {}, tableau=lambda: [],
+                           names=lambda: set(), visual=visual, verbose=False)
+
+    def test_still_trying_before_cutoff_waits_quietly(self):
+        v = self.judge_at("STILL_TRYING", 7)
+        self.assertTrue(v.waiting)
+        self.assertEqual(v.blocked, [])
+
+    def test_still_trying_after_cutoff_rebuilds_once(self):
+        v = self.judge_at("STILL_TRYING", 9)
+        self.assertEqual(v.blocked, [])
+        self.assertEqual(v.fixable, [A.TABLEAU_DEADLINE_REBUILD])
+
+    def test_failed_upstream_still_holds(self):
+        v = self.judge_at("FAILED", 9)
+        self.assertTrue(any("not clean" in r for r in v.blocked))

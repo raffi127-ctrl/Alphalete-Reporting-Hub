@@ -1134,6 +1134,23 @@ def short_name(name: str) -> str:
     return first if len(words) == 1 else "%s %s." % (first, words[-1][:1].upper())
 
 
+# Eveliz 2026-11-20: a green check next to "score 0.0" read as a pass. The
+# mark on a counted recording is now its grade, same cuts as the sheet's
+# score colors: 8+ green, 6-8 yellow, under 6 red. Not counted keeps the X.
+SCORE_LEGEND = ":large_green_circle: 8+ · :large_yellow_circle: 6–7.9 · :red_circle: under 6"
+
+
+def score_dot(score) -> str:
+    if score == "" or score is None:
+        return ""
+    s = float(score)
+    if s >= 8:
+        return ":large_green_circle:"
+    if s >= 6:
+        return ":large_yellow_circle:"
+    return ":red_circle:"
+
+
 def yesterday_text(day: str, rows: list, office: str = "Raf's Office") -> str:
     """Slack message: one block per owner, one line per recording."""
     d = dt.date.fromisoformat(day)
@@ -1160,9 +1177,10 @@ def yesterday_text(day: str, rows: list, office: str = "Raf's Office") -> str:
             bits = [short_name(r[1]), r[0]]
             if r[4] != "":
                 bits.append("score %s" % r[4])
-            mark = ":white_check_mark:" if r[5] == COUNTED else ":x: " + r[5].replace("Not counted: ", "")
-            out.append("%d. %s %s" % (n, " · ".join(bits), mark))
+            mark = score_dot(r[4]) if r[5] == COUNTED else ":x: " + r[5].replace("Not counted: ", "")
+            out.append(("%d. %s %s" % (n, " · ".join(bits), mark)).rstrip())
     out.append("")
+    out.append(SCORE_LEGEND)
     out.append("_Recordings sent twice, or under %d min, don't count. Missing one? Reply here "
                "with the rep's name and the time it was sent._" % (MIN_RECORDING_SECONDS // 60))
     return "\n".join(out)

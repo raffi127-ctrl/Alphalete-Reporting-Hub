@@ -73,5 +73,61 @@ class Book(unittest.TestCase):
         VT._CACHE.clear()
 
 
+class WeekBlock(unittest.TestCase):
+    """Carlos 2026-11-19: from 8:30pm the text adds each team's week."""
+
+    def _grid_with_days(self):
+        g = _grid()
+        # Stefany (Diego): Mon 3, Tue 2, Wed 1, Thu 9 (today's cell is ignored)
+        g[4][4:8] = ["3", "2", "1", "9"]
+        # Nathaly (Cinthya): Mon T, Tue 4
+        g[6][4:6] = ["T", "4"]
+        return g
+
+    def test_board_days_before_today_plus_todays_live_numbers(self):
+        thu = dt.date(2026, 11, 19)
+        book = VT.from_grid(self._grid_with_days(), "NDS Sales Board", thu)
+        self.assertEqual(book.week_before, {"Diego": 6, "Cinthya": 4})
+        lines = VT.week_lines(book, [("Nathaly Benitez", 3), ("Nick Smedra", 1),
+                                     ("New Guy", 2)], thu)
+        self.assertEqual(lines, ["", "Week (Mon-Thu):", "Cinthya: 7 \U0001F947",
+                                 "Diego: 6", "Direct Hit: 1", "Unassigned: 2"])
+
+    def test_only_from_830pm_central(self):
+        from zoneinfo import ZoneInfo
+        ct = ZoneInfo("America/Chicago")
+        self.assertFalse(VT.week_due(dt.datetime(2026, 11, 19, 20, 29, tzinfo=ct)))
+        self.assertTrue(VT.week_due(dt.datetime(2026, 11, 19, 20, 30, tzinfo=ct)))
+        self.assertTrue(VT.week_due(dt.datetime(2026, 11, 19, 23, 50, tzinfo=ct)))
+        self.assertFalse(VT.week_due(dt.datetime(2026, 11, 19, 14, 0, tzinfo=ct)))
+
+    def test_the_text_gets_it_only_for_carlos_and_only_when_due(self):
+        thu = dt.date(2026, 11, 19)
+        book = VT.from_grid(self._grid_with_days(), "NDS Sales Board", thu)
+        office = mock.Mock(campaign="nds")
+        sales = {"NATHALY BENITEZ": {"NL": 2, "Air": 1, "Int Up": 3}}
+        with mock.patch.object(VT, "week_due", return_value=True):
+            block = P._week_team_block("carlos-b2batt", thu, office, sales, None, book)
+            self.assertIn("Cinthya: 7", block)            # 4 board + 3 live (no upgrades)
+            self.assertEqual(P._week_team_block("raf", thu, office, sales, None, book), "")
+        with mock.patch.object(VT, "week_due", return_value=False):
+            self.assertEqual(P._week_team_block("carlos-b2batt", thu, office, sales, None, book), "")
+
+
+class SoldUnderWeek(unittest.TestCase):
+    def test_a_login_carrying_someone_elses_week_counts_for_the_real_seller(self):
+        from automations.icd_alerts import rep_names as RN
+        g = _grid()
+        g.insert(9, ["9", "Esmeralda Gonzalez", "0", "0", "X", "2", "5", "8", "", "", "",
+                     "NDS", "", "", "Cinthya", "Level 1", ""])
+        g.insert(10, ["10", "Jacob Ortega", "0", "0", "", "", "", "", "", "", "",
+                      "NDS", "", "", "Jacob", "Level 1", ""])
+        with mock.patch.dict(RN.SOLD_UNDER, {("carlos-b2batt", "2026-11-18"):
+                                             {"ESMERALDA": "Jacob Ortega"}}, clear=True):
+            book = VT.from_grid(g, "NDS Sales Board", dt.date(2026, 11, 19))
+        # Tue 2 stays Esmeralda's (Cinthya); Wed 5 was Jacob's; Thu = today, unread
+        self.assertEqual(book.week_before, {"Cinthya": 2, "Jacob": 5})
+
+
 if __name__ == "__main__":
     unittest.main()

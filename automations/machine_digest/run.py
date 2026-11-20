@@ -78,7 +78,10 @@ def _machine_matches(row_machine: str, host: str, exact: bool) -> bool:
     silently matches neither is worse than one that matches both."""
     m = (row_machine or "").strip()
     if exact:
-        return m == host
+        # A row may carry a profile tag: 'Mac.attlocal.net [Lucy 1]'
+        # (hub_identity.activity_machine). Its HOSTNAME is what --host means.
+        from automations.shared.hub_identity import split_machine
+        return m == host or split_machine(m)[0] == host
     return any(h.strip().lower() in m.lower()
                for h in host.split(",") if h.strip())
 
@@ -792,7 +795,18 @@ def _machine_label(row_machine: str, lucy2_hosts: str) -> str:
     `--assist` in a Terminal. Anyone acting on it would have gone to the wrong
     machine looking for the wrong thing. A label we cannot derive is better
     printed raw than guessed: the hostname is always true.
-    [[reference_hub_signals_lie]]"""
+    [[reference_hub_signals_lie]]
+
+    THE PROFILE TAG WINS (2026-11-20). A row written as
+    'Mac.attlocal.net [Lucy 1]' says which runner it was, from that runner's own
+    .machine-profile marker. It goes first because a hostname can be shared: the
+    AT&T router names Lucy 1 AND Lucy 2 'Mac.attlocal.net', and that name sat
+    on the Lucy-2 list, so Lucy 1's 3am DD harvest failure was posted as
+    "didn't run clean on Lucy 2"."""
+    from automations.shared.hub_identity import split_machine
+    _host, tag = split_machine(row_machine)
+    if tag:
+        return tag
     if lucy2_hosts and _machine_matches(row_machine, lucy2_hosts, exact=False):
         return "Lucy 2"
     low = (row_machine or "").lower()

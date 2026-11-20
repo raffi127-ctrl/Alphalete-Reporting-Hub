@@ -910,7 +910,7 @@ def _why_not_landed(page, who: str) -> None:
 
 
 def _try_overwrite_send(page) -> bool:
-    """Push to AI via the override control when the ATS allows it (control
+    r"""Push to AI via the override control when the ATS allows it (control
     present, no 'Cannot override'). The ATS still blocks a recent contact, so
     this only sends when legitimately allowed. Send-maximizer.
 
@@ -969,7 +969,7 @@ def _try_overwrite_send(page) -> bool:
     # the send is a separate click afterwards. Refusing to click it (or checking
     # for the error immediately after) reports a dead end on an applicant who was
     # one more click from the call list.
-    _CLICK_JS = """() => {
+    _CLICK_JS = r"""() => {
              const els = Array.from(document.querySelectorAll(
                  'button, input[type=submit], input[type=button], a'))
                .filter(e => e.offsetParent !== null);

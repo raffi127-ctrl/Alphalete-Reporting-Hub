@@ -709,8 +709,28 @@ def candidates(sara_name: str) -> List[str]:
     return out
 
 
-def board_key(sara_name: str, rows: Dict[str, int]) -> Optional[str]:
-    """SaraPlus name -> campaign_rows key, or None (flagged by the caller)."""
+# Sales rung under ANOTHER rep's SaraPlus login, by day (Carlos 2026-11-19:
+# "All of the sales under Esmeralda for this week on the sales board, move
+# them to Jacob"). The dated list is icd_alerts.rep_names.SOLD_UNDER -- the
+# same one the live sales text uses -- for this office key.
+SOLD_UNDER_OFFICE = "carlos-b2batt"
+
+
+def board_key(sara_name: str, rows: Dict[str, int],
+              day: Optional[dt.date] = None) -> Optional[str]:
+    """SaraPlus name -> campaign_rows key, or None (flagged by the caller).
+    On a day the login carried someone else's sales, the real seller's row."""
+    if day is not None:
+        try:
+            from automations.icd_alerts import rep_names as RN
+            real = RN.sold_under_for(SOLD_UNDER_OFFICE, day, sara_name)
+        except Exception:  # noqa: BLE001 -- no swap list, the login's own row
+            real = ""
+        if real:
+            for cand in candidates(real):
+                key = R.match_rep(cand, rows)
+                if key:
+                    return key
     for cand in candidates(sara_name):
         key = R.match_rep(cand, rows)
         if key:
@@ -748,7 +768,8 @@ def board_rules(writes: List[tuple]) -> List[tuple]:
 
 
 def plan(g, col: int, rows: Dict[str, int],
-         per_rep: Dict[str, Dict[str, int]]) -> Tuple[List[tuple], List[str]]:
+         per_rep: Dict[str, Dict[str, int]],
+         day: Optional[dt.date] = None) -> Tuple[List[tuple], List[str]]:
     """(plan, flags) for setting the day column from the relay snapshot.
 
     The overwrite itself is sara.plan_overwrite -- matched rep SET up or
@@ -762,7 +783,7 @@ def plan(g, col: int, rows: Dict[str, int],
     flags: List[str] = []
     by_row: Dict[str, List[str]] = {}
     for sara_name, m in sorted(per_rep.items()):
-        key = board_key(sara_name, rows)
+        key = board_key(sara_name, rows, day)
         if key is None:
             if m["units"]:
                 counts[sara_name] = counts.get(sara_name, 0) + int(m["units"])
@@ -1087,7 +1108,7 @@ def main(argv=None) -> int:
         _log("no column for %s on the board -- holding." % day.strftime("%A"))
         return EXIT_HOLD
 
-    plan_rows, flags = plan(g, col, board_rows, per_rep)
+    plan_rows, flags = plan(g, col, board_rows, per_rep, day=day)
     for f in flags:
         _log("  ! %s" % f)
     _log("%d cell(s) would change on %r (SaraPlus overwrites, up or down):"

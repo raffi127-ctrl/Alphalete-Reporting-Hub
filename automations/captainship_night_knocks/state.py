@@ -103,10 +103,33 @@ def record_failure(data: dict, *, captain_key: str, label: str,
     kind="office" the email went, but one office's board was missing from it
                   (Eve 2026-09-14: "necesitamos ser avisados para poder reparar
                   esa oficina aunque el resto se envíe")."""
-    data.setdefault("failures", []).append(
+    # THE SAME FAILURE TWICE IS ONE LINE. A wave whose capture dies stays
+    # open and is retried every 5-minute tick until its grace runs out, so a
+    # dead ownerville session used to append the identical line ~7 times per
+    # captain: the 11/19 notice listed the Pacific wave 49 times for 7
+    # captains, and every retry re-mailed Eve the same "NOT sent" alert.
+    # Repeats now bump `repeats` on the first line; see is_new_failure.
+    reason = reason[:600]
+    for f in data.setdefault("failures", []):
+        if (f.get("captain"), f.get("wave"), f.get("kind"),
+                f.get("reason")) == (captain_key, label, kind, reason):
+            f["repeats"] = int(f.get("repeats") or 0) + 1
+            f["last_at"] = _now()
+            return data
+    data["failures"].append(
         {"at": _now(), "captain": captain_key, "wave": label,
-         "reason": reason[:600], "kind": kind})
+         "reason": reason, "kind": kind})
     return data
+
+
+def is_new_failure(data: dict, *, captain_key: str, label: str,
+                   reason: str, kind: str = "wave") -> bool:
+    """False when record_failure would only bump an existing line — the
+    caller must not count it as a new failure (nor alert about it again)."""
+    key = (captain_key, label, kind, reason[:600])
+    return not any((f.get("captain"), f.get("wave"), f.get("kind"),
+                    f.get("reason")) == key
+                   for f in (data.get("failures") or []))
 
 
 def office_failures(data: dict) -> List[Dict[str, str]]:

@@ -41,8 +41,12 @@ export PYTHONPATH="$(pwd)"
 # retired names costs nothing and a missing name is silent damage: Lucy 2 moved to
 # Lucys-MacBook-Neo.local after 2026-08-06, so from 8/7 every Lucy-2 alert was
 # labeled "Lucy 1" and pointed people at the wrong machine (Eve 2026-08-13).
+# NOT "Mac.attlocal.net" (removed 2026-11-20): the AT&T router gives that name
+# to Lucy 1 too, so it labeled Lucy 1's failures "Lucy 2". Rows now carry the
+# runner's own name ('Mac.attlocal.net [Lucy 1]'), which the label reads first;
+# an old untagged row with that name prints raw instead of guessing.
 "$VENV_PY" -m automations.machine_digest.run --watch \
-  --host "Lucys-MacBook-Neo,Mac.attlocal.net,Carloss-Mac-mini-2" "$@" >> "$LOG_FILE" 2>&1
+  --host "Lucys-MacBook-Neo,Carloss-Mac-mini-2" "$@" >> "$LOG_FILE" 2>&1
 ST=$?
 if [ "$ST" -ne 0 ]; then
   echo "[$(date)] error-watch exit=$ST" >> "$LOG_FILE"

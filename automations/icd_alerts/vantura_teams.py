@@ -36,13 +36,25 @@ CACHE_MIN = 10
 OFFICE_KEYS = frozenset({"carlos-b2batt"})
 
 
+# THE WEEK BLOCK (Carlos 2026-11-19: "starting at 8:30 p.m. and after, do a
+# team section with the total for the week numbers, only for 8:30pm and
+# after"). From this local time on, the text also carries each team's week:
+# the board's Mon..yesterday day cells + today's live SaraPlus numbers (the
+# board's today cell is only filled hourly from Slack, so it is not used).
+WEEK_FROM = (20, 30)
+TZ = "America/Chicago"
+
+
 class Book:
     """rep -> team for one read of the board."""
 
-    def __init__(self, by_name: Dict[str, str], teams: List[str], source: str = ""):
+    def __init__(self, by_name: Dict[str, str], teams: List[str], source: str = "",
+                 week_before: Optional[Dict[str, int]] = None):
         self._by_name = dict(by_name)      # normalised board name -> team
         self.teams = list(teams)
         self.source = source
+        # {team: units on the board's day cells BEFORE today}, this week
+        self.week_before = dict(week_before or {})
 
     def team_for(self, rep: str) -> str:
         """The rep's team, or '' when the board cannot place them."""
@@ -72,19 +84,74 @@ def box_teams(grid) -> List[str]:
     return out
 
 
-def from_grid(grid, tab: str = "") -> Book:
+def _units(v) -> int:
+    v = str(v or "").replace(",", "").strip()
+    return int(v) if v.isdigit() else 0          # T / F / X / blank = 0
+
+
+def from_grid(grid, tab: str = "", day: Optional[dt.date] = None,
+              office: str = "carlos-b2batt") -> Book:
     from automations import vantura_boards as VB
+    from automations.icd_alerts import rep_names as RN
     from automations.vantura_slack_sales.run import _norm
     reps = VB.parse_board(grid, tab)
     by_name = {}
     for r in reps:
-        team = " ".join(str(r.get("team") or "").split())
-        by_name[_norm(r["name"])] = team
+        by_name[_norm(r["name"])] = " ".join(str(r.get("team") or "").split())
+    placer = Book(by_name, [])
+    week_before = {}
+    upto = day.weekday() if day else 0           # Mon=0: day cells before today
+    monday = (day - dt.timedelta(days=upto)) if day else None
+    for r in reps:
+        own = by_name[_norm(r["name"])]
+        for i, cell in enumerate((r.get("days") or [])[:upto]):
+            n = _units(cell)
+            if not n:
+                continue
+            # A day this rep's login carried someone else's sales (Esmeralda's
+            # week of 11/16 was Jacob's): that day counts for the real seller.
+            real = RN.sold_under_for(office, monday + dt.timedelta(days=i), r["name"])
+            k = (placer.team_for(real) if real else own) or "Unassigned"
+            week_before[k] = week_before.get(k, 0) + n
     teams = box_teams(grid) or sorted({t for t in by_name.values() if t}, key=str.lower)
     if not teams:
         raise ValueError("no team on any rep row of %s" % (tab or "the board"))
     return Book(by_name, teams, "%s -> Team column, %d rep(s), %d team(s)"
-                % (tab or "NDS Sales Board", len(by_name), len(teams)))
+                % (tab or "NDS Sales Board", len(by_name), len(teams)),
+                week_before=week_before)
+
+
+def week_due(now: Optional[dt.datetime] = None) -> bool:
+    """8:30pm or later, office time."""
+    from zoneinfo import ZoneInfo
+    now = now or dt.datetime.now(ZoneInfo(TZ))
+    if now.tzinfo is not None:
+        now = now.astimezone(ZoneInfo(TZ))
+    return (now.hour, now.minute) >= WEEK_FROM
+
+
+def week_lines(book: Book, today_units, day: dt.date) -> List[str]:
+    """['', 'Week (Mon-Thu):', 'Team: n 🥇', ...] -- the board's days before
+    today plus today's live units. `today_units` = [(shown rep name, units)].
+    Every team the board lists shows (a zero too); Unassigned only when > 0."""
+    from automations.alphalete_sales_board import notify as N
+    score = {t: 0 for t in book.teams}
+    for t, n in book.week_before.items():
+        score[t] = score.get(t, 0) + n
+    for name, n in today_units:
+        if n <= 0:
+            continue
+        t = book.team_for(N.short_name(name)) or book.team_for(name) or "Unassigned"
+        score[t] = score.get(t, 0) + n
+    if not score.get("Unassigned"):
+        score.pop("Unassigned", None)
+    order = sorted(score, key=lambda t: (t == "Unassigned", -score[t], t.lower()))
+    top = max([score[t] for t in score if t != "Unassigned"] or [0])
+    days = "Mon" if day.weekday() == 0 else "Mon-%s" % day.strftime("%a")
+    return ["", "Week (%s):" % days] + [
+        "%s: %d%s" % (t, score[t], " " + N.GOLD if top and score[t] == top
+                      and t != "Unassigned" else "")
+        for t in order]
 
 
 _CACHE: Dict[str, tuple] = {}
@@ -94,16 +161,16 @@ def for_day(day: dt.date, log=print, now: Optional[dt.datetime] = None) -> Optio
     """The live team book, or None (never raises)."""
     now = now or dt.datetime.now()
     hit = _CACHE.get("book")
-    if hit and (now - hit[0]).total_seconds() < CACHE_MIN * 60:
+    if hit and hit[2] == day and (now - hit[0]).total_seconds() < CACHE_MIN * 60:
         return hit[1]
     try:
         from automations import vantura_boards as VB
         from automations.recruiting_report.fill import open_by_key
         ws = VB.board_ws(open_by_key(SHEET_ID), CAMPAIGN)
-        book = from_grid(VB._retry_or_call(ws.get, VB.READ_RANGE), ws.title)
+        book = from_grid(VB._retry_or_call(ws.get, VB.READ_RANGE), ws.title, day)
         log("vantura teams: %s" % book.source)
     except Exception as e:  # noqa: BLE001 -- the block, never the text
         log("vantura teams skipped: %s: %s" % (type(e).__name__, str(e)[:160]))
         book = None
-    _CACHE["book"] = (now, book)
+    _CACHE["book"] = (now, book, day)
     return book

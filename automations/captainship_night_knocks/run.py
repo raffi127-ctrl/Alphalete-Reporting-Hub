@@ -630,7 +630,8 @@ def _board_attempt(data: dict, office: str, night: dt.date) -> int:
 
 
 def _send_wave(d: "S.Due", todo: Sequence[str], data: dict, *, send: bool,
-               sample: bool, logfn=print, retry_boards: bool = True) -> int:
+               sample: bool, logfn=print, retry_boards: bool = True,
+               lead: Optional[str] = None) -> int:
     """Capture `todo` (offices of wave `d`) and mail each its own board.
     Returns the number of office mails sent. Shared by the tick and --resend."""
     sent = 0
@@ -641,9 +642,12 @@ def _send_wave(d: "S.Due", todo: Sequence[str], data: dict, *, send: bool,
         reason = "%s: %s" % (type(exc).__name__, str(exc)[:400])
         logfn("[night-knocks] ✗ capture failed: " + reason)
         logfn(traceback.format_exc()[-1200:])
+        fresh = ST.is_new_failure(data, captain_key=d.captain_key,
+                                  label=d.label, reason=reason)
         data = ST.record_failure(data, captain_key=d.captain_key,
                                  label=d.label, reason=reason)
-        ST.save(d.local_date, alert_now(d, data, 1, send=send, logfn=logfn))
+        ST.save(d.local_date, alert_now(d, data, 1 if fresh else 0,
+                                        send=send, logfn=logfn))
         return 0
 
     n_fail, retry = 0, False
@@ -665,10 +669,12 @@ def _send_wave(d: "S.Due", todo: Sequence[str], data: dict, *, send: bool,
         if failure is not None:
             # Nobody gets a broken board; Eve hears about it now.
             logfn("[night-knocks]   ✗ %s" % failure)
+            n_fail += ST.is_new_failure(data, captain_key=d.captain_key,
+                                        label=d.label, reason=failure,
+                                        kind="office")
             data = ST.record_failure(data, captain_key=d.captain_key,
                                      label=d.label, reason=failure,
                                      kind="office")
-            n_fail += 1
             continue
         to_addrs = mail.assert_allowed(to, sample=sample)
         subject = mail.office_subject(display, d.local_date)
@@ -676,7 +682,7 @@ def _send_wave(d: "S.Due", todo: Sequence[str], data: dict, *, send: bool,
                          fire_local=d.fire_local, boards=[(display, png)],
                          footer=footer_lines([display], sample=sample),
                          first=True, to_addrs=to_addrs,
-                         lead="Today's knocking for your office.")
+                         lead=lead or "Today's knocking for your office.")
         if not send:
             logfn("[night-knocks] DRY-RUN — would send %r to %s"
                   % (subject, ", ".join(to_addrs)))
@@ -687,10 +693,12 @@ def _send_wave(d: "S.Due", todo: Sequence[str], data: dict, *, send: bool,
             reason = "%s — email not sent (%s: %s)" % (
                 display, type(exc).__name__, str(exc)[:300])
             logfn("[night-knocks] ✗ " + reason)
+            n_fail += ST.is_new_failure(data, captain_key=d.captain_key,
+                                        label=d.label, reason=reason,
+                                        kind="office")
             data = ST.record_failure(data, captain_key=d.captain_key,
                                      label=d.label, reason=reason,
                                      kind="office")
-            n_fail += 1
             retry = True       # SMTP hiccup: the next tick tries this one again
             continue
         data = ST.record_office_sent(data, display, d.local_date, mid,
@@ -726,13 +734,15 @@ def resend(night: dt.date, offices: Sequence[str], *, send: bool,
     whose board failed that night and was never sent. Anyone already mailed for
     that night is skipped, so running it twice sends nobody twice."""
     data = ST.load(night)
-    wanted = list(offices) or failed_offices(data, night)
-    wanted = [o for o in wanted if not ST.office_sent(data, o, night)]
+    rosters = rosters_for(captain_keys, night=night, logfn=logfn)
+    wanted = list(offices) or (failed_offices(data, night)
+                               + wave_failed_offices(data, rosters))
+    wanted = [o for o in dict.fromkeys(wanted)
+              if not ST.office_sent(data, o, night)]
     if not wanted:
         logfn("[night-knocks] resend %s: nothing owed" % night)
         return 0
     logfn("[night-knocks] resend %s: %s" % (night, ", ".join(wanted)))
-    rosters = rosters_for(captain_keys, night=night, logfn=logfn)
     low = {w.lower(): w for w in wanted}
     groups: Dict[Tuple[str, str], List[str]] = {}
     for key, icds in sorted(rosters.items()):
@@ -751,8 +761,30 @@ def resend(night: dt.date, offices: Sequence[str], *, send: bool,
                   fire_local=S._fire_instant(zone, night).astimezone(
                       ZoneInfo(zone)))
         sent += _send_wave(d, icds, ST.load(night), send=send, sample=sample,
-                           logfn=logfn, retry_boards=False)
+                           logfn=logfn, retry_boards=False, lead=LATE_LEAD)
     return sent
+
+
+# Eve 2026-11-20: a resend says WHY it is late and that today is back to
+# normal. The SUBJECT stays exactly the same (owners filter on it); only this
+# line at the top changes.
+LATE_LEAD = ("Sorry this is late &mdash; a glitch on our side held up last "
+             "night's email. Everything is back to normal, and today's will "
+             "arrive at the usual time.")
+
+
+def wave_failed_offices(data: dict, rosters: Dict[str, List[str]]) -> List[str]:
+    """Offices of every WHOLE wave that failed (11/19: ownerville died for the
+    Pacific wave, so seven captainships' Pacific offices got nothing). A wave
+    failure names only captain + zone label, so the offices come from the
+    roster: that captain's offices whose zone carries that label."""
+    out: List[str] = []
+    for f in ST.wave_failures(data):
+        for icd in rosters.get(f.get("captain") or "", []):
+            zone = Z.zone_for(icd)
+            if zone and Z.ZONE_LABEL.get(zone, zone) == f.get("wave")                     and icd not in out:
+                out.append(icd)
+    return out
 
 
 def alert_now(d: S.Due, data: dict, n_new: int, *, send: bool,

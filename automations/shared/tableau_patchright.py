@@ -1101,35 +1101,71 @@ def _ownerville_session_valid(page: Page, verbose: bool = True) -> bool:
     return False
 
 
+def _remint_ownerville_in_child(verbose: bool) -> bool:
+    """Run refresh_ownerville in a SEPARATE PROCESS; True iff it wrote a live
+    session.
+
+    The self-heal is always reached from inside the caller's own
+    sync_playwright() (it holds a `page`), and a second sync_playwright() in
+    the same process raises "It looks like you are using Playwright Sync API
+    inside the asyncio loop". refresh_ownerville's in-process guard
+    (_inside_playwright_loop, a greenlet probe) does not catch that case: on
+    Lucy 3 the night of 2026-11-19 the re-mint hit that error 8 times out of 8
+    and the 9 PM Pacific wave of seven captainships went out as "session
+    expired". A child process has no Playwright loop, so the unattended login
+    really runs; the caller then re-reads the file it exported."""
+    import sys
+    root = Path(__file__).resolve().parents[2]
+    try:
+        res = subprocess.run(
+            [sys.executable, "-m", "automations.shared.appstream_autorenew",
+             "--ownerville-only"],
+            cwd=str(root), capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=10 * 60)
+    except Exception as e:  # noqa: BLE001 — caller reports the real error
+        if verbose:
+            print("-> re-mint child did not run (%s)" % type(e).__name__,
+                  flush=True)
+        return False
+    if verbose:
+        tail = (res.stdout or res.stderr or "").strip().splitlines()[-1:]
+        print("-> re-mint child exit %s%s" % (
+            res.returncode, (" — " + tail[0][:160]) if tail else ""),
+            flush=True)
+    return res.returncode == 0
+
+
 def _ownerville_seed_hint() -> str:
     """What to actually DO about a dead ownerville session on THIS machine.
 
-    The old error named output/_scratch_ownerville_export_state.py — a scratch
-    file that no longer exists, so anyone who hit this was sent to a missing
-    path (found 2026-08-24). The real refresh path is the session holder: a
-    human clears Cloudflare in its window ONCE, then it re-exports the live
-    cookies every few minutes.
-
-    The key thing the old message never said: this file is gitignored and
-    MACHINE-LOCAL. A holder keeping ownerville warm on the mini does nothing
-    for a laptop, so a machine that never runs one just ages out — that is
-    expected, not a fault to repair. Hence the two branches below.
+    resources/lucy-login-standard.md is authoritative here, and this text used
+    to contradict it ("log back in inside its window", "a machine with no
+    holder only ever ages", "run browser reports through `lucy` instead") —
+    rewritten 2026-11-20. Per that doc: no login needs a human (Cloudflare
+    clears itself given the pre-submit wait), every machine may hold its own
+    session, and a STALE export means the holder is not running, while a FRESH
+    one means the holder is alive and the login itself is what failed.
     """
     try:
         days = (_dt.datetime.now() - _dt.datetime.fromtimestamp(
             OWNERVILLE_STORAGE_STATE.stat().st_mtime)).days
-        when = f"was last exported {days} day(s) ago on this machine"
     except OSError:
-        when = "has never been exported on this machine"
-    return (
-        f"{OWNERVILLE_STORAGE_STATE.name} {when}. On a machine that RUNS the "
-        "session holder (mini / Lucy boxes): log back in inside its window, or "
-        "restart it — `python -m automations.shared.session_holder` locally, "
-        "`lucy restart_holder` remotely. On a machine with NO holder (e.g. a "
-        "laptop) this file only ever ages, and reseeding it by hand is not the "
-        "fix: run browser reports through `lucy` on the mini instead. Note "
-        "`lucy reseed_appstream` is a DIFFERENT login (AppStream) and does not "
-        "touch this file.")
+        days = None
+    if days is None:
+        when = ("has never been exported on this machine — the session holder "
+                "is not running here: start it (`python -m "
+                "automations.shared.session_holder`, or `lucy restart_holder` "
+                "for a Lucy)")
+    elif days >= 1:
+        when = (f"was last exported {days} day(s) ago — the session holder is "
+                "not running here: restart it (`lucy restart_holder`, or "
+                "`python -m automations.shared.session_holder` locally)")
+    else:
+        when = ("was exported today, so the holder is alive and the login "
+                "itself failed — run `lucy login_check` on this machine")
+    return (f"{OWNERVILLE_STORAGE_STATE.name} {when}. Note `lucy "
+            "reseed_appstream` is a DIFFERENT login (AppStream) and does not "
+            "touch this file.")
 
 
 def _reuse_ownerville_storage_state(ctx, page: Page, verbose: bool) -> bool:
@@ -1232,8 +1268,7 @@ def _ensure_ownerville_logged_in(page: Page, verbose: bool = True,
         if verbose:
             print("-> ownerville session dead — minting a new one", flush=True)
         try:
-            from automations.shared.appstream_autorenew import refresh_ownerville
-            if refresh_ownerville(verbose=verbose) and \
+            if _remint_ownerville_in_child(verbose) and \
                     _reuse_ownerville_storage_state(page.context, page, verbose):
                 if verbose:
                     print("-> ownerville session re-minted and restored",

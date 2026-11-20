@@ -297,6 +297,9 @@ def name_groups(reps, max_names: int = PENDING_MAX_NAMES,
     letter that would take the post to max_names+1..stretch goes in whole
     and closes it; past stretch it opens the next post. Only a single letter
     bigger than stretch is split (unavoidable). Label = 'A–K'; '' if one."""
+    # A-Z ignoring case (11/20: 'ortensia martinez' sorted after Z and the
+    # post read 'reps K–O' while it held K..Z).
+    reps = sorted(reps, key=lambda x: str(x[0]).strip().casefold())
     blocks = []                          # [(letter, [(rep, rows)])]
     for rep, rr in reps:
         if blocks and blocks[-1][0] == _initial(rep):
@@ -419,8 +422,9 @@ def post_pending_thread(mine, owner: str, day: dt.date, *, dry_run: bool,
     first_link = ""
     for label, part in groups:
         span = " — reps {}".format(label) if label else ""
-        title = "{}{} *Pending Orders {}*{} {}".format(
-            tag, PENDING_TITLE[:1], md, span, PENDING_TAG)
+        # Eve 11/20: it read too much like the Order Log post right above it
+        # -> orange marks + CAPS. No description line (too wordy, Eve).
+        title = "{}🟧⏳ *PENDING ORDERS {}{}*".format(tag, md, span)
         ts = _text(None, "{}\nOpen the thread 👇 and tap your name".format(title))
         index_ts = _text(ts, "👉 *Tap your name:* (names loading...)")
         links = []
@@ -479,8 +483,9 @@ def _find_pending_post(client, channel_id: str, md: str) -> str:
     except Exception as e:  # noqa: BLE001 — can't tell: post (better than none)
         print("  (could not check for an earlier Pending Orders post: {})".format(e))
         return ""
-    want = "*Pending Orders {}*".format(md)
-    hits = [m for m in msgs if want in (m.get("text") or "")
+    # old title '*Pending Orders 11/20*', new '*PENDING ORDERS 11/20 — …*'
+    want = "pending orders {}".format(md)
+    hits = [m for m in msgs if "*" + want in (m.get("text") or "").lower()
             and "[SAMPLE]" not in (m.get("text") or "")]
     if not hits:
         return ""
@@ -493,7 +498,7 @@ def _find_pending_post(client, channel_id: str, md: str) -> str:
 
 
 def post_pending_live(mine, owner: str, day: dt.date) -> None:
-    """Live: the Pending Orders thread, then one pointer line in Metrics.
+    """Live: the Pending Orders thread (its own post, nothing in Metrics).
     Never fails the fiber board — a problem here prints loud and moves on."""
     from automations.shared import slack_metrics_post as smp
     if smp._email_capture() is not None:
@@ -504,13 +509,11 @@ def post_pending_live(mine, owner: str, day: dt.date) -> None:
         print("  (nothing pending — no Pending Orders thread)")
         return
     try:
-        link = post_pending_thread(mine, owner, day, dry_run=False,
-                                   channel_id=smp.CHANNEL_ID)
-        if link == "found":
-            link = ""
-        res = smp.post_reply_text_only(pending_pointer_text(rows, link),
-                                       today=day)
-        print("  ✓ pointer in Metrics: {}".format(res))
+        # Eve 11/20 (Raf: "one pic in the metrics thread with the fiber
+        # scheduled orders ... then a different thread"): NOTHING else goes in
+        # Metrics — no pointer line.
+        post_pending_thread(mine, owner, day, dry_run=False,
+                            channel_id=smp.CHANNEL_ID)
     except Exception as e:  # noqa: BLE001
         print("⚠ Pending Orders thread FAILED: {}: {}".format(
             type(e).__name__, str(e)[:300]))

@@ -271,5 +271,80 @@ class Alerting(unittest.TestCase):
         self.assertIn("except Exception", src)
 
 
+
+class ReadiestFirst(unittest.TestCase):
+    """raf, 2026-11-20: owner_submit spent its whole 9m39s budget on the first
+    eight names in board order and stopped with "20 not reached this run".
+    Four of the eight were not in OwnerVille at all; the other four had every
+    section PENDING. Jaime Molina -- all sections COMPLETED, Submit box there
+    and unticked -- was one of the twenty never reached. Every lookup worked
+    and the run submitted nobody."""
+
+    def _row(self, **done):
+        r = {c: "" for c in B.COLUMNS}
+        r.update(done)
+        return r
+
+    def test_more_steps_done_scores_higher(self):
+        ready = self._row(**{"Contact Added": "11/18", "BG Status": "Passed",
+                             "Digi Docs": "11/18", "Onboarding Quizzes": "11/19",
+                             "Blue Ink": "11/18", "Headshot Photo": "11/19",
+                             "UID Request": "11/19", "OV BG Status": "Passed"})
+        fresh = self._row()
+        self.assertGreater(P.readiness(ready, "Owner Submit"),
+                           P.readiness(fresh, "Owner Submit"))
+
+    def test_only_the_steps_before_this_one_count(self):
+        """A column after Owner Submit says nothing about being ready for it."""
+        later = self._row(**{"Added to APEX": "11/19"})
+        self.assertEqual(P.readiness(later, "Owner Submit"), 0)
+
+    def test_a_pending_bg_is_not_a_finished_step(self):
+        """BG Status holds a STATE. "Pending" is a cell somebody filled in,
+        not a step somebody completed, and counting it would push a person who
+        is waiting on Sterling ahead of one who is actually ready."""
+        pending = self._row(**{"BG Status": "Pending"})
+        passed = self._row(**{"BG Status": "Passed"})
+        self.assertEqual(P.readiness(pending, "Owner Submit"), 0)
+        self.assertEqual(P.readiness(passed, "Owner Submit"), 1)
+
+    def test_an_alert_cell_is_not_a_finished_step(self):
+        """An ALERT_PREFIX cell is an ask, not an answer -- the same rule
+        `candidates` already applies to the column it is filtering on."""
+        asked = self._row(**{"Blue Ink": F.ALERT_PREFIX + " chase this"})
+        self.assertEqual(P.readiness(asked, "Owner Submit"), 0)
+
+    def test_the_board_can_never_cause_a_press(self):
+        """readiness reads a sheet people type in. It may decide who is asked
+        about FIRST and nothing else: OwnerVille's section states stay the only
+        gate, which is why submit_one re-reads them itself."""
+        src = inspect.getsource(P.readiness) + inspect.getsource(P.candidates)
+        for forbidden in ("submit_one", "press(", "_tick", "Save Changes"):
+            self.assertNotIn(forbidden, src)
+
+
+class MissCooldownOnThePress(unittest.TestCase):
+    """The same ~27s-per-absence cost `ov_misses` was built for, on the step
+    that was paying it four times out of eight."""
+
+    def test_the_press_asks_ov_misses_before_searching(self):
+        called = _calls(P._press)
+        self.assertIn("fresh", called)
+
+    def test_it_records_the_misses_and_clears_the_hits(self):
+        called = _calls(P._press)
+        self.assertIn("remember", called)
+        self.assertIn("forget", called)
+
+    def test_only_a_not_found_counts_as_an_absence(self):
+        """"not every section is done" is OwnerVille describing somebody it
+        HAS. Remembering that as a miss would stop asking about the very
+        people who are closest to ready."""
+        src = inspect.getsource(P._press)
+        self.assertIn('"not found in OwnerVille" in str(detail)', src)
+        self.assertIn("missing.append(name)", src)
+        self.assertIn("found.append(name)", src)
+
+
 if __name__ == "__main__":
     unittest.main()

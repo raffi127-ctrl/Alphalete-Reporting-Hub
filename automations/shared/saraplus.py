@@ -231,7 +231,7 @@ def _login_page_message(page) -> str:
     there is none, or when the page cannot be asked (a fake page in tests)."""
     try:
         text = page.evaluate(
-            """() => {
+            r"""() => {
                  const pick = sel => [...document.querySelectorAll(sel)]
                    .map(e => (e.innerText || '').trim())
                    .filter(t => t && t.length < 300 && !/\{1\}|##LOC/.test(t));

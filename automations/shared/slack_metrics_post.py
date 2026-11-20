@@ -656,6 +656,8 @@ def ensure_metrics_thread(today: dt.date | None = None,
         ":door: Total Knocks (with Time Gaps)",
         ":clipboard: Order Log",
         # Raf 2026-11-10; every D2D office the same day (Eve).
+        # Only the fiber image lives in Metrics; Pending Orders is its own
+        # post, not listed here (Raf 11/12, Eve 11/20).
         ":calendar: Activations Scheduled Today",
         ":date: Sales scheduled 6+ days out",
         ":no_entry_sign: Canceled Orders",

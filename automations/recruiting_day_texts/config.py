@@ -34,6 +34,13 @@ class Office:
                           # Office Channels tab -- found by its pinned people.
     tz: str = "America/Chicago"   # office local time (from their ECO sign-up)
     mode: str = "dry"     # "dry" = read + log only | "live" = texts | "hold" = skip
+    texts_key: str = ""   # the Office Channels row that holds `group`'s approval,
+                          # when it is NOT `key`. Carlos's NEW A Players is approved
+                          # on his 'carlos-b2batt' row, not 'carlos' (2026-11-20).
+
+    @property
+    def approval_key(self) -> str:
+        return self.texts_key or self.key
 
     @property
     def first_name(self) -> str:
@@ -78,9 +85,12 @@ OFFICES: Dict[str, Office] = {
     # every send there failed: "Can not send message to a chat you are not a
     # member of!" -- Lucy 1 is no longer in that chat (Box went off 10/28).
     # Other approved group: ATT B2B Leaders.
+    # NEW A Players is approved on the 'carlos-b2batt' Office Channels row; the
+    # 'carlos' row only holds Box B2B. 11/20 7:01 the morning text failed with
+    # "not an approved text destination (has: ['Box B2B'])" -- texts_key fixes it.
     "carlos": Office(key="carlos", appstream_id="11580", owner="Carlos Hidalgo",
                   team="Alphalete", group="NEW A Players",
-                  tz="America/Chicago"),
+                  tz="America/Chicago", texts_key="carlos-b2batt"),
     "cody": Office(key="cody", appstream_id="21151", owner="Cody Cannon",
                   team="Aeon", group="ASC A-Players",
                   tz="America/Chicago"),

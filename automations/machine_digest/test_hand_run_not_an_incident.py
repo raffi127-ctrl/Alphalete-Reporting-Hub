@@ -73,6 +73,47 @@ class TheMachineLabelNamesTheRealBox(unittest.TestCase):
         """No hostname recorded = no new information; don't regress old rows."""
         self.assertEqual(md._machine_label("", ""), "Lucy 1")
 
+    def test_one_hostname_two_lucys(self):
+        """2026-11-20: the AT&T router named Lucy 1 AND Lucy 2 'Mac.attlocal.net',
+        and Lucy 1's DD harvest failure went out as 'on Lucy 2'. The profile tag
+        each runner writes beside its hostname decides, whatever the Lucy-2 list
+        says."""
+        hosts = "Lucys-MacBook-Neo,Mac.attlocal.net"
+        self.assertEqual(md._machine_label("Mac.attlocal.net [Lucy 1]", hosts), "Lucy 1")
+        self.assertEqual(md._machine_label("Mac.attlocal.net [Lucy 2]", hosts), "Lucy 2")
+        self.assertEqual(md._machine_label("Lucys-Mac-mini.local [Lucy 3]", ""), "Lucy 3")
+
+    def test_tagged_rows_still_match_their_hostname(self):
+        """The tag must not hide a row from a --host filter (substring OR exact)."""
+        self.assertTrue(md._machine_matches("Mac.attlocal.net [Lucy 1]",
+                                            "Mac.attlocal.net", exact=True))
+        self.assertTrue(md._machine_matches("Lucys-MacBook-Neo.local [Lucy 2]",
+                                            "MacBook-Neo", exact=False))
+        self.assertFalse(md._machine_matches("Lucys-Mac-mini.local [Lucy 3]",
+                                             "Mac.attlocal.net", exact=True))
+
+
+class ActivityMachineValue(unittest.TestCase):
+    """hub_identity.activity_machine / split_machine — what a row carries."""
+
+    def test_tag_round_trips(self):
+        from automations.shared import hub_identity as hi
+        self.assertEqual(hi.split_machine("Mac.attlocal.net [Lucy 1]"),
+                         ("Mac.attlocal.net", "Lucy 1"))
+        self.assertEqual(hi.split_machine("MacBook-Pro-3.local"),
+                         ("MacBook-Pro-3.local", ""))
+        self.assertEqual(hi.split_machine(""), ("", ""))
+
+    def test_no_marker_writes_the_bare_hostname(self):
+        from unittest import mock
+        from automations.shared import hub_identity as hi
+        with mock.patch.object(hi, "_profile", return_value=""), \
+                mock.patch.object(hi.socket, "gethostname", return_value="Mac.attlocal.net"):
+            self.assertEqual(hi.activity_machine(), "Mac.attlocal.net")
+        with mock.patch.object(hi, "_profile", return_value="Lucy 1"), \
+                mock.patch.object(hi.socket, "gethostname", return_value="Mac.attlocal.net"):
+            self.assertEqual(hi.activity_machine(), "Mac.attlocal.net [Lucy 1]")
+
 
 class TheErroredBranchSkipsHandRuns(unittest.TestCase):
     """Reproduces the exact Activity row that opened the ticket:
