@@ -117,13 +117,16 @@ def totals(lines: Sequence[dict]) -> Dict[str, float]:
     return {c: round(sum(float(ln.get(c) or 0) for ln in lines), 2) for c in MONEY_COLS}
 
 
-# Carlos 2026-11-20, word for word: "Entry-level payout is 30%. Leadership
-# payout: 40%. Leadership payout: 45% at 12 apps the week prior. Leadership
-# payout at 50% at 16 apps the week prior."
-PAYOUT_LEVELS = (("Entry Level", "30%"),
-                 ("Leadership", "40%"),
-                 ("Leadership, 12 apps the week prior", "45%"),
-                 ("Leadership, 16 apps the week prior", "50%"))
+# Carlos 2026-11-20: "Entry-level payout is 30%. Leadership payout: 40%.
+# Leadership payout: 45% at 12 apps the week prior. Leadership payout at 50%
+# at 16 apps the week prior." -- then, the same night: "Let's do 10 apps is
+# 45%, and then 14 apps at 50% for the pay out. And on the table, let's just
+# call it: entry-level pay, leadership pay, leadership pay at 12 apps,
+# leadership pay at 16 apps" (the names with the NEW 10 / 14 thresholds).
+PAYOUT_LEVELS = (("Entry-level pay", "30%"),
+                 ("Leadership pay", "40%"),
+                 ("Leadership pay at 10 apps", "45%"),
+                 ("Leadership pay at 14 apps", "50%"))
 SALES_WEEKS = 5
 CAL_WEEKS = 5            # the Activation/Pay Week box: this many weeks, the current one last
 ACTIVATED_STATUSES = ("Posted", "Active", "Disconnected")

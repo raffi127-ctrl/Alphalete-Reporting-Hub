@@ -247,9 +247,10 @@ class Lines(unittest.TestCase):
                         cal.index('<td class="now">11/15/26</td><td class="now">11/21/26</td><td class="now">11/27/26</td>'))
         self.assertNotIn("11/22/26", cal)                                  # nothing after the current week
         # the boxes
-        for text in ("Payout Levels", ">Entry Level</td><td class=\"b\">30%</td>", ">Leadership</td><td class=\"b\">40%</td>",
-                     "Leadership, 12 apps the week prior</td><td class=\"b\">45%</td>",
-                     "Leadership, 16 apps the week prior</td><td class=\"b\">50%</td>"):
+        for text in ("Payout Levels", ">Entry-level pay</td><td class=\"b\">30%</td>",
+                     ">Leadership pay</td><td class=\"b\">40%</td>",
+                     ">Leadership pay at 10 apps</td><td class=\"b\">45%</td>",      # Carlos 11/20 night: 10 / 14
+                     ">Leadership pay at 14 apps</td><td class=\"b\">50%</td>"):
             self.assertIn(text, page)
         self.assertIn("Tier Bonus", page)
         for row in ("<td>Tier 1</td><td>4</td><td>$30</td>", '<td class="now">Tier 2</td><td class="now">5\u20136</td>'
