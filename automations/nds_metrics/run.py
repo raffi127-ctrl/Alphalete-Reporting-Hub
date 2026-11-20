@@ -1797,21 +1797,25 @@ def tier_cells(n_orders: int, port_lines: int, bands=None) -> list:
 
 
 def revenue_tier_columns(cols, lines, monday: dt.date, i_od, i_rep, i_port, i_tn, i_spm,
-                         log=print):
+                         log=print, double_days=None):
     """-> (headers, {rep: cells}, {rep: (orders, port lines)}) for the Sun-Sat rep-tier week that holds
     the board's week (Sun = the Monday - 1 .. Sat): an order counts when it
     has a port line (sp.SPM Number distinct), a double-tier day counts it
     twice (double_tier.days), port lines = the rep's port lines on those
-    orders."""
+    orders. `double_days` = the double-tier days already read (a caller
+    counting several weeks reads the inbox once); None = read them here."""
     sun = monday - dt.timedelta(days=1)
     sat = monday + dt.timedelta(days=5)
     seed = sow_rates()["rep_tier"].get("double_days") or []
-    try:
-        from automations.nds_metrics import double_tier
-        dbl = set(double_tier.days(seed, log=log))
-    except Exception as e:  # noqa: BLE001
-        dbl = set(seed)
-        log(f"[nds] revenue tiers: double-tier days off the seed only ({type(e).__name__})")
+    if double_days is not None:
+        dbl = set(double_days)
+    else:
+        try:
+            from automations.nds_metrics import double_tier
+            dbl = set(double_tier.days(seed, log=log))
+        except Exception as e:  # noqa: BLE001
+            dbl = set(seed)
+            log(f"[nds] revenue tiers: double-tier days off the seed only ({type(e).__name__})")
     i_st = cols.find("dtr status", "spe.status")
     orders: Dict[str, dict] = {}        # rep -> {spm: order date}
     plines: Dict[str, int] = {}

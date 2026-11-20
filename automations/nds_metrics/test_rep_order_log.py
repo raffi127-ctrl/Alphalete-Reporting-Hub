@@ -15,7 +15,7 @@ RATES = {"wireless": {"port_nonbyod": {"OOF": 213, "INFP": 193}, "port_byod": {"
 HDR = ["Rep", "sp.Order Date (copy)", "DTR Active Date", "Customer Name", "DTR Status", "spe.Status",
        "Device Description", "Package", "Wireless Installment Plan", "spe.TN", "Customer Zip Simple",
        "spe.Port Carrier", "spe.TN Type", "sp.SPM Number", "spe.Account BAN", "spe.Wireless Type",
-       "Product Type (Broken Out)", "spe.Install Date", "IF/OOF", "Auto Bill Pay"]
+       "Product Type (Broken Out)", "spe.Install Date", "IF/OOF", "Auto Bill Pay", "Rep Tier Bonus Status"]
 TODAY = dt.date(2026, 11, 20)                       # Friday; its Mon-Sun week ends Sun 11/22
 
 
@@ -23,7 +23,7 @@ def _row(**kw):
     base = dict(zip(HDR, ["Esmeralda Gonzalez", "11/3/2026", "11/5/2026", "FELIPE C", "Posted", "Delivered",
                           "iPhone 18 Pro - 256GB - Black", "AT&T Extra 2.0", "Next36 w/ Next Up Anytime",
                           "2145550100", "75060", "T-MOBILE USA", "port", "DSI1", "177145738935", "Phone",
-                          "WIRELESS", "", "OOF", ""]))
+                          "WIRELESS", "", "OOF", "", "0"]))
     base.update(kw); return [base[h] for h in HDR]
 
 
@@ -99,34 +99,91 @@ class Lines(unittest.TestCase):
 
     def test_weekly_sales_are_apps_by_sale_week(self):
         wes, sales = ROL.weekly_sales(self.cols, _crew(), TODAY)
-        self.assertEqual(wes, [dt.date(2026, 11, 1), dt.date(2026, 11, 8), dt.date(2026, 11, 15), dt.date(2026, 11, 22)])
+        self.assertEqual(wes, [dt.date(2026, 10, 25), dt.date(2026, 11, 1), dt.date(2026, 11, 8), dt.date(2026, 11, 15),
+                               dt.date(2026, 11, 22)])                                            # 5 weeks (Carlos 11/20)
         esm = sales["Esmeralda Gonzalez"]
-        self.assertEqual(dict(esm[dt.date(2026, 11, 8)]), {"sold": 1, "activated": 1})            # 11/3 port, posted
-        # WE 11/15: the BYOD (pending), the cancelled port, the Air (active) -- the tablet is not an app
-        self.assertEqual(dict(esm[dt.date(2026, 11, 15)]), {"sold": 3, "pending": 1, "cancelled": 1, "activated": 1})
-        self.assertEqual(dict(esm[dt.date(2026, 11, 22)]), {"sold": 1, "activated": 1})           # disconnected after activating
+        self.assertEqual(dict(esm[dt.date(2026, 10, 25)]), {"sold": 1, "activated": 1, "revenue": 213.0})   # the 10/20 port
+        self.assertEqual(dict(esm[dt.date(2026, 11, 8)]), {"sold": 1, "activated": 1, "revenue": 213.0})    # 11/3 port, posted
+        # WE 11/15: the BYOD (pending, 188), the cancelled port (0), the Air (active, 93) are the apps; the
+        # tablet (25) is not an app but its money is in the week's revenue
+        self.assertEqual(dict(esm[dt.date(2026, 11, 15)]),
+                         {"sold": 3, "pending": 1, "cancelled": 1, "activated": 1, "revenue": 306.0})
+        self.assertEqual(dict(esm[dt.date(2026, 11, 22)]), {"sold": 1, "activated": 1, "revenue": 193.0})   # disconnected after activating, in footprint
         self.assertNotIn(dt.date(2026, 11, 1), esm)                                               # nothing sold that week
-        self.assertEqual(sum(c["sold"] for c in esm.values()), 5)                                 # 10/20 is past the 4 weeks
+        wes4, _s = ROL.weekly_sales(self.cols, _crew(), TODAY, weeks=4)
+        self.assertEqual(wes4[0], dt.date(2026, 11, 1))
 
-    def test_tier_standing_is_the_boards_count(self):
-        with mock.patch("automations.nds_metrics.double_tier.days", lambda seed, log=print: []):
-            week, counts = ROL.tier_standing(self.cols, _crew(), TODAY, log=lambda *_a: None)
-        self.assertEqual(week, (dt.date(2026, 11, 15), dt.date(2026, 11, 21)))
-        self.assertEqual(counts, {"Esmeralda Gonzalez": (1, 0)})           # one port order this week, its line disconnected
+    def test_tier_weeks_are_the_boards_count_with_one_inbox_read(self):
+        wes, _s = ROL.weekly_sales(self.cols, _crew(), TODAY)
+        reads = []
+        with mock.patch("automations.nds_metrics.double_tier.days",
+                        lambda seed, log=print: reads.append(1) or {"2026-11-12"}):
+            tiers = ROL.tier_weeks(self.cols, _crew(), wes, log=lambda *_a: None)
+        self.assertEqual(len(reads), 1)                                    # five weeks, one read of the double-tier days
+        self.assertEqual(sorted(tiers), wes)
+        # WE 11/22 -> tier week Sun 11/15 - Sat 11/21: one port order, its line disconnected
+        self.assertEqual(tiers[dt.date(2026, 11, 22)], {"Esmeralda Gonzalez": (1, 0)})
+        # WE 11/15 -> 11/8 - 11/14: DSI3 (the tablet's port) + DSI2 sold on the 11/12 double-tier day = 3
+        self.assertEqual(tiers[dt.date(2026, 11, 15)]["Esmeralda Gonzalez"][0], 3)
+        self.assertEqual(tiers[dt.date(2026, 11, 8)]["Esmeralda Gonzalez"][0], 1)      # 11/3 (Someone Else has one too)
+        self.assertEqual(tiers[dt.date(2026, 11, 1)], {})
+        self.assertEqual(ROL.tier_week_of(dt.date(2026, 11, 22)), (dt.date(2026, 11, 15), dt.date(2026, 11, 21)))
+
+    def test_tier_label(self):
+        bands = [(4, 30.0), (5, 50.0), (7, 75.0), (9, 110.0)]
+        self.assertEqual([ROL.tier_label(n, bands) for n in (0, 3, 4, 5, 6, 7, 8, 9, 14)],
+                         ["-", "-", "Tier 1", "Tier 2", "Tier 2", "Tier 3", "Tier 3", "Tier 4", "Tier 4"])
+        # what Smart Circle has posted wins when it is the higher one (a count of 3 paid at $30 = Tier 1)
+        self.assertEqual(ROL.tier_label(3, bands, paid_rate=30.0), "Tier 1")
+        self.assertEqual(ROL.tier_label(5, bands, paid_rate=30.0), "Tier 2")
+        self.assertEqual(ROL.tier_label(0, bands, paid_rate=75.0), "Tier 3")
+        self.assertEqual(ROL.tier_label(3, bands, paid_rate=0.0), "-")
+
+    def test_posted_tier_rates_reads_the_exports_own_column(self):
+        wes, _s = ROL.weekly_sales(self.cols, _crew(), TODAY)
+        crew = _crew() + [
+            _row(**{"spe.TN": "2145550120", "sp.Order Date (copy)": "11/4/2026", "Rep Tier Bonus Status": "30"}),
+            _row(**{"spe.TN": "2145550121", "sp.Order Date (copy)": "11/5/2026", "Rep Tier Bonus Status": "50"}),
+            _row(**{"spe.TN": "2145550122", "sp.Order Date (copy)": "11/5/2026", "Rep Tier Bonus Status": "110",
+                    "DTR Status": "Shipped"}),                              # not posted: not counted
+            _row(**{"spe.TN": "2145550123", "sp.Order Date (copy)": "11/5/2026", "Rep Tier Bonus Status": "110",
+                    "spe.TN Type": "upgrade"})]                             # not a port line
+        paid = ROL.posted_tier_rates(self.cols, crew, wes)
+        self.assertEqual(paid[dt.date(2026, 11, 8)], {"Esmeralda Gonzalez": 50.0})     # tier week 11/1 - 11/7
+        self.assertEqual(paid[dt.date(2026, 11, 22)], {})
+        from automations.nds_metrics.run import Cols as _Cols
+        bare = _Cols(HDR[:-1])                                              # an export without the column
+        self.assertEqual(ROL.posted_tier_rates(bare, [r[:-1] for r in crew], wes), {we: {} for we in wes})
 
     def test_page(self):
         esm = ROL.rep_lines(self.cols, _crew(), TODAY)["Esmeralda Gonzalez"]
         wes, sales = ROL.weekly_sales(self.cols, _crew(), TODAY)
         tier = ((dt.date(2026, 11, 15), dt.date(2026, 11, 21)), (6, 9))
-        page = ROL.html_for("Esmeralda Gonzalez", esm, TODAY, weekly=(wes, sales["Esmeralda Gonzalez"]), tier=tier)
+        orders = dict(zip(wes, ((0, "-"), (4, "Tier 1"), (1, "-"), (3, "-"), (6, "Tier 2"))))
+        page = ROL.html_for("Esmeralda Gonzalez", esm, TODAY, weekly=(wes, sales["Esmeralda Gonzalez"]), tier=tier,
+                            orders=orders)
+        bare = ROL.html_for("Esmeralda Gonzalez", esm, TODAY, weekly=(wes, sales["Esmeralda Gonzalez"]), tier=tier)
+        self.assertNotIn("<th>Orders</th>", bare)                          # no tier counts -> the columns are left out
+        self.assertIn('colspan="7">Sales by Week Ending', bare)
         self.assertIn("Activated Week 11.01 to 11.07", page)               # Carlos 11/20: "activated" next to "week"
         self.assertIn("Paid Friday 11.13", page)
         self.assertEqual(page.count(">Total</td>"), 2)                     # one per activated week, none under pending
+        # a blank row after each grey Total: before the next blue band and before the orange band
+        self.assertEqual(page.count('<tr class="gap"><td colspan="14"></td></tr>'), 2)
+        self.assertIn('</tr><tr class="gap"><td colspan="14"></td></tr><tr><td class="band"', page)
+        self.assertIn('</tr><tr class="gap"><td colspan="14"></td></tr><tr><td class="pdc"', page)
         self.assertLess(page.rindex(">Total</td>"), page.index("Pending / Disconnect / Cancel"))
         self.assertIn(">$63.90</td>", page)
         self.assertIn("<th>Plan</th><th>Next Up</th>", page)
         for gone in ("Ported From", "SPM Number", "Wireless Order", ">BAN<", "<th>Package</th>"):
             self.assertNotIn(gone, page)
+        # the Activation/Pay Week box: 5 weeks, the current one last and highlighted (Carlos 11/20)
+        cal = page[page.index("Activation/Pay Week"):page.index("Payout Levels")]
+        import re
+        self.assertEqual(len(re.findall(r'<tr><td class="[a-z]*">\d+/\d+/\d\d</td>', cal)), 5)
+        self.assertLess(cal.index('<td class="">10/18/26</td><td class="">10/24/26</td><td class="">10/30/26</td>'),
+                        cal.index('<td class="now">11/15/26</td><td class="now">11/21/26</td><td class="now">11/27/26</td>'))
+        self.assertNotIn("11/22/26", cal)                                  # nothing after the current week
         # the boxes
         for text in ("Payout Levels", ">Entry Level</td><td class=\"b\">30%</td>", ">Leadership</td><td class=\"b\">40%</td>",
                      "Leadership, 12 apps the week prior</td><td class=\"b\">45%</td>",
@@ -138,14 +195,19 @@ class Lines(unittest.TestCase):
                     "<td>Tier 4</td><td>9+</td><td>$110</td>"):
             self.assertIn(row, page)
         self.assertIn("Week of 11/15 to 11/21: 6 orders, Tier 2.", page)
-        self.assertIn("Sales by Week Ending (last 4 weeks)", page)
-        self.assertIn('<td class="alt">11/8</td><td class="alt">1</td><td class="alt">1</td><td class="alt">0</td>'
-                      '<td class="alt">0</td><td class="alt">100%</td>', page)
-        self.assertIn('<td class="">11/15</td><td class="">3</td><td class="">1</td><td class="">1</td>'
-                      '<td class="">1</td><td class="">33%</td>', page)
-        self.assertIn('<td class="now">11/22*</td><td class="now">1</td><td class="now">1</td>', page)
-        self.assertIn('<td class="">11/1</td><td class="">0</td><td class="">0</td><td class="">0</td>'
-                      '<td class="">0</td><td class="">-</td>', page)
+        self.assertIn('colspan="9">Sales by Week Ending (last 5 weeks)', page)
+        # Orders + Tier right after the week ending (Carlos 11/20), revenue far right
+        self.assertIn("<th>Week Ending</th><th>Orders</th><th>Tier</th><th>Sales</th>", page)
+        self.assertIn("<th>Activation %</th><th>Est. Revenue</th></tr>", page)
+
+        def cells(cls, *vals):
+            return "".join('<td class="%s">%s</td>' % (cls, v) for v in vals)
+        self.assertIn(cells("", "10/25", 0, "-", 1, 1, 0, 0, "100%", "$213"), page)
+        self.assertIn(cells("alt", "11/1", 4, "Tier 1", 0, 0, 0, 0, "-", "$0"), page)
+        self.assertIn(cells("", "11/8", 1, "-", 1, 1, 0, 0, "100%", "$213"), page)
+        self.assertIn(cells("alt", "11/15", 3, "-", 3, 1, 1, 1, "33%", "$306"), page)
+        self.assertIn(cells("now", "11/22*", 6, "Tier 2", 1, 1, 0, 0, "100%", "$193"), page)
+        self.assertIn("Orders and Tier = the bonus week, Sunday to Saturday", page)
 
     def test_tier_box_below_the_first_band_and_without_a_count(self):
         box = ROL.tier_box(((dt.date(2026, 11, 15), dt.date(2026, 11, 21)), (2, 3)))
