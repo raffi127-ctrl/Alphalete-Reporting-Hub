@@ -209,6 +209,34 @@
   }
  },
  "reports": {
+  "ars_web_watch": {
+   "on_scheduler": true,
+   "_note": "Eve 2026-11-20: ARS REPORT workbooks are being replaced by Camila's ARS Interview Tracker web. READ-ONLY daily check: an office with >=3 web rows and 0 ARS rows in the last 5 days = it stopped filling ARS, so Hub reports reading ARS lose it. DMs Eve only when that list changes. No machine pin: any Lucy with Sheets + Slack.",
+   "display_name": "ARS -> web watch",
+   "source_type": "api",
+   "data_sources": [],
+   "command": [
+    "automations.ars_web_watch.run"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ],
+    "not_before": "09:00"
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 15,
+   "verify": null
+  },
   "reception_contacts_cleanup": {
    "on_scheduler": true,
    "_note": "JD/Eve 2026-11-19: monthly cleanup of alphaletereception contacts. Rule A old applicants (>30d, never hired), rule B retired in OwnerVille + never on a Sales Board (start >= 2024-07-01). Lucy 1 = has the reception contacts token + OwnerVille. Stops itself above 1500 deletes. DMs Eve the count.",
