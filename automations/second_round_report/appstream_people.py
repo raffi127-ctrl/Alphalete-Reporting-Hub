@@ -68,13 +68,39 @@ def _open_on(app, d: dt.date) -> List[str]:
     return app.page.evaluate(_DATES_JS) or []
 
 
+from contextlib import contextmanager
+
+
+@contextmanager
+def _session(log=print):
+    """The funnel board's way in: an unattended FORM login as the configured
+    account, in a profile of this report's own (the tracker's saved-session
+    reuse expired on Lucy 2 on 11/19, "Re-seed once with ... --appstream-login";
+    the funnel board's form login kept working all day). Own profile = no lock
+    fight with the funnel board's hourly run."""
+    from automations.shared.tableau_patchright import appstream_direct_session, APPSTREAM_PROFILE_DIR
+    from automations.applicant_tracker import applicantstream as A
+    sess = dict(headless=False, verbose=True, force_form_login=True,
+                profile_dir=APPSTREAM_PROFILE_DIR.parent / ".appstream_profile_2r")
+    with appstream_direct_session(**sess) as page:
+        app = A.ApplicantStream()
+        app.page = page
+        try:
+            page.set_default_timeout(A.DEFAULT_TIMEOUT_MS)
+            page.set_default_navigation_timeout(A.NAV_TIMEOUT_MS)
+        except Exception:  # noqa: BLE001
+            pass
+        app._capture_token()
+        log("[2R pull] AppStream session up (form login, own profile)")
+        yield app
+
+
 def pull(lo: dt.date, hi: dt.date, office: str = "11580", log=print) -> List[List[str]]:
-    from automations.applicant_tracker.applicantstream import session
     from automations.linkedin_2nd_round_contacts.run import _READ_TABLE, _count
     days = [lo + dt.timedelta(days=i) for i in range((hi - lo).days + 1)]
     stamp = dt.datetime.now().isoformat(timespec="seconds")
     rows: List[List[str]] = []
-    with session() as app:
+    with _session(log) as app:
         owner = app.select_office(office)
         log("[2R pull] office %s = %s, %s .. %s" % (office, owner, lo, hi))
         todo = list(days)
