@@ -268,6 +268,35 @@ class SoldUnder(unittest.TestCase):
         self.assertEqual(rows[0][0], "Esmeralda Gonzalez")                           # the caller's rows are untouched
         self.assertEqual(ROL.apply_sold_under(cols, rows, []), (rows, {}))
 
+    def test_a_moved_line_does_not_carry_the_logins_posted_tier(self):
+        """build(): Aaron's login hit Tier 2 ($50 posted on its lines); the one order of his that is
+        really Jacob's moves to Jacob with its payouts, but Jacob's tier stays his own count's."""
+        cols = Cols(HDR)
+        mk = lambda **kw: _row(**dict({"Rep": "Aaron De La Torre", "sp.Order Date (copy)": "11/12/2026",
+                                       "DTR Active Date": "11/14/2026", "Rep Tier Bonus Status": "50"}, **kw))
+        crew = [mk(**{"spe.TN": "21455502%02d" % n, "sp.SPM Number": "A%d" % n, "Customer Name": "OTHER %s" % "ABCDE"[n]})
+                for n in range(4)]
+        crew.append(mk(**{"spe.TN": "2145550299", "sp.SPM Number": "A9", "Customer Name": "Sundararaghandran V"}))
+        rules = [{"to": "Jacob Isaiah Ortega", "from": ["aaron", "de", "la", "torre"], "start": None, "end": None,
+                  "customer": ["sundararaghandran", "viswanathan"], "date": None, "why": "tab row 3"}]
+        seen = {}
+
+        def fake_render(rep, lines, today, out, weekly=None, tier=None, orders=None):
+            seen[rep] = (len(lines), orders)
+            return out
+        import tempfile
+        from pathlib import Path as _P
+        with mock.patch("automations.nds_metrics.run.sow_rates", lambda: RATES), \
+                mock.patch.object(ROL, "sold_under_rules", lambda log=print: rules), \
+                mock.patch.object(ROL, "render_rep_png", fake_render), \
+                mock.patch("automations.nds_metrics.double_tier.days", lambda seed, log=print: set()):
+            ROL.build(cols, crew, TODAY, _P(tempfile.mkdtemp()), log=lambda *_a: None)
+        we = dt.date(2026, 11, 15)                                         # tier week 11/8 - 11/14
+        self.assertEqual(seen["Jacob Isaiah Ortega"][0], 1)                # the moved line is on Jacob's picture
+        self.assertEqual(seen["Jacob Isaiah Ortega"][1][we], (1, "-"))     # 1 order: no tier, whatever Aaron's login earned
+        self.assertEqual(seen["Aaron De La Torre"][0], 4)
+        self.assertEqual(seen["Aaron De La Torre"][1][we], (4, "Tier 2"))  # his count is 4 now, Smart Circle posted $50
+
     def test_rules_come_from_payrolls_two_lists(self):
         from automations.vantura_payroll import run as VP
         tab = [["Customer", "Sale Date", "From Rep", "To Rep", "Note", "Added", "Last applied"],

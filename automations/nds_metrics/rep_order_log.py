@@ -632,6 +632,7 @@ def build(cols, crew: Sequence, today: dt.date, out_dir: Path, reps: Optional[Se
     `reps` -- case-blind substrings). -> {rep: png}."""
     from automations.uploaded.order_log import _md
     owner = getattr(cols, "owner_lines", None) or crew
+    logins = owner                         # the export as Smart Circle sees it: one rep per LOGIN
     try:                                   # lines rung under someone else's login go to the real seller
         rules = sold_under_rules(log=log)
         crew, moved = apply_sold_under(cols, crew, rules)
@@ -652,8 +653,13 @@ def build(cols, crew: Sequence, today: dt.date, out_dir: Path, reps: Optional[Se
     board_we = week_ending(RX.board_day(today))        # Monday's board is still last week's
     if board_we not in wes:
         board_we = wes[-1]
-    try:                                   # what Smart Circle has posted, where it is ahead of our count
-        paid = posted_tier_rates(cols, owner, wes)
+    # What Smart Circle has posted, where it is ahead of our count. Read off the
+    # rows BEFORE the sold-under moves: a posted tier $ is the LOGIN's tier, so a
+    # line moved to its real seller must not hand them the login's tier (11/20:
+    # Jacob's 2-order week read "Tier 2" off a line rung under Aaron's login,
+    # which Aaron's own 5 orders had put at $50).
+    try:
+        paid = posted_tier_rates(cols, logins, wes)
     except Exception as e:  # noqa: BLE001
         paid = {}
         log(f"[nds] rep order log: NOTE posted tier status unread ({type(e).__name__}: {str(e)[:100]})")
