@@ -28,11 +28,23 @@ Plan = the rate plan the customer was signed up on (Tableau's Package:
 headed "Package" until Carlos asked on 11/20 for "the plan that the rep
 signed the customer up on ... next to the next up column" -- it was already
 there under the other name, so the header changed and nothing was added.
+A line the export has no Package (or Device) for yet -- a fresh order -- takes
+them from the 'NDS Order Log' tab, the SaraPlus feed, where every line has
+its plan (TabPlans; Carlos 11/20: "you don't have the plan filled out for
+everyone, so get that fixed"); the price is worked out on the filled values.
 
 Est. Revenue = the revenue board's per-line price, the deposit's rates
 (revenue_extras.board_line_price: port $213 / $193 in footprint, BYOD port
-$188 / $168, new-number line $25, upgrade $30, tablet-wearable $25), $0 on a
-Cancelled line. Each payout column is that share of the line's Est. Revenue.
+$188 / $168, new-number line $25, upgrade $30, tablet-wearable $25) PLUS the
+plan's add-on, the deposit's own row (line_revenue.addon_of: Premium $15,
+Extra $10, Value / others $0 -- Carlos 11/20: "I don't think you're accounting
+for the extra value or the premium plan because that changes the revenue");
+PLUS the tier bonus on a port line (Carlos 11/20: "are you accounting for
+the tier in the revenue as well?" -- line_tier_rates: the line's own posted
+'Rep Tier Bonus Status', else the rate of its LOGIN's order count that
+Sun-Sat week; $30 / $50 / $75 / $110). $0 on a Cancelled line. Not in it:
+the Air bundle, Protect.
+Each payout column is that share of the line's Est. Revenue.
 The Total row sums the five money columns for the ACTIVATED week above it
 (what that Friday pays); the Pending / Disconnect / Cancel band carries no
 total -- nothing in it is paid. Everything comes off Tableau (the NDS Order
@@ -117,14 +129,96 @@ CAL_WEEKS = 5            # the Activation/Pay Week box: this many weeks, the cur
 ACTIVATED_STATUSES = ("Posted", "Active", "Disconnected")
 
 
-def weekly_sales(cols, crew: Sequence, today: dt.date, weeks: int = SALES_WEEKS):
+class TabPlans:
+    """The 'NDS Order Log' tab's Plan + Device by line, to fill what the export
+    leaves blank: by the line's phone number; a number the tab lacks falls
+    back to the order's DSI # when every tab line of that order agrees. A
+    miss is '' -- never a guess. `filled` / `missed` count for the run log."""
+
+    def __init__(self, header: Sequence[str], rows: Sequence[Sequence[str]]):
+        from automations.nds_metrics.order_log_tab import LineIndex
+        self._digits = LineIndex.digits
+        hdr = [str(h).strip().lower() for h in header]
+
+        def col(name):
+            return hdr.index(name) if name in hdr else None
+        ip, idsi, ipl, idv = col("phone #"), col("dsi #"), col("plan"), col("device")
+        self.by_phone: Dict[str, dict] = {}
+        self.by_dsi: Dict[str, list] = {}
+        for r in rows:
+            def g(i, r=r):
+                return str(r[i]).strip() if i is not None and i < len(r) else ""
+            rec = {"Plan": g(ipl), "Device": g(idv)}
+            ph = self._digits(g(ip))
+            if ph:
+                self.by_phone.setdefault(ph, rec)
+            dsi = g(idsi).upper()
+            if dsi:
+                self.by_dsi.setdefault(dsi, []).append(rec)
+        self.filled = self.missed = 0
+
+    @classmethod
+    def read(cls, log=print) -> Optional["TabPlans"]:
+        """Off the live tab; None (and a NOTE) when it can't be read."""
+        try:
+            from automations.nds_metrics import order_log_tab as OLT
+            from automations.recruiting_report.fill import _retry, open_by_key
+            ws = open_by_key(OLT.VANTURA_SHEET_ID).worksheet(OLT.TAB)
+            vals = _retry(lambda: ws.get_all_values()) or []
+            return cls(vals[0], vals[1:]) if vals else None
+        except Exception as e:  # noqa: BLE001
+            log(f"[nds] rep order log: NOTE the NDS Order Log tab is unreadable ({type(e).__name__}: "
+                f"{str(e)[:90]}) -- a plan the export lacks stays blank")
+            return None
+
+    def get(self, key: str, phone="", dsi="") -> str:
+        rec = self.by_phone.get(self._digits(phone)) if phone else None
+        if rec is None or not rec.get(key):
+            same = {c.get(key, "") for c in self.by_dsi.get(str(dsi or "").strip().upper(), [])} - {""}
+            rec = {key: same.pop()} if len(same) == 1 else None
+        if rec and rec.get(key):
+            self.filled += 1
+            return rec[key]
+        self.missed += 1
+        return ""
+
+
+def _filled_rec(cols, r, idx, tab, i_tn, i_spm) -> dict:
+    """revenue_extras.line_rec, its blank Package / Device filled from the tab."""
+    from automations.nds_metrics import revenue_extras as RX
+    from automations.nds_metrics.run import _c
+    rec = RX.line_rec(cols, r, idx)
+    if tab is not None and not (rec.get("package") and rec.get("device")):
+        phone = _c(cols, r, i_tn) if i_tn is not None else ""
+        dsi = _c(cols, r, i_spm) if i_spm is not None else ""
+        if not rec.get("package"):
+            rec["package"] = tab.get("Plan", phone, dsi)
+        if not rec.get("device"):
+            rec["device"] = tab.get("Device", phone, dsi)
+    return rec
+
+
+def line_value(rec: dict, status: str, rates: dict) -> float:
+    """Est. Revenue of one sold line: the revenue board's base price + the
+    plan's add-on (Premium $15 / Extra $10); $0 once cancelled."""
+    if status == "Cancelled":
+        return 0.0
+    from automations.nds_metrics import revenue_extras as RX
+    from automations.nds_metrics.line_revenue import addon_of
+    return RX.board_line_price(rec, rates) + addon_of(rec.get("package", ""), rates)
+
+
+def weekly_sales(cols, crew: Sequence, today: dt.date, weeks: int = SALES_WEEKS, tab=None,
+                 tier_by_line=None):
     """-> (week endings oldest first, {rep: {we: Counter sold / activated /
     pending / cancelled / revenue}}): apps (the revenue board's rule -- port
     phones + BYODs + Internet Air) by the Mon-Sun week of the ORDER date, for
     the last `weeks` weeks through today's. Activated = Posted / Active now,
     or Disconnected after activating (the Activation Rate by Week Ending
     rule). revenue = the Est. Revenue of EVERY line sold that week (the
-    non-app lines too -- a tablet, an upgrade), $0 for a cancelled one."""
+    non-app lines too -- a tablet, an upgrade), $0 for a cancelled one, each
+    priced as on the picture (line_value). `tab` = TabPlans for a line the
+    export has no Package / Device for."""
     import collections
     from automations.nds_metrics import revenue_extras as RX
     from automations.nds_metrics.activation_by_week import week_ending
@@ -133,6 +227,7 @@ def weekly_sales(cols, crew: Sequence, today: dt.date, weeks: int = SALES_WEEKS)
     i_od = cols.need("order date", "sp.order date (copy)", "sp.order date", "order date")
     i_rep = cols.need("rep", "rep")
     i_dtr, i_spe = cols.find("dtr status"), cols.find("spe.status")
+    i_tn, i_spm = cols.find("spe.tn"), cols.find("sp.spm number", "spm number")
     last = week_ending(today)
     wes = [last - dt.timedelta(days=7 * k) for k in range(weeks - 1, -1, -1)]
     out: Dict[str, dict] = {}
@@ -144,12 +239,14 @@ def weekly_sales(cols, crew: Sequence, today: dt.date, weeks: int = SALES_WEEKS)
         we = week_ending(od)
         if we not in wes:
             continue
-        rec = RX.line_rec(cols, r, idx)
+        rec = _filled_rec(cols, r, idx, tab, i_tn, i_spm)
         st = _status(_c(cols, r, i_dtr) if i_dtr is not None else "",
                      _c(cols, r, i_spe) if i_spe is not None else "")
         c = out.setdefault(rep, {}).setdefault(we, collections.Counter())
         if st != "Cancelled":
-            c["revenue"] += RX.board_line_price(rec, rates)
+            c["revenue"] += line_value(rec, st, rates) + (tier_by_line or {}).get(
+                line_key(_c(cols, r, i_spm) if i_spm is not None else "",
+                         _c(cols, r, i_tn) if i_tn is not None else ""), 0.0)
         if RX.line_kind(rec) not in RX.APP_KINDS:
             continue
         c["sold"] += 1
@@ -157,21 +254,29 @@ def weekly_sales(cols, crew: Sequence, today: dt.date, weeks: int = SALES_WEEKS)
     return wes, out
 
 
-def tier_weeks(cols, lines: Sequence, wes: Sequence[dt.date], log=print) -> Dict[dt.date, dict]:
+def double_days(log=print) -> set:
+    """The double-tier days (sow_rates seed + Sean's emails), read once."""
+    from automations.nds_metrics.run import sow_rates
+    seed = sow_rates()["rep_tier"].get("double_days") or []
+    try:
+        from automations.nds_metrics import double_tier
+        return set(double_tier.days(seed, log=log))
+    except Exception as e:  # noqa: BLE001
+        log(f"[nds] rep order log: double-tier days off the seed only ({type(e).__name__})")
+        return set(seed)
+
+
+def tier_weeks(cols, lines: Sequence, wes: Sequence[dt.date], log=print, dbl=None) -> Dict[dt.date, dict]:
     """{week ending: {rep: (orders, port lines)}} -- for each Mon-Sun week
     ending, the Sun-Sat tier week the revenue board ties to it (the Sunday
     before that Monday .. Saturday), counted by the board's own counter
     (run.revenue_tier_columns: orders with a port line, a double-tier day
     twice), so the picture and the board never disagree. One inbox read for
-    the double-tier days, whatever the number of weeks."""
-    from automations.nds_metrics.run import revenue_tier_columns, sow_rates
-    seed = sow_rates()["rep_tier"].get("double_days") or []
-    try:
-        from automations.nds_metrics import double_tier
-        dbl = set(double_tier.days(seed, log=log))
-    except Exception as e:  # noqa: BLE001
-        dbl = set(seed)
-        log(f"[nds] rep order log: double-tier days off the seed only ({type(e).__name__})")
+    the double-tier days, whatever the number of weeks (`dbl` = days already
+    read)."""
+    from automations.nds_metrics.run import revenue_tier_columns
+    if dbl is None:
+        dbl = double_days(log=log)
     idx = (cols.need("order date", "sp.order date"), cols.need("rep", "rep"),
            cols.find("ported from", "port"), cols.find("spe.tn type", "tn type"),
            cols.find("sp.spm number", "spm number"))
@@ -180,6 +285,60 @@ def tier_weeks(cols, lines: Sequence, wes: Sequence[dt.date], log=print) -> Dict
         _h, _cells, counts = revenue_tier_columns(cols, lines, we - dt.timedelta(days=6), *idx,
                                                   log=lambda *_a, **_k: None, double_days=dbl)
         out[we] = counts
+    return out
+
+
+def line_key(spm, tn) -> tuple:
+    from automations.nds_metrics.order_log_tab import LineIndex
+    return (str(spm or "").strip().upper(), LineIndex.digits(tn))
+
+
+def line_tier_rates(cols, rows: Sequence, log=print, dbl=None) -> Dict[tuple, float]:
+    """{line_key(order id, number): $ tier bonus} for every PORT line (a
+    financed port or a BYOD port -- line_revenue's rule; tablets, upgrades and
+    new numbers earn none) on `rows`, the export as Smart Circle sees it: one
+    rep per LOGIN, BEFORE the sold-under moves. The deposit pays a line the
+    tier of the login it was rung under, and payroll moves that money with the
+    line, so that is what the line is worth to its real seller. A Posted
+    line's own 'Rep Tier Bonus Status' is the truth; any other line gets the
+    rate of the login's order count in the Sun-Sat week its order is in
+    (tier_weeks: the revenue board's counter, a double-tier day twice).
+    Paid when the line activates, so a pending line carries what it will
+    earn."""
+    from automations.nds_metrics import revenue_extras as RX
+    from automations.nds_metrics.run import _c, _parse_date, tier_bands
+    idx = RX.column_index(cols)
+    i_od = cols.need("order date", "sp.order date (copy)", "sp.order date", "order date")
+    i_rep, i_tn = cols.need("rep", "rep"), cols.find("spe.tn")
+    i_spm, i_dtr = cols.find("sp.spm number", "spm number"), cols.find("dtr status")
+    i_t = cols.find("rep tier bonus status")
+    g = lambda r, i: _c(cols, r, i) if i is not None else ""
+    ports = []
+    for r in rows:
+        od = _parse_date(g(r, i_od))
+        rec = RX.line_rec(cols, r, idx)
+        if od is None or str(rec.get("tn_type") or "").strip().lower() != "port":
+            continue
+        if RX.line_kind(rec) not in ("new phone", "byod"):
+            continue
+        sun = od - dt.timedelta(days=(od.weekday() + 1) % 7)
+        ports.append((r, sun + dt.timedelta(days=7)))            # keyed like tier_week_of
+    if not ports:
+        return {}
+    tiers = tier_weeks(cols, rows, sorted({we for _r, we in ports}), log=log, dbl=dbl)
+    bands = tier_bands()
+    out: Dict[tuple, float] = {}
+    for r, we in ports:
+        rate = None
+        if g(r, i_dtr).strip().lower() == "posted":
+            try:
+                rate = float(g(r, i_t))
+            except ValueError:
+                rate = None
+        if rate is None:
+            n = tiers.get(we, {}).get(g(r, i_rep), (0, 0))[0]
+            rate = max([float(b) for thr, b in bands if n >= thr] or [0.0])
+        out[line_key(g(r, i_spm), g(r, i_tn))] = rate
     return out
 
 
@@ -376,9 +535,11 @@ def _status(dtr: str, spe: str) -> str:
     return s or "Pending"
 
 
-def rep_lines(cols, crew: Sequence, today: dt.date, log=print) -> Dict[str, List[dict]]:
+def rep_lines(cols, crew: Sequence, today: dt.date, log=print, tab=None,
+              tier_by_line=None) -> Dict[str, List[dict]]:
     """{rep: [line dict, ...]} off the crew's Tableau lines (one row per line,
-    as load_crew returns them)."""
+    as load_crew returns them). `tab` = TabPlans: the Plan / Device of a line
+    the export leaves blank."""
     from automations.nds_metrics import revenue_extras as RX
     from automations.nds_metrics.run import _c, _parse_date, sow_rates
     idx, rates = RX.column_index(cols), sow_rates()
@@ -393,6 +554,7 @@ def rep_lines(cols, crew: Sequence, today: dt.date, log=print) -> Dict[str, List
         "pkg": cols.find("package"),
         "wip": cols.find("wireless installment plan"),
         "tn": cols.find("spe.tn"),
+        "spm": cols.find("sp.spm number", "spm number"),
         "zip": cols.find("customer zip simple", "customer zip"),
         "wt": cols.find("spe.wireless type", "wireless type"),
         "prod": cols.find("product type (broken out)", "product type"),
@@ -412,9 +574,12 @@ def rep_lines(cols, crew: Sequence, today: dt.date, log=print) -> Dict[str, List
             continue                                   # Air / Internet lines are not on the wireless log
         status = _status(g(r, "dtr"), g(r, "spe"))
         # priced like the revenue board prices a sold line (in-footprint ports
-        # $20 less, a tablet / wearable $25 whatever its number type)
-        revenue = (0.0 if status == "Cancelled"
-                   else RX.board_line_price(RX.line_rec(cols, r, idx), rates))
+        # $20 less, a tablet / wearable $25 whatever its number type) + the
+        # plan's add-on, on the Package / Device the tab fills in when blank
+        rec = _filled_rec(cols, r, idx, tab, i["tn"], i["spm"])
+        revenue = line_value(rec, status, rates)
+        if revenue:                       # + the tier bonus the line earns (line_tier_rates)
+            revenue += (tier_by_line or {}).get(line_key(g(r, "spm"), g(r, "tn")), 0.0)
         line = {
             "Order Date": od,
             "Activation Date": _parse_date(g(r, "act")),
@@ -422,8 +587,8 @@ def rep_lines(cols, crew: Sequence, today: dt.date, log=print) -> Dict[str, List
             "Customer Name": g(r, "cust"),
             "Status": status,
             "Est. Revenue": revenue,
-            "Device": g(r, "dev"),
-            "Plan": g(r, "pkg"),             # Tableau's Package IS the rate plan ("AT&T Extra 2.0")
+            "Device": g(r, "dev") or rec.get("device", ""),
+            "Plan": rec.get("package", ""),  # Tableau's Package IS the rate plan ("AT&T Extra 2.0")
             "Next Up": _next_up(g(r, "wip"), g(r, "wt")),
             "Phone Number": g(r, "tn"),
             "Zip Code": g(r, "zip"),
@@ -641,12 +806,22 @@ def build(cols, crew: Sequence, today: dt.date, out_dir: Path, reps: Optional[Se
             log(f"[nds] rep order log: sold under -- {n} line(s) {frm} -> {to}")
     except Exception as e:  # noqa: BLE001 -- the pictures still ship, under the logins
         log(f"[nds] rep order log: NOTE sold-under moves not applied ({type(e).__name__}: {str(e)[:100]})")
-    per_rep = rep_lines(cols, crew, today, log=log)
-    wes, sales = weekly_sales(cols, crew, today)
+    tab = TabPlans.read(log=log)           # the plan / device of a line the export has none for yet
+    dbl = double_days(log=log)
+    try:                                   # each port line's tier bonus, at its LOGIN's tier
+        tier_by_line = line_tier_rates(cols, logins, log=log, dbl=dbl)
+    except Exception as e:  # noqa: BLE001
+        tier_by_line = {}
+        log(f"[nds] rep order log: NOTE tier bonus left out of Est. Revenue ({type(e).__name__}: {str(e)[:100]})")
+    per_rep = rep_lines(cols, crew, today, log=log, tab=tab, tier_by_line=tier_by_line)
+    if tab is not None and (tab.filled or tab.missed):
+        log(f"[nds] rep order log: the export had no Package / Device on some line(s): "
+            f"{tab.filled} cell(s) filled from the NDS Order Log tab, {tab.missed} still blank")
+    wes, sales = weekly_sales(cols, crew, today, tab=tab, tier_by_line=tier_by_line)
     from automations.nds_metrics import revenue_extras as RX
     from automations.nds_metrics.activation_by_week import week_ending
     try:                                   # the board's own count; the bands print without it
-        tiers = tier_weeks(cols, owner, wes, log=log)
+        tiers = tier_weeks(cols, owner, wes, log=log, dbl=dbl)
     except Exception as e:  # noqa: BLE001
         tiers = None
         log(f"[nds] rep order log: NOTE tier counts unavailable ({type(e).__name__}: {str(e)[:100]})")
