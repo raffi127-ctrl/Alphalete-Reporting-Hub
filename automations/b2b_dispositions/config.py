@@ -210,9 +210,14 @@ TEXT_ROUTES = {
     # ON_REQUEST). Carlos 2026-11-19: "as text message to the Aplayer and
     # leaders chat".
     ("NDS METRICS", "nds_teams_board"): [TEXT_GROUP_ATT, TEXT_GROUP_ALL],
-    # NDS Sales Board WEEK 1 table, 10:45 AM Mon-Fri (week_one_text). Carlos
-    # 2026-11-19: "it should be sent on the A Players text chain".
+    # Week tables off the AT&T (NDS) + Verizon Sales Boards (week_one_text),
+    # Mon-Fri: WEEK 1 cut at today's column at 10:45, WEEK 1-4 at 11:30.
+    # Carlos 2026-11-19: "it should be sent on the A Players text chain" /
+    # "you'll do it both for AT&T and Verizon".
     ("NDS WEEK 1", "nds_week_one"): [TEXT_GROUP_ALL],
+    ("VZ WEEK 1", "vz_week_one"): [TEXT_GROUP_ALL],
+    ("NDS WEEKS 1-4", "nds_weeks"): [TEXT_GROUP_ALL],
+    ("VZ WEEKS 1-4", "vz_weeks"): [TEXT_GROUP_ALL],
 }
 
 # Seconds to wait after handing Messages an image. TdB proved a group image send

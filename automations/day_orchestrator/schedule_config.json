@@ -16706,8 +16706,8 @@
   "week_one_text": {
    "on_scheduler": false,
    "machine": "Lucy 2",
-   "_note": "Carlos 2026-11-19: 10:45 AM Monday-Friday, a picture of the NDS Sales Board's WEEK 1 table (title row to the last rep, Roll Call across to TODAY's day column) texted to NEW A Players. Fails loudly and sends nothing if WEEK 1's dates don't cover today (board B2 left on an old week); no reps = nothing sent. Real schedule = launchd com.alphalete.week-one-text on Lucy 2 (10:45 + a 10:55 retry, Mon-Fri; install with `rerun install_week_one_text_agent`). NOT a Report Library card: Lucy 2's card scheduler runs observe-only (2026-11-19). Dry-run by default; --send queues the text (once per day; --force resends).",
-   "display_name": "NDS Week 1 text (10:45am Mon-Fri)",
+   "_note": "Carlos 2026-11-19: Monday-Friday to NEW A Players, for BOTH the AT&T (NDS) and Verizon Sales Boards: 10:45 AM = the WEEK 1 table cut at TODAY's day column (title row to last rep, Roll Call across to today); 11:30 AM = WEEK 1 through WEEK 4, full width (--shot weeks). One text per board. A board fails loudly and sends nothing if WEEK 1's dates don't cover today (board B2 left on an old week); nobody in the shot = nothing sent. Real schedule = launchd on Lucy 2: com.alphalete.week-one-text (10:45 + 10:55 retry) and com.alphalete.week-tables-text (11:30 + 11:40 retry); install with `rerun install_week_one_text_agent` / `rerun install_week_tables_text_agent`. NOT Report Library cards: Lucy 2's card scheduler runs observe-only (2026-11-19). Dry-run by default; --send queues (once per day per board per shot; --force resends); --dm U... = Slack preview.",
+   "display_name": "Week tables text (AT&T + Verizon, 10:45 + 11:30 Mon-Fri)",
    "source_type": "api",
    "data_sources": [],
    "command": [
@@ -16735,6 +16735,28 @@
    ],
    "base_args": [
     "week-one-text"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 15,
+   "machine": "Lucy 2"
+  },
+  "install_week_tables_text_agent": {
+   "on_scheduler": false,
+   "_note": "One-shot installer for com.alphalete.week-tables-text on Lucy 2: deploy/week_one_text.sh --shot weeks --send -> automations.week_one_text.run, 11:30 + 11:40 Mon-Fri local. Run `lucy rerun install_week_tables_text_agent` after `lucy update`.",
+   "display_name": "Install week tables text agent (11:30am Mon-Fri)",
+   "source_type": "none",
+   "data_sources": [],
+   "command": [
+    "automations.day_orchestrator.install_agent"
+   ],
+   "base_args": [
+    "week-tables-text"
    ],
    "cadence": {
     "weekdays": []

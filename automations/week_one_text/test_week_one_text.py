@@ -6,19 +6,33 @@ from automations.week_one_text import run as R
 HDR = ["", "Roll Call", "Status", "Day 0", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat",
        "Date Gone", "Prior Weeks", "Total Sales", "Trainer"]
 
-# The live NDS Sales Board on 2026-11-19 (rows 54-66).
+# The live NDS Sales Board on 2026-11-19 (rows 54-82).
 GRID = [[]] * 55 + [
-    ["", "WEEK 1   ·   11/16 – 11/22   ·   5 reps"],
+    ["", "WEEK 1   ·   11/16 – 11/22   ·   5 reps"],          # 56
     HDR,
     ["", "Hung Quoc Nguyen", "New Start", "11/16", "Here", "Here", "Here", "Here"],
     ["", "Izanama Shinto Sullivan", "New Start", "11/16", "Here", "Here", "Here", "Here"],
     ["", "John Anthony Escobedo", "New Start", "11/16", "Here", "Here", "Here", "Here"],
     ["", "Rocco Dichiara", "New Start", "11/16", "Here", "Here", "Here", "Here"],
-    ["", "Gustavo Morales", "Terminated", "11/17", "", "T"],
+    ["", "Gustavo Morales", "Terminated", "11/17", "", "T"],                     # 62
     [],
-    ["", "WEEK 2   ·   11/9 – 11/15   ·   2 reps"],
+    ["", "WEEK 2   ·   11/9 – 11/15   ·   2 reps"],             # 64
     HDR,
     ["", "Anairt Triana", "Active", "11/10"],
+    ["", "Christopher Eduardo Cajabon Penagos", "Terminated", "11/10"],          # 67
+    [],
+    ["", "WEEK 3   ·   11/2 – 11/8   ·   4 reps"],              # 69
+    HDR,
+    ["", "Isadora Bazan Puga"], ["", "Angela Juliette Rizo"],
+    ["", "Roseanna Jurado"], ["", "Stefany Zaldivar"],                           # 74
+    [],
+    ["", "WEEK 4   ·   10/26 – 11/1   ·   1 rep"],              # 76
+    HDR,
+    ["", "Elisa Diaz-Garcia", "Active", "10/27"],                                # 78
+    [],
+    ["", "TERMINATED   ·   4 weeks   ·   10 reps"],                   # 80
+    ["", "Roll Call", "Days Lasted", "Total Orders", "Trainer"],
+    ["", "Brianna Belen Contreras", "26", "2", "Nick Smedra"],
 ]
 
 
@@ -31,6 +45,23 @@ def test_thursday_crop_matches_carloss_picture():
 def test_crop_ends_at_todays_column():
     assert R.find_week_one(GRID, dt.date(2026, 11, 20))[2] == 9   # Fri -> I
     assert R.find_week_one(GRID, dt.date(2026, 11, 16))[2] == 5   # Mon -> E
+
+
+def test_weeks_shot_is_week_1_to_week_4_full_width():
+    top, last, col, reps, title = R.find_weeks(GRID)
+    assert (top, last, R._letter(col), reps) == (56, 78, "N", 5 + 2 + 4 + 1)   # B56:N78
+    assert title.startswith("WEEK 1")
+
+
+def test_weeks_shot_never_takes_terminated():
+    tables = R.parse_tables(GRID)
+    assert [t["num"] for t in tables] == [1, 2, 3, 4, 0]
+    assert R.find_weeks(GRID)[1] < tables[-1]["title"]
+
+
+def test_weeks_shot_with_fewer_tables():
+    g = GRID[:68] + GRID[79:]          # WEEK 1, WEEK 2, then TERMINATED
+    assert R.find_weeks(g)[1] == 67
 
 
 def test_table_with_no_reps():
@@ -64,20 +95,33 @@ def test_title_must_cover_today():
     assert not R.title_covers("WEEK 1", dt.date(2026, 11, 19))
 
 
-def test_text_title():
-    assert R.text_title(dt.date(2026, 11, 20)) == "NDS Week 1s — Friday 11/20"
+def test_text_titles():
+    d = dt.date(2026, 11, 20)
+    assert R.text_title("nds", "week1", d) == "AT&T Week 1s — Friday 11/20"
+    assert R.text_title("verizon", "weeks", d) == "Verizon Weeks 1–4 — Friday 11/20"
 
 
 def test_monday_to_friday_only():
     assert C.WEEKDAYS == [0, 1, 2, 3, 4]
     assert R.main(["--date", "2026-11-21"]) == 0    # Saturday: nothing, no sheet read
+    assert R.main(["--date", "2026-11-22", "--shot", "weeks"]) == 0
 
 
-def test_once_per_day():
-    assert R.already_sent(dt.date(2026, 11, 20), {"sent_day": "2026-11-20"})
-    assert not R.already_sent(dt.date(2026, 11, 23), {"sent_day": "2026-11-20"})
+def test_once_per_day_per_shot_and_board():
+    st = {"day": "2026-11-20", "sent": ["week1:nds", "weeks:verizon"]}
+    d = dt.date(2026, 11, 20)
+    assert R.already_sent(d, "week1", "nds", st)
+    assert not R.already_sent(d, "week1", "verizon", st)
+    assert R.already_sent(d, "weeks", "verizon", st)
+    assert not R.already_sent(dt.date(2026, 11, 23), "week1", "nds", st)
+    # the 11/19 state format (NDS week 1 only)
+    old = {"sent_day": "2026-11-20"}
+    assert R.already_sent(d, "week1", "nds", old)
+    assert not R.already_sent(d, "week1", "verizon", old)
 
 
-def test_route_goes_to_new_a_players_only():
+def test_every_board_and_shot_goes_to_new_a_players_only():
     from automations.b2b_dispositions import config as B
-    assert B.TEXT_ROUTES[(C.CAMPAIGN_LABEL, C.KIND)] == [B.TEXT_GROUP_ALL]
+    assert set(C.ROUTES) == {(b, s) for b in C.BOARD_ORDER for s in C.SHOTS}
+    for key in C.ROUTES.values():
+        assert B.TEXT_ROUTES[key] == [B.TEXT_GROUP_ALL], key

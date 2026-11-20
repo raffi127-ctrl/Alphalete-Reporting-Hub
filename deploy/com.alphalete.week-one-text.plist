@@ -23,9 +23,11 @@
         <string>/Users/megan/1st Claude Folder</string>
     </dict>
 
-    <!-- Carlos 2026-11-19: the NDS Week 1 table at 10:45 AM, Monday-Friday
-         (launchd Weekday 1 = Monday .. 5 = Friday). The 10:55 tick is a retry:
-         the job texts once per day, so it does nothing after a good 10:45. -->
+    <!-- Carlos 2026-11-19: the WEEK 1 table (cut at today's column) of the
+         AT&T (NDS) AND Verizon Sales Boards at 10:45 AM, Monday-Friday (launchd
+         Weekday 1 = Monday .. 5 = Friday). The 10:55 tick is a retry: each
+         board texts once per day, so it does nothing after a good 10:45. The
+         11:30 WEEK 1-4 shot is com.alphalete.week-tables-text. -->
     <key>StartCalendarInterval</key>
     <array>
         <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>10</integer><key>Minute</key><integer>45</integer></dict>

@@ -1,10 +1,12 @@
 #!/bin/bash
-# NDS Week 1 table picture -> the NEW A Players chain (Carlos 2026-11-19).
-# Fired by launchd (com.alphalete.week-one-text) on LUCY 2 at 10:45 AM
-# Monday-Friday, with a 10:55 retry; texts once per day.
+# Week-table pictures (AT&T/NDS + Verizon Sales Boards) -> the NEW A Players
+# chain (Carlos 2026-11-19). Fired by launchd on LUCY 2, Monday-Friday:
+#   com.alphalete.week-one-text     10:45 (+10:55 retry)  --send               WEEK 1, cut at today
+#   com.alphalete.week-tables-text  11:30 (+11:40 retry)  --shot weeks --send  WEEK 1-4
+# Each board texts once per day per shot.
 #
-#   bash deploy/week_one_text.sh            # DRY RUN, renders the picture only
-#   bash deploy/week_one_text.sh --send     # queue the text
+#   bash deploy/week_one_text.sh                       # DRY RUN, renders only
+#   bash deploy/week_one_text.sh --shot weeks --send   # queue the 11:30 texts
 #
 # See automations/week_one_text/run.py.
 
