@@ -40,6 +40,8 @@ except Exception:
 # (tab on the NDS Program workbook, tab on the ATT Program workbook)
 MIRRORS = [
     ("JC Lopez - NDS", "JC Lopez (NDS)"),
+    # Eve 2026-11-20 (Maud: Starr's Monday 1on1) — sits next to Starr Rodenhurst.
+    ("Sarah Park - NDS", "Sarah Park (NDS)"),
 ]
 
 
