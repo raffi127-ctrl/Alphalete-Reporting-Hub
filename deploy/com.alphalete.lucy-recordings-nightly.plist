@@ -13,9 +13,9 @@
         <string>/bin/bash</string>
         <string>/Users/megan/1st Claude Folder/deploy/lucy_recordings_nightly.sh</string>
         <!-- Month-to-date summary to the whole org (Alphalete Org Owners distro, once a day).
-             Raf 2026-11-11: "yes please lets send to everyone" -> was --email (Raf + Colten + Eve). -->
+             Raf 2026-11-11: "yes please lets send to everyone" -> was the 'email' flag (Raf + Colten + Eve). -->
         <string>--email-org</string>
-        <!-- Raf's group DM list (--yesterday-slack) OFF 2026-11-16 (Eve): the list now goes in
+        <!-- Raf's group DM list (the 'yesterday-slack' flag) OFF 2026-11-16 (Eve): the list now goes in
              the "Lucy Second Round Scorecards" thread below. The "who's your owner?" DMs to
              reps with no owner stay on. -->
         <string>--ask-owners</string>

@@ -7,7 +7,7 @@
 
     <!-- Path is the laptop placeholder; on the mini, regenerate with the install
          path via the python-replace step in workflows/scheduler-mini.md. -->
-    <!-- 2pm = pull campaigns + write the tab only (--no-pdf). The PDF build + Slack
+    <!-- 2pm = pull campaigns + write the tab only (the 'no-pdf' flag). The PDF build + Slack
          post runs in the separate 7:30pm finalize job (com.alphalete.leaders-call-finalize),
          after promotions are all filled in. -->
     <key>ProgramArguments</key>

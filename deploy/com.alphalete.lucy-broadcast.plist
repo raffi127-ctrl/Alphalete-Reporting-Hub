@@ -6,7 +6,8 @@
     <string>com.alphalete.lucy-broadcast</string>
 
     <!-- Path is the laptop's; on the mini, regenerate with the install path via
-         `lucy rerun install_lucy_broadcast_agent --machine "Lucy 1"` (rewrites to the mini repo). -->
+         `lucy rerun install_lucy_broadcast_agent` with the machine
+         flag set to "Lucy 1" (rewrites to the mini repo). -->
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>

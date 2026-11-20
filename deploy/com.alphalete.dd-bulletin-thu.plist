@@ -33,7 +33,7 @@
          approval usually lands; evening passes are cheap checkmark polls.
          Repeats are safe: the send refuses a stale week, refuses a blocking data
          problem, and records the week it sent so it cannot double-email. The
-         22:00 pass also runs --close-day (dd_bulletin_thu.sh keys it to hour
+         22:00 pass also runs the 'close-day' flag (dd_bulletin_thu.sh keys it to hour
          >= 22 — keep the two in sync when moving the last pass).
          TIME KNOB: edit these entries (Hour/Minute are machine LOCAL time; the
          mini is Central). -->
