@@ -109,5 +109,14 @@ class ActivationsTodayTest(unittest.TestCase):
         self.assertTrue(run.render(work, self.tmp / "w.png")[0].exists())
 
 
+
+class NameGroupsCase(unittest.TestCase):
+    def test_lowercase_rep_sorts_with_its_letter(self):
+        reps = [(n, []) for n in ["Ana A", "Kim K", "Zoe Z", "ortensia m"]]
+        groups = run.name_groups(reps, max_names=2, stretch=2)
+        self.assertEqual([l for l, _ in groups], ["A–K", "O–Z"])
+        self.assertEqual([r for r, _ in groups[1][1]], ["ortensia m", "Zoe Z"])
+
+
 if __name__ == "__main__":
     unittest.main()

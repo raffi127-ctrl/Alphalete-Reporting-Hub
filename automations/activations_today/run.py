@@ -297,6 +297,9 @@ def name_groups(reps, max_names: int = PENDING_MAX_NAMES,
     letter that would take the post to max_names+1..stretch goes in whole
     and closes it; past stretch it opens the next post. Only a single letter
     bigger than stretch is split (unavoidable). Label = 'A–K'; '' if one."""
+    # A-Z ignoring case (11/20: 'ortensia martinez' sorted after Z and the
+    # post read 'reps K–O' while it held K..Z).
+    reps = sorted(reps, key=lambda x: str(x[0]).strip().casefold())
     blocks = []                          # [(letter, [(rep, rows)])]
     for rep, rr in reps:
         if blocks and blocks[-1][0] == _initial(rep):
