@@ -280,6 +280,29 @@ def _never_sleeps() -> Optional[bool]:
         return None
 
 
+def agent_release() -> str:
+    """WHICH RELEASE THIS OFFICE IS ACTUALLY RUNNING, as the machine sees it.
+
+    `AGENT_VERSION` above was meant to answer this ("how we see who has
+    updated, from the relay row") and cannot: it is a protocol number bumped
+    by hand, stuck on /5 across months of releases. So the question that
+    matters -- is the fix we shipped RUNNING on this office's computer? --
+    had no answer anywhere. On 2026-11-19 a Sterling fix sat in main while an
+    office kept failing, and the only way to reason about it was the absence
+    of an update fault, which is an inference, not a reading.
+
+    Empty string from an office that has never self-updated (it is on whatever
+    its installer wrote) or an agent older than this function. Empty is not
+    "current": it means nobody can say, which is the honest answer and reads
+    differently from a release number that is simply behind.
+    """
+    try:
+        from automations.icd_alerts import selfupdate
+        return (selfupdate.applied_release() or "")[:40]
+    except Exception:  # noqa: BLE001 — older agent, unreadable stamp
+        return ""
+
+
 def _auto_login() -> Optional[bool]:
     """Does this Mac log itself back in after a restart?
 
@@ -448,6 +471,8 @@ def payload(records: Dict[str, int], day: dt.date,
             {str(k): {m: int(v.get(m, 0) or 0) for m in _sale_metrics(rec)}
              for k, v in sorted((sales or {}).items())}, credit, rec),
         "agent": AGENT_VERSION,
+        # ...and which RELEASE that agent is on. See agent_release().
+        "agent_release": agent_release(),
         # WHICH computer this came from. An older relay ignores the key, so an
         # office that has not updated simply stays as one unnamed machine.
         "machine": machine_id(),
@@ -627,6 +652,8 @@ def send_knocks(rows, day: Optional[dt.date] = None, *, time_tracker=None,
         "knocks_rows": rows,
         "knocks_time_tracker": time_tracker or [],
         "agent": AGENT_VERSION,
+        # ...and which RELEASE that agent is on. See agent_release().
+        "agent_release": agent_release(),
         "local_time": dt.datetime.now().isoformat(timespec="seconds"),
     }
     # THE SAME ANSWERS RIDE HERE TOO. For an office with no SaraPlus this is
@@ -777,6 +804,7 @@ def report_fault(stage: str, summary: str, detail: str = "",
                 "summary": _scrub(summary, rec)[:FAULT_SUMMARY_MAX],
                 "detail": _scrub(detail, rec),
                 "agent": AGENT_VERSION,
+                "agent_release": agent_release(),
                 "platform": "%s %s" % (platform.system(), platform.release()),
                 "python": platform.python_version(),
             },
@@ -889,6 +917,7 @@ def report_forward(address: str, office_key: str = "", log=None,
                 "summary": CA.forward_summary(address, service),
                 "detail": "",
                 "agent": AGENT_VERSION,
+                "agent_release": agent_release(),
                 "platform": "%s %s" % (platform.system(), platform.release()),
                 "python": platform.python_version(),
             },
