@@ -44,12 +44,18 @@ def _call(S, path, payload, method="post"):
 def _get(S, url, params=None, tries=3):
     """GET with retries. Reads are safe to repeat; on 10/5 one Sheets
     ReadTimeout on the values read killed a --write rerun after all three
-    Tableau pulls had finished (~17 min of work lost)."""
+    Tableau pulls had finished (~17 min of work lost).
+
+    429 is retried too, with waits long enough to outlast a per-minute quota
+    (2026-11-20: a 429 on the first read crashed the stamper on Lucy 2)."""
     for i in range(tries):
         try:
             r = S.get(url, params=params)
-            if r.status_code < 500 or i == tries - 1:
+            busy = r.status_code == 429 or r.status_code >= 500
+            if not busy or i == tries - 1:
                 return r
+            time.sleep(20 * (i + 1) if r.status_code == 429 else 5 * (i + 1))
+            continue
         except (requests.exceptions.Timeout,
                 requests.exceptions.ConnectionError):
             if i == tries - 1:
@@ -57,9 +63,25 @@ def _get(S, url, params=None, tries=3):
         time.sleep(5 * (i + 1))
 
 
+def _get_json(S, url, params=None):
+    """A read that FAILS LOUDLY. Never hand back an error body as data.
+
+    WHY (2026-11-20). `_read_block` used to do `.json().get("values", [])`, so a
+    429 or 403 read as an EMPTY tab. upsert_values / upsert_goals then rewrite
+    from row 2 with only the incoming rows, clobbering every stored week and
+    Carlos's typed goals (seed_only can't protect a goal it was told isn't
+    there). A failed read must stop the run before any write."""
+    r = _get(S, url, params=params)
+    if r.status_code != 200:
+        raise RuntimeError("GET %s -> %s\n%s"
+                           % (url.replace(API, "") or "/", r.status_code,
+                              r.text[:800]))
+    return r.json()
+
+
 def ensure_tab(S, log=print):
     """Create the hidden tab if missing; return its sheetId."""
-    meta = _get(S, API, params={"fields": "sheets.properties(title,sheetId)"}).json()
+    meta = _get_json(S, API, params={"fields": "sheets.properties(title,sheetId)"})
     sid = {s["properties"]["title"]: s["properties"]["sheetId"]
            for s in meta["sheets"]}
     if TAB in sid:
@@ -91,7 +113,7 @@ def write_layout(S, log=print):
 
 
 def _read_block(S, rng, width):
-    rows = _get(S, API + "/values/'%s'!%s" % (TAB, rng)).json().get("values", [])
+    rows = _get_json(S, API + "/values/'%s'!%s" % (TAB, rng)).get("values", [])
     out = []
     for r in rows:
         r = list(r) + [""] * (width - len(r))
