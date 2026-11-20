@@ -4138,6 +4138,33 @@
    "verify": null,
    "timeout_minutes": 20
   },
+  "program_daily_summary": {
+   "order": 41,
+   "on_scheduler": true,
+   "_note": "Country Campaign Board (Eve 2026-11-20, Raf via Maud: COUNTRY daily sales per campaign). Tab 'Country Campaign Board' in the ATT Program - Focus Report (next to Country Metrics) + hidden 'Country Campaign Board (data)'. Fios/Frontier = red totals row of Credico's daily scorecard PDFs; ATT Fiber = D2D1-PAGERV4 'Sales By ICD (ATT) (V2)' summed over all owners (own Tableau session); ATT NDS/B2B pending the probe. GATE (readiness._probe_email): waits for TODAY's Fios + Frontier PDFs (~9:30am CT), runs anyway from 11am CT. TUESDAY ROLL (--enable-rollover) with the Country Sales Board's rules: snapshot to hidden 'Country Campaign Board (pre-rollover backup)', never the same week twice, closing week frozen with final source numbers, Monday never rolls, a missed Tuesday rolls the next run. Post-write verify exits 1 when yesterday is empty for Fios/Frontier/ATT Fiber.",
+   "display_name": "Country Campaign Board",
+   "source_type": "email",
+   "data_sources": [],
+   "command": [
+    "automations.program_daily_summary.run"
+   ],
+   "base_args": [
+    "--enable-rollover"
+   ],
+   "cadence": {
+    "weekdays": [0, 1, 2, 3, 4, 5, 6]
+   },
+   "priority": "P2",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": {
+    "type": "cells_nonblank",
+    "sheet": "1w_KWAmlLfMR4kceaJmz_kyahnVslStTquVkVydysXTE",
+    "tab": "Country Campaign Board",
+    "checks": [{"row_label": "Sales - This Week", "min_nonblank": 1}]
+   },
+   "timeout_minutes": 30
+  },
   "program_daily_summary_probe": {
    "hand_run_only": true,
    "on_scheduler": true,

@@ -139,6 +139,22 @@ def fetch_pdf(program: str, dest: str | Path, *, since_days: int = 4,
     return next(iter(found.values()), None)
 
 
+def edition(path: str | Path) -> Optional[dt.date]:
+    """The edition date in a scorecard filename ('… - SCI - 20261120.pdf')."""
+    m = re.search(r"(\d{8})\.pdf$", Path(path).name)
+    return dt.datetime.strptime(m.group(1), "%Y%m%d").date() if m else None
+
+
+def editions(dest: str | Path) -> Dict[str, Optional[dt.date]]:
+    """{program: edition date of the newest PDF in the inbox, or None}. Used
+    by the orchestrator's readiness gate: today's edition = yesterday's sales."""
+    out = {}
+    for prog in SOURCES:
+        p = fetch_pdf(prog, dest)
+        out[prog] = edition(p) if p else None
+    return out
+
+
 def country_days(dest: str | Path, *, verbose: bool = False
                  ) -> Dict[str, Dict[dt.date, int]]:
     """{'Fios': {date: n}, 'Frontier': {date: n}} from the newest PDFs.

@@ -385,6 +385,25 @@ class ReadinessCache:
                     False, f"no new tracker email — {tab!r} is current through "
                            f"WE {ses.we_label(max(inbox))}",
                     nothing_to_do=True)
+            if rpt.report_id == "program_daily_summary":
+                # Country Campaign Board: ready once TODAY's Fios + Frontier
+                # scorecard PDFs are in (~9:30am CT; today's edition = sales
+                # through yesterday). After 11am CT (before the noon backstop) it runs with whatever is
+                # there — the AT&T rows don't wait on Credico, and the report's
+                # own post-write verify names any campaign still empty.
+                import tempfile
+                from zoneinfo import ZoneInfo
+                from automations.program_daily_summary import credico_pdf as cp
+                with tempfile.TemporaryDirectory() as tmp:
+                    ed = cp.editions(tmp)
+                late = [p for p, d in ed.items() if not d or d < self.target_date]
+                if not late:
+                    return Readiness(True, "today's Fios + Frontier scorecards are in")
+                now_ct = dt.datetime.now(ZoneInfo("America/Chicago"))
+                if now_ct.hour >= 11:
+                    return Readiness(True, f"11am CT and still missing {late} — "
+                                           f"running with what is there")
+                return Readiness(False, f"waiting on today's scorecard PDF: {late}")
             return Readiness(True, "email — no probe wired; running on schedule")
         except Exception as e:  # noqa: BLE001 — fail open; the report self-guards
             return Readiness(
