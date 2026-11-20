@@ -16786,7 +16786,9 @@
    "freshness_target": null,
    "depends_on": [],
    "timeout_minutes": 40,
-   "verify": null
+   "verify": null,
+   "close_on": "exit_zero",
+   "_close_on_note": "2026-11-20: on-request report, no manifest. Its 11/19 23:45 ticket stayed open after a clean re-run because nothing could confirm delivery. A clean exit is the delivery signal here."
   },
   "install_second_round_cards_agent": {
    "on_scheduler": false,

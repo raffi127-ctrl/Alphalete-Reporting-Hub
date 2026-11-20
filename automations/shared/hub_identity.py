@@ -67,3 +67,42 @@ def machine_name() -> str:
         return socket.gethostname()
     except Exception:
         return "this machine"
+
+
+def _profile() -> str:
+    """The .machine-profile name ('Lucy 1' ...), or '' when there is none."""
+    try:
+        return (_REPO_ROOT / ".machine-profile").read_text().strip()
+    except Exception:
+        return ""
+
+
+def activity_machine() -> str:
+    """What a run writes into the Hub Activity log's Machine column:
+    'Mac.attlocal.net [Lucy 1]' -- the hostname, then the runner's profile name.
+
+    WHY BOTH (2026-11-20). The AT&T router hands Lucy 1 AND Lucy 2 the same name,
+    'Mac.attlocal.net'. The watcher had that name on its Lucy-2 list, so Lucy 1's
+    3am DD harvest and its BG check failures were posted as "on Lucy 2", and the
+    log searches for them came back empty on the wrong box. A hostname can't tell
+    the two apart, but the profile marker can. The hostname stays first, so every
+    substring match on it (machine_digest._ran_here, the --host lists) still hits.
+    No marker = hostname alone, exactly as before."""
+    try:
+        host = socket.gethostname()
+    except Exception:
+        host = "this machine"
+    prof = _profile()
+    if prof and prof.lower() != host.lower():
+        return "%s [%s]" % (host, prof)
+    return host
+
+
+def split_machine(value: str) -> tuple:
+    """('Mac.attlocal.net', 'Lucy 1') from an Activity Machine value. Old rows
+    with no tag come back as (value, '')."""
+    v = (value or "").strip()
+    if v.endswith("]") and " [" in v:
+        host, _, tag = v[:-1].rpartition(" [")
+        return host.strip(), tag.strip()
+    return v, ""

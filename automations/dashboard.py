@@ -2558,7 +2558,10 @@ def _latest_run_summary(report_id: str) -> str | None:
         # so we just show the user's name as the "on whose Mac" hint.
         # (Local runs from runs.jsonl don't carry a machine field, so the
         # absence-of-machine check is the local-vs-remote signal too.)
-        if machine and machine != this_machine:
+        # A runner's row reads 'host [Lucy N]' (hub_identity.activity_machine);
+        # compare the hostname part, or a run on THIS box reads as remote.
+        from automations.shared.hub_identity import split_machine as _split_machine
+        if machine and _split_machine(machine)[0] != this_machine:
             return f"Last ran {day.lower()} · {user} · {time_str} · on {user}'s Mac"
         return f"Last ran {day.lower()} · {user} · {time_str}"
     return None
