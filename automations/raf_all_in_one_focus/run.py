@@ -246,8 +246,8 @@ def col_a_stop(col_a: List[str]) -> Optional[int]:
 
 
 # ----------------------------------------------------------------- layout
-def ensure_layout(ws, dry_run: bool, log=print) -> None:
-    """Insert the missing rows. Never deletes, never renames."""
+def ensure_layout(ws, dry_run: bool, log=print) -> bool:
+    """Insert the missing rows. Never deletes, never renames. True if it inserted."""
     sh = ws.spreadsheet
     col_b = ws.col_values(2)
     rows = label_rows(col_b)
@@ -274,9 +274,9 @@ def ensure_layout(ws, dry_run: bool, log=print) -> None:
             "inheritFromBefore": False}})
     if not reqs:
         log("  layout already complete")
-        return
+        return False
     if dry_run:
-        return
+        return True
     sh.batch_update({"requests": reqs})
     # write labels (top-down; recompute positions after the inserts)
     data, shift = [], 0
@@ -286,6 +286,7 @@ def ensure_layout(ws, dry_run: bool, log=print) -> None:
                      "values": [[l] for l in labels]})
         shift += len(labels)
     ws.batch_update(data, value_input_option="USER_ENTERED")
+    return True
 
 
 # ----------------------------------------------------------------- formulas
@@ -605,7 +606,8 @@ def main(argv=None) -> int:
     ap.add_argument("--sandbox", action="store_true",
                     help=f"work on the copy tab {SANDBOX_TITLE!r} (created if missing)")
     ap.add_argument("--dry-run", action="store_true", help="print, write nothing")
-    ap.add_argument("--no-style", action="store_true", help="skip colors/borders")
+    ap.add_argument("--style", action="store_true",
+                    help="re-apply colors/borders/number formats (default: only when rows were just inserted)")
     args = ap.parse_args(argv)
     log = print
     today = dt.date.today()
@@ -616,7 +618,7 @@ def main(argv=None) -> int:
     ws = open_target(sh, args.sandbox, args.dry_run, log)
     log(f"Target: All in One Local Office - Raf -> {ws.title!r}")
 
-    ensure_layout(ws, args.dry_run, log)
+    inserted = ensure_layout(ws, args.dry_run, log)
 
     values = ws.get_all_values(value_render_option="FORMATTED_VALUE")
     weeks = fill.find_sunday_columns(values)            # {date: 1-idx col}
@@ -758,7 +760,9 @@ def main(argv=None) -> int:
     data = [{"range": f"{a1col(c)}{row}", "values": [[v]]} for row, c, v in updates]
     for i in range(0, len(data), 2000):
         ws.batch_update(data[i:i + 2000], value_input_option="USER_ENTERED")
-    if not args.no_style:
+    # Raf formats the tab himself (Loom 2026-11-20): style only the rows we
+    # just inserted, never repaint on a normal weekly run.
+    if inserted or args.style:
         sh.batch_update({"requests": style_requests(ws.id, r, last_col)})
         fix_conditional_formats(ws, log)
         fill_missing_borders(ws, last_col, log)
