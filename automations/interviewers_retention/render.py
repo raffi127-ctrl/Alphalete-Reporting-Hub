@@ -144,7 +144,7 @@ def render_boards(boards: List[Board], out_dir: Path, stem: str = "board") -> Li
                                   viewport={"width": MAX_W, "height": 800})
         pg = ctx.new_page()
         for n, b in enumerate(boards, 1):
-            pg.set_content(page(board_html(b)))
+            pg.set_content(page(_fit_board(pg, b)))
             path = out_dir / f"{stem}-{n}.png"
             pg.locator("#board").screenshot(path=str(path))
             _shrink(path)
@@ -153,6 +153,30 @@ def render_boards(boards: List[Board], out_dir: Path, stem: str = "board") -> Li
         browser.close()
         p.stop()
     return paths
+
+
+def _podium_css(base: int) -> str:
+    """The podium's type at `base` px instead of BASE_PX (same steps as _CSS)."""
+    return (f"<style>.board {{ font-size:{base}px; }} .board .title {{ font-size:{base + 6}px; }}"
+            f" .board .sub, .board .pill, .board .note, .board td.ow, .board td.h"
+            f" {{ font-size:{base - 4}px; }}"
+            f" .board th {{ font-size:{max(base - 8, 12)}px; }}"
+            f" .board td.nm small {{ font-size:{max(base - 6, 12)}px; }}</style>")
+
+
+def _fit_board(pg, b: Board) -> str:
+    """A podium wider than MAX_W was cut by the screenshot (Eve 11/20: the
+    newest week column showed only half). Step the type down, like the by-day
+    board, until the TABLE fits; measured with the width cap lifted."""
+    doc = board_html(b)
+    for font in DAY_FONTS:
+        doc = (_podium_css(font) if font != BASE_PX else "") + board_html(b)
+        pg.set_content(page(doc))
+        w = pg.evaluate("() => { const b = document.getElementById('board');"
+                        " b.style.maxWidth = 'none'; return b.scrollWidth; }")
+        if w <= MAX_W:
+            return doc
+    return doc
 
 
 def _shrink(path: Path) -> None:
@@ -246,8 +270,10 @@ def day_board_html(b, *, compact: bool, base: int) -> str:
     .board th.wk {{ background:{WEEK_HEAD}; color:#ffffff; }}
     .board td.wk, .board td.wkna {{ background:{WEEK_BG}; color:{WEEK_HEAD}; font-weight:700; }}
     .board td.wkp {{ font-size:{base + 2}px; }}
-    .board .wkL {{ border-left:4px solid {WEEK_HEAD}; }}
-    .board .wkR {{ border-right:4px solid {WEEK_HEAD}; }}
+    /* th./td. so they beat the gray .grp divider (Eve 11/20: the blue line
+       between Thu/Fri and 'Last 4 weeks' was losing to it) */
+    .board th.wkL, .board td.wkL {{ border-left:4px solid {WEEK_HEAD}; }}
+    .board th.wkR, .board td.wkR {{ border-right:4px solid {WEEK_HEAD}; }}
     """
     note = ('<div class="note">— = no 2nd rounds booked that day / week. '
             'Last 4 weeks = the same weeks as the podium below.</div>')
