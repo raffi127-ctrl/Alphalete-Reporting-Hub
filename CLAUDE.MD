@@ -34,6 +34,24 @@ fluff. I need clear visuals and concise communications.
   just start — don't wait for my sign-off unless the task hits a
   blocker above.
 - Concise output, bullet points over paragraphs.
+- **Anything I have to look at, decide, or run goes in the YOUR TURN box,
+  and nowhere else.** Megan, 2026-11-20: "I keep getting lost", then
+  "make the background of whatever I need to actually take an action on a
+  different color". Call `mcp__your-turn__set` — it draws a cream-and-gold
+  box directly above her prompt, the only thing on screen that doesn't
+  look like prose. Rules:
+  - ONE ask per reply. A second call replaces the first; two boxes is the
+    wall of words this exists to cut through.
+  - Only what needs HER: a question, a decision, a command to run, a link
+    to check. Never findings, status, or what I already did — those stay
+    in the body.
+  - Nothing needed from her → don't call it. An empty box teaches her to
+    stop looking at it, which is the one failure that makes this worse
+    than not having it.
+  - It clears itself when she replies, so an ask is good for one turn.
+  - The mod lives in `~/.claude/dev-mods/<session>/your-turn/`. If it
+    isn't loaded in a session, fall back to a single fenced `YOUR TURN`
+    block at the end of the reply.
 - Cite sources when doing research.
 - Save any one-off outputs to `output/`.
 
