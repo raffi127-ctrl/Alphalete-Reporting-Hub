@@ -94,11 +94,47 @@ def owner_submitted_cell(text: str, html: str = "") -> bool:
     return cell_done(text, html)
 
 
+# AT&T UID REQUEST holds one of two different answers, and the plain date
+# rule cannot tell them apart (Megan 2026-11-20). OwnerVille writes a date
+# either way, so `cell_done` ticked both of these:
+#
+#     Jaime Molina        "Requested"  11/17/26 10:51 AM   <- no UID yet
+#     Alexandria Mccrobie "AN9948"     11/14/26 07:30 AM   <- AT&T answered
+#
+# The number IS the UID. Until it arrives the rep has only submitted the
+# portal form and the request has not been sent to AT&T (uid_request's
+# docstring: the send fires off SaraPlus activation, and AT&T can take 30
+# days). Ticking on "Requested" tells a leader the step is finished when the
+# thing it is waiting for has not happened.
+#
+# So: a UID number -> done. The bare word "Requested" -> RQ, which the board
+# prints instead of a tick, because "waiting on AT&T" is a real third state
+# and flattening it to done-or-blank loses the only bit worth reading.
+UID_REQUESTED = "RQ"
+# 'AN9948' — AT&T's own shape: letters then digits. Deliberately not \w+,
+# which would match the word "Requested" itself.
+_UID_RE = re.compile(r"\b[A-Za-z]{2,4}\d{3,}\b")
+
+
+def uid_cell(text: str, html: str = ""):
+    """True once AT&T returned a UID, UID_REQUESTED while only requested."""
+    t = text or ""
+    if any(m in (html or "").lower() for m in RED_MARKERS):
+        return False
+    if _UID_RE.search(t):
+        return True                       # the number is the answer
+    if "requested" in t.lower():
+        return UID_REQUESTED
+    return cell_done(text, html)
+
+
 def _judge(header: str):
     if header == "upload documents":
         return photo_uploaded
     if header == "owner submit":
         return owner_submitted_cell
+    if header == "at&t uid request":
+        return uid_cell
     return cell_done
 
 
@@ -242,7 +278,15 @@ def done_columns(headers: List[str], cells: List[dict]) -> Dict[str, object]:
             if i is None or i >= len(cells):
                 ok = None
                 break
-            if not _judge(w)(cells[i].get("text", ""), cells[i].get("html", "")):
+            said = _judge(w)(cells[i].get("text", ""),
+                             cells[i].get("html", ""))
+            # A judge may answer with a WORD, not a yes/no -- UID Request
+            # says "RQ" for requested-but-not-granted. It is not done, so it
+            # must never read as True, and it is not nothing either.
+            if isinstance(said, str):
+                ok = said
+                break
+            if not said:
                 ok = False
         out[col] = ok
     return out

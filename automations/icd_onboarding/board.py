@@ -132,7 +132,17 @@ TICKS: Sequence[str] = tuple(STEPS) + (SHOWED_UP,)
 # Passed/Failed/Unperformable, and never goes backwards. Blank means not sent.
 # Both background-check columns ADVANCE rather than tick: the useful thing is
 # which answer is showing, including the ones that are not an answer yet.
-STATUS_STEPS: Sequence[str] = ("BG Status", "OV BG Status", SHOWED_UP)
+UID_REQUEST = "UID Request"
+# RQ, OwnerVille's "Requested" with no number back from AT&T yet (Megan
+# 2026-11-20: "once the uid request shows 'requested' our obcl should say
+# 'RQ'; when it has a number like this it should just green check").
+UID_RQ = "RQ"
+# UID Request IS A STATUS, not a tick, and it has to be: `fillers.plan` writes
+# a tick ONCE and never again, so a cell left reading RQ would still read RQ
+# the day AT&T granted the number. Ranking it lets the date replace it, and
+# only in that direction -- RQ can never pull a granted UID back.
+STATUS_STEPS: Sequence[str] = ("BG Status", "OV BG Status", SHOWED_UP,
+                               UID_REQUEST)
 NOT_SENT = "Not sent"
 
 # WHAT APPLICANTSTREAM SAID ABOUT THE FIRST MORNING (Megan, 2026-11-16, asked
@@ -162,6 +172,20 @@ def showed_up_rank(text) -> int:
     return 1 if want == NO_SHOW.lower() else 2
 
 
+def uid_rank(text) -> int:
+    """blank 0 < RQ 1 < granted 2.
+
+    Anything that is neither blank nor RQ is the UID itself (the board writes
+    a date when OwnerVille shows a number), so it outranks RQ and nothing
+    outranks it. One-way on purpose: a later read that has gone back to
+    "Requested" must not erase a granted UID.
+    """
+    said = str(text or "").strip()
+    if not said:
+        return 0
+    return 1 if said.upper() == UID_RQ else 2
+
+
 def status_rank(text, column: str = "") -> int:
     """How far along a status is. 0 = blank, or a word we do not know.
 
@@ -173,6 +197,8 @@ def status_rank(text, column: str = "") -> int:
     """
     if column == SHOWED_UP:
         return showed_up_rank(text)
+    if column == UID_REQUEST:
+        return uid_rank(text)
     from automations.bg_check_sync import parse
     want = str(text or "").strip().lower()
     if not want or want == NOT_SENT.lower():

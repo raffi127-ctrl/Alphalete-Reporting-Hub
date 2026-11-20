@@ -219,10 +219,28 @@ def _marqoun():
 
 class TableRead(unittest.TestCase):
     def test_megans_screenshot_row(self):
+        # UID reads "Requested" with a date -- submitted to the portal, no
+        # number back from AT&T. RQ, not a tick (Megan 2026-11-20).
         self.assertEqual(ov_table.done_columns(VP_HEADS, _marqoun()),
                          {"Digi Docs": True, "Onboarding Quizzes": True,
-                          "UID Request": True, "Owner Submit": False,
-                          "Headshot Photo": False})
+                          "UID Request": ov_table.UID_REQUESTED,
+                          "Owner Submit": False, "Headshot Photo": False})
+
+    def test_a_granted_uid_number_is_a_tick(self):
+        # Alexandria Mccrobie, 2026-11-20: "AN9948" is the UID itself
+        c = _marqoun()
+        c[13] = {"text": "AN9948\n11/14/26\n07:30 AM", "html": ""}
+        self.assertIs(ov_table.done_columns(VP_HEADS, c)["UID Request"], True)
+
+    def test_requested_never_reads_as_done(self):
+        # the whole point: RQ is truthy, so anything testing it as a boolean
+        # would call it finished. It must not equal True.
+        self.assertNotEqual(ov_table.uid_cell("Requested\n11/17/26"), True)
+        self.assertEqual(ov_table.uid_cell("Requested\n11/17/26"), "RQ")
+
+    def test_a_red_uid_cell_is_not_requested(self):
+        self.assertIs(ov_table.uid_cell("Requested",
+                                        '<span class="badge-danger">'), False)
 
     def test_one_open_course_blocks_quizzes(self):
         c = _marqoun()
@@ -412,8 +430,13 @@ class FullyOnboarded(unittest.TestCase):
         return c
 
     def test_all_four_columns_done(self):
-        self.assertEqual(ov_table.done_columns(VP_HEADS, self._row()),
-                         {c: True for c in config.COLUMNS})
+        # His UID cell still says "Requested": a person is owner-submitted and
+        # APPROVED without the number, because the request only goes to AT&T
+        # after SaraPlus activation and can take 30 days (uid_request). So the
+        # finished shape is every column ticked EXCEPT a UID still outstanding.
+        want = {c: True for c in config.COLUMNS}
+        want["UID Request"] = ov_table.UID_REQUESTED
+        self.assertEqual(ov_table.done_columns(VP_HEADS, self._row()), want)
 
     def test_ready_too_but_run_ticks_green_instead_of_blue(self):
         # ready is True; run.py only paints blue when Owner Submit is NOT
