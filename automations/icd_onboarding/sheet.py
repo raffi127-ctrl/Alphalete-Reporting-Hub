@@ -178,13 +178,29 @@ def seed(workbook, week_start: dt.date, people: List[Dict],
         return plan
     cols = layout(_values(ws)) or {n: i for i, n in enumerate(B.COLUMNS)}
     width = max(cols.values()) + 1
-    block = []
-    for r in plan["add"]:
+    def _line(r):
         line = [""] * width
         for name, value in r.items():
             if name in cols:
                 line[cols[name]] = value
-        block.append(line)
+        return line
+
+    # ONE DIVIDER PER FUNNEL, above its people. They all land in one
+    # OwnerVille, so without the label a leader cannot tell whose new start is
+    # whose (Megan 2026-11-20). Only drawn when the block actually carries
+    # somebody from that funnel -- a divider over nobody is noise -- and never
+    # for the office's own account, whose people are the board's default.
+    week_text = B.week_label(week_start)
+    by_funnel = {}
+    for r in plan["add"]:
+        by_funnel.setdefault(str(r.get(B.FUNNEL) or "").strip(), []).append(r)
+    block = []
+    for r in by_funnel.pop("", []):          # the office's own, first and bare
+        block.append(_line(r))
+    for label in sorted(by_funnel):
+        block.append(_line(B.divider_row(week_text, label)))
+        for r in by_funnel[label]:
+            block.append(_line(r))
     # Appended to the END of the tab, after every week already on it.
     start = FIRST_DATA_ROW + len(all_rows)
     ws.update(values=block,
