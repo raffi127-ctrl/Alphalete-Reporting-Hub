@@ -15,7 +15,8 @@ Sources:
   Fios / Frontier  credico_pdf  — mail PDFs, land ~9:30am CT (sales thru yesterday)
   ATT Fiber        Tableau D2D1-PAGERV4 'Sales By ICD (ATT) (V2)' + '(LW2)',
                    summed over ALL owners (Country Sales Board's own pull)
-  ATT NDS / B2B    pending — program_daily_summary_probe names the worksheets
+  ATT NDS / B2B    same workbooks/worksheets as the ORG Sales Board, BASE view
+                   (country), NDS = WIRELESS like the board
 """
 from __future__ import annotations
 
@@ -46,10 +47,32 @@ def _sum_owners(parsed) -> dict:
     return out
 
 
-def tableau_days(logfn=print) -> dict:
-    """{campaign: {date: n}} for the AT&T campaigns, this week + last week."""
+def _country_specs():
+    """NDS + B2B = the SAME workbooks/worksheets the ORG Sales Board reads
+    (Eve 2026-11-20), but the BASE view instead of the board's saved custom
+    view — those are scoped to our org/captainship ('LuissCaptainship',
+    'Thisweekandlast'), the base view carries every owner in the country."""
+    import dataclasses
+    from automations.org_sales_board import section_pull as sp
+    nds = dataclasses.replace(
+        sp.NDS_SPEC,
+        view_url=sp._BASE + "NDS-SNRES-ATT-OOFWorkbook/ProductSalesSummaryRep",
+        total_label="", include_products=("WIRELESS",),   # = the board's metric
+        out_name="country_campaign_nds.csv")
+    b2b = dataclasses.replace(
+        sp.B2B_SPEC,
+        view_url=sp._BASE + "ATTTRACKER-B2B/D2D1-PAGERV3",
+        out_name="country_campaign_b2b.csv")
+    return {"ATT NDS": nds, "B2B": b2b}
+
+
+def tableau_days(today: dt.date, logfn=print) -> dict:
+    """{campaign: {date: n}} for the AT&T campaigns, this week + last week
+    (last week so a Tuesday roll freezes the closing week's final Sunday)."""
+    import dataclasses
     from automations.shared.tableau_patchright import tableau_session
     from automations.country_sales_board import pull as fiber
+    from automations.org_sales_board import section_pull as sp
     got = {}
     with tableau_session(verbose=False) as page:
         days = {}
@@ -60,7 +83,30 @@ def tableau_days(logfn=print) -> dict:
             except fiber.NoDataYet as e:
                 logfn(f"  ATT Fiber {'LW' if lw else 'this week'}: {e}")
         got["ATT Fiber"] = days
-        # ATT NDS / B2B: added once the probe names their worksheets.
+        for camp, spec in _country_specs().items():
+            days = {}
+            for back in (7, 0):                 # last week first, then this one
+                when = today - dt.timedelta(days=back)
+                s = dataclasses.replace(
+                    spec, out_name=spec.out_name.replace(".csv", f"_{back}.csv"))
+                try:
+                    path = sp.pull_section_byday(s, OUT, page, logfn=logfn,
+                                                 today=when)
+                    parsed = sp.parse_byday(s, path, when)
+                except Exception as e:  # noqa: BLE001 — one campaign never sinks the rest
+                    logfn(f"  {camp} ({'LW' if back else 'this week'}) "
+                          f"FAILED: {type(e).__name__}: {str(e)[:200]}")
+                    continue
+                owners = len(parsed)
+                d = _sum_owners(parsed)
+                logfn(f"  {camp} {'LW' if back else 'this week'}: {owners} "
+                      f"owners, " + ", ".join(f"{k:%a %m/%d}={v}"
+                                               for k, v in sorted(d.items())))
+                days.update(d)
+            if days:
+                got[camp] = days
+    for camp, d in got.items():
+        logfn(f"  {camp}: " + ", ".join(f"{k:%m/%d}={v}" for k, v in sorted(d.items())))
     return got
 
 
@@ -84,7 +130,7 @@ def main() -> int:
                 print(f"  {prog}: no scorecard PDF in the last days")
     if not args.no_tableau:
         OUT.mkdir(parents=True, exist_ok=True)
-        data.update(tableau_days())
+        data.update(tableau_days(today))
 
     monday = board.run(data, today=today, dry_run=args.dry_run,
                        enable_rollover=args.enable_rollover)
@@ -93,7 +139,7 @@ def main() -> int:
     expected = [c for c in L.CAMPAIGNS
                 if c in data or not args.no_tableau]
     missing = [c for c in board.verify(board._tab(), monday, today)
-               if c in expected and c in ("Fios", "Frontier", "ATT Fiber")]
+               if c in expected]
     if missing:
         print(f"VERIFY FAILED: nothing for yesterday on the board for {missing}")
         return 1
