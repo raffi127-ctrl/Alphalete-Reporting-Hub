@@ -171,6 +171,10 @@ def records(root: pathlib.Path, prof: pathlib.Path):
                     "id": eid,
                     "folder": folder,
                     "path": path,
+                    # `path` is what Chrome recorded and what a person needs to
+                    # see; `full` is that resolved to somewhere readable, which
+                    # for a packed install is under <profile>/Extensions.
+                    "full": full,
                     "version": manifest.get("version") or disk.get("version"),
                     # Chrome does NOT cache a manifest in prefs for a freshly
                     # loaded unpacked extension, so "did Chrome cache one" says
@@ -178,6 +182,13 @@ def records(root: pathlib.Path, prof: pathlib.Path):
                     # broken on 2026-11-19. Only the folder on disk knows.
                     "readable": bool(disk),
                     "unpacked": rec.get("location") == 4,
+                    # A Web Store install carries Google's update_url. It is
+                    # NOT a hand copy and must not be told to Load unpacked:
+                    # admins are sent the store link by the Hub on purpose, so
+                    # the fix for them is a new version PUBLISHED to the store.
+                    "from_store": "clients2.google.com" in str(
+                        (manifest.get("update_url")
+                         or disk.get("update_url") or "")),
                     "reasons": rec.get("disable_reasons"),
                 })
     return found, devmode
@@ -261,6 +272,71 @@ def repo_version(folder: str) -> str | None:
         return None
 
 
+# Chrome adds these to a packed extension's manifest when it installs it, and
+# re-encodes the PNGs. Neither is drift -- comparing them raw reports every
+# packed copy as different and the real signal gets lost in the noise.
+CHROME_ADDS = {"key", "update_url"}
+NOT_CODE = (".png", ".jpg", ".jpeg", ".webp", ".ico", ".md")
+
+
+def _code_files(folder_path: pathlib.Path) -> list[pathlib.Path]:
+    """The files that actually RUN, relative to the extension folder."""
+    out = []
+    for f in sorted(folder_path.rglob("*")):
+        if not f.is_file():
+            continue
+        rel = f.relative_to(folder_path)
+        if rel.parts and rel.parts[0] == "_metadata":
+            continue  # Chrome's own signing records; not ours.
+        if f.name == "manifest.json" or not f.name.endswith(NOT_CODE):
+            out.append(rel)
+    return out
+
+
+def drift_against_repo(installed: str, folder: str):
+    """Which of the repo's files this installed copy does NOT match.
+
+    THE POINT. A frozen copy at the same version number as the repo is the
+    worst case, because every version check calls it current. On 2026-11-20
+    Raf's packed office-admin said 1.1.5 and the repo said 1.1.5, while his
+    content.js was missing the one-click-one-send guard added for the double
+    send he himself hit on 11/11. A version string cannot see that. Bytes can.
+
+    Returns (differing, missing) as sorted name lists, or None when either side
+    cannot be read -- "unknown", which is not the same as "fine".
+    """
+    if not installed:
+        # pathlib.Path("") is ".", the CWD, which is a real directory -- so
+        # without this an install Chrome recorded no path for came back as
+        # "every file missing" instead of "unknown".
+        return None
+    repo = main_checkout() / "extension" / folder
+    try:
+        here = pathlib.Path(installed)
+        if not (repo.is_dir() and here.is_dir()):
+            return None
+    except OSError:
+        return None
+    differing, missing = [], []
+    for rel in _code_files(repo):
+        mine, theirs = repo / rel, here / rel
+        if not theirs.is_file():
+            missing.append(str(rel))
+            continue
+        try:
+            if rel.name == "manifest.json":
+                a = json.loads(mine.read_text(encoding="utf-8"))
+                b = json.loads(theirs.read_text(encoding="utf-8"))
+                b = {k: v for k, v in b.items() if k not in CHROME_ADDS}
+                if a != b:
+                    differing.append(str(rel))
+            elif mine.read_bytes() != theirs.read_bytes():
+                differing.append(str(rel))
+        except (OSError, ValueError):
+            return None
+    return sorted(differing), sorted(missing)
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(
         description="Check the Lucy Chrome extensions on this computer.")
@@ -318,22 +394,60 @@ def main(argv=None) -> int:
                 if why:
                     problems += 1
                     print("      TURNED OFF: %s" % why)
-                if r["unpacked"] and not from_a_checkout(r["path"], r["folder"]):
+                # A copy is a copy whether Chrome unpacked it or packed it.
+                # The packed case used to print a parenthetical and still count
+                # as OK, so a run with nothing BUT a frozen copy exited 0 and
+                # said "installed and on" -- see the note on drift_against_repo.
+                own_copy = not from_a_checkout(r["path"], r["folder"])
+                if own_copy and r["readable"]:
                     problems += 1
-                    print("      WRONG PLACE: this is a copy, not the repo "
-                          "folder, so `git pull` will never fix it.")
-                    print("      Load it from: %s" % pick_this(r["folder"]))
-                if (r["readable"] and not why
-                        and (not r["unpacked"]
-                             or from_a_checkout(r["path"], r["folder"]))):
-                    print("      OK — installed and on.")
+                    if r["from_store"]:
+                        print("      BEHIND THE REPO: this is the Chrome Web "
+                              "Store build. `git pull` does not reach it — "
+                              "only publishing a new store version does.")
+                    else:
+                        print("      FROZEN COPY: %s, so `git pull` will never "
+                              "reach it."
+                              % ("this is a copy on disk, not the repo folder"
+                                 if r["unpacked"] else
+                                 "Chrome is running its own packed copy, not "
+                                 "the repo folder"))
+                    moved = drift_against_repo(r["full"], r["folder"])
+                    if moved is None:
+                        print("      Could not compare it against the repo "
+                              "folder, so assume it is behind.")
+                    else:
+                        differing, gone = moved
+                        behind = differing + gone
+                        if behind:
+                            print("      It is ALREADY running different code "
+                                  "— %d file(s) do not match the repo:" % len(behind))
+                            for name in behind[:8]:
+                                print("        %s%s" % (
+                                    name, "  (missing entirely)"
+                                    if name in gone else ""))
+                            if len(behind) > 8:
+                                print("        ... and %d more"
+                                      % (len(behind) - 8))
+                        else:
+                            print("      Its files match the repo today, but "
+                                  "the next fix will not reach it.")
+                    if r["from_store"]:
+                        print("      This came from the Chrome Web Store, so "
+                              "it is NOT a hand copy and Load unpacked is the "
+                              "wrong fix.")
+                        print("      Fix: publish %s to the Web Store listing. "
+                              "Chrome then updates every admin by itself."
+                              % (repo_version(r["folder"]) or "the new version"))
+                        print("      Until that is published, every admin on "
+                              "the store build is running this same code.")
+                    else:
+                        print("      Fix: remove this card, then Load unpacked "
+                              "and pick:")
+                        print("      %s" % pick_this(r["folder"]))
+                if r["readable"] and not why and not own_copy:
+                    print("      OK — installed and on, from the repo folder.")
                     ok_in[r["folder"]].append((prof.name, label))
-                    if not r["unpacked"]:
-                        # A packed install works, but it is a frozen copy: it
-                        # will quietly sit at this version while the repo moves.
-                        print("      (a packed copy rather than the repo "
-                              "folder — it will not pick up `git pull` "
-                              "fixes on its own)")
 
     print("=" * 72)
     here = inuse[1] if inuse else "the profile you use"
