@@ -22,6 +22,7 @@ Python 3.9-safe.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import datetime as dt
 import json
 import re
@@ -133,6 +134,23 @@ def remember_sent(day: dt.date, now: dt.datetime) -> None:
         "sent_at": now.isoformat(timespec="seconds")}, indent=1), encoding="utf-8")
 
 
+@contextlib.contextmanager
+def _send_lock():
+    """One sender at a time (the launchd tick and a hand rerun could overlap):
+    the already-sent check and the send happen under this lock."""
+    C.STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    f = open(str(C.STATE_PATH) + ".lock", "w")
+    try:
+        try:
+            import fcntl
+            fcntl.flock(f, fcntl.LOCK_EX)
+        except ImportError:   # no flock off macOS/Linux; nothing else sends there
+            pass
+        yield
+    finally:
+        f.close()
+
+
 # --------------------------------------------------------------- render -----
 
 def render(day: dt.date, out_path: Path) -> Tuple[Path, int, str]:
@@ -190,9 +208,16 @@ def main(argv=None) -> int:
     if day.weekday() not in C.WEEKDAYS:
         _log("%s %s: Monday-Friday only -- nothing to send" % (name, day.isoformat()))
         return 0
-    if a.send and already_sent(day) and not a.force:
-        _log("already sent today -- not sending again (use --force)")
-        return 0
+    if not a.send:
+        return _run(a, day, now, name)
+    with _send_lock():
+        if already_sent(day) and not a.force:
+            _log("already sent today -- not sending again (use --force)")
+            return 0
+        return _run(a, day, now, name)
+
+
+def _run(a, day: dt.date, now: dt.datetime, name: str) -> int:
     if a.out:
         png = Path(a.out)
     else:
