@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alphalete.second-round-cards-1120</string>
+
+    <!-- ONE-SHOT (Carlos 2026-11-19): "Tomorrow morning in the A Players chat,
+         I want you to send just the top half of the screenshot ... the total
+         numbers for the Office, AT&T, and Verizon." Fri 11/20 at 9:00, a 9:15
+         retry (the text goes once). launchd would fire again next 11/20, so
+         the job only acts when today IS 2026-11-20 (only-on). Remove with
+         `lucy rerun install_second_round_cards_agent remove` after. On Lucy 2. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/megan/1st Claude Folder/deploy/second_round_report.sh</string>
+        <string>--view</string>
+        <string>weeks</string>
+        <string>--weeks</string>
+        <string>4</string>
+        <string>--through</string>
+        <string>2026-11-18</string>
+        <string>--cards-only</string>
+        <string>--text</string>
+        <string>--only-on</string>
+        <string>2026-11-20</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/megan/1st Claude Folder</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/megan/1st Claude Folder</string>
+    </dict>
+
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Month</key><integer>11</integer><key>Day</key><integer>20</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Month</key><integer>11</integer><key>Day</key><integer>20</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>15</integer></dict>
+    </array>
+
+    <key>StandardOutPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/second-round-cards.launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/second-round-cards.launchd.err.log</string>
+</dict>
+</plist>

@@ -222,6 +222,11 @@ TEXT_ROUTES = {
     # "Send it out as a text message on the new A players text chain").
     ("NDS TERMINATED", "nds_terminated"): [TEXT_GROUP_ALL],
     ("VZ TERMINATED", "vz_terminated"): [TEXT_GROUP_ALL],
+    # 2nd rounds & new starts report cards (second_round_report --text).
+    # Carlos 2026-11-19: "Tomorrow morning in the A Players chat ... just the
+    # top three tables that shows the total numbers for the Office, AT&T, and
+    # Verizon."
+    ("2ND ROUNDS", "second_rounds_cards"): [TEXT_GROUP_ALL],
 }
 
 # Seconds to wait after handing Messages an image. TdB proved a group image send

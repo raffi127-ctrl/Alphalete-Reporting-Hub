@@ -53,3 +53,27 @@ def test_summary_and_day_gaps():
 def test_closing_pct_is_accepted_over_conducted():
     b = R.second_block([_row(accepted=True), _row(), _row(), _row()])
     assert b["close_pct"] == 0.25 and b["offer_pct"] == 1.0
+
+
+def test_same_leader_and_carlos():
+    assert R.same_leader("Nicholas Smedra", "Nick Smedra", ROSTERS)
+    assert R.same_leader("William Bautista", "Will Bautista", ROSTERS)
+    assert not R.same_leader("Will Bautista", "Gary Van Whitaker", ROSTERS)
+    assert R.is_carlos("Carlos Hidalgo") and R.is_carlos("SELECT=Carlos  Hidalgo") is True
+    assert R._clean_who("SELECT=None") == "" and R._clean_who(" Gary  Van Whitaker ") == "Gary Van Whitaker"
+
+
+def test_leaders_with_appstream_done_by():
+    d = dt.date(2026, 11, 16)
+    rows = [_row(cand="Ann Lee", accepted=True), _row(cand="Bo Kim"), _row(cand="Cy Do", who="Will Bautista", camp="VERIZON"),
+            _row(cand="Di Fox", who="Will Bautista", camp="VERIZON"), _row(cand="Ed Ray", who="Will Bautista", camp="VERIZON")]
+    R.assign_teams(rows, ROSTERS)
+    asr = [{"Day": d.isoformat(), "Row": "Second Interviews Showed Up", "First": f, "Last": l, "Email": "", "Phone": "",
+            "Done By 2nd": who} for f, l, who in (("Ann", "Lee", "Nicholas Smedra"), ("Bo", "Kim", "Carlos Hidalgo"),
+                                                  ("Cy", "Do", "Gary Van Whitaker"), ("Di", "Fox", ""))]
+    L = R.leaders_summary(rows, d, d, asr, ROSTERS)
+    assert L["kinds"] == {"same": 1, "carlos": 1, "other": 1, "blank": 1, "not found": 1}
+    att = dict((n, (b, k)) for n, b, ns, k in L["teams"]["AT&T"]["leaders"])
+    assert att["Nick Smedra"][0]["conducted"] == 2 and att["Nick Smedra"][1] == {"same": 1, "carlos": 1}
+    assert [r["cand"] for r in L["others"]] == ["Cy Do"]
+    assert "Carlos 1" in R._as_cell({"same": 1, "carlos": 1}, True)

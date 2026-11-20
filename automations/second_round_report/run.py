@@ -55,7 +55,8 @@ OUT_DIR = Path(__file__).resolve().parents[2] / "output" / "second_round_report"
 
 DU_COLS = {"name": "name", "camp": "campaign", "date2": "2nd round interview date",
            "who2": "2nd round", "show2": "2nd show/no show", "offered": "offered",
-           "bob": "bob status", "orient": "orientation date", "cr": "classroom retention"}
+           "bob": "bob status", "orient": "orientation date", "cr": "classroom retention",
+           "email": "email", "phone": "phone #"}
 AS_COLS = {"s2": "2nd Showed", "off": "Job Offered", "bob": "BOB",
            "nss": "NS Scheduled", "nsh": "NS Showed", "b2": "2nd Booked"}
 SUFFIX = {"ii", "iii", "iv", "jr", "jr.", "sr", "sr."}
@@ -159,7 +160,8 @@ def read_du(sh, year: int) -> List[Dict]:
                      "offered": g("offered").upper() == "Y", "not_offered": g("offered").upper() == "N",
                      "accepted": g("bob").upper() == "BOB", "declined": g("bob").lower() == "declined",
                      "waiting": g("bob").lower() in ("lm", "letting us know"),
-                     "ns_showed": g("cr") == "Showed To CR"})
+                     "ns_showed": g("cr") == "Showed To CR",
+                     "email": g("email").lower(), "phone": re.sub(r"\D", "", g("phone"))[-10:]})
     return rows
 
 
@@ -337,6 +339,7 @@ table.att .th th { background: #0B3A6E; color: #fff; } table.vz .th th { backgro
 table.chk .th th { background: #3d4a57; color: #fff; }
 th.grp { font-size: 13px; letter-spacing: .5px; }
 tr.tot td { font-weight: 700; background: #eee; }
+td.asc { font-size: 13px; white-space: nowrap; }
 td.pc { font-weight: 700; }
 td.ok { color: #1b7f3b; font-weight: 700; } td.diff { color: #b25b00; font-weight: 700; }
 .foot { margin: 10px 28px 0; padding: 10px 14px; background: #f3f6f9; border-left: 5px solid #00A8E0; font-size: 14px; line-height: 1.55; }
@@ -370,7 +373,7 @@ def _cmp(a: int, d: int) -> str:
     return ("<td class='ok'>%d &#10003;</td>" % d) if a == d else ("<td class='diff'>%d vs %d</td>" % (a, d))
 
 
-def render_week(s: Dict) -> str:
+def render_week(s: Dict, cards_only: bool = False) -> str:
     days = s["days"]
     span = "%s – %s" % (_md(days[0]), _md(days[-1])) if days else "—"
 
@@ -397,6 +400,13 @@ def render_week(s: Dict) -> str:
             who = ", ".join(html.escape(n) for n in g["hint"])
             gl.append("Offers on %s: AppStream %d, Daily Update %d — one of %s (marked N on the Daily Update) is "
                       "offered in AppStream." % (_md(g["day"]), g["appstream"], g["du"], who))
+    if cards_only:
+        return _doc("<div class='band'><h1>2ND ROUND INTERVIEWS <span>&middot; AT&amp;T vs VERIZON</span></h1>"
+                    "<div class='wk'>Week of %s – %s</div></div><div class='sub1'>So far this week: %s. "
+                    "Accepted = accepted, orientation booked.</div><div class='cards'>%s%s%s</div>"
+                    % (s["lo"].strftime("%b %-d"), s["hi"].strftime("%b %-d, %Y"), span,
+                       _card("OFFICE", T, None, "tot", ""), _card("AT&amp;T", s["AT&T"], None, "att", ATT_LOGO),
+                       _card("VERIZON", s["Verizon"], None, "vz", VZ_LOGO)))
     body = ("<div class='band'><h1>2ND ROUND INTERVIEWS <span>&middot; AT&amp;T vs VERIZON</span></h1>"
             "<div class='wk'>Week of %s – %s</div></div>"
             "<div class='sub1'>So far this week: interviews held %s (from the Daily Update). Team = who did the 2nd round. "
@@ -415,7 +425,7 @@ def render_week(s: Dict) -> str:
     return _doc(body)
 
 
-def render_weeks(weeks: List[Dict], tot: Dict, through: dt.date) -> str:
+def render_weeks(weeks: List[Dict], tot: Dict, through: dt.date, cards_only: bool = False) -> str:
     def team_table(team, cls):
         rows = ""
         for w in weeks:
@@ -435,6 +445,15 @@ def render_weeks(weeks: List[Dict], tot: Dict, through: dt.date) -> str:
                 "<th>Offered</th><th>Accepted</th><th>Closing %%</th><th>New starts<br>scheduled</th>"
                 "<th>New starts<br>showed</th><th>NS show %%</th></tr>%s</table>" % (cls, team, rows))
 
+    if cards_only:
+        return _doc("<div class='band'><h1>2ND ROUNDS &amp; NEW STARTS <span>&middot; AT&amp;T vs VERIZON</span></h1>"
+                    "<div class='wk'>%s – %s</div></div><div class='sub1'>Last %d weeks through %s. "
+                    "Closing %% = accepted &divide; 2nd rounds conducted. New starts = orientation; showed = showed to "
+                    "classroom.</div><div class='cards'>%s%s%s</div>"
+                    % (weeks[0]["lo"].strftime("%b %-d"), through.strftime("%b %-d, %Y"), len(weeks), _md(through),
+                       _card("OFFICE", tot["total"], tot["ns_total"], "tot", ""),
+                       _card("AT&amp;T", tot["AT&T"], tot["ns_AT&T"], "att", ATT_LOGO),
+                       _card("VERIZON", tot["Verizon"], tot["ns_Verizon"], "vz", VZ_LOGO)))
     chk = ""
     for w in weeks + [dict(tot, label="4-week total")]:
         a, T, N = w["as"], w["total"], w["ns_total"]
@@ -479,6 +498,229 @@ def render_weeks(weeks: List[Dict], tot: Dict, through: dt.date) -> str:
                team_table("AT&T", "att"), team_table("Verizon", "vz"), check,
                "<br>".join(notes), "".join("<br>" + x for x in gl)))
     return _doc(body)
+
+
+# ------------------------------------------------------ by leader -----
+
+def _clean_who(v: str) -> str:
+    v = " ".join((v or "").split())
+    v = re.sub(r"^SELECT=", "", v, flags=re.I).strip()
+    return "" if v.lower() in ("", "none", "select", "-", "--") else v
+
+
+def same_leader(a: str, b: str, rosters) -> bool:
+    """Two spellings of one interviewer (board name, nickname, middle names)."""
+    if not a or not b:
+        return False
+    ta, tb = team_of(a, rosters), team_of(b, rosters)
+    if ta[1] and tb[1]:
+        return ta[1] == tb[1]
+    x, y = toks(a), toks(b)
+    return bool(x and y) and NICK.get(x[0], x[0]) == NICK.get(y[0], y[0]) and x[-1] == y[-1]
+
+
+def is_carlos(who: str) -> bool:
+    return "carloshidalgo" in re.sub(r"[^a-z]", "", (who or "").lower())
+
+
+def _as_people(as_rows: List[Dict], label: str, lo: dt.date, hi: dt.date) -> List[Dict]:
+    from automations.second_round_report.appstream_people import digits, loose
+    out = []
+    for x in as_rows:
+        if x.get("Row") != label:
+            continue
+        try:
+            d = dt.date.fromisoformat(x.get("Day", ""))
+        except ValueError:
+            continue
+        if lo <= d <= hi:
+            name = ("%s %s" % (x.get("First", ""), x.get("Last", ""))).strip()
+            out.append({"day": d, "name": name, "key": loose(name), "email": (x.get("Email") or "").strip().lower(),
+                        "phone": digits(x.get("Phone", "")), "who2": _clean_who(x.get("Done By 2nd", ""))})
+    return out
+
+
+def _match(r: Dict, people: List[Dict], same_day: bool = True) -> Optional[Dict]:
+    from automations.second_round_report.appstream_people import loose
+    k = loose(r["cand"])
+    for p in people:
+        if same_day and p["day"] != r.get("date2"):
+            continue
+        if (k and p["key"] == k) or (r.get("email") and p["email"] == r["email"]) or \
+                (r.get("phone") and len(r["phone"]) >= 7 and p["phone"] == r["phone"]):
+            return p
+    return None
+
+
+def leaders_summary(rows: List[Dict], lo: dt.date, hi: dt.date, as_rows: List[Dict], rosters) -> Dict:
+    seconds = [r for r in rows if r["showed"] and in_range(r["date2"], lo, hi)]
+    starts = [r for r in rows if in_range(r["orient"], lo, hi)]
+    shown = _as_people(as_rows, "Second Interviews Showed Up", lo, hi)
+    total = _as_people(as_rows, "Total Second Interviews", lo, hi)
+    have_as = bool(shown or total)
+    checks = []
+    for r in seconds:
+        p = _match(r, shown) if shown else None
+        t = _match(r, total)
+        who = (p or {}).get("who2") or (t or {}).get("who2") or ""
+        if not (p or t):
+            kind = "not found"
+        elif not who:
+            kind = "blank"
+        elif same_leader(who, r["who"], rosters) or (r["shown"] and same_leader(who, r["shown"], rosters)):
+            kind = "same"
+        elif is_carlos(who):
+            kind = "carlos"
+        else:
+            kind = "other"
+        r["as_who"], r["as_kind"] = who, kind
+        checks.append(r)
+    leaders: Dict[Tuple[str, str], Dict] = {}
+    for r in seconds:
+        leaders.setdefault((r["team"] or "", r["shown"]), {"sec": [], "ns": []})["sec"].append(r)
+    for r in starts:
+        leaders.setdefault((r["team"] or "", r["shown"]), {"sec": [], "ns": []})["ns"].append(r)
+    out = {"lo": lo, "hi": hi, "have_as": have_as, "teams": {}}
+    for team in TEAMS + ("",):
+        ls = []
+        for (tm, name), v in leaders.items():
+            if tm != team:
+                continue
+            kinds = {}
+            for r in v["sec"]:
+                kinds[r.get("as_kind", "")] = kinds.get(r.get("as_kind", ""), 0) + 1
+            ls.append((name, second_block(v["sec"]), ns_block(v["ns"]), kinds))
+        ls.sort(key=lambda t: (-t[1]["conducted"], -t[1]["accepted"], t[0]))
+        tr = [r for r in seconds if (r["team"] or "") == team]
+        ts = [r for r in starts if (r["team"] or "") == team]
+        out["teams"][team or "none"] = {"leaders": ls, "total": second_block(tr), "ns": ns_block(ts)}
+    out["others"] = [r for r in checks if r.get("as_kind") == "other"]
+    out["kinds"] = {}
+    for r in checks:
+        out["kinds"][r["as_kind"]] = out["kinds"].get(r["as_kind"], 0) + 1
+    # person-level: who is on one list and not the other, over the whole period
+    diffs = []
+    for label, du_rows in (("Second Interviews Showed Up", seconds),
+                           ("Offered Job From Second Round", [r for r in seconds if r["offered"]]),
+                           ("Brought on Board Booked", [r for r in seconds if r["accepted"]]),
+                           ("Total New Starts Scheduled", starts),
+                           ("New Starts Showed Up", [r for r in starts if r["ns_showed"]])):
+        ppl = _as_people(as_rows, label, lo, hi)
+        if not ppl:
+            continue
+        only_as = [p["name"] for p in ppl if not any(_match(r, [p], same_day=False) for r in du_rows)]
+        only_du = [r["cand"] for r in du_rows if not _match(r, ppl, same_day=False)]
+        diffs.append((label, len(ppl), len(du_rows), only_as, only_du))
+    out["diffs"] = diffs
+    return out
+
+
+def _as_cell(kinds: Dict[str, int], have_as: bool) -> str:
+    if not have_as:
+        return "<td>—</td>"
+    parts = []
+    if kinds.get("same"):
+        parts.append("&#10003; %d" % kinds["same"])
+    if kinds.get("carlos"):
+        parts.append("Carlos %d" % kinds["carlos"])
+    if kinds.get("other"):
+        parts.append("<b>&ne; %d</b>" % kinds["other"])
+    if kinds.get("blank"):
+        parts.append("blank %d" % kinds["blank"])
+    if kinds.get("not found"):
+        parts.append("not found %d" % kinds["not found"])
+    return "<td class='asc'>%s</td>" % (" &middot; ".join(parts) or "—")
+
+
+def render_leaders(L: Dict, through: dt.date, weeks: int) -> str:
+    def table(team, cls):
+        T = L["teams"].get(team) or {"leaders": [], "total": second_block([]), "ns": ns_block([])}
+        rows = ""
+        for name, b, n, kinds in T["leaders"]:
+            rows += ("<tr><td class='nm'>%s</td><td>%d</td><td>%d</td><td>%d</td><td class='pc'>%s</td>"
+                     "<td>%d</td><td>%d</td><td class='pc'>%s</td>%s</tr>"
+                     % (html.escape(name), b["conducted"], b["offered"], b["accepted"],
+                        pct(b["close_pct"]) if b["conducted"] else "—", n["scheduled"], n["showed"],
+                        pct(n["show_pct"]) if n["scheduled"] else "—", _as_cell(kinds, L["have_as"])))
+        b, n = T["total"], T["ns"]
+        rows += ("<tr class='tot'><td class='nm'>%s total</td><td>%d</td><td>%d</td><td>%d</td><td class='pc'>%s</td>"
+                 "<td>%d</td><td>%d</td><td class='pc'>%s</td><td></td></tr>"
+                 % (team, b["conducted"], b["offered"], b["accepted"], pct(b["close_pct"]),
+                    n["scheduled"], n["showed"], pct(n["show_pct"])))
+        return ("<table class='%s'><tr class='th'><th class='nm'>%s leader</th><th>2nd rounds<br>conducted</th>"
+                "<th>Offered</th><th>Accepted</th><th>Closing %%</th><th>New starts<br>scheduled</th>"
+                "<th>New starts<br>showed</th><th>NS show %%</th><th>AppStream<br>done by</th></tr>%s</table>"
+                % (cls, team, rows))
+    notes = []
+    k = L["kinds"]
+    if L["have_as"]:
+        notes.append("<b>AppStream &ldquo;Done By 2nd&rdquo;</b> for the %d 2nd rounds: &#10003; same leader %d &middot; "
+                     "Carlos Hidalgo %d (left as the Daily Update has it, on purpose) &middot; a different leader %d "
+                     "&middot; blank %d &middot; not found %d."
+                     % (sum(k.values()), k.get("same", 0), k.get("carlos", 0), k.get("other", 0),
+                        k.get("blank", 0), k.get("not found", 0)))
+        for r in L["others"][:10]:
+            notes.append("&ne; %s (%s): Daily Update <b>%s</b>, AppStream %s."
+                         % (html.escape(r["cand"]), _md(r["date2"]), html.escape(r["who"] or "?"), html.escape(r["as_who"])))
+        for label, n_as, n_du, only_as, only_du in L["diffs"]:
+            if not only_as and not only_du:
+                notes.append("%s: AppStream %d, Daily Update %d &mdash; same people." % (label, n_as, n_du))
+                continue
+            bits = []
+            if only_as:
+                bits.append("only in AppStream: %s" % ", ".join(html.escape(n) for n in only_as[:8])
+                            + (" +%d more" % (len(only_as) - 8) if len(only_as) > 8 else ""))
+            if only_du:
+                bits.append("only on the Daily Update: %s" % ", ".join(html.escape(n) for n in only_du[:8])
+                            + (" +%d more" % (len(only_du) - 8) if len(only_du) > 8 else ""))
+            notes.append("%s: AppStream %d, Daily Update %d &mdash; %s." % (label, n_as, n_du, "; ".join(bits)))
+    else:
+        notes.append("AppStream person-by-person check not loaded (run --appstream-pull first).")
+    none = L["teams"].get("none")
+    if none and none["total"]["conducted"]:
+        notes.append("Not on a team (no interviewer, no campaign): %d." % none["total"]["conducted"])
+    body = ("<div class='band'><h1>BY LEADER <span>&middot; 2ND ROUNDS &amp; NEW STARTS</span></h1>"
+            "<div class='wk'>%s – %s</div></div>"
+            "<div class='sub1'>Last %d weeks through %s, by the leader who did the 2nd round on the Daily Update. "
+            "New starts count for the leader who did their 2nd round. Accepted = BOB.</div>"
+            "<div class='stack'>%s%s</div><div class='foot'>%s</div>"
+            % (L["lo"].strftime("%b %-d"), through.strftime("%b %-d, %Y"), weeks, _md(through),
+               table("AT&T", "att"), table("Verizon", "vz"), "<br>".join(notes)))
+    return _doc(body)
+
+
+# ------------------------------------------------------ the text -----
+
+TEXT_CAMPAIGN, TEXT_KIND = "2ND ROUNDS", "second_rounds_cards"
+TEXT_STATE = Path.home() / ".config" / "recruiting-report" / "second_round_text_state.json"
+
+
+def queue_text(png: Path, title: str, key: str, now: dt.datetime, force: bool = False) -> bool:
+    """Text the picture to NEW A Players through the local text outbox, once per
+    `key` (b2b_dispositions.config.TEXT_ROUTES[("2ND ROUNDS", ...)])."""
+    import json
+    from automations.b2b_dispositions import text_post as tp
+    from automations.b2b_dispositions import run as bd_run
+    from automations.day_orchestrator import text_outbox as tob
+    try:
+        state = json.loads(TEXT_STATE.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        state = {}
+    if state.get(key) and not force:
+        _log("text %s already sent at %s -- not again (--force)" % (key, state[key]))
+        return False
+    spec = {"kind": TEXT_KIND, "title": title, "by_campaign": {TEXT_CAMPAIGN: [str(png)]}}
+    if not tp.spec_has_routes(spec):
+        _log("no route for %s/%s in TEXT_ROUTES -- not queued" % (TEXT_CAMPAIGN, TEXT_KIND))
+        return False
+    day = now.date()
+    mp = tp.write_manifest(spec, bd_run.OUTPUT_DIR / day.isoformat(), "%s-%s" % (TEXT_KIND, now.strftime("%H%M")))
+    tob.drop(mp, by="second_round_report", day=day.isoformat())
+    state[key] = now.isoformat(timespec="seconds")
+    TEXT_STATE.parent.mkdir(parents=True, exist_ok=True)
+    TEXT_STATE.write_text(json.dumps(state, indent=1), encoding="utf-8")
+    _log("text queued (outbox %s)" % mp.name)
+    return True
 
 
 def to_png(html_text: str, out: Path) -> Path:
@@ -527,18 +769,33 @@ def group_text(users: List[str], text: str) -> str:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("--view", choices=["week", "weeks"], default="week")
+    ap.add_argument("--view", choices=["week", "weeks", "leaders"], default="week")
     ap.add_argument("--weeks", type=int, default=4, help="--view weeks: how many Mon-Sun weeks")
     ap.add_argument("--through", help="YYYY-MM-DD, last day counted (default today)")
     ap.add_argument("--out", help="picture path (default output/second_round_report/)")
     ap.add_argument("--dm", metavar="U...", help="Slack-DM the picture to this user (from Lucy)")
     ap.add_argument("--note-to", metavar="U1,U2", help="--view week: the offers note's recipients")
     ap.add_argument("--send-note", action="store_true", help="actually send the note (else print it)")
+    ap.add_argument("--cards-only", action="store_true", help="only the top cards (office / AT&T / Verizon)")
+    ap.add_argument("--text", action="store_true", help="text the picture to NEW A Players (once)")
+    ap.add_argument("--force", action="store_true", help="--text: send again")
+    ap.add_argument("--only-on", help="YYYY-MM-DD: do nothing unless today is that day (one-shot timers)")
+    ap.add_argument("--appstream-pull", action="store_true",
+                    help="read AppStream's per-person lists into the '2R AppStream Pull' tab, then stop")
+    ap.add_argument("--from", dest="from_", help="--appstream-pull: first day (default 4 weeks back)")
     a = ap.parse_args(argv)
+    if a.only_on and dt.date.today().isoformat() != a.only_on:
+        _log("--only-on %s: today is %s -- nothing to do" % (a.only_on, dt.date.today()))
+        return 0
 
     through = dt.date.fromisoformat(a.through) if a.through else dt.date.today()
     monday = through - dt.timedelta(days=through.weekday())
-    first = monday - dt.timedelta(days=7 * ((a.weeks if a.view == "weeks" else 1) - 1))
+    first = monday - dt.timedelta(days=7 * ((a.weeks if a.view in ("weeks", "leaders") else 1) - 1))
+    if a.appstream_pull:
+        from automations.second_round_report import appstream_people as AP
+        lo = dt.date.fromisoformat(a.from_) if a.from_ else first
+        AP.write_tab(AP.pull(lo, through, OFFICE, log=_log), log=_log)
+        return 0
     sh = _sheet(VANTURA)
     rosters = read_rosters(sh)
     rows = read_du(sh, through.year)
@@ -559,7 +816,7 @@ def main(argv=None) -> int:
             _log("%s: conducted %d, offered %d, accepted %d, closing %s"
                  % (team, b["conducted"], b["offered"], b["accepted"], pct(b["close_pct"])))
         _log("AppStream: %s | gaps: %s" % (s["as"], [(str(g["day"]), g["what"], g["appstream"], g["du"]) for g in s["gaps"]]))
-        page = render_week(s)
+        page = render_week(s, cards_only=a.cards_only)
         out = Path(a.out) if a.out else OUT_DIR / ("second_rounds_week_%s.png" % stamp)
         caption = ("2nd round interviews — AT&T vs Verizon, week of %s (so far: %s)"
                    % (monday.strftime("%b %-d"), ", ".join(_md(d) for d in s["days"]) or "none yet"))
@@ -571,6 +828,21 @@ def main(argv=None) -> int:
                 _log("note sent: " + group_text(users, note))
             else:
                 _log("note NOT sent (pass --send-note) -- would go to %s" % users)
+    elif a.view == "leaders":
+        from automations.second_round_report import appstream_people as AP
+        L = leaders_summary(rows, first, through, AP.read_tab(), rosters)
+        for team in TEAMS:
+            for name, b, n, kinds in L["teams"][team]["leaders"]:
+                _log("%-8s %-28s 2nd %2d off %2d acc %2d  NS %2d/%2d  AS %s"
+                     % (team, name, b["conducted"], b["offered"], b["accepted"], n["scheduled"], n["showed"], kinds))
+        _log("AppStream done-by: %s | others: %s" % (L["kinds"], [(r["cand"], str(r["date2"]), r["who"], r["as_who"])
+                                                             for r in L["others"]]))
+        for d in L["diffs"]:
+            _log("diff %s: AS %d DU %d only AS %s only DU %s" % d)
+        page = render_leaders(L, through, a.weeks)
+        out = Path(a.out) if a.out else OUT_DIR / ("second_rounds_leaders_%dweeks_%s.png" % (a.weeks, stamp))
+        caption = ("2nd rounds & new starts by leader — last %d weeks (%s – %s)"
+                   % (a.weeks, first.strftime("%b %-d"), through.strftime("%b %-d")))
     else:
         weeks = []
         for k in range(a.weeks):
@@ -584,12 +856,17 @@ def main(argv=None) -> int:
                     {k2: w["Verizon"][k2] for k2 in ("conducted", "offered", "accepted")},
                     w["ns_AT&T"], w["ns_Verizon"], w["as"]))
         tot = summarize(rows, first, through, appstream)
-        page = render_weeks(weeks, tot, through)
+        page = render_weeks(weeks, tot, through, cards_only=a.cards_only)
         out = Path(a.out) if a.out else OUT_DIR / ("second_rounds_%dweeks_%s.png" % (a.weeks, stamp))
         caption = ("2nd rounds & new starts — AT&T vs Verizon, last %d weeks (%s – %s)"
                    % (a.weeks, first.strftime("%b %-d"), through.strftime("%b %-d")))
+    if a.cards_only:
+        out = out.with_name(out.stem + "_cards.png")
     to_png(page, out)
     _log("picture: %s" % out)
+    if a.text:
+        queue_text(out, caption, "%s|%s|%s|%s" % (a.view, a.weeks, stamp, "cards" if a.cards_only else "full"),
+                   dt.datetime.now(), force=a.force)
     if a.dm:
         dm_picture(out, a.dm, caption)
         _log("DM'd to %s" % a.dm)
