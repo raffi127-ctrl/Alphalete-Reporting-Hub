@@ -5258,6 +5258,40 @@
    "verify": null,
    "close_on": "exit_zero"
   },
+  "ov_sales_board_sheet_copy": {
+   "on_scheduler": true,
+   "order": 90,
+   "machine": "Lucy 3",
+   "_note": "Our own copy of OwnerVille's CEO Dashboard Sales Board (artifact https://claude.ai/artifact/9uYxif3fDMBjt4rK6mdVEK, Raf via Eve 2026-11-20) shows a few things OwnerVille does not have; for now people type them ONLY on the Alphalete SALES BOARD 2025 sheet. Every morning, after the rest of Lucy 3's batch (order 90), this reads this week's tab -- roll call, Trainer / Drug Test / Direct Deposit / A-Play / Location / Gas Bonus / Add applied to, the 'Goal' row, the 'New Starts/Raf' box and every rep row -- and writes one row per artifact-database document into the bridge sheet (alphaletemarketing's Drive, 1UfyUveaWQMFgFtXVzVsBTHtYKj1VPLTA0l4rAWRogo8, shared Editor with the Lucys' Sheets accounts). A daily claude.ai cloud routine (Eve's account) then copies those rows into the artifact; Lucy cannot write the artifact itself. Reps are keyed by name; the page matches names to OwnerVille ids. Everything else on that board stays exactly OwnerVille's. Lucy 3 = the least-loaded box (Eve: 'en la lucy que este mas libre'). Read-only on the Sales Board. Code: automations/ov_sales_board/sheet_import.py.",
+   "display_name": "OV Sales Board copy - daily copy from our Sales Board",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.ov_sales_board.sheet_import"
+   ],
+   "base_args": [
+    "--weeks",
+    "1",
+    "--bridge"
+   ],
+   "cadence": {
+    "weekdays": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ]
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 10,
+   "verify": null,
+   "close_on": "exit_zero"
+  },
   "energy_crossref": {
    "_retired_note": "RETIRADO 2026-09-01 - se acabo el programa. Rafael Hidalgo en #alphalete-sales, sobre el chequeo del 8.31 (que salio limpio: Slack 1 / Board 0 / Webform 1, all accounted for): \"we can end the base energy cross referencing FYI we're done with that program!\". Sin ventas de Energy no hay nada que auditar ni a quien etiquetar, y este post ademas TAGUEA REPS REALES cada manana, asi que dejarlo prendido era mandar un nudge diario por un programa cerrado. Tres candados, no uno: (1) automations/energy_crossref/DISABLED - run.py sale 0 sin leer Slack, la Sales Board ni el webform, asi que un `lucy rerun energy_crossref` a mano tampoco postea; (2) on_scheduler:false + cadence.weekdays [] - el batch de las 4am no lo corre Y hub_coverage deja de rearmarle la card de la Report Library (weekdays [] solo no alcanza: on_scheduler:true lo mantiene en _scheduler_reports() y la card vuelve diciendo DUE TODAY todos los dias, igual que knocks_access_watch el 2026-08-26); (3) standalone_watch:false - sin eso machine_digest lo pierde de vista al pasar a on_scheduler:false, cae al baseline historico y postea \"didn't run today\" una vez por dia por ~una semana (lo que paso con indeed-source-report el 2026-08-28). NO hay LaunchAgent que descargar: esto vivia dentro del batch de las 4am (order 7, depends_on alphalete_production), no en un agente propio, asi que no hay `uninstall_...` que encolar. Nadie depende de el: ningun otro entry lo lista en depends_on/after. El codigo NO se toca y `lucy rerun energy_crossref` sigue resolviendo (registry.resolve_report cae al config crudo). SIGUEN VIVOS Y NO SE TOCARON: energy_slack_fill (llena la columna EN de la Sales Board desde Slack) y la seccion Energy Sales Board del post de alphalete_production - si Energy tambien deja de aparecer en el board de la noche, esos dos se bajan aparte. Para volver atras: borrar el archivo DISABLED, on_scheduler:true, weekdays [0..6], sacar standalone_watch y sacarlo de PAUSED_REPORTS en automations/dashboard.py.",
    "order": 7,
