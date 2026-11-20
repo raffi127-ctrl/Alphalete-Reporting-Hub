@@ -103,6 +103,9 @@ def main(argv=None) -> int:
     ap.add_argument("--no-deactivate", dest="no_deactivate", action="store_true",
                     help="don't retire in OwnerVille / deactivate in Slack this "
                          "run (auto_deactivate.py; on by default since 2026-10-13)")
+    ap.add_argument("--no-arc", dest="no_arc", action="store_true",
+                    help="skip the ARC (Credico) termination step "
+                         "(arc_terminate.py)")
     ap.add_argument("--back-weeks", dest="back_weeks", type=int, default=1,
                     help="how many PREVIOUS week tabs to read as well "
                          "(default 1 — Monday's new tab leaves the weekend's "
@@ -251,6 +254,32 @@ def main(argv=None) -> int:
             outcomes = auto_deactivate.run(today, apply=not dry)
         except Exception as e:                                  # noqa: BLE001
             print(f"  ⚠ auto-deactivation didn't run: {type(e).__name__}: {e}")
+
+    # 2c — terminate in ARC / Credico too (Raf, 2026-11-20). Shadow until
+    # arc_terminate.LIVE is flipped: it only DMs Eve what it would do. Its
+    # results ride on the same status line as OwnerVille / Slack.
+    if not args.sandbox and not args.no_arc:
+        try:
+            from automations.terminated_reps import arc_terminate
+            from automations.terminated_reps.board import norm_name
+            from automations.terminated_reps.auto_deactivate import Outcome
+            emails = {norm_name(o.name): o.email for o in (outcomes or []) if o.email}
+            arc = arc_terminate.run(today, apply=not dry, emails=emails)
+            if arc_terminate.LIVE and arc:
+                if outcomes is None:
+                    outcomes = []
+                by = {norm_name(o.name): o for o in outcomes}
+                for r in arc:
+                    if r.status in ("would", ""):
+                        continue
+                    o = by.get(norm_name(r.name))
+                    if o is None:
+                        # Both boxes already ticked, so nothing else pending.
+                        o = Outcome(r.name, 0, r.term_date)
+                        outcomes.append(o)
+                    o.arc = r.status
+        except Exception as e:                                  # noqa: BLE001
+            print(f"  ⚠ ARC step didn't run: {type(e).__name__}: {e}")
     try:
         # The week's deactivation checklist, read off the tracker's own
         # Ownerville / Slack Deact columns. Only from the REAL tab — a sandbox

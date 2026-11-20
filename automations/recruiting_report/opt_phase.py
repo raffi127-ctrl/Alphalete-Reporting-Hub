@@ -2578,7 +2578,10 @@ def run_opt_phase(we_sunday: Optional[dt.date] = None, only: Optional[str] = Non
     # reports a misleading '[gap] … check the ICD Aliases sheet'. --only still
     # honours an explicit request, so a human can always force one.
     if not only:
-        foreign = fill.opt_source_tabs(mapping, "b2b") & set(targets)
+        # "none" (Spencer Brown, LeafGuard, 2026-11-20): no Tableau source
+        # carries the campaign at all — skip instead of a weekly bogus gap.
+        foreign = (fill.opt_source_tabs(mapping, "b2b")
+                   | fill.opt_source_tabs(mapping, "none")) & set(targets)
         if foreign:
             targets = [t for t in targets if t not in foreign]
             logfn(f"OPT: {len(foreign)} B2B tab(s) left to the B2B OPT step "

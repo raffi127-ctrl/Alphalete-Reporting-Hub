@@ -1,0 +1,174 @@
+"""Pull the OwnerVille data for our copy of the CEO Dashboard Sales Board, every morning (Eve 2026-11-20).
+
+Opens OwnerVille's CEO Dashboard (p=9197) with this machine's OwnerVille session, finds the frame
+where OwnerVille's own KnockReport / callApi live, and runs extract.js there -- the same code that
+built the board's data.json by hand on 11/20, so the numbers stay OwnerVille's exactly.
+
+The result (data.json, ~270 KB, has rep emails) goes into the bridge sheet in pieces: rows
+`file | data.json.NN | <piece>` plus one `filemeta | data.json | {"at", "parts", "generatedAt"}`.
+The daily claude.ai routine glues the pieces back together and republishes the board with them;
+a Lucy cannot publish an artifact itself. Rows written by sheet_import.py (roll call etc.) are
+left as they are.
+
+    python -m automations.ov_sales_board.ov_pull             # pull + write the bridge sheet
+    python -m automations.ov_sales_board.ov_pull --dry-run   # pull, save output/ov_sales_board/data.json only
+"""
+import argparse
+import datetime as dt
+import json
+import os
+import time
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+OFFICE_ID = "11280"
+OFFICE_LABEL = "Alphalete Marketing, INC."
+WEEKS = 13
+PIECE = 45000            # a sheet cell holds 50,000 characters
+OUT = Path("output/ov_sales_board/data.json")
+
+
+KNOCK_JS = "/prototypes/captainDash/assets/knockReport.js"
+# OwnerVille loads knockReport.js only when someone opens a knocks tab, so on a fresh dashboard the
+# frame has callApi but no KnockReport yet: load OwnerVille's own file into that frame (Lucy 3, 11/20).
+LOAD_KNOCKS = ("(src) => window.KnockReport ? true : new Promise(function (ok, bad) {"
+               " var s = document.createElement('script'); s.src = src;"
+               " s.onload = function () { ok(!!window.KnockReport); };"
+               " s.onerror = function () { bad(new Error('could not load ' + src)); };"
+               " document.head.appendChild(s); })")
+
+
+def _main_world(frame, expr, arg=None):
+    """Run JS where the PAGE's own globals live. The Lucys' browser (patchright) evaluates in an
+    isolated world by default, which cannot see OwnerVille's callApi / KnockReport (Lucy 3, 11/20:
+    four runs found 'no frame with callApi' on the right page). Same switch as terminated_reps/ov_retire."""
+    try:
+        return frame.evaluate(expr, arg, isolated_context=False)
+    except TypeError:          # plain Playwright has no such switch and is already in the main world
+        return frame.evaluate(expr, arg)
+
+
+def find_board_frame(page, wait_s=90):
+    """The frame of the CEO Dashboard that has OwnerVille's callApi, with KnockReport loaded."""
+    probe = "() => typeof window.callApi === 'function'"
+    end = time.time() + wait_s
+    clicked = False
+    start = time.time()
+    while time.time() < end:
+        # The dashboard opens on the tab the account used last (Raf's Chrome: Sales Board; Lucy 3: p=9191,
+        # which has no callApi). After a short wait, click the 'Sales Board' tab the way a person would.
+        if not clicked and time.time() - start > 15:
+            clicked = _click_sales_board_tab(page)
+        for fr in page.frames:
+            try:
+                if _main_world(fr, probe):
+                    if not _main_world(fr, LOAD_KNOCKS, KNOCK_JS):
+                        raise RuntimeError("knockReport.js loaded but window.KnockReport is missing")
+                    return fr
+            except RuntimeError:
+                raise
+            except Exception:
+                pass
+        time.sleep(2)
+    frames = [_page_of(f.url) for f in page.frames]
+    raise RuntimeError("no CEO Dashboard frame with callApi after %ds (page %s, frames %s)"
+                       % (wait_s, _page_of(page.url), frames))
+
+
+def _click_sales_board_tab(page):
+    """Click the CEO Dashboard's 'Sales Board' tab in whichever frame shows it. True once clicked."""
+    for fr in page.frames:
+        try:
+            tab = fr.get_by_text("Sales Board", exact=True).first
+            if tab.count():
+                tab.click(timeout=10000, force=True)
+                print("-> clicked the 'Sales Board' tab (%s)" % _page_of(fr.url), flush=True)
+                return True
+        except Exception:
+            pass
+    tabs = []
+    for fr in page.frames:
+        try:
+            tabs += fr.evaluate("() => [...document.querySelectorAll('a,button,[role=tab]')]"
+                                ".map(e => (e.innerText || '').trim()).filter(t => t && t.length < 30).slice(0, 40)")
+        except Exception:
+            pass
+    print("-> no 'Sales Board' tab found; tabs seen: %s" % sorted(set(tabs))[:60], flush=True)
+    return True
+
+
+def _page_of(url):
+    """'p=9197' for an OwnerVille URL -- never the rqst session token."""
+    import re
+    m = re.search(r"[?&]p=(\d+)", url or "")
+    return "p=%s" % m.group(1) if m else (url or "").split("?")[0]
+
+
+def open_ceo_dashboard(page, rqst):
+    """A bare p=9197 can land on Welcome (seen in Chrome and on Lucy 3, 11/20). Go there, and if the
+    page is not the dashboard, click the sidebar's 'CEO Dashboard' link the way a person does."""
+    page.goto("https://v2.ownerville.com/index.cfm?p=9197&rqst=%s" % rqst, wait_until="domcontentloaded",
+              timeout=60000)
+    page.wait_for_timeout(4000)
+    if "p=9197" in (page.url or ""):
+        return
+    link = page.locator("a", has_text="CEO Dashboard").first
+    href = link.get_attribute("href", timeout=20000) or ""
+    if href and not href.lower().startswith("javascript"):
+        page.goto(href if href.startswith("http") else "https://v2.ownerville.com/" + href.lstrip("/"),
+                  wait_until="domcontentloaded", timeout=60000)
+    else:
+        link.click(timeout=20000, force=True)
+    page.wait_for_timeout(6000)
+    print("-> CEO Dashboard opened from the sidebar link (%s)" % _page_of(page.url), flush=True)
+
+
+def pull(headless=True):
+    from automations.b2b_dispositions.capture import capture_rqst
+    from automations.shared.tableau_patchright import ownerville_session
+    js = (HERE / "extract.js").read_text(encoding="utf-8")
+    call = ("async () => { %s\n return await extractSalesBoard(window, %s); }"
+            % (js, json.dumps({"officeId": OFFICE_ID, "weeks": WEEKS, "officeLabel": OFFICE_LABEL})))
+    with ownerville_session(headless=headless) as page:
+        rqst = capture_rqst(page)
+        open_ceo_dashboard(page, rqst)
+        frame = find_board_frame(page)
+        data = _main_world(frame, call)
+    if not data or not data.get("knocks") or not data.get("sales"):
+        raise SystemExit("OwnerVille returned no knocks or no sales -- not replacing the board's data")
+    return data
+
+
+def write_bridge(text, generated_at):
+    from automations.recruiting_report.fill import _client
+    from automations.ov_sales_board.sheet_import import BRIDGE_SHEET_ID
+    ws = _client().open_by_key(BRIDGE_SHEET_ID).sheet1
+    keep = [r for r in ws.get_all_values()[1:] if r and r[0] not in ("file", "filemeta")]
+    parts = [text[i:i + PIECE] for i in range(0, len(text), PIECE)]
+    at = dt.datetime.now().strftime("%-m/%-d %H:%M") if os.name != "nt" else dt.datetime.now().strftime("%#m/%#d %H:%M")
+    rows = [["collection", "doc_id", "json"]] + [r[:3] + [""] * (3 - len(r[:3])) for r in keep]
+    rows.append(["filemeta", "data.json", json.dumps({"at": at, "parts": len(parts), "generatedAt": generated_at})])
+    rows += [["file", "data.json.%02d" % i, p] for i, p in enumerate(parts)]
+    ws.clear()
+    ws.update(values=rows, range_name="A1", value_input_option="RAW")
+    print("bridge sheet: data.json in %d pieces (%d characters), %d other rows kept" % (len(parts), len(text), len(keep)))
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--dry-run", action="store_true", help="only save output/ov_sales_board/data.json")
+    ap.add_argument("--headed", action="store_true")
+    a = ap.parse_args()
+    data = pull(headless=not a.headed)
+    text = json.dumps(data, separators=(",", ":"), ensure_ascii=False)
+    OUT.parent.mkdir(parents=True, exist_ok=True)
+    OUT.write_text(text, encoding="utf-8")
+    print("OwnerVille: %d knock rows, %d sale rows, %d people, %d teams, errors: %s"
+          % (len(data["knocks"]), len(data["sales"]), len(data["people"]), len(data["teams"]),
+             "; ".join(data.get("errors") or []) or "none"))
+    if not a.dry_run:
+        write_bridge(text, data.get("generatedAt", ""))
+
+
+if __name__ == "__main__":
+    main()

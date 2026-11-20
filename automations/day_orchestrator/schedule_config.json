@@ -4138,11 +4138,58 @@
    "verify": null,
    "timeout_minutes": 20
   },
+  "program_daily_summary": {
+   "order": 41,
+   "on_scheduler": true,
+   "_note": "Country Campaign Board (Eve 2026-11-20, Raf via Maud: COUNTRY daily sales per campaign). Tab 'Country Campaign Board' in the ATT Program - Focus Report (next to Country Metrics) + hidden 'Country Campaign Board (data)'. Fios/Frontier = red totals row of Credico's daily scorecard PDFs; ATT Fiber = D2D1-PAGERV4 'Sales By ICD (ATT) (V2)' summed over all owners (own Tableau session); ATT NDS/B2B pending the probe. GATE (readiness._probe_email): waits for TODAY's Fios + Frontier PDFs (~9:30am CT), runs anyway from 11am CT. TUESDAY ROLL (--enable-rollover) with the Country Sales Board's rules: snapshot to hidden 'Country Campaign Board (pre-rollover backup)', never the same week twice, closing week frozen with final source numbers, Monday never rolls, a missed Tuesday rolls the next run. Post-write verify exits 1 when yesterday is empty for Fios/Frontier/ATT Fiber.",
+   "display_name": "Country Campaign Board",
+   "source_type": "email",
+   "data_sources": [],
+   "command": [
+    "automations.program_daily_summary.run"
+   ],
+   "base_args": [
+    "--enable-rollover"
+   ],
+   "cadence": {
+    "weekdays": [0, 1, 2, 3, 4, 5, 6]
+   },
+   "priority": "P2",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": {
+    "type": "cells_nonblank",
+    "sheet": "1w_KWAmlLfMR4kceaJmz_kyahnVslStTquVkVydysXTE",
+    "tab": "Country Campaign Board",
+    "checks": [{"row_label": "Sales - This Week", "min_nonblank": 1}]
+   },
+   "timeout_minutes": 30
+  },
+  "program_daily_summary_probe": {
+   "hand_run_only": true,
+   "on_scheduler": true,
+   "_note": "READ-ONLY probe (Eve 2026-11-20, Raf daily COUNTRY sales by program). Lists the worksheets of the Fiber/NDS/B2B/BOX country trackers and downloads the sales-looking ones to output/program_daily_probe/, printing header + total rows. Writes no Sheet, posts nothing. `lucy rerun program_daily_summary_probe`.",
+   "display_name": "Program Daily Summary probe",
+   "source_type": "tableau",
+   "data_sources": [],
+   "command": [
+    "automations.program_daily_summary.probe"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 30
+  },
   "nds_mirror_to_att": {
    "on_scheduler": true,
    "order": 41.1,
    "machine": "Lucy 3",
-   "_note": "MONDAYS, right after nds_program_focus_all (Eve 2026-10-26). Copies the typed values of NDS owners' tabs that Raf also wants on the ATT Program - Focus Report (first one: 'JC Lopez - NDS' -> 'JC Lopez (NDS)', Raf's mail 10/25). Sheets-only, no Tableau, no AppStream: the NDS tab stays the ONE that gets filled, this keeps the ATT copy identical instead of running the 45-min NDS pull twice. Never clears a cell. `after` not depends_on: a half-failed NDS run still has real work worth mirroring. Lucy 3 because that is where the NDS fill runs, so the mirror lands minutes after it. Add more owners in MIRRORS in automations/recruiting_report/mirror_nds_tab.py.",
+   "_note": "MONDAYS, right after nds_program_focus_all (Eve 2026-10-26); also TUESDAYS since 2026-11-20 as a catch-up pass: David Pisikian (B2B) is mirrored from the Carlos 1on1s book, which carlos_focus fills on Lucy 2 with no cross-machine ordering, so Monday can run before it. Idempotent, never clears a cell. Copies the typed values of NDS owners' tabs that Raf also wants on the ATT Program - Focus Report (first one: 'JC Lopez - NDS' -> 'JC Lopez (NDS)', Raf's mail 10/25). Sheets-only, no Tableau, no AppStream: the NDS tab stays the ONE that gets filled, this keeps the ATT copy identical instead of running the 45-min NDS pull twice. Never clears a cell. `after` not depends_on: a half-failed NDS run still has real work worth mirroring. Lucy 3 because that is where the NDS fill runs, so the mirror lands minutes after it. Add more owners in MIRRORS in automations/recruiting_report/mirror_nds_tab.py.",
    "display_name": "NDS tabs mirrored onto the ATT Program",
    "source_type": "sheet",
    "data_sources": [],
@@ -4152,7 +4199,8 @@
    "base_args": [],
    "cadence": {
     "weekdays": [
-     0
+     0,
+     1
     ]
    },
    "priority": "P3",
@@ -5207,6 +5255,70 @@
     "alphalete_production"
    ],
    "timeout_minutes": 15,
+   "verify": null,
+   "close_on": "exit_zero"
+  },
+  "ov_sales_board_ov_pull": {
+   "on_scheduler": true,
+   "order": 89,
+   "machine": "Lucy 3",
+   "_note": "OwnerVille half of our Alphalete Sales Board artifact (https://claude.ai/artifact/9uYxif3fDMBjt4rK6mdVEK; Eve 2026-11-20: 'que lo de ownerville se actualice solo'). Every morning, right before ov_sales_board_sheet_copy, opens OwnerVille's CEO Dashboard (p=9197) with Lucy 3's rhidalgo session (office 11280) and runs automations/ov_sales_board/extract.js inside it -- OwnerVille's own KnockReport + getSalesBoard / getTeams / getSalesBoardPeople, 13 weeks -- then writes the resulting data.json in pieces into the bridge sheet 1UfyUveaWQMFgFtXVzVsBTHtYKj1VPLTA0l4rAWRogo8 (rows 'file' / 'filemeta'; sheet_import's rows are kept). The daily claude.ai routine trig_01QRmQKRzyFqYoAdjjeXRmWv glues them and republishes the board. No knocks or no sales = exits 1 and the board keeps yesterday's data. Read-only on OwnerVille. Code: automations/ov_sales_board/ov_pull.py.",
+   "display_name": "OV Sales Board copy - daily OwnerVille pull",
+   "source_type": "ownerville",
+   "data_sources": [],
+   "command": [
+    "automations.ov_sales_board.ov_pull"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ]
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 15,
+   "verify": null,
+   "close_on": "exit_zero"
+  },
+  "ov_sales_board_sheet_copy": {
+   "on_scheduler": true,
+   "order": 90,
+   "machine": "Lucy 3",
+   "_note": "Our own copy of OwnerVille's CEO Dashboard Sales Board (artifact https://claude.ai/artifact/9uYxif3fDMBjt4rK6mdVEK, Raf via Eve 2026-11-20) shows a few things OwnerVille does not have; for now people type them ONLY on the Alphalete SALES BOARD 2025 sheet. Every morning, after the rest of Lucy 3's batch (order 90), this reads this week's tab -- roll call, Trainer / Drug Test / Direct Deposit / A-Play / Location / Gas Bonus / Add applied to, the 'Goal' row, the 'New Starts/Raf' box and every rep row -- and writes one row per artifact-database document into the bridge sheet (alphaletemarketing's Drive, 1UfyUveaWQMFgFtXVzVsBTHtYKj1VPLTA0l4rAWRogo8, shared Editor with the Lucys' Sheets accounts). A daily claude.ai cloud routine (Eve's account) then copies those rows into the artifact; Lucy cannot write the artifact itself. Reps are keyed by name; the page matches names to OwnerVille ids. Everything else on that board stays exactly OwnerVille's. Lucy 3 = the least-loaded box (Eve: 'en la lucy que este mas libre'). Read-only on the Sales Board. Code: automations/ov_sales_board/sheet_import.py.",
+   "display_name": "OV Sales Board copy - daily copy from our Sales Board",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.ov_sales_board.sheet_import"
+   ],
+   "base_args": [
+    "--weeks",
+    "1",
+    "--bridge"
+   ],
+   "cadence": {
+    "weekdays": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ]
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 10,
    "verify": null,
    "close_on": "exit_zero"
   },

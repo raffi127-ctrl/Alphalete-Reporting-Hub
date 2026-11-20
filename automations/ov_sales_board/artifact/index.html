@@ -1,0 +1,484 @@
+<title>Sales Board (versión vieja)</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Urbanist:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: navy command banner, then white cards; one wide rep table with pinned names, days collapsible. */
+:root{
+  --ground:#e7eef1; --card:#ffffff; --zebra:#f7fafb; --hover:#eef4f6;
+  --ink:#0a2f3c; --muted:#526b78; --faint:#7d939d; --line:rgba(10,47,60,.10);
+  --navy:#0a2f3c; --on-navy:#ffffff; --on-navy-soft:rgba(255,255,255,.7);
+  --chip:#eef3f5;
+  --red-bg:#fbe1de; --red:#b42318; --yel-bg:#fbeac6; --yel:#875400;
+  --grn-bg:#d6f1e5; --grn:#0c6a45; --blu-bg:#dbe6fb; --blu:#2450b8; --cya-bg:#d2f1f7; --cya:#0e6f86;
+  --k-apps:#0a2f3c; --k-int:#660000; --k-intup:#783f04; --k-dtv:#20124d; --k-nl:#073763; --k-tk:#274e13; --k-cx:#bf9000;
+  --font:"Urbanist",system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --ground:#0b1a20; --card:#11252d; --zebra:#142c35; --hover:#18343e;
+  --ink:#e4eef2; --muted:#9db2bb; --faint:#7e959f; --line:rgba(228,238,242,.10);
+  --navy:#06212b; --chip:#1b3640;
+  --red-bg:#4a1d1a; --red:#ff9b94; --yel-bg:#47370f; --yel:#ffd76e; --grn-bg:#123d2c; --grn:#7ee2b0; --blu-bg:#1b2d55; --blu:#9cb8ff; --cya-bg:#0f3a44; --cya:#5eead4;
+  --k-apps:#7fb2c4; --k-int:#e07a7a; --k-intup:#d99a5b; --k-dtv:#a493e0; --k-nl:#6fa8dc; --k-tk:#8bc27a; --k-cx:#e6c35c;
+  color-scheme:dark}}
+:root[data-theme="dark"]{
+  --ground:#0b1a20; --card:#11252d; --zebra:#142c35; --hover:#18343e;
+  --ink:#e4eef2; --muted:#9db2bb; --faint:#7e959f; --line:rgba(228,238,242,.10);
+  --navy:#06212b; --chip:#1b3640;
+  --red-bg:#4a1d1a; --red:#ff9b94; --yel-bg:#47370f; --yel:#ffd76e; --grn-bg:#123d2c; --grn:#7ee2b0; --blu-bg:#1b2d55; --blu:#9cb8ff; --cya-bg:#0f3a44; --cya:#5eead4;
+  --k-apps:#7fb2c4; --k-int:#e07a7a; --k-intup:#d99a5b; --k-dtv:#a493e0; --k-nl:#6fa8dc; --k-tk:#8bc27a; --k-cx:#e6c35c;
+  color-scheme:dark}
+*,*::before,*::after{box-sizing:border-box}
+body{background:var(--ground);color:var(--ink);font-family:var(--font);font-size:15px;line-height:1.45;font-weight:500;-webkit-font-smoothing:antialiased}
+.wrap{display:grid;grid-template-columns:minmax(0,1fr);gap:16px;max-width:1800px;margin:0 auto;padding-block:18px 32px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+button,select{font-family:inherit}
+.top{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:10px}
+.pills{display:inline-flex;flex-wrap:wrap;gap:2px;padding:4px;border-radius:999px;background:var(--card);box-shadow:inset 0 0 0 1px var(--line)}
+.pills button{height:36px;padding:0 16px;border:0;border-radius:999px;background:transparent;font-size:14.5px;font-weight:600;color:var(--muted);cursor:pointer}
+.pills button:hover{color:var(--ink)}
+.pills button.on{background:var(--navy);color:var(--on-navy)}
+.pills button:focus-visible,.btn:focus-visible,select:focus-visible,.daybtn:focus-visible{outline:2px solid var(--blu);outline-offset:2px}
+.ctrl{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-left:auto}
+.ctrl select{height:40px;border-radius:999px;border:0;padding:0 14px;background:var(--card);color:var(--ink);box-shadow:inset 0 0 0 1px var(--line);font-size:14.5px;font-weight:600}
+.btn{display:inline-flex;align-items:center;gap:8px;height:40px;padding:0 16px;border:0;border-radius:999px;background:var(--card);box-shadow:inset 0 0 0 1px var(--line);font-size:14px;font-weight:600;color:var(--muted);cursor:pointer;white-space:nowrap}
+.btn:hover{color:var(--ink)}
+.btn .i{display:inline-block;width:24px;height:24px;border-radius:999px;background:var(--ground);color:var(--ink);font:italic 700 14px/24px Georgia,serif;text-align:center}
+.stamp{font-size:13px;color:var(--muted)}
+.banner{background:var(--navy);color:var(--on-navy);border-radius:24px;padding:22px 26px;display:flex;flex-wrap:wrap;gap:18px 28px;align-items:center;justify-content:space-between}
+.kicker{font-size:14px;color:var(--on-navy-soft)}
+.banner h1{margin:0;font-size:30px;font-weight:500;letter-spacing:-.02em;line-height:1.15;text-wrap:balance}
+.banner p{margin:2px 0 0;font-size:15px;color:var(--on-navy-soft)}
+.bstats{display:flex;flex-wrap:wrap;gap:10px}
+.bstat{background:rgba(255,255,255,.07);border-radius:14px;padding:10px 14px;min-width:120px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.08)}
+.bstat span{display:block;font-size:13px;color:var(--on-navy-soft)}
+.bstat b{display:block;font-size:26px;font-weight:500;letter-spacing:-.02em;line-height:1.2;font-variant-numeric:tabular-nums}
+.bstat b.teal{color:#5eead4}.bstat b.lav{color:#c3bef7}
+.bstat em{display:block;font-style:normal;font-size:12.5px;color:rgba(255,255,255,.6)}
+.card{background:var(--card);border-radius:20px;padding:18px 0 10px;display:grid;grid-template-columns:minmax(0,1fr);gap:10px;min-width:0}
+.two{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(560px,100%),1fr));gap:16px;min-width:0}
+.head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-end;gap:10px 16px;padding:0 22px}
+.head h2{margin:0;font-size:22px;font-weight:600;line-height:1.2}
+.head p{margin:2px 0 0;font-size:14px;color:var(--muted)}
+.headr{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.legend{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;font-size:13px;color:var(--muted)}
+.legend .chip{min-width:0;padding:2px 9px;font-size:12.5px}
+.scroll{overflow:auto;max-height:76vh;min-width:0}
+table{border-collapse:separate;border-spacing:0;font-size:14px;white-space:nowrap;font-variant-numeric:tabular-nums;color:var(--ink)}
+table.small{width:100%}
+th,td{padding:9px 8px;text-align:center;background:var(--card);vertical-align:middle}
+th:first-child,td:first-child{padding-left:22px}
+th:last-child,td:last-child{padding-right:22px}
+thead th{position:sticky;z-index:2}
+tr.grow th{top:0;height:42px;padding:6px;text-align:left}
+tr.crow th{top:42px;font-size:12px;font-weight:600;color:var(--muted);padding:8px 8px 6px;border-bottom:1px solid var(--line);white-space:normal;line-height:1.2;vertical-align:bottom;min-width:46px;max-width:96px;cursor:pointer;user-select:none}
+table.small tr.crow th{top:0;cursor:default;max-width:none}
+tr.crow th:hover{color:var(--ink)}
+th.k-apps{border-bottom:3px solid var(--k-apps)}th.k-int{border-bottom:3px solid var(--k-int)}th.k-intup{border-bottom:3px solid var(--k-intup)}
+th.k-dtv{border-bottom:3px solid var(--k-dtv)}th.k-nl{border-bottom:3px solid var(--k-nl)}th.k-tk{border-bottom:3px solid var(--k-tk)}th.k-cx{border-bottom:3px solid var(--k-cx)}
+.daybtn{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:999px;border:0;background:var(--navy);color:var(--on-navy);font-size:13px;font-weight:600;letter-spacing:.02em;cursor:pointer}
+.daybtn .ar{font-size:10px;opacity:.7}
+.glabel{font-size:12px;font-weight:600;color:var(--faint);letter-spacing:.06em;text-transform:uppercase;padding:0 4px}
+.n{position:sticky;left:0;z-index:3;min-width:58px;max-width:58px;color:var(--faint);font-weight:600;text-align:left}
+.name{position:sticky;left:58px;z-index:3;min-width:230px;text-align:left;box-shadow:6px 0 8px -6px rgba(10,47,60,.18)}
+thead .n,thead .name{z-index:4}
+tbody tr:nth-child(even) td{background:var(--zebra)}
+tbody tr:hover td{background:var(--hover)}
+.nw{display:flex;align-items:center;gap:8px}
+.who{font-weight:600;font-size:15px}
+.fs{font-size:12px;color:var(--faint)}
+.dot{width:10px;height:10px;border-radius:999px;flex:none;background:#dbe7ec;display:inline-block}
+.fs1{background:#b4a7d6}.fs2{background:#f1c232}.fs3{background:#6fa8dc}.fs4{background:#b45f06}.fs5{background:#6aa84f}
+.sep{border-left:1px solid var(--line)}
+.left{text-align:left!important}
+.chip{display:inline-block;min-width:28px;padding:3px 8px;border-radius:8px;font-weight:700;background:var(--chip)}
+.tot{display:inline-block;min-width:44px;padding:4px 10px;border-radius:10px;font-weight:700;font-size:16px;background:var(--chip)}
+.s0,.t0{background:var(--red-bg);color:var(--red)}
+.s1,.t1{background:var(--yel-bg);color:var(--yel)}
+.s3,.t10{background:var(--grn-bg);color:var(--grn)}
+.s5{background:var(--blu-bg);color:var(--blu)}
+.t20{background:var(--cya-bg);color:var(--cya)}
+td.red{color:var(--red);font-weight:700}
+td.soft{color:var(--muted);font-weight:600}
+td.strong{font-weight:600}
+.na{color:var(--faint);cursor:help}
+tbody tr.total td{background:var(--navy);color:var(--on-navy);font-weight:600;padding:11px 8px;position:sticky;bottom:0;z-index:2}
+tbody tr.total td.n,tbody tr.total td.name{z-index:4}
+tbody tr.total td:first-child{padding-left:22px}
+tbody tr.total:hover td{background:var(--navy)}
+tbody tr.total td.soft{color:#c9d6dc}
+tbody tr.total .chip,tbody tr.total .tot{background:rgba(255,255,255,.1);color:#fff}
+tbody tr.total .tot.t0{color:#ff9b94}tbody tr.total .tot.t1{color:#ffe08a}tbody tr.total .tot.t10{color:#7ee2b0}tbody tr.total .tot.t20{color:#5eead4}
+tbody tr.noteam .who{font-style:italic;font-weight:500}
+.msg{padding:28px;text-align:center;color:var(--muted)}
+.err{padding:12px 16px;border-radius:14px;background:var(--red-bg);color:var(--red);font-size:14px}
+dialog{max-width:min(860px,calc(100vw - 32px));max-height:86vh;border:0;border-radius:20px;padding:0;background:var(--card);color:var(--ink)}
+dialog::backdrop{background:rgba(5,20,26,.55)}
+.dh{display:flex;justify-content:space-between;gap:12px;padding:20px 24px 12px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--card)}
+.dh h3{margin:0;font-size:20px}.dh p{margin:2px 0 0;color:var(--muted);font-size:14px}
+.db{padding:8px 24px 24px;font-size:14.5px}
+.db h4{margin:18px 0 6px;font-size:15px}
+.db dt{font-weight:700;margin-top:8px}.db dd{margin:2px 0 0;color:var(--muted);max-width:72ch}
+.db p,.db li{color:var(--muted);max-width:72ch}
+.x{border:0;background:var(--ground);color:var(--ink);width:36px;height:36px;border-radius:999px;font-size:20px;cursor:pointer;flex:none}
+@media (max-width:640px){.banner{padding:18px}.banner h1{font-size:24px}.name{min-width:170px}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap" id="app"><section class="card"><div class="msg">Loading the Sales Board…</div></section></div>
+
+<dialog id="info"><div class="dh"><div><h3>How this Sales Board is built</h3><p>Where every number comes from and how each one is worked out.</p></div><button class="x" type="button" id="infoX" aria-label="Close">&times;</button></div><div class="db" id="infoBody"></div></dialog>
+
+<script>
+(function(){
+'use strict';
+/* ---------- dates ---------- */
+function pad(n){return (n<10?'0':'')+n}
+function isoOf(d){return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())}
+function parseIso(s){var m=/^(\d{4})-(\d{2})-(\d{2})/.exec(String(s||''));return m?new Date(+m[1],+m[2]-1,+m[3]):null}
+function addIso(iso,n){var d=parseIso(iso);d.setDate(d.getDate()+n);return isoOf(d)}
+function todayIso(){return isoOf(new Date())}
+function daysBetween(a,b){return Math.round((parseIso(b)-parseIso(a))/864e5)}
+function md(iso){var d=parseIso(iso);return d?(d.getMonth()+1)+'/'+d.getDate():''}
+function mdy(iso){var d=parseIso(iso);return d?(d.getMonth()+1)+'/'+d.getDate()+'/'+d.getFullYear():''}
+function weekLabel(mon){return 'WE '+md(mon)+' - '+md(addIso(mon,6))}
+var DAYS=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
+/* ---------- the sheet's number formats ---------- */
+function n0(v){return v?Number(v).toLocaleString():''}
+function nz(v){return Number(v||0).toLocaleString()}
+function d1(v){return typeof v==='number'?v.toFixed(1):(v||'')}
+function p1(v){return typeof v==='number'?(v*100).toFixed(1)+'%':(v||'')}
+function div(a,b){return b?a/b:'-'}
+/* ---------- field status and levels ---------- */
+function fieldStatus(start,mon){if(!parseIso(start))return '';var n=Math.floor(daysBetween(start,mon)/7)+1;
+  return n<=1?'1st Wk':n===2?'2nd Wk':n===3?'3rd Wk':n===4?'4th Wk':'5th wk+'}
+var LEVELS=['Mastermind','Level 3','Level 2','Level 1','Entry Level','In Training'];
+var LEADER_LEVELS=['Level 1','Level 2','Level 3','Mastermind'];
+function levelOf(role){var p=String(role||'').split(',').map(function(s){return s.trim().toLowerCase()});
+  for(var i=0;i<LEVELS.length;i++)if(p.indexOf(LEVELS[i].toLowerCase())>=0)return LEVELS[i];return ''}
+
+/* ---------- raw data, indexed once ---------- */
+var D=null, BYDAY={}, HIST={}, TEAMOF={}, ROLEOF={};
+function index(d){
+  D=d;
+  d.knocks.forEach(function(k){var a=BYDAY[k[1]]||(BYDAY[k[1]]=[]);a.push({pk:k[0],c:k[2],tk:k[3],tt:k[4]})});
+  d.sales.forEach(function(s){
+    HIST[s[1]]=(HIST[s[1]]||0)+s[2]+s[3]+s[4];
+    var a=BYDAY[s[1]]||(BYDAY[s[1]]=[]);a.push({pk:s[0],int:s[2],dtv:s[3],nl:s[4],cx:s[5]});
+  });
+  // A person on two teams counts under the team they lead, else the first (Team Performance's rule).
+  var leads={};
+  d.teams.forEach(function(t){
+    var people=[];if(t.leader)people.push({id:t.leader.id,role:t.leader.role,lead:true});
+    t.members.forEach(function(m){people.push({id:m.id,role:m.role,lead:false})});
+    people.forEach(function(p){if(!TEAMOF[p.id]||(p.lead&&!leads[p.id])){TEAMOF[p.id]=t.name;ROLEOF[p.id]=p.role}if(p.lead)leads[p.id]=true});
+  });
+}
+
+/* ---------- the model for one week: one cell per rep per day ---------- */
+var MODELS={};
+function blankCell(){return{int:0,dtv:0,nl:0,cx:0,tk:0,tt:0}}
+function build(mon){
+  if(MODELS[mon])return MODELS[mon];
+  var weeks=[mon,addIso(mon,-7),addIso(mon,-14)],reps={};
+  function rep(pk){return reps[pk]||(reps[pk]={pk:pk,name:'',days:{},clients:{},att:false})}
+  for(var day=weeks[2];day<=addIso(mon,6);day=addIso(day,1)){
+    (BYDAY[day]||[]).forEach(function(e){
+      var r=rep(e.pk),c=r.days[day]||(r.days[day]=blankCell());
+      if('tk' in e){c.tk+=e.tk;c.tt+=e.tt;if(e.tk)r.clients[D.clients[e.c]]=1}
+      else{c.int+=e.int;c.dtv+=e.dtv;c.nl+=e.nl;c.cx+=e.cx;if(e.int||e.dtv||e.nl||e.cx)r.att=true}
+    });
+  }
+  var rows=Object.keys(reps).filter(function(pk){var r=reps[pk];return Object.keys(r.days).some(function(d){var c=r.days[d];return c.tk||c.tt||c.int||c.dtv||c.nl||c.cx})}).map(function(pk){
+    var r=reps[pk],p=D.people[pk]||{};
+    r.name=D.names[pk]||D.saleNames[pk]||p.name||('Rep '+pk);
+    r.team=TEAMOF[pk]||'';r.level=levelOf(ROLEOF[pk]);
+    r.start=p.start||'';r.term=p.term||'';r.email=p.email||'';
+    r.fs=fieldStatus(r.start,mon);
+    r.termed=!!(r.term&&r.term<=addIso(mon,6));
+    var end=r.term&&r.term<todayIso()?r.term:todayIso();
+    r.tenure=r.start?Math.max(daysBetween(r.start,end),0):'';
+    r.campaign=Object.keys(r.clients).sort().join(', ')||(r.att?'AT&T':'');
+    r.wk=weeks.map(function(w){return weekStats(r.days,w)});
+    return r;
+  }).sort(function(a,b){return a.name.localeCompare(b.name)});
+  var tdays={};
+  rows.forEach(function(r){Object.keys(r.days).forEach(function(d){var t=tdays[d]||(tdays[d]=blankCell()),c=r.days[d];Object.keys(t).forEach(function(k){t[k]+=c[k]})})});
+  var M={mon:mon,weeks:weeks,rows:rows,total:{name:'TOTALS',days:tdays,wk:weeks.map(function(w){return weekStats(tdays,w)})}};
+  return MODELS[mon]=M;
+}
+function cellOf(days,iso){return days[iso]||blankCell()}
+function appsOf(c){return c.int+c.dtv+c.nl}
+function weekStats(days,mon){
+  var s={apps:0,int:0,dtv:0,nl:0,tk:0,tt:0,cx:0,worked:0,any:false};
+  for(var i=0;i<7;i++){var c=cellOf(days,addIso(mon,i)),a=appsOf(c);
+    s.apps+=a;s.int+=c.int;s.dtv+=c.dtv;s.nl+=c.nl;s.tk+=c.tk;s.tt+=c.tt;s.cx+=c.cx;
+    if(i<6&&(c.tk>0||a!==0))s.worked++;
+    if(c.tk>0||a>0)s.any=true}
+  s.avgK=s.tk?div(s.tk,s.worked):'';s.avgT=s.tk?div(s.tt,s.worked):'';
+  s.pct=s.tk?s.tt/s.tk:'';s.perApp=s.tk?div(s.tt,s.apps):'';
+  return s;
+}
+function dayPct(c){return(!c.tk&&!c.tt)?'':(c.tk?c.tt/c.tk:'-')}
+function dayAppTT(c){return(!c.tk&&!c.tt)?'':(c.tt?appsOf(c)/c.tt:'-')}
+
+/* ---------- board stats ---------- */
+function boardStats(M){
+  var out={week:{field:0,board:0},days:[]};for(var i=0;i<7;i++)out.days.push({field:0,board:0});
+  M.rows.forEach(function(r){
+    if(r.fs==='1st Wk')return;
+    var w=r.wk[0];if(w.any){out.week.field++;if(w.apps>0)out.week.board++}
+    for(var i=0;i<7;i++){var c=cellOf(r.days,addIso(M.mon,i)),a=appsOf(c);if(c.tk>0||a>0){out.days[i].field++;if(a>0)out.days[i].board++}}
+  });
+  var tw=M.total.wk[0];finish(out.week,tw.int,tw.apps);
+  out.days.forEach(function(s,i){var c=cellOf(M.total.days,addIso(M.mon,i));finish(s,c.int,appsOf(c))});
+  return out;
+}
+function finish(s,int,apps){s.zero=s.field-s.board;s.pct=s.field?s.board/s.field:0;s.intPer=s.field?int/s.field:0;s.appsPer=s.field?apps/s.field:0}
+
+/* ---------- team summary ---------- */
+function teamSummary(M){
+  var g={},order=[];
+  M.rows.forEach(function(r){var t=r.team||'No team';if(!g[t]){g[t]=[];order.push(t)}g[t].push(r)});
+  order.sort(function(a,b){return(a==='No team')-(b==='No team')||a.localeCompare(b)});
+  return{rows:order.map(function(t){return teamRow(t,g[t],M)}),total:teamRow('All teams',M.rows,M)};
+}
+function teamRow(name,reps,M){
+  var row={name:name,wk:[],days:[],n:reps.length};
+  M.weeks.forEach(function(w,wi){
+    var s={units:0,int:0,dtv:0,nl:0,tk:0,tt:0,cx:0,worked:0};
+    reps.forEach(function(r){var x=r.wk[wi];s.int+=x.int;s.dtv+=x.dtv;s.nl+=x.nl;s.tk+=x.tk;s.tt+=x.tt;s.cx+=x.cx;s.worked+=x.worked});
+    s.units=s.int+s.dtv+s.nl;s.avgK=s.tk?div(s.tk,s.worked):'';s.avgT=s.tk?div(s.tt,s.worked):'';s.pct=s.tk?s.tt/s.tk:'';s.perUnit=s.tk?div(s.tt,s.units):'';
+    row.wk.push(s);
+  });
+  for(var i=0;i<7;i++){var d={units:0,int:0,dtv:0,nl:0,tk:0,tt:0},iso=addIso(M.mon,i);
+    reps.forEach(function(r){var c=cellOf(r.days,iso);d.int+=c.int;d.dtv+=c.dtv;d.nl+=c.nl;d.tk+=c.tk;d.tt+=c.tt});
+    d.units=d.int+d.dtv+d.nl;d.pct=(!d.tk&&!d.tt)?'':(d.tk?d.tt/d.tk:'-');d.perTT=(!d.tk&&!d.tt)?'':(d.tt?d.units/d.tt:'-');row.days.push(d)}
+  row.entry=reps.filter(function(r){return r.level==='Entry Level'}).length;
+  row.leaders=reps.filter(function(r){return LEADER_LEVELS.indexOf(r.level)>=0}).length;
+  row.active=reps.filter(function(r){return r.wk[0].apps>0&&!r.termed&&r.fs!=='1st Wk'}).length;
+  row.unitsAvg=row.active?row.wk[0].units/row.active:'-';row.intAvg=row.active?row.wk[0].int/row.active:'-';
+  row.lwUnitsAvg=row.active?row.wk[1].units/row.active:'-';row.lwIntAvg=row.active?row.wk[1].int/row.active:'-';
+  return row;
+}
+
+/* ---------- colour rules (Raf's sheet) ---------- */
+function scale(v){if(typeof v!=='number'||isNaN(v))return '';if(v===0)return 's0';if(v>=.5&&v<=2.5)return 's1';if(v>=3&&v<=4.5)return 's3';if(v>=5)return 's5';return ''}
+function totalCls(v){if(typeof v!=='number')return '';if(v===0)return 't0';if(v>=.5&&v<=9.5)return 't1';if(v>=10&&v<=19.5)return 't10';if(v>=20)return 't20';return ''}
+function fsCls(fs){return{'1st Wk':'fs1','2nd Wk':'fs2','3rd Wk':'fs3','4th Wk':'fs4','5th wk+':'fs5'}[fs]||''}
+function blank0(v){return v?v:''}
+function nzOrBlank(v){return v===''?'':nz(v)}
+var NA_TITLE='Not in OwnerVille data: AT&T sends internet upgrades as ordinary internet orders, so they are counted in INT.';
+var NA='<span class="na" title="'+esc(NA_TITLE)+'">—</span>';
+
+/* ---------- columns ---------- */
+var WEEK_COLS=[
+  {k:'apps',h:'Total Apps',raw:function(s){return s.apps},fmt:nz},
+  {k:'int',h:'INT',raw:function(s){return s.int},fmt:nz},
+  {k:'intup',h:'INT UP',title:NA_TITLE,raw:function(){return ''},fmt:function(){return NA}},
+  {k:'dtv',h:'DTV',raw:function(s){return s.dtv},fmt:nz},
+  {k:'nl',h:'NL',raw:function(s){return s.nl},fmt:nz},
+  {k:'tk',h:'TK',title:'Total knocks',raw:function(s){return s.tk},fmt:nz},
+  {k:'tk',h:'AVG Total Knocks per day',raw:function(s){return s.avgK},fmt:d1},
+  {k:'tk',h:"Total Talk-To's",raw:function(s){return s.tk?s.tt:''},fmt:nzOrBlank},
+  {k:'tk',h:"AVG TT's per day",raw:function(s){return s.avgT},fmt:d1},
+  {k:'tk',h:"% of TT's per knock",raw:function(s){return s.pct},fmt:p1},
+  {k:'tk',h:'AVG TTs per app',raw:function(s){return s.perApp},fmt:d1},
+  {k:'cx',h:'Cx',raw:function(s){return s.cx},fmt:nz}];
+var APPS_ONLY=[{k:'apps',h:'Apps',raw:function(s){return s.apps},fmt:nz}];
+var DAY_COLS=[
+  {k:'apps',h:'Apps',raw:function(c){return appsOf(c)},fmt:nz},
+  {k:'int',h:'Int',raw:function(c){return blank0(c.int)},fmt:n0},
+  {k:'intup',h:'Int Up',title:NA_TITLE,raw:function(){return ''},fmt:function(){return ''}},
+  {k:'dtv',h:'DTV',raw:function(c){return blank0(c.dtv)},fmt:n0},
+  {k:'nl',h:'NL',raw:function(c){return blank0(c.nl)},fmt:n0},
+  {k:'tk',h:'TK',title:'Total knocks',raw:function(c){return blank0(c.tk)},fmt:n0},
+  {k:'tk',h:"Total Talk-To's",raw:function(c){return blank0(c.tt)},fmt:n0},
+  {k:'tk',h:"% of TT's per knock",raw:function(c){return dayPct(c)},fmt:p1},
+  {k:'tk',h:'AVG app per TT',raw:function(c){return dayAppTT(c)},fmt:p1},
+  {k:'cx',h:'Cx',raw:function(c){return blank0(c.cx)},fmt:n0}];
+// Compact day: the three numbers you scan for (apps, knocks, talk-tos). Click the day to open the rest.
+var DAY_COMPACT=[DAY_COLS[0],DAY_COLS[5],DAY_COLS[6]];
+var PROFILE_COLS=[
+  {h:'Team',left:true,v:function(r){return esc(r.team)}},
+  {h:'Leadership Status',left:true,v:function(r){return esc(r.level)}},
+  {h:'Field Status',left:true,v:function(r){return esc(r.fs)}},
+  {h:'Campaign',left:true,v:function(r){return esc(r.campaign)}},
+  {h:'Email',left:true,v:function(r){return esc(r.email)}},
+  {h:'# Days Worked',title:'Days since the start date (to the termination date once terminated)',v:function(r){return r.tenure===''?'':nz(r.tenure)}},
+  {h:'Start Date',v:function(r){return esc(mdy(r.start))}},
+  {h:'Termination Date',v:function(r){return esc(mdy(r.term))}}];
+
+/* ---------- table ---------- */
+function table(groups,rows,total,opts){
+  opts=opts||{};
+  var grp='<tr class="grow"><th class="n"></th><th class="name"></th>'+groups.map(function(g){
+    var lab=g.tone==='day'?'<button type="button" class="daybtn" data-day="'+g.dayIdx+'" title="'+(g.open?'Collapse':'Expand')+' this day">'+esc(g.label)+'<span class="ar">'+(g.open?'◀':'▶')+'</span></button>':'<span class="glabel">'+esc(g.label)+'</span>';
+    return '<th colspan="'+g.cols.length+'">'+lab+'</th>'}).join('')+'</tr>';
+  var cols='<tr class="crow"><th class="n" data-sort>#</th><th class="name left" data-sort>'+esc(opts.nameHead||'Rep')+'</th>'+groups.map(function(g){
+    return g.cols.map(function(c,ci){return '<th class="k-'+(c.k||'plain')+(ci===0?' sep':'')+(c.left?' left':'')+'" data-sort'+(c.title?' title="'+esc(c.title)+'"':'')+'>'+esc(c.h)+'</th>'}).join('')}).join('')+'</tr>';
+  function line(r,n,isTotal,cls){
+    var who=isTotal?'<span class="who">'+esc(opts.totalLabel||r.name)+'</span>'
+      :(r.pk?'<span class="dot '+fsCls(r.fs)+'" title="'+esc(r.fs||'No start date')+'"></span>':'')+'<span class="who">'+esc(r.name)+'</span>'+(opts.sub?opts.sub(r):'');
+    return '<tr class="'+(isTotal?'total':'')+(cls?' '+cls:'')+'"><td class="n">'+n+'</td><td class="name"><div class="nw">'+who+'</div></td>'+
+      groups.map(function(g){return g.cols.map(function(c,ci){
+        var html,k=[ci===0?'sep':''];
+        if(g.tone==='plain'){html=(!isTotal||opts.plainTotal)&&c.v?c.v(r):'';if(c.left)k.push('left')}
+        else{var raw=g.value(r,c);html=c.fmt(raw);
+          if(c.k==='apps'&&(g.tone==='cur'||g.tone==='day')&&html!=='')html='<span class="'+(g.tone==='cur'?'tot '+totalCls(raw):'chip '+(isTotal||opts.noScale?'':scale(raw)))+'">'+html+'</span>';
+          else if(g.tone!=='cur'&&c.k==='apps')k.push('soft');
+          else if(!isTotal&&g.tone==='day'&&(raw===0||(c.k==='cx'&&raw>0)))k.push('red')}
+        var cl=k.join(' ').trim();return '<td'+(cl?' class="'+cl+'"':'')+'>'+html+'</td>'}).join('')}).join('')+'</tr>';
+  }
+  var body=rows.map(function(r,i){return line(r,i+1,false,opts.rowCls?opts.rowCls(r):'')}).join('')+(total?line(total,'',true):'');
+  return '<div class="scroll"><table><thead>'+grp+cols+'</thead><tbody>'+body+'</tbody></table></div>';
+}
+function weekGroup(label,wi,tone,cols){return{label:label,tone:tone,cols:cols||WEEK_COLS,value:function(r,c){return c.raw(r.wk[wi])}}}
+function dayLabel(mon,i){return DAYS[i].toUpperCase()+' '+parseIso(addIso(mon,i)).getDate()}
+function dayOpen(i){return st.open[i]==null?!st.compact:st.open[i]}
+function dayGroups(mon,full,compact){return DAYS.map(function(d,i){var iso=addIso(mon,i),o=dayOpen(i);
+  return{label:dayLabel(mon,i),tone:'day',dayIdx:i,open:o,cols:o?full:compact,value:function(r,c){return c.raw(cellOf(r.days,iso))}}})}
+function fsSub(r){return r.fs?'<span class="fs">'+esc(r.fs)+'</span>':''}
+function repTable(M,view){
+  var g;
+  if(view==='week')g=[weekGroup('This week · '+weekLabel(M.weeks[0]),0,'cur'),{label:'Rep',tone:'plain',cols:[PROFILE_COLS[0],PROFILE_COLS[2]]}];
+  else if(view==='weeks')g=[weekGroup('This week · '+weekLabel(M.weeks[0]),0,'cur'),weekGroup('Last week · '+weekLabel(M.weeks[1]),1,'lw'),weekGroup('Prior week · '+weekLabel(M.weeks[2]),2,'pw')];
+  else if(view==='profile')g=[{label:'Rep profile',tone:'plain',cols:PROFILE_COLS}];
+  else g=[weekGroup('This week',0,'cur',[WEEK_COLS[0]]),weekGroup('Last week',1,'lw',APPS_ONLY)].concat(dayGroups(M.mon,DAY_COLS,DAY_COMPACT));
+  return table(g,M.rows,M.total,{totalLabel:'Totals · '+M.rows.length+' reps',sub:fsSub});
+}
+function smallTable(head,rows){
+  return '<div class="scroll"><table class="small"><thead><tr class="crow">'+head.map(function(h,i){return '<th'+(i===0?' class="left"':'')+'>'+h+'</th>'}).join('')+'</tr></thead><tbody>'+
+    rows.map(function(r){return '<tr>'+r.map(function(c,i){return '<td'+(i===0?' class="left strong"':'')+'>'+c+'</td>'}).join('')+'</tr>'}).join('')+'</tbody></table></div>';
+}
+function statsTable(M){
+  var S=boardStats(M),L=[['Total Reps in the Field',function(s){return nz(s.field)}],['Reps that got on the Board',function(s){return nz(s.board)}],['Reps that rolled a Zero',function(s){return nz(s.zero)}],
+    ['% of Reps on the Board',function(s){return Math.round(s.pct*100)+'%'}],['New INT per Rep AVG',function(s){return s.intPer.toFixed(1)}],['App per Rep AVG',function(s){return s.appsPer.toFixed(1)}]];
+  return smallTable(['','Week'].concat(DAYS.map(function(d,i){return dayLabel(M.mon,i)})),L.map(function(l){return[l[0],'<b>'+l[1](S.week)+'</b>'].concat(S.days.map(l[1]))}));
+}
+function historyTable(M){
+  var rows=[];
+  for(var w=1;w<=6;w++){var mon=addIso(M.mon,-7*w),tot=0,cells=[];
+    for(var i=0;i<7;i++){var a=HIST[addIso(mon,i)]||0;tot+=a;cells.push(nz(a))}
+    rows.push([esc(weekLabel(mon)),'<span class="tot '+totalCls(tot)+'">'+nz(tot)+'</span>'].concat(cells))}
+  return smallTable(['Week','Apps'].concat(DAYS),rows);
+}
+var TEAM_WEEK_COLS=[
+  {k:'apps',h:'Total Units',raw:function(s){return s.units},fmt:nz},{k:'int',h:'INT',raw:function(s){return s.int},fmt:nz},
+  {k:'intup',h:'INT UP',title:NA_TITLE,raw:function(){return ''},fmt:function(){return NA}},
+  {k:'dtv',h:'DTV',raw:function(s){return s.dtv},fmt:nz},{k:'nl',h:'NL',raw:function(s){return s.nl},fmt:nz},
+  {k:'tk',h:'TK',raw:function(s){return s.tk},fmt:nz},{k:'tk',h:'AVG Knocks / day',raw:function(s){return s.avgK},fmt:d1},
+  {k:'tk',h:"Talk-To's",raw:function(s){return s.tt},fmt:nz},{k:'tk',h:"AVG TT's / day",raw:function(s){return s.avgT},fmt:d1},
+  {k:'tk',h:'% TT / knock',raw:function(s){return s.pct},fmt:p1},{k:'tk',h:'AVG TTs / unit',raw:function(s){return s.perUnit},fmt:d1},
+  {k:'cx',h:'Cx',raw:function(s){return s.cx},fmt:nz}];
+var TEAM_DAY_COLS=[
+  {k:'apps',h:'Units',raw:function(d){return d.units},fmt:nz},{k:'int',h:'INT',raw:function(d){return blank0(d.int)},fmt:n0},
+  {k:'dtv',h:'DTV',raw:function(d){return blank0(d.dtv)},fmt:n0},{k:'nl',h:'NL',raw:function(d){return blank0(d.nl)},fmt:n0},
+  {k:'tk',h:'TK',raw:function(d){return blank0(d.tk)},fmt:n0},{k:'tk',h:"TT's",raw:function(d){return blank0(d.tt)},fmt:n0},
+  {k:'tk',h:'% TT',raw:function(d){return d.pct},fmt:p1},{k:'tk',h:'Units / TT',raw:function(d){return d.perTT},fmt:p1}];
+var TEAM_DAY_COMPACT=[TEAM_DAY_COLS[0],TEAM_DAY_COLS[4],TEAM_DAY_COLS[5]];
+var TEAM_HEAD_COLS=[
+  {h:'Entry Level',v:function(t){return nz(t.entry)}},{h:'Total Leaders',title:'Level 1, 2, 3 or Mastermind',v:function(t){return nz(t.leaders)}},
+  {h:'Active Reps',title:'Sold this week, not terminated, not in the first week',v:function(t){return nz(t.active)}},{h:'Total Reps',v:function(t){return nz(t.n)}},
+  {h:'Total Units AVG',v:function(t){return d1(t.unitsAvg)}},{h:'New INT AVG',v:function(t){return d1(t.intAvg)}},
+  {h:'LW Total Units AVG',title:"Last week's units divided by this week's active reps (the sheet's rule)",v:function(t){return d1(t.lwUnitsAvg)}},
+  {h:'LW New INT AVG',title:"Last week's INT divided by this week's active reps (the sheet's rule)",v:function(t){return d1(t.lwIntAvg)}}];
+function teamTable(M,view){
+  var T=teamSummary(M),g;
+  function wk(label,wi){return{label:label,tone:wi?'lw':'team',cols:TEAM_WEEK_COLS,value:function(t,c){return c.raw(t.wk[wi])}}}
+  if(view==='days')g=DAYS.map(function(d,i){var o=dayOpen(i);return{label:dayLabel(M.mon,i),tone:'day',dayIdx:i,open:o,cols:o?TEAM_DAY_COLS:TEAM_DAY_COMPACT,value:function(t,c){return c.raw(t.days[i])}}});
+  else if(view==='weeks')g=[wk('This week',0),wk('Last week',1),wk('Prior week',2)];
+  else g=[wk('This week · '+weekLabel(M.weeks[0]),0),{label:'Headcount and averages',tone:'plain',cols:TEAM_HEAD_COLS}];
+  return table(g,T.rows,T.total,{nameHead:'Team',totalLabel:'All teams',plainTotal:true,noScale:true,rowCls:function(t){return t.name==='No team'?'noteam':''}});
+}
+
+/* ---------- sorting ---------- */
+function sortVal(td){var t=(td.textContent||'').replace(/ /g,' ').trim();if(!t||t==='-'||t==='—')return null;
+  if(/^-?[\d,]*\.?\d+%?$/.test(t))return parseFloat(t.replace(/[,%]/g,''));
+  var m=/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(t);if(m)return +m[3]*1e4+ +m[1]*100+ +m[2];return t.toLowerCase()}
+function sortBy(th){
+  var row=th.parentNode,tb=th.closest('table').tBodies[0],idx=[].indexOf.call(row.children,th);
+  var rows=[].slice.call(tb.rows).filter(function(r){return!r.classList.contains('total')}),tot=[].slice.call(tb.rows).filter(function(r){return r.classList.contains('total')});
+  var vals=rows.map(function(r){return sortVal(r.cells[idx])}),isText=vals.some(function(v){return typeof v==='string'});
+  var dir=th.dataset.dir?-Number(th.dataset.dir):(isText||idx===0?1:-1);
+  row.querySelectorAll('th[data-dir]').forEach(function(x){delete x.dataset.dir;x.textContent=x.textContent.replace(/ [▲▼]$/,'')});
+  th.dataset.dir=dir;th.textContent+=dir===1?' ▲':' ▼';
+  rows.map(function(r,i){return{r:r,v:vals[i],i:i}}).sort(function(a,b){if(a.v==null&&b.v==null)return a.i-b.i;if(a.v==null)return 1;if(b.v==null)return-1;
+    if(typeof a.v!==typeof b.v)return typeof a.v==='number'?-1:1;return(a.v<b.v?-1:a.v>b.v?1:a.i-b.i)*dir}).forEach(function(x){tb.appendChild(x.r)});
+  tot.forEach(function(r){tb.appendChild(r)});
+}
+
+/* ---------- page ---------- */
+var st={mon:null,view:'board',teamView:'week',compact:true,open:{}};
+function store(k,v){try{localStorage.setItem('sb-'+k,v)}catch(e){}}
+function recall(k){try{return localStorage.getItem('sb-'+k)}catch(e){return null}}
+var VIEWS=[['board','Board'],['week','Week totals'],['weeks','Last / prior weeks'],['profile','Rep profile']];
+var TEAM_VIEWS=[['week','Week'],['weeks','Last / prior weeks'],['days','Days']];
+function pills(cls,opts,on){return '<span class="pills '+cls+'" role="group">'+opts.map(function(o){return '<button type="button" data-v="'+o[0]+'" class="'+(o[0]===on?'on':'')+'" aria-pressed="'+(o[0]===on)+'">'+esc(o[1])+'</button>'}).join('')+'</span>'}
+function weekOptions(){var out=[];for(var i=0;i<13;i++){var iso=addIso(D.thisMon,-7*i);if(iso<D.firstMon)break;
+  out.push('<option value="'+iso+'"'+(iso===st.mon?' selected':'')+'>'+esc(weekLabel(iso))+(i===0?' (so far)':'')+'</option>')}return out.join('')}
+var LEGEND='<div class="legend"><span>Apps a day</span><span class="chip s0">0</span><span class="chip s1">1-2</span><span class="chip s3">3-4</span><span class="chip s5">5+</span><span>Field status</span>'+
+  ['1st Wk','2nd Wk','3rd Wk','4th Wk','5th wk+'].map(function(f){return '<span><span class="dot '+fsCls(f)+'"></span> '+f+'</span>'}).join('')+'</div>';
+function banner(M){
+  var w=M.total.wk[0],S=boardStats(M).week,cur=M.mon===D.thisMon;
+  function stat(l,v,s,c){return '<div class="bstat"><span>'+l+'</span><b'+(c?' class="'+c+'"':'')+'>'+v+'</b><em>'+s+'</em></div>'}
+  return '<div class="banner"><div><div class="kicker">'+esc((D.officeLabel?D.officeLabel+' · ':'')+'Office '+D.officeId)+'</div><h1>Sales Board</h1>'+
+    '<p>Mon '+md(M.mon)+' to Sun '+md(addIso(M.mon,6))+(cur?', so far':'')+' · knocks from TeleMapper, sales from AT&amp;T</p></div><div class="bstats">'+
+    stat('Total Apps',nz(w.apps),'INT + DTV + NL','teal')+stat('INT / NL / DTV',nz(w.int)+' / '+nz(w.nl)+' / '+nz(w.dtv),'internet, lines, DirecTV')+
+    stat('Knocks',nz(w.tk),typeof w.avgK==='number'?nz(Math.round(w.avgK))+' a day':' ')+
+    stat("Talk-to's",nz(w.tt),typeof w.pct==='number'?p1(w.pct)+' of knocks':' ')+
+    stat('On the board',S.field?Math.round(S.pct*100)+'%':'-',nz(S.board)+' of '+nz(S.field)+' reps in the field','lav')+'</div></div>';
+}
+function card(t,sub,right,body){return '<section class="card"><div class="head"><div><h2>'+t+'</h2>'+(sub?'<p>'+sub+'</p>':'')+'</div>'+(right?'<div class="headr">'+right+'</div>':'')+'</div>'+body+'</section>'}
+function stamp(){var d=new Date(D.generatedAt);return 'Data from OwnerVille, pulled '+d.toLocaleString([], {month:'numeric',day:'numeric',hour:'numeric',minute:'2-digit'})}
+function paint(){
+  var M=build(st.mon),app=document.getElementById('app');
+  var x=window.scrollX,y=window.scrollY;
+  var errs=D.errors&&D.errors.length?'<div class="err">'+D.errors.map(esc).join('<br>')+'</div>':'';
+  var dayToggle=(st.view==='board'||st.teamView==='days')?pills('days',[['compact','Compact days'],['full','Full days']],st.compact?'compact':'full'):'';
+  var sub={board:'Days start compact (apps, knocks, talk-tos). Click a day to open all its columns. Click a column to sort.',week:"This week's totals, the sheet's running week columns.",weeks:'This week, last week and the week before, side by side.',profile:'Start dates and status from OwnerVille; team and level from the team builder.'}[st.view];
+  app.innerHTML='<div class="top">'+pills('view',VIEWS,st.view)+'<div class="ctrl"><span class="stamp">'+esc(stamp())+'</span>'+
+    '<select id="week" aria-label="Week">'+weekOptions()+'</select><button type="button" class="btn" id="infoBtn"><span class="i" aria-hidden="true">i</span>How it’s built</button></div></div>'+
+    banner(M)+errs+
+    card('Reps',sub,(st.view==='board'?dayToggle:'')+LEGEND,M.rows.length?repTable(M,st.view):'<div class="msg">No knocks, sales or cancels in '+esc(weekLabel(M.mon))+' or the two weeks before.</div>')+
+    '<div class="two">'+card('Board stats','Reps past their 1st week.','',statsTable(M))+card('Recent weeks','Apps by day, the six weeks before.','',historyTable(M))+'</div>'+
+    card('Teams','From the OwnerVille team builder.',(st.teamView==='days'?dayToggle:'')+pills('tview',TEAM_VIEWS,st.teamView),teamTable(M,st.teamView));
+  window.scrollTo(x,y);
+}
+document.addEventListener('click',function(e){
+  var t=e.target;if(!t.closest)return;
+  var b;
+  if((b=t.closest('.view button'))){st.view=b.dataset.v;store('view',st.view);paint();return}
+  if((b=t.closest('.tview button'))){st.teamView=b.dataset.v;paint();return}
+  if((b=t.closest('.days button'))){st.compact=b.dataset.v==='compact';st.open={};store('compact',st.compact?'1':'0');paint();return}
+  if((b=t.closest('.daybtn'))){var i=+b.dataset.day;st.open[i]=!dayOpen(i);paint();return}
+  if(t.closest('#infoBtn')){document.getElementById('info').showModal();return}
+  if(t.closest('#infoX')){document.getElementById('info').close();return}
+  if((b=t.closest('th[data-sort]')))sortBy(b);
+});
+document.addEventListener('change',function(e){if(e.target.id==='week'){st.mon=e.target.value;st.open={};paint()}});
+document.getElementById('info').addEventListener('click',function(e){if(e.target.id==='info')e.target.close()});
+
+function dl(items){return '<dl>'+items.map(function(i){return '<dt>'+i[0]+'</dt><dd>'+i[1]+'</dd>'}).join('')+'</dl>'}
+document.getElementById('infoBody').innerHTML=
+ '<h4>What this page is</h4><p>Alphalete’s own copy of the CEO Dashboard Sales Board, so we can change it. Every number is read from OwnerVille (knocks, AT&amp;T orders, people, teams) and worked out with the same formulas as Raf’s "Alphalete SALES BOARD" sheet. Nothing is typed. The time the data was pulled shows at the top.</p>'+
+ '<h4>Where the data comes from</h4>'+dl([['TeleMapper knocks','Knocks, talk-tos and campaign, read with OwnerVille’s own Knocking daily board, on the office’s local day.'],['AT&amp;T order log','INT, DTV, NL, Cx and Recent weeks. Each order goes to the rep whose OwnerVille ID is on it as the AT&amp;T rep number. Orders arrive about a day after they are placed.'],['OwnerVille people','Names, start date, termination date, email.'],['Team builder','Team and Leadership Status.']])+
+ '<h4>Who is on the board</h4><p>Everyone with a knock, an AT&amp;T order or a cancel in the chosen week or the two weeks before, sorted by name.</p>'+
+ '<h4>What each number means</h4>'+dl([['TK','Every knock logged in TeleMapper that day.'],['Total Talk-To’s','Doors where someone was spoken to, from the last status logged at each address that day. AT&amp;T fiber campaigns: Talk To - Not Interested, Presentation - Not Interested, Come Back, Sale, Do Not Knock. Other campaigns: every status except No Answer, Inaccessible, Inaccurate, Inaccurate Lead, No Contact.'],['INT / DTV / NL','AT&amp;T internet, DirecTV, and new or ported lines, on the day ordered. Rejected orders never count.'],['Apps','INT + DTV + NL. INT UP is not an app.'],['Cx','AT&amp;T cancels, on the day AT&amp;T cancelled.']])+
+ '<h4>Formulas (the sheet’s)</h4>'+dl([['% of TT’s per knock','Talk-tos ÷ knocks.'],['AVG app per TT','A day’s apps ÷ its talk-tos.'],['Days worked','Monday to Saturday days with knocks or apps. Sunday adds up but never counts as worked.'],['AVG Total Knocks per day','Week knocks ÷ days worked.'],['AVG TT’s per day','Week talk-tos ÷ days worked.'],['AVG TTs per app','Week talk-tos ÷ week apps.'],['Totals row','Every rep added up; ratios use the same formulas on the totals.']])+
+ '<h4>Rep profile</h4>'+dl([['Field Status','Weeks since the OwnerVille start date, counted from the board week’s Monday: 1st Wk to 4th Wk, then 5th wk+.'],['Campaign','TeleMapper campaign(s) knocked in the three weeks shown; AT&amp;T when the rep only has orders.'],['# Days Worked','Calendar days from the start date to today, or to the termination date.']])+
+ '<h4>Board stats</h4>'+dl([['Reps in the Field','Reps who knocked or sold, not in their 1st week.'],['On the Board','In the field with at least one app.'],['Rolled a Zero','In the field with no apps.'],['New INT / App per Rep','Total INT or apps ÷ reps in the field.']])+
+ '<h4>Team summary</h4>'+dl([['Teams','A rep on two teams counts under the team they lead, else their first. No team: shown as "No team".'],['Active Reps','Sold this week, not terminated by Sunday, not in their 1st week. LW averages divide by this week’s active reps, as the sheet does.']])+
+ '<h4>Colours</h4>'+dl([['Name dot','Field status: 1st Wk lavender, 2nd yellow, 3rd light blue, 4th brown, 5th+ green.'],['Total Apps','Red 0, yellow 1–9, green 10–19, cyan 20+.'],['Day apps','Red 0, yellow 1–2, green 3–4, blue 5+. Zeros and cancels in red.']])+
+ '<h4>Not in OwnerVille, so not here</h4><p>INT UP, Roll Call and day codes, Direct Deposit, A-Play, Gas Bonus, Location, team and office goals, Road trip status.</p>'+
+ '<h4>What is different from the OwnerVille page</h4><p>Days can be compacted to apps, knocks and talk-tos, and opened one at a time.</p>';
+
+fetch('data.json').then(function(r){if(!r.ok)throw new Error('data.json '+r.status);return r.json()}).then(function(d){
+  index(d);
+  st.mon=d.thisMon;
+  var v=recall('view');if(v&&VIEWS.some(function(x){return x[0]===v}))st.view=v;
+  var c=recall('compact');if(c!=null)st.compact=c==='1';
+  paint();
+}).catch(function(e){document.getElementById('app').innerHTML='<div class="err">The board data did not load ('+esc(e.message)+'). Reload the page; if it keeps failing, the data file needs to be republished.</div>'});
+})();
+</script>
