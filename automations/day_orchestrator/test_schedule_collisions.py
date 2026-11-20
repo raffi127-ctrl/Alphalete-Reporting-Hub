@@ -97,11 +97,27 @@ def _say(fire):
     return "%s %02d:%02d" % (day, h, m)
 
 
-# No known clashes. An entry here is a bug with a name, not permission, and
-# the b2b pair that was listed on 2026-11-20 is fixed rather than excused.
-# test_every_known_clash_is_still_a_real_clash below fails on any entry that
-# has quietly stopped being one, so this cannot rot back into a waiver list.
-_KNOWN_CLASHES = set()
+# KNOWN AND UNFIXED. b2b-dispositions-final and b2b-dispositions-hourly both
+# fire Sat 16:00 and run the same module through a wrapper that skips itself,
+# so one of them dies on arrival every Saturday and which one is a race.
+#
+# THE FINAL IS NOT THE ONE TO MOVE, and this note exists because that mistake
+# was made here on 2026-11-20: the Saturday final was moved to 17:00 to clear
+# the clash, which broke an explicit request from Carlos (8/6, commit b8b89e6)
+# that Saturday's last message land at 4pm. Reverted the same day.
+#
+# The hourly is what looks out of place: Saturday gaps end 15:30 and the final
+# closes at 16:00, so a 16:00 hourly has nothing between it and the close.
+# Moving or dropping it is a decision about Carlos's report, not a schedule
+# tidy up, so it waits for Megan.
+#
+# An entry here is a bug with a name, not permission.
+# test_every_known_clash_is_still_a_real_clash fails on any entry that has
+# quietly stopped being one, so this cannot rot into a waiver list.
+_KNOWN_CLASHES = {
+    frozenset({"com.alphalete.b2b-dispositions-final.plist",
+               "com.alphalete.b2b-dispositions-hourly.plist"}),
+}
 
 
 class GuardedJobsDoNotShareAFireTime(unittest.TestCase):
@@ -150,23 +166,6 @@ class GuardedJobsDoNotShareAFireTime(unittest.TestCase):
             self.assertTrue(
                 _overlap(min_a or set(), min_b or set()),
                 "%s and %s no longer share a fire time; drop the exception" % (a, b))
-
-    def test_the_b2b_final_stays_an_hour_off_its_hourly(self):
-        """Sat 16:00 for both, fixed 2026-11-20. The shape, not just the minute:
-        gaps ends, the hourly posts 30 min later, the final an hour after that.
-        """
-        final = _fire_minutes(DEPLOY / "com.alphalete.b2b-dispositions-final.plist")
-        hourly = _fire_minutes(DEPLOY / "com.alphalete.b2b-dispositions-hourly.plist")
-        self.assertTrue(final and hourly)
-        self.assertFalse(_overlap(final, hourly),
-                         "the b2b final is back on a minute the hourly owns")
-        by_day = {wd: (h, m) for wd, h, m in hourly}
-        for wd, h, m in final:
-            self.assertIn(wd, by_day, "a final with no hourly that day")
-            hh, hm = by_day[wd]
-            self.assertEqual((h * 60 + m) - (hh * 60 + hm), 60,
-                             "day %s: the final should be 1h after the hourly"
-                             % wd)
 
     def test_the_scan_can_actually_see_the_pair(self):
         """A test that silently matches nothing would pass forever."""
