@@ -42,7 +42,13 @@ def find_board_frame(page, wait_s=90):
     """The frame of the CEO Dashboard that has OwnerVille's callApi, with KnockReport loaded."""
     probe = "() => typeof window.callApi === 'function'"
     end = time.time() + wait_s
+    clicked = False
+    start = time.time()
     while time.time() < end:
+        # The dashboard opens on the tab the account used last (Raf's Chrome: Sales Board; Lucy 3: p=9191,
+        # which has no callApi). After a short wait, click the 'Sales Board' tab the way a person would.
+        if not clicked and time.time() - start > 15:
+            clicked = _click_sales_board_tab(page)
         for fr in page.frames:
             try:
                 if fr.evaluate(probe):
@@ -57,6 +63,28 @@ def find_board_frame(page, wait_s=90):
     frames = [_page_of(f.url) for f in page.frames]
     raise RuntimeError("no CEO Dashboard frame with callApi after %ds (page %s, frames %s)"
                        % (wait_s, _page_of(page.url), frames))
+
+
+def _click_sales_board_tab(page):
+    """Click the CEO Dashboard's 'Sales Board' tab in whichever frame shows it. True once clicked."""
+    for fr in page.frames:
+        try:
+            tab = fr.get_by_text("Sales Board", exact=True).first
+            if tab.count():
+                tab.click(timeout=10000, force=True)
+                print("-> clicked the 'Sales Board' tab (%s)" % _page_of(fr.url), flush=True)
+                return True
+        except Exception:
+            pass
+    tabs = []
+    for fr in page.frames:
+        try:
+            tabs += fr.evaluate("() => [...document.querySelectorAll('a,button,[role=tab]')]"
+                                ".map(e => (e.innerText || '').trim()).filter(t => t && t.length < 30).slice(0, 40)")
+        except Exception:
+            pass
+    print("-> no 'Sales Board' tab found; tabs seen: %s" % sorted(set(tabs))[:60], flush=True)
+    return True
 
 
 def _page_of(url):
