@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ARS Interview Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* Layout: sticky toolbar (office + week + goal), tab strip, one wide scrollable table per tab, first column pinned. */
+:root{
+  --bg:#f4f5f8; --surface:#ffffff; --ink:#161a24; --muted:#5d6577; --line:#dfe2ea;
+  --accent:#2f4bc4; --accent-soft:#e7ebfb;
+  --mid:#4b5563; --mid-bg:#e5e7eb; --good:#17804a; --good-bg:#dff3e7; --warn:#b85a00; --warn-bg:#ffe9d2; --blue:#1f5fbf; --blue-bg:#dde9fb; --violet:#6b3fc0; --violet-bg:#ece2fb; --yellow:#7a6200; --yellow-bg:#fff5b8; --bad:#b4232c; --bad-bg:#fbe3e4;
+  --g1:#6b3fc0; --g2:#9a5a1e; --g3:#1f78a8; --g4:#b8407e; --g5:#a8820f; --g6:#3a6b3a;
+  --display:"Archivo", "Helvetica Neue", Arial, sans-serif;
+  --body:"IBM Plex Sans", "Segoe UI", Roboto, Arial, sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#11141b; --surface:#191d27; --ink:#e8ebf2; --muted:#9aa2b4; --line:#2b3140;
+    --accent:#8ea2ff; --accent-soft:#232c4d;
+    --mid:#c7ccd6; --mid-bg:#2f3542; --good:#5fd394; --good-bg:#16352a; --warn:#ffad5c; --warn-bg:#3d2a14; --blue:#8ab8ff; --blue-bg:#17284a; --violet:#c6a6ff; --violet-bg:#2c1f4a; --yellow:#f2d64b; --yellow-bg:#3a3410; --bad:#ff8a8f; --bad-bg:#3d1c21;
+    --g1:#b597ff; --g2:#e0a46a; --g3:#6fc1ec; --g4:#f08cc0; --g5:#e3c25a; --g6:#8fcf8f;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#11141b; --surface:#191d27; --ink:#e8ebf2; --muted:#9aa2b4; --line:#2b3140;
+  --accent:#8ea2ff; --accent-soft:#232c4d;
+  --mid:#c7ccd6; --mid-bg:#2f3542; --good:#5fd394; --good-bg:#16352a; --warn:#ffad5c; --warn-bg:#3d2a14; --blue:#8ab8ff; --blue-bg:#17284a; --violet:#c6a6ff; --violet-bg:#2c1f4a; --yellow:#f2d64b; --yellow-bg:#3a3410; --bad:#ff8a8f; --bad-bg:#3d1c21;
+  --g1:#b597ff; --g2:#e0a46a; --g3:#6fc1ec; --g4:#f08cc0; --g5:#e3c25a; --g6:#8fcf8f;
+  color-scheme: dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 var(--body)}
+h1{font:800 17px/1.1 var(--display);letter-spacing:-.01em;margin:0;text-wrap:balance}
+h2{font:700 15px/1.2 var(--display);margin:0}
+button,select,input{font:inherit;color:inherit}
+.top{position:sticky;top:0;z-index:20;background:var(--surface);border-bottom:1px solid var(--line)}
+.bar{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:flex-end;padding:6px 12px}
+.brand{display:flex;flex-direction:column;gap:1px;margin-right:auto;align-self:center}
+.brand small{color:var(--muted);font-size:12px}
+.ctl{display:flex;flex-direction:column;gap:3px}
+.ctl label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600}
+select,input[type=text],input[type=password],input[type=date],input[type=search]{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:3px 6px;min-height:30px}
+select:focus,input:focus,button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+#office{font-weight:600;min-width:220px;border-color:var(--accent)}
+.btn{border:1px solid var(--line);background:var(--surface);border-radius:6px;padding:3px 10px;min-height:30px;cursor:pointer;font-weight:500}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+:root[data-theme="dark"] .btn.primary{color:#0b1020}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .btn.primary{color:#0b1020}}
+.btn:disabled{opacity:.5;cursor:default}
+.weeknav{display:flex;gap:4px;align-items:center}
+.tabs{display:flex;gap:0;padding:0 8px;overflow-x:auto}
+.tab{border:0;background:none;padding:6px 10px;cursor:pointer;color:var(--muted);font-weight:600;border-bottom:3px solid transparent;white-space:nowrap}
+.tab[aria-selected=true]{color:var(--ink);border-bottom-color:var(--tc,var(--accent))}
+.tab:hover{color:var(--ink)}
+main{padding:8px 12px 16px;display:flex;flex-direction:column;gap:8px}
+.head{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:baseline}
+.head p{font-size:12.5px}
+.head p{margin:0;color:var(--muted)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:6px}
+.scroll{overflow-x:auto;border-radius:6px;width:fit-content;max-width:100%}
+table{border-collapse:separate;border-spacing:0;font-variant-numeric:tabular-nums;width:max-content;font-size:13px}
+th,td{padding:2px 6px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+thead th{background:var(--surface);font-size:11.5px;color:var(--muted);font-weight:600;position:sticky;top:0}
+thead tr.grp th{color:var(--ink);font:700 12px var(--display);text-align:center;border-bottom:3px solid var(--tc,var(--accent))}
+th.l,td.l{text-align:left}
+td.name,th.name{position:sticky;left:0;background:var(--surface);z-index:2;text-align:left;font-weight:600;border-right:1px solid var(--line)}
+thead th.name{z-index:3}
+td.sep,th.sep{border-left:2px solid var(--line)}
+tr.tot td{font-weight:700;background:var(--accent-soft)}
+tr.tot td.name{background:var(--accent-soft)}
+td.z{color:var(--muted);opacity:.55}
+td.ok{background:var(--good-bg);color:var(--good);font-weight:700}
+td.bad{background:var(--bad-bg);color:var(--bad);font-weight:700}
+td.mid{background:var(--mid-bg);color:var(--mid);font-weight:700}
+.pill.mid{background:var(--mid-bg);color:var(--mid)}
+.pill{display:inline-block;padding:2px 8px;border-radius:99px;font-size:12px;font-weight:600}
+.pill.ok{background:var(--good-bg);color:var(--good)}
+.pill.bad{background:var(--bad-bg);color:var(--bad)}
+.legend{display:flex;gap:8px;align-items:center;color:var(--muted);font-size:12.5px}
+.empty{padding:20px 16px;text-align:center;color:var(--muted);display:flex;flex-direction:column;gap:12px;align-items:center}
+.empty h2{color:var(--ink)}
+/* data entry */
+.entry td{padding:2px 3px}
+.entry td.idx{color:var(--muted);font-size:12px;padding:0 6px}
+.entry select,.entry input{min-height:24px;padding:3px 5px;border-color:transparent;background:transparent;border-radius:4px;max-width:100%}
+.entry select:hover,.entry input:hover{border-color:var(--line)}
+.entry input.w-name{width:170px}.entry input.w-int{width:120px}.entry input.w-ad{width:340px}
+.entry td.ro{color:var(--muted);padding:0 8px}
+.addrow td{background:var(--accent-soft);padding:3px}
+.addrow select,.addrow input{border-color:var(--line);background:var(--surface)}
+.entry td.v-g{background:var(--good-bg)}.entry td.v-g select{color:var(--good);font-weight:600}
+.entry td.v-r{background:var(--bad-bg)}.entry td.v-r select{color:var(--bad);font-weight:600}
+.entry td.v-o{background:var(--warn-bg)}.entry td.v-o select{color:var(--warn);font-weight:600}
+.entry td.v-b{background:var(--blue-bg)}.entry td.v-b select{color:var(--blue);font-weight:600}
+.entry td.v-v{background:var(--violet-bg)}.entry td.v-v select{color:var(--violet);font-weight:600}
+.entry td.v-y{background:var(--yellow-bg)}.entry td.v-y select{color:var(--yellow);font-weight:600}
+.addrow td[class*="v-"] select{background:transparent}
+.entry td.na{background:#000}
+.entry td.na select,.entry td.na input{color:#555;appearance:none;-webkit-appearance:none;background:transparent;border-color:transparent;cursor:not-allowed}
+.entry td.na input::-webkit-calendar-picker-indicator{display:none}
+.entry td.na input::-webkit-datetime-edit{color:transparent}
+.del{border:0;background:none;color:var(--muted);cursor:pointer;padding:4px 8px;border-radius:4px}
+.del:hover{color:var(--bad)}
+.del.arm{background:var(--bad);color:#fff}
+.filters{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end}
+.pager{display:flex;gap:8px;align-items:center;color:var(--muted);padding:2px 0}
+#status{font-size:12px;color:var(--muted);min-width:90px;text-align:right}
+#status.err{color:var(--bad);font-weight:600}
+.reasons{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:8px}
+.reasons .card{padding:8px 12px;display:flex;flex-direction:column;gap:4px}
+.reasons h2,.rank h2{background:var(--hd);color:var(--hdt);margin:-8px -12px 2px;padding:5px 12px;border-radius:6px 6px 0 0;font-size:12.5px;letter-spacing:.06em;text-transform:uppercase}
+.rbar{display:grid;grid-template-columns:150px 1fr 40px;gap:6px;align-items:center;font-size:13px}
+.rbar .track{height:10px;background:var(--line);border-radius:5px;overflow:hidden}
+.rbar .fill{height:100%;background:var(--muted);border-radius:5px}
+.rbar b{text-align:right;font-variant-numeric:tabular-nums}
+.rank{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:8px}
+.rank .card{padding:8px 12px;display:flex;flex-direction:column;gap:4px}
+.rank ol{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:3px}
+.rank li{display:grid;grid-template-columns:22px 1fr auto;gap:8px;align-items:center}
+.rank li .n{color:var(--muted);font-weight:600;font-variant-numeric:tabular-nums}
+.rank li .t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rank li .t small{display:block;color:var(--muted);font-size:12px}
+.avg{font:700 15px var(--display);font-variant-numeric:tabular-nums}
+.avg.ok{color:var(--good)}.avg.bad{color:var(--bad)}
+.dist{display:flex;height:12px;border-radius:3px;overflow:hidden;min-width:180px;background:var(--line)}
+.dist span{height:100%}
+.s1{background:#c8323c}.s2{background:#e07b39}.s3{background:#d9b23a}.s4{background:#7cb85a}.s5{background:#1f8a4c}
+.keyrow{display:flex;gap:12px;flex-wrap:wrap;color:var(--muted);font-size:12.5px;align-items:center}
+.keyrow i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:-1px}
+th.sort{cursor:pointer;text-decoration:underline dotted}
+/* Report palettes taken from the Excel/PDF header fills */
+.pal-q{--hd:#20124D;--hdt:#B580FF;--dy:#9900FF;--dyt:#fff;--sb:#674EA7;--sbt:#fff;--tc:#9900FF}
+.pal-a{--hd:#783F04;--hdt:#FF9900;--dy:#FF9900;--dyt:#1a0f00;--sb:#F6B26B;--sbt:#1a0f00;--tc:#FF9900}
+.pal-s{--hd:#073763;--hdt:#00FFFF;--dy:#00FFFF;--dyt:#04202f;--sb:#3D85C6;--sbt:#fff;--tc:#3D85C6}
+.pal-o{--hd:#4C1130;--hdt:#D5A6BD;--dy:#A64D79;--dyt:#fff;--sb:#741B47;--sbt:#fff;--tc:#A64D79}
+.pal-c{--hd:#BF9000;--hdt:#fff;--dy:#FFFF00;--dyt:#1f1a00;--sb:#FFD966;--sbt:#1f1a00;--tc:#BF9000}
+.pal-k{--hd:#000;--hdt:#fff;--dy:#000;--dyt:#fff;--sb:#2b2b2b;--sbt:#fff;--tc:#6b6b6b}
+.rpt thead tr.ttl th{background:var(--hd);color:var(--hdt);font:800 12.5px var(--display);letter-spacing:.08em;text-transform:uppercase;text-align:left;padding:5px 8px;border:0}
+.rpt thead tr.grp th{background:var(--dy);color:var(--dyt);border-bottom:0}
+.rpt thead tr.sub th,.rpt thead tr.sub th.name{background:var(--sb);color:var(--sbt);border-bottom:0}
+.rpt thead tr.grp th.name{background:var(--dy);color:var(--dyt)}
+.rpt thead tr.ttl th.name{background:var(--hd)}
+.rpt tr.tot td,.rpt tr.tot td.name{background:color-mix(in srgb,var(--sb) 22%,var(--surface))}
+.rpt td.sep,.rpt th.sep{border-left:2px solid color-mix(in srgb,var(--sb) 55%,var(--line))}
+.rpt th.sort{color:var(--sbt)}
+.rpt th,.rpt td{text-align:center;padding:2px 4px}
+.rpt td.name,.rpt th.name,.rpt td.l,.rpt th.l{text-align:left;padding-left:8px;padding-right:8px}
+.rpt thead tr.ttl th{text-align:left}
+.rpt td{min-width:26px}
+.modal{position:fixed;inset:0;background:rgba(10,12,20,.45);display:none;align-items:center;justify-content:center;z-index:50;padding:16px}
+.modal.on{display:flex}
+.modal .card{max-width:520px;width:100%;padding:20px;display:flex;flex-direction:column;gap:12px}
+.modal p{margin:0;color:var(--muted)}
+.prog{height:8px;background:var(--line);border-radius:4px;overflow:hidden}.prog div{height:100%;width:0;background:var(--accent);transition:width .2s}
+@media (prefers-reduced-motion: reduce){*{transition:none!important}}
+@media (max-width:600px){.bar{padding:10px 16px}main{padding:14px 16px}.tabs{padding:0 8px}#office{min-width:0;width:100%}}
+.userchip{display:flex;gap:6px;align-items:center;font-size:12.5px;color:var(--muted)}
+.userchip b{color:var(--ink)}
+#gate{position:fixed;inset:0;z-index:60;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:16px}
+#gate[hidden]{display:none}
+.gatecard{width:100%;max-width:360px;padding:22px;display:flex;flex-direction:column;gap:10px}
+.gatecard h1{font-size:20px}.gatecard p{margin:0;color:var(--muted)}
+.gatecard input{width:100%}
+.gmsg{color:var(--bad)!important;font-weight:600;min-height:1em}
+body.gated .top,body.gated main{visibility:hidden}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="bar">
+    <div class="brand"><h1>ARS Interview Tracker</h1><small id="sub">Loading&#x2026; (v4)</small></div>
+    <div class="ctl"><label for="office">Office</label><select id="office"></select></div>
+    <div class="ctl" id="weekCtl"><label for="week">Week (Mon&#x2013;Sat)</label>
+      <div class="weeknav"><button class="btn" id="wPrev" aria-label="Previous week">&#x2039;</button><select id="week"></select><button class="btn" id="wNext" aria-label="Next week">&#x203A;</button></div></div>
+    <div class="ctl"><label for="goal">Retention goal</label><select id="goal"><option value="0.5">50%</option><option value="0.6">60%</option><option value="0.7">70%</option></select></div>
+    <div class="ctl"><label>&nbsp;</label><div style="display:flex;gap:6px"><button class="btn" id="addOffice">+ Office</button><button class="btn" id="manageOffices" hidden>Manage offices</button><button class="btn" id="importBtn">Import Excel</button></div></div>
+    <div id="status"></div>
+    <div id="userChip" class="userchip"></div>
+  </div>
+  <nav class="tabs" role="tablist" id="tabs"></nav>
+</header>
+<main id="main"></main>
+<div id="gate" hidden></div>
+<div class="modal" id="mPass"><div class="card">
+  <h2>Change password</h2>
+  <div class="ctl"><label for="cpOld">Current password</label><input type="password" id="cpOld" autocomplete="current-password"></div>
+  <div class="ctl"><label for="cpNew">New password (8+ characters)</label><input type="password" id="cpNew" autocomplete="new-password"></div>
+  <p id="cpMsg"></p>
+  <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn" id="cpCancel">Cancel</button><button class="btn primary" id="cpGo">Save</button></div>
+</div></div>
+
+<div class="modal" id="mImport"><div class="card" style="max-width:860px">
+  <h2>Import Excel files</h2>
+  <p>Upload one or more ARS report files (.xlsx). Each tab with the Data Entry columns (Date 1st Rd, Full Name, Qualify&#x2026;) becomes an office. Big reports can take up to a minute to read.</p>
+  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+    <label class="btn primary" for="impFiles" style="display:inline-flex;align-items:center">Choose Excel files</label>
+    <input type="file" id="impFiles" accept=".xlsx,.xls,.xlsm,.csv" multiple style="position:absolute;width:1px;height:1px;opacity:0">
+    <span id="impMsg" style="color:var(--muted);font-size:12.5px"></span>
+  </div>
+  <div id="impList" style="max-height:46vh;overflow:auto"></div>
+  <fieldset id="impMode" style="border:0;padding:0;margin:0;display:none;gap:4px;flex-direction:column">
+    <label><input type="radio" name="impMode" value="add" checked> Add new interviews and skip ones already loaded (same date, name and interviewer)</label>
+    <label><input type="radio" name="impMode" value="replace"> Replace everything in the selected offices with the file</label>
+  </fieldset>
+  <div class="prog"><div id="progFill"></div></div>
+  <p id="progTxt"></p>
+  <div style="display:flex;gap:8px;justify-content:space-between;align-items:center;flex-wrap:wrap">
+    <span></span>
+    <div style="display:flex;gap:8px"><button class="btn" id="mCancel">Close</button><button class="btn primary" id="mGo" disabled>Import</button></div>
+  </div>
+</div></div>
+<div class="modal" id="mInts"><div class="card">
+  <h2>Interviewer list</h2>
+  <p>One name per line. This list feeds the 1st Round Interviewer dropdown in every office. Interviews already logged keep their current name.</p>
+  <textarea id="intsTxt" rows="14" style="width:100%;font:inherit;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink)" placeholder="Valentina R&#10;Ludmila&#10;Victoria"></textarea>
+  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><label class="btn" for="intsFile" style="display:inline-flex;align-items:center">Upload .xlsx or .csv</label><input type="file" id="intsFile" accept=".xlsx,.xls,.csv" style="position:absolute;width:1px;height:1px;opacity:0"><span id="intsMsg" style="color:var(--muted);font-size:12.5px"></span></div>
+  <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn" id="iCancel">Cancel</button><button class="btn primary" id="iGo">Save list</button></div>
+</div></div>
+<div class="modal" id="mManage"><div class="card">
+  <h2>Manage offices</h2>
+  <p>Deleting an office removes it and all of its interviews for everyone. This can't be undone. Only Admins see this option.</p>
+  <div id="manageList" style="display:flex;flex-direction:column;gap:4px;max-height:50vh;overflow:auto"></div>
+  <p id="manageMsg"></p>
+  <div style="display:flex;justify-content:flex-end"><button class="btn" id="manageClose">Close</button></div>
+</div></div>
+<div class="modal" id="mOffice"><div class="card">
+  <h2>New office</h2>
+  <div class="ctl"><label for="newOffice">Name (client / owner)</label><input type="text" id="newOffice" placeholder="e.g. Rafael Hidalgo"></div>
+  <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn" id="oCancel">Cancel</button><button class="btn primary" id="oGo">Create</button></div>
+</div></div>
+
+<script>
+// Shows any startup error on the page so it can be reported
+window.__showErr=function(m){ var d=document.getElementById("errBox"); if(!d){ d=document.createElement("pre"); d.id="errBox"; d.style.cssText="margin:12px;padding:12px;border:2px solid #b4232c;background:#fbe3e4;color:#7a1016;white-space:pre-wrap;font:13px/1.4 monospace;border-radius:6px"; (document.getElementById("main")||document.body).appendChild(d); } d.textContent+= m+"\n"; };
+window.addEventListener("error",function(e){ window.__showErr("Error (page v4): "+(e.message||e)+(e.lineno?" (line "+e.lineno+")":"")); });
+window.addEventListener("unhandledrejection",function(e){ window.__showErr("Error: "+((e.reason&&e.reason.message)||e.reason)); });
+</script>
+<script>
+(function(){var s="@@CODE@@";s=s.split("-").join("+").split("_").join("/");try{(new Function(atob(s)))();}catch(e){window.__showErr&&window.__showErr("Error (page v4): "+e.message);}})();
+</script>
+</body>
+</html>
