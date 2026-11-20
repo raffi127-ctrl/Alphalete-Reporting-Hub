@@ -4138,6 +4138,26 @@
    "verify": null,
    "timeout_minutes": 20
   },
+  "program_daily_summary_probe": {
+   "hand_run_only": true,
+   "on_scheduler": true,
+   "_note": "READ-ONLY probe (Eve 2026-11-20, Raf daily COUNTRY sales by program). Lists the worksheets of the Fiber/NDS/B2B/BOX country trackers and downloads the sales-looking ones to output/program_daily_probe/, printing header + total rows. Writes no Sheet, posts nothing. `lucy rerun program_daily_summary_probe`.",
+   "display_name": "Program Daily Summary probe",
+   "source_type": "tableau",
+   "data_sources": [],
+   "command": [
+    "automations.program_daily_summary.probe"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 30
+  },
   "nds_mirror_to_att": {
    "on_scheduler": true,
    "order": 41.1,
