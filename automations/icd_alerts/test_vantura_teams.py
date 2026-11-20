@@ -114,5 +114,20 @@ class WeekBlock(unittest.TestCase):
             self.assertEqual(P._week_team_block("carlos-b2batt", thu, office, sales, None, book), "")
 
 
+class SoldUnderWeek(unittest.TestCase):
+    def test_a_login_carrying_someone_elses_week_counts_for_the_real_seller(self):
+        from automations.icd_alerts import rep_names as RN
+        g = _grid()
+        g.insert(9, ["9", "Esmeralda Gonzalez", "0", "0", "X", "2", "5", "8", "", "", "",
+                     "NDS", "", "", "Cinthya", "Level 1", ""])
+        g.insert(10, ["10", "Jacob Ortega", "0", "0", "", "", "", "", "", "", "",
+                      "NDS", "", "", "Jacob", "Level 1", ""])
+        with mock.patch.dict(RN.SOLD_UNDER, {("carlos-b2batt", "2026-11-18"):
+                                             {"ESMERALDA": "Jacob Ortega"}}, clear=True):
+            book = VT.from_grid(g, "NDS Sales Board", dt.date(2026, 11, 19))
+        # Tue 2 stays Esmeralda's (Cinthya); Wed 5 was Jacob's; Thu = today, unread
+        self.assertEqual(book.week_before, {"Cinthya": 2, "Jacob": 5})
+
+
 if __name__ == "__main__":
     unittest.main()

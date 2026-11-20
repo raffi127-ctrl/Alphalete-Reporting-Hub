@@ -89,18 +89,29 @@ def _units(v) -> int:
     return int(v) if v.isdigit() else 0          # T / F / X / blank = 0
 
 
-def from_grid(grid, tab: str = "", day: Optional[dt.date] = None) -> Book:
+def from_grid(grid, tab: str = "", day: Optional[dt.date] = None,
+              office: str = "carlos-b2batt") -> Book:
     from automations import vantura_boards as VB
+    from automations.icd_alerts import rep_names as RN
     from automations.vantura_slack_sales.run import _norm
     reps = VB.parse_board(grid, tab)
-    by_name, week_before = {}, {}
-    upto = day.weekday() if day else 0           # Mon=0: day cells before today
+    by_name = {}
     for r in reps:
-        team = " ".join(str(r.get("team") or "").split())
-        by_name[_norm(r["name"])] = team
-        n = sum(_units(c) for c in (r.get("days") or [])[:upto])
-        if n:
-            k = team or "Unassigned"
+        by_name[_norm(r["name"])] = " ".join(str(r.get("team") or "").split())
+    placer = Book(by_name, [])
+    week_before = {}
+    upto = day.weekday() if day else 0           # Mon=0: day cells before today
+    monday = (day - dt.timedelta(days=upto)) if day else None
+    for r in reps:
+        own = by_name[_norm(r["name"])]
+        for i, cell in enumerate((r.get("days") or [])[:upto]):
+            n = _units(cell)
+            if not n:
+                continue
+            # A day this rep's login carried someone else's sales (Esmeralda's
+            # week of 11/16 was Jacob's): that day counts for the real seller.
+            real = RN.sold_under_for(office, monday + dt.timedelta(days=i), r["name"])
+            k = (placer.team_for(real) if real else own) or "Unassigned"
             week_before[k] = week_before.get(k, 0) + n
     teams = box_teams(grid) or sorted({t for t in by_name.values() if t}, key=str.lower)
     if not teams:

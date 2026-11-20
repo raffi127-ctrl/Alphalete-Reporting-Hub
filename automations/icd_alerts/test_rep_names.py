@@ -143,7 +143,7 @@ class SoldUnder(unittest.TestCase):
             base = lambda n: n.title()
             show = RN.day_resolver(base, "carlos-b2batt", dt.date(2026, 11, 19))
             self.assertEqual(show("ROSEANNA JURADO"), "Roseanna Jurado")
-            self.assertIs(RN.day_resolver(base, "carlos-b2batt", dt.date(2026, 11, 20)), base)
+            self.assertIs(RN.day_resolver(base, "carlos-b2batt", dt.date(2026, 11, 23)), base)
             self.assertIsNone(RN.day_resolver(None, "raf", dt.date(2026, 11, 19)))
 
 

@@ -115,8 +115,24 @@ def ensure_tab(book=None) -> str:
 # SaraPlus holds for her). The board and payroll are NOT touched by this.
 #   {(office key, "YYYY-MM-DD"): {"WORDS IN THE SARAPLUS NAME": "Real Seller"}}
 SOLD_UNDER = {
-    ("carlos-b2batt", "2026-11-19"): {"ESMERALDA": "Jacob Ortega"},
+    # Carlos 2026-11-19: "All of Esmeralda's sales this week are Jacob's" --
+    # the whole week of WE 11.22, Mon 11/16 .. Sun 11/22.
+    **{("carlos-b2batt", "2026-11-%02d" % d): {"ESMERALDA": "Jacob Ortega"}
+       for d in range(16, 23)},
 }
+
+
+def sold_under_for(office: str, day, name: str) -> str:
+    """The real seller when `name` (any spelling) rang under someone else's
+    login on `day` for this office, else ''."""
+    iso = day.isoformat() if hasattr(day, "isoformat") else str(day)
+    swaps = SOLD_UNDER.get((str(office or "").strip().lower(), iso)) or {}
+    words = set(str(name or "").upper().split())
+    for pat, real in swaps.items():
+        need = set(str(pat).upper().split())
+        if need and need <= words:
+            return real
+    return ""
 
 
 def day_resolver(show: Optional[Callable[[str], str]], office: str,
