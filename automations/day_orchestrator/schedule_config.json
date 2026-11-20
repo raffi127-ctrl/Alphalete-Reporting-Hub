@@ -5258,6 +5258,36 @@
    "verify": null,
    "close_on": "exit_zero"
   },
+  "ov_sales_board_ov_pull": {
+   "on_scheduler": true,
+   "order": 89,
+   "machine": "Lucy 3",
+   "_note": "OwnerVille half of our Alphalete Sales Board artifact (https://claude.ai/artifact/9uYxif3fDMBjt4rK6mdVEK; Eve 2026-11-20: 'que lo de ownerville se actualice solo'). Every morning, right before ov_sales_board_sheet_copy, opens OwnerVille's CEO Dashboard (p=9197) with Lucy 3's rhidalgo session (office 11280) and runs automations/ov_sales_board/extract.js inside it -- OwnerVille's own KnockReport + getSalesBoard / getTeams / getSalesBoardPeople, 13 weeks -- then writes the resulting data.json in pieces into the bridge sheet 1UfyUveaWQMFgFtXVzVsBTHtYKj1VPLTA0l4rAWRogo8 (rows 'file' / 'filemeta'; sheet_import's rows are kept). The daily claude.ai routine trig_01QRmQKRzyFqYoAdjjeXRmWv glues them and republishes the board. No knocks or no sales = exits 1 and the board keeps yesterday's data. Read-only on OwnerVille. Code: automations/ov_sales_board/ov_pull.py.",
+   "display_name": "OV Sales Board copy - daily OwnerVille pull",
+   "source_type": "ownerville",
+   "data_sources": [],
+   "command": [
+    "automations.ov_sales_board.ov_pull"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ]
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 15,
+   "verify": null,
+   "close_on": "exit_zero"
+  },
   "ov_sales_board_sheet_copy": {
    "on_scheduler": true,
    "order": 90,

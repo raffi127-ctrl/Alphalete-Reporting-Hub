@@ -78,8 +78,10 @@ BRIDGE_SHEET_ID = "1UfyUveaWQMFgFtXVzVsBTHtYKj1VPLTA0l4rAWRogo8"
 def write_bridge(docs):
     """One row per database document: collection | doc_id | JSON. The cloud agent writes each row as-is."""
     ws = _client().open_by_key(BRIDGE_SHEET_ID).sheet1
+    # ov_pull.py's rows (the OwnerVille data.json pieces) stay; only this script's rows are replaced.
+    keep = [(r + ["", "", ""])[:3] for r in ws.get_all_values()[1:] if r and r[0] in ("file", "filemeta")]
     rows = [["collection", "doc_id", "json"]] + [[c, d, json.dumps(b, separators=(",", ":"), ensure_ascii=False)]
-                                                  for c, d, b in docs]
+                                                  for c, d, b in docs] + keep
     for r in rows:
         if len(r[2]) > 49000:
             raise SystemExit("%s/%s is %d characters, over a sheet cell's limit" % (r[0], r[1], len(r[2])))
