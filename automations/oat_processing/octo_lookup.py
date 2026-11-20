@@ -48,6 +48,14 @@ billing alert (the rules that read sixteen real pages clean on 11/16; the
 the alert's own words, routed to the office; a clean sweep is silent except
 for the tally. The page's screenshot stays on the office computer
 (output/octo-billing-<date>/<account>.png) -- the relay carries no pictures.
+While the profile is open the run also reads the account's own Gmail tab for
+Indeed's billing mail -- "Payment declined: Update your billing information"
+and "We received your payment of $..." -- and puts their timestamps in the
+tally (billing_mail), so the hold's real start and end travel with the check
+(Carlos 2026-11-19: "it needs to somehow communicate when the ads go back
+live"). Lucy 1 turns that into the 'Billing Holds' tab and a Slack note
+(icd_alerts/billing_holds.py). A signed-out Gmail is reported as such; no
+password is ever typed.
 
 WHAT IT NEVER DOES. It never clicks a "Verify you are human" box: a walled
 account waits up to four minutes for the wall to pass on its own (they do),
@@ -794,11 +802,76 @@ def billing_hits(text) -> List[str]:
     return out
 
 
+MAIL_SEARCH = ('from:indeed (subject:"Payment declined" OR subject:"We received your payment" '
+               'OR subject:"make your job visible" OR subject:"is live on Indeed") after:%s')
+MAIL_ROWS_JS = """() => [...document.querySelectorAll('tr.zA')].map(tr => {
+  const s = tr.querySelector('.bog'); const d = tr.querySelector('td.xW span');
+  return {subject: s ? s.innerText : '', when: d ? (d.getAttribute('title') || d.innerText) : ''};
+})"""
+MAIL_WALL = ("Verify it\u2019s you", "Verify it's you", "Sign in", "Choose an account")
+
+
+def _mail_when(text) -> Optional[str]:
+    """Gmail's row title 'Wed, Nov 18, 2026, 7:05 PM' -> '2026-11-18 19:05'."""
+    t = str(text or "").strip()
+    for fmt in ("%a, %b %d, %Y, %I:%M %p", "%b %d, %Y, %I:%M %p"):
+        try:
+            return dt.datetime.strptime(t, fmt).strftime("%Y-%m-%d %H:%M")
+        except ValueError:
+            continue
+    return None
+
+
+def mail_times(rows: List[Dict]) -> Dict:
+    """The newest decline, the newest payment received, and the newest
+    'job visible / live' mail among Gmail search rows: {declined, paid,
+    live} as 'YYYY-MM-DD HH:MM' (missing when none)."""
+    out: Dict = {}
+    for r in rows or []:
+        subj = str(r.get("subject") or "").lower()
+        when = _mail_when(r.get("when"))
+        if not when:
+            continue
+        key = ("declined" if "payment declined" in subj else
+               "paid" if "received your payment" in subj else
+               "live" if ("is live on indeed" in subj or "make your job visible" in subj) else "")
+        if key and (key not in out or when > out[key]):
+            out[key] = when
+    return out
+
+
+def read_billing_mail(ctx, log=_log, days: int = 45) -> Dict:
+    """The account's Gmail, as the profile holds it: a search for Indeed's
+    billing mail, the timestamps read off the result rows (the title attribute
+    carries the full date). Never signs in: a signed-out Gmail is
+    {'signed_in': False}. Nothing is clicked inside Gmail."""
+    rec: Dict = {"signed_in": None}
+    try:
+        page = next((pg for pg in ctx.pages if "mail.google.com" in pg.url), None)
+        if page is None:
+            page = ctx.new_page()
+        since = (dt.date.today() - dt.timedelta(days=days)).strftime("%Y/%m/%d")
+        q = urllib.request.quote(MAIL_SEARCH % since)
+        page.goto("https://mail.google.com/mail/u/0/#search/" + q, wait_until="domcontentloaded", timeout=60000)
+        time.sleep(9)
+        t = body_text(page)
+        if "mail.google.com" not in page.url or any(w in t[:600] for w in MAIL_WALL):
+            rec["signed_in"] = False
+            return rec
+        rec["signed_in"] = True
+        rows = page.evaluate(MAIL_ROWS_JS) or []
+        rec.update(mail_times(rows))
+        rec["rows"] = len(rows)
+    except Exception as e:  # noqa: BLE001 -- the mail is extra; the page read is the check
+        rec["error"] = "%s: %s" % (type(e).__name__, str(e)[:100])
+    return rec
+
+
 def check_billing(ws: str, title: str, shot_dir: Optional[Path], log=_log) -> Dict:
     """One account's All Jobs page: status ok / problem / walled / error,
     the alert lines, and where its screenshot went. Read-only: nothing on
     the page is clicked, a wall is waited out and never touched."""
-    rec: Dict = {"title": title, "status": "error", "hits": [], "shot": "", "error": ""}
+    rec: Dict = {"title": title, "status": "error", "hits": [], "shot": "", "error": "", "mail": {}}
     sync_playwright = _sync_playwright()
     try:
         with sync_playwright() as p:
@@ -849,6 +922,10 @@ def check_billing(ws: str, title: str, shot_dir: Optional[Path], log=_log) -> Di
                 page.close()
             except Exception:  # noqa: BLE001
                 pass
+            rec["mail"] = read_billing_mail(ctx, log)
+            m = rec["mail"]
+            log("    %-28s mail: %s" % (title, "signed out" if m.get("signed_in") is False else
+                                        (", ".join("%s %s" % (k, m[k]) for k in ("declined", "paid", "live") if m.get(k)) or "no billing mail")))
     except Exception as e:  # noqa: BLE001
         rec["error"] = "%s: %s" % (type(e).__name__, str(e)[:160])
     return rec
@@ -927,7 +1004,7 @@ def _report(office_id: str, summary: Dict, loud: str = "", log=_log) -> None:
         body = {k: summary.get(k) for k in ("office", "date", "at", "ran", "snapshot", "listed",
                                             "skipped_recent", "found", "missing",
                                             "accounts", "billing", "billing_problems",
-                                            "csv_rows", "elapsed_min")}
+                                            "billing_mail", "csv_rows", "elapsed_min")}
         R.report_fault(STAGE_QUIET, "octo lookup %s: %d found, %d not"
                        % (office_id, len(summary.get("found") or []),
                           len(summary.get("missing") or [])),
@@ -957,7 +1034,7 @@ def run(office_id, *, names: Optional[List[str]] = None, account: str = "",
     today = dt.date.today()
     summary: Dict = {"office": office_id, "date": today.isoformat(),
                      "at": dt.datetime.now().strftime("%H:%M"), "found": [], "missing": [],
-                     "accounts": {}, "billing": {}, "billing_problems": [],
+                     "accounts": {}, "billing": {}, "billing_problems": [], "billing_mail": {},
                      "csv_rows": None, "dry": dry,
                      # WHAT RAN THIS (2026-11-18): a 1pm row said "5 found" with no
                      # billing read, and nothing on the row could say which
@@ -1103,6 +1180,9 @@ def run(office_id, *, names: Optional[List[str]] = None, account: str = "",
             # the billing
             if billing and time.time() < run_deadline:
                 b = check_billing(ws, title, shot_dir, log)
+                if b.get("mail"):
+                    summary["billing_mail"][title] = {k: v for k, v in b["mail"].items()
+                                                      if k in ("declined", "paid", "live", "signed_in")}
                 if b["status"] == "problem":
                     summary["billing"][title] = "PROBLEM: " + b["hits"][0]
                     summary["billing_problems"].append([title, b["hits"][0]])

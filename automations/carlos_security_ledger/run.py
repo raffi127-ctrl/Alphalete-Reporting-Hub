@@ -37,6 +37,9 @@ TAB = "Security Ledger"
 CAP_TAB = "Captain Bonus (Tableau)"
 OVR_TAB = "Override Weekly (Tableau)"
 DATES_TAB = "Override Dates (Tableau)"
+ICD_TAB = "Override by ICD (Tableau)"
+ICD_HEADER = ["Week (Sun)", "P&L week ending (Sat)", "Period", "ICD owner", "ICD office", "Override", "Pulled"]
+ICD_VIEW = VIEW.rsplit("/", 1)[0] + "/MYOVERRIDESUMMARY"
 DATES_VIEWS = [VIEW.rsplit("/", 1)[0] + "/" + v for v in ("DATESTOREMEMBER-2026", "DATESTOREMEMBER2026", "DatestoRemember2026")] + [VIEW]
 OVR_HEADER = ["Week (Sun)", "P&L week ending (Sat)", "Period", "Standard override", "Pulled", "Source"]
 OVR_SOURCE = "Tableau → Overrides ICD View → ORG Override Summary (Carlos Hidalgo, all campaign rows)"
@@ -393,7 +396,7 @@ def pull_overrides_hub(periods: list[int], page=None) -> list[list]:
     return out
 
 
-def write_overrides(svc, via_hub: bool) -> str:
+def write_overrides(svc, via_hub: bool, only_periods=None) -> str:
     """Upsert the weekly standard override by (week, period). First run backfills every period of the year."""
     have = svc.values().get(spreadsheetId=PNL_SHEET_ID, range=f"'{OVR_TAB}'!A2:F", valueRenderOption="UNFORMATTED_VALUE").execute().get("values", [])
     have = [r for r in have if len(r) >= 4 and isinstance(r[0], (int, float))]
@@ -402,6 +405,8 @@ def write_overrides(svc, via_hub: bool) -> str:
     m = dt.date.today().month
     # newest first; each period is its own Tableau session (~1-4 min), so save after every one — a timeout keeps what it got
     periods = [x for x in ((m, m - 1, m + 1) if have else (m, m - 1, m - 2, m + 1)) if 1 <= x <= 13]
+    if only_periods:
+        periods = list(only_periods)
     today = dt.date.today().isoformat()
     keep = {(r[0], r[2]): r for r in have}
     got = 0
@@ -412,6 +417,8 @@ def write_overrides(svc, via_hub: bool) -> str:
             if not fresh:
                 continue
             got += len(fresh)
+            for k in [k for k in keep if k[1] == fresh[0][1]]:   # a re-pulled period replaces its old rows — SCI moves weeks between periods
+                del keep[k]
             for wk, label, amt in fresh:
                 keep[(wk, label)] = [wk, wk + 6, label, amt, today, OVR_SOURCE]
             rows = sorted(keep.values(), key=lambda r: (-r[0], str(r[2])))
@@ -545,6 +552,11 @@ def write(rows: list[list], balance: float | None, via_hub: bool = False):
         log(f"override weekly failed (rest of the run is fine): {str(e)[:160]}")
     if via_hub:
         try:
+            m = dt.date.today().month
+            log(write_override_by_icd(svc, [x for x in (m + 1, m, m - 1) if 1 <= x <= 13]))
+        except Exception as e:  # noqa: BLE001
+            log(f"override by icd failed (rest of the run is fine): {str(e)[:160]}")
+        try:
             log(write_dates(svc))
         except Exception as e:  # noqa: BLE001
             log(f"dates refresh failed (rest of the run is fine): {str(e)[:160]}")
@@ -568,6 +580,132 @@ def record_delivery(svc, rows: list[list]) -> int:
     return 0
 
 
+def icd_weeks(rows: list[list]) -> list[list]:
+    """[week serial, owner, office, amount] from one 'My Override Summary' crosstab (one row per downline ICD, one column per week)."""
+    from automations.override_bulletin.pulls import _WK_HDR, _num_locale
+    cols, hdr_row = {}, None
+    for ri, r in enumerate(rows[:6]):
+        for ci, c in enumerate(r):
+            m = _WK_HDR.match(str(c).strip())
+            if m:
+                y = int(m.group(3)); y += 2000 if y < 100 else 0
+                cols[ci] = dt.date(y, int(m.group(1)), int(m.group(2))).toordinal() - EPOCH.toordinal()
+                hdr_row = ri
+        if cols:
+            break
+    out = []
+    for r in rows[(hdr_row or 0) + 1:]:
+        name = re.sub(r"\s+", " ", str(r[0])).strip() if r else ""
+        if not name or name.lower().startswith(("override grand total", "grand total", "total")):
+            continue
+        m = re.match(r"^(.*?)\s*\[(.*)\]\s*$", name)
+        owner, office = (m.group(1), m.group(2)) if m else (name, "")
+        for ci, wk in cols.items():
+            v = _num_locale(r[ci]) if ci < len(r) else None
+            if v:
+                out.append([wk, owner.title(), office.title(), round(v, 2)])
+    return out
+
+
+def write_override_by_icd(svc, periods: list[int]) -> str:
+    """Upsert Carlos's weekly override per downline ICD (Tableau 'MY OVERRIDE SUMMARY') keyed by (week, period, owner, office)."""
+    from automations.shared.tableau_patchright import download_crosstab_patchright, tableau_session
+    from automations.override_bulletin.pulls import read_crosstab, _with_filter
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    tabs = {x["properties"]["title"] for x in svc.get(spreadsheetId=PNL_SHEET_ID, fields="sheets.properties").execute()["sheets"]}
+    if ICD_TAB not in tabs:
+        svc.batchUpdate(spreadsheetId=PNL_SHEET_ID, body={"requests": [{"addSheet": {"properties": {"title": ICD_TAB, "gridProperties": {"rowCount": 3000, "columnCount": 30, "frozenRowCount": 1}}}}]}).execute()
+    have = svc.values().get(spreadsheetId=PNL_SHEET_ID, range=f"'{ICD_TAB}'!A2:G", valueRenderOption="UNFORMATTED_VALUE").execute().get("values", [])
+    keep = {(r[0], r[2], r[3], r[4]): r for r in have if len(r) >= 6 and isinstance(r[0], (int, float))}
+    today, got = dt.date.today().isoformat(), 0
+    with tableau_session(headless=True, verbose=False) as pg:
+        for n in periods:
+            label = f"Period {dt.date.today().year}-{n}"
+            path = OUT_DIR / f"Override_by_ICD_P{n}.csv"
+            try:
+                download_crosstab_patchright(_with_filter(ICD_VIEW, "Period", label), "My Override Summary", path, verbose=False, page=pg)
+                rows = icd_weeks(read_crosstab(path))
+            except Exception as e:  # noqa: BLE001
+                log(f"override by icd {label}: no crosstab ({str(e)[:80]})")
+                continue
+            for k in [k for k in keep if k[1] == label]:   # a re-pulled period replaces its old rows (SCI adjusts prior weeks)
+                del keep[k]
+            for wk, owner, office, amt in rows:
+                keep[(wk, label, owner, office)] = [wk, wk + 6, label, owner, office, amt, today]
+            got += len(rows)
+            log(f"override by icd {label}: {len(rows)} rows, total {sum(r[3] for r in rows):,.2f}")
+            out = sorted(keep.values(), key=lambda r: (-r[0], -r[5]))
+            svc.values().clear(spreadsheetId=PNL_SHEET_ID, range=f"'{ICD_TAB}'!A2:G5000").execute()
+            svc.values().update(spreadsheetId=PNL_SHEET_ID, range=f"'{ICD_TAB}'!A1:G{len(out) + 1}", valueInputOption="RAW", body={"values": [ICD_HEADER] + out}).execute()
+    return f"override by icd: {got} rows refreshed from periods {periods}; {len(keep)} on the tab"
+
+
+def probe_override_detail(svc, period: int) -> str:
+    """Discovery pull: every 'OVERRIDE' view of the Overrides ICD View workbook for one period, each crosstab sheet
+    dumped raw (capped) onto tab 'Override Detail (probe)' so the per-ICD layout can be read before building on it."""
+    from automations.shared.tableau_patchright import download_crosstab_patchright, tableau_session
+    from automations.recruiting_report.opt_phase import list_crosstab_sheets
+    from automations.override_bulletin.pulls import read_crosstab, _with_filter
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    tab = "Override Detail (probe)"
+    label = f"Period {dt.date.today().year}-{period}"
+    base = VIEW.rsplit("/", 1)[0] + "/"
+    body = [["Pulled", dt.date.today().isoformat(), "Period filter", label], []]
+    with tableau_session(headless=True, verbose=False) as pg:
+        names = []
+        try:
+            pg.goto(VIEW, wait_until="domcontentloaded")
+            pg.wait_for_timeout(10_000)
+            raw = pg.evaluate("""async (wbid) => {
+                const xsrf = (document.cookie.match(/XSRF-TOKEN=([^;]+)/) || [])[1] || '';
+                const body = {method: 'getViews', params: {filter: {operator: 'and', clauses: [{operator: 'eq', field: 'workbookId', value: wbid}]},
+                              order: [{field: 'name', ascending: true}], page: {startIndex: 0, maxItems: 200}}};
+                const r = await fetch('/vizportal/api/web/v1/getViews', {method: 'POST', credentials: 'include',
+                              headers: {'Content-Type': 'application/json', 'X-XSRF-TOKEN': xsrf}, body: JSON.stringify(body)});
+                return await r.text();
+            }""", "936712")
+            names = [v.get("name", "") for v in (json.loads(raw).get("result", {}).get("views") or [])]
+        except Exception as e:  # noqa: BLE001
+            log(f"detail: view list failed ({str(e)[:100]})")
+        body += [["## workbook views"]] + [[n] for n in names] + [[]]
+        for i in range(0, len(names), 3):
+            log("detail: views " + " | ".join(names[i:i + 3]))
+        targets = [n for n in names if "OVERRIDE" in n.upper()] or ["MY OVERRIDE DETAILED SUMMARY", "ORG OVERRIDE SUMMARY"]
+        for name in targets:
+            slug = re.sub(r"\s+", "", name)
+            view = _with_filter(base + slug, "Period", label)
+            try:
+                sheets = list_crosstab_sheets(view, page=pg, verbose=False)
+            except Exception as e:  # noqa: BLE001
+                log(f"detail: {slug[:34]} no crosstab ({str(e)[:50]})")
+                body += [[f"## {name}", "no crosstab dialog"], []]
+                continue
+            log(f"detail: {slug[:34]} sheets {sheets}"[:190])
+            for sh in sheets[:6]:
+                out = OUT_DIR / f"Detail_{re.sub(r'[^A-Za-z0-9]+', '_', slug + '_' + sh)}.csv"
+                try:
+                    download_crosstab_patchright(view, sh, out, verbose=False, page=pg)
+                    rows = [list(r) for r in read_crosstab(out) if any(str(c).strip() for c in r)]
+                except Exception as e:  # noqa: BLE001
+                    log(f"detail: {slug[:24]}/{sh[:24]} failed ({str(e)[:50]})")
+                    body += [[f"## {name} / {sh}", "download failed"], []]
+                    continue
+                mine = sum(1 for r in rows if OWNER in " ".join(map(str, r)).lower())
+                log(f"detail: {slug[:24]}/{sh[:24]} {len(rows)} rows, {mine} mention owner")
+                body += [[f"## {name} / {sh}", f"{len(rows)} rows", f"{mine} rows mention owner"]] + [r[:40] for r in rows[:4000]] + [[]]
+    tabs = {x["properties"]["title"] for x in svc.get(spreadsheetId=PNL_SHEET_ID, fields="sheets.properties").execute()["sheets"]}
+    if tab not in tabs:
+        svc.batchUpdate(spreadsheetId=PNL_SHEET_ID, body={"requests": [{"addSheet": {"properties": {"title": tab, "gridProperties": {"rowCount": max(1000, len(body) + 50), "columnCount": 42}}}}]}).execute()
+    else:
+        sid = next(x["properties"] for x in svc.get(spreadsheetId=PNL_SHEET_ID, fields="sheets.properties").execute()["sheets"] if x["properties"]["title"] == tab)
+        if sid["gridProperties"]["rowCount"] < len(body) + 10:
+            svc.batchUpdate(spreadsheetId=PNL_SHEET_ID, body={"requests": [{"appendDimension": {"sheetId": sid["sheetId"], "dimension": "ROWS", "length": len(body) + 50 - sid["gridProperties"]["rowCount"]}}]}).execute()
+        svc.values().clear(spreadsheetId=PNL_SHEET_ID, range=f"'{tab}'!A1:AP60000").execute()
+    for i in range(0, len(body), 2000):
+        svc.values().update(spreadsheetId=PNL_SHEET_ID, range=f"'{tab}'!A{i + 1}", valueInputOption="RAW", body={"values": body[i:i + 2000]}).execute()
+    return f"detail: {len(body)} lines written to '{tab}'"
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true")
@@ -575,9 +713,24 @@ def main(argv=None) -> int:
     import getpass
     default_via = os.environ.get("CARLOS_TABLEAU_VIA") or ("hub" if getpass.getuser().lower().startswith("lucy") else "chrome")
     ap.add_argument("--dates-only", action="store_true", help="only refresh the Dates to Remember tab (Lucy / hub session)")
+    ap.add_argument("--weekly-periods", default="", metavar="1,2,…", help="only refresh the Override Weekly tab for these periods (hub session)")
+    ap.add_argument("--icd-periods", default="", metavar="1,2,…", help="only refresh the Override by ICD tab for these periods (hub session)")
+    ap.add_argument("--detail-probe", type=int, default=0, metavar="PERIOD", help="dump every OVERRIDE view of the workbook for one period onto a probe tab")
     ap.add_argument("--via", choices=["chrome", "hub"], default=default_via, help="chrome = copy Carlos's Chrome Tableau session (his Mac); hub = the Hub's shared Tableau session (Lucy)")
     args = ap.parse_args(argv)
     log(f"tableau via: {args.via}")
+    if args.weekly_periods:
+        from automations.carlos_finance.tiller_sync import _svc
+        log(write_overrides(_svc(), True, [int(x) for x in args.weekly_periods.split(",") if x.strip()]))
+        return 0
+    if args.icd_periods:
+        from automations.carlos_finance.tiller_sync import _svc
+        log(write_override_by_icd(_svc(), [int(x) for x in args.icd_periods.split(",") if x.strip()]))
+        return 0
+    if args.detail_probe:
+        from automations.carlos_finance.tiller_sync import _svc
+        log(probe_override_detail(_svc(), args.detail_probe))
+        return 0
     if args.dates_only:
         from automations.carlos_finance.tiller_sync import _svc
         svc = _svc()

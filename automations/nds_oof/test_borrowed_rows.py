@@ -256,3 +256,32 @@ class CarRideBorrowing(unittest.TestCase):
              mock.patch.object(R.C, "BORROWED_RIDE_LEADERS", {"rafael": ["Cinthya Reyes"]}), \
              mock.patch.object(R, "_log", lambda m: None):
             self.assertEqual(R.borrowed_wanted(), {"rafael": ["Cinthya Reyes"]})
+
+
+class AsOfLabels(unittest.TestCase):
+    """2026-11-19 (Carlos: "lets do your suggestion"): the board stopped
+    waiting for Raf's share; his reps' names say when their numbers are from."""
+
+    def test_only_the_borrowed_reps_are_labelled_and_only_on_a_copy(self):
+        from automations.total_knocks import pull as knocks
+        rows = [{knocks.COL_REP: "Yahir Lopez", knocks.COL_TOTAL_KNOCKS: "40"},
+                {knocks.COL_REP: "Cinthya Reyes GP", knocks.COL_TOTAL_KNOCKS: "22"}]
+        at = dt.datetime(2026, 11, 19, 14, 4, 31)
+        shown, relabel = R.with_as_of(rows, {"Cinthya Reyes GP": at})
+        self.assertEqual([r[knocks.COL_REP] for r in shown],
+                         ["Yahir Lopez", "Cinthya Reyes GP (as of 2:04)"])
+        self.assertEqual(relabel, {"Cinthya Reyes GP": "Cinthya Reyes GP (as of 2:04)"})
+        self.assertEqual(rows[1][knocks.COL_REP], "Cinthya Reyes GP")   # untouched
+        self.assertEqual(shown[1][knocks.COL_TOTAL_KNOCKS], "22")
+
+    def test_no_time_no_label_and_the_switch_turns_it_off(self):
+        from automations.total_knocks import pull as knocks
+        rows = [{knocks.COL_REP: "Cinthya Reyes GP", knocks.COL_TOTAL_KNOCKS: "22"}]
+        self.assertEqual(R.with_as_of(rows, {"Cinthya Reyes GP": None}), (rows, {}))
+        with mock.patch.object(R.C, "BORROWED_AS_OF", False):
+            self.assertEqual(R.with_as_of(
+                rows, {"Cinthya Reyes GP": dt.datetime(2026, 11, 19, 14, 4)}), (rows, {}))
+        self.assertEqual(R.as_of_label("A B", dt.datetime(2026, 11, 19, 12, 34)), "A B (as of 12:34)")
+
+    def test_the_board_does_not_wait_any_more(self):
+        self.assertFalse(R.C.BORROWED_WAIT)

@@ -408,6 +408,14 @@ def run(owners: List[R.Owner], *, send: bool, show_window: bool = True,
             if read.get("error"):
                 _log("  %s: NUDGING NOBODY -- %s" % (o.owner, read["error"]))
                 continue
+            # THE PAGE COUNTS THE SAME ROWS WE DO. Saying so out loud is
+            # what would have caught the Show Up radio bug on the day rather
+            # than after a day of wrong numbers blamed on an office.
+            gripe = SI.tally_problem(rows, read.get("tally"))
+            if gripe:
+                _log("    !! %s" % gripe)
+                _log("       the page's own line: %s"
+                     % (read.get("banner") or "(none)"))
             _log("    read the %r table" % (read.get("section") or "(unnamed)"))
 
             # THE WRONG-RECIPIENT GUARD. If select_office quietly does not

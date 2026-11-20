@@ -568,11 +568,43 @@ def borrowed_wanted() -> Dict[str, List[str]]:
     return want
 
 
+# What the last borrowed_rows() call put on the board: {rep name as the row
+# reads: when that owner's numbers were shared}. The board labels those reps
+# "(as of 2:04)" (config.BORROWED_AS_OF) now that it no longer waits.
+LAST_BORROW: Dict[str, Optional[dt.datetime]] = {}
+
+
+def as_of_label(rep: str, at: Optional[dt.datetime]) -> str:
+    """'Cinthya Reyes GP (as of 2:04)'; the bare name when the time is unknown."""
+    if not at:
+        return rep
+    return "%s (as of %s)" % (rep, at.strftime("%I:%M").lstrip("0"))
+
+
+def with_as_of(rows: List[Dict], borrowed: Optional[Dict] = None):
+    """(rows for the PICTURE, {plain name: labelled name}). Only the borrowed
+    reps are relabelled, and only on a copy: the saved knock totals, the
+    no-dispositions check and the owners' share keep the plain names."""
+    from automations.total_knocks import pull as knocks
+    borrowed = LAST_BORROW if borrowed is None else borrowed
+    if not (getattr(C, "BORROWED_AS_OF", False) and borrowed):
+        return rows, {}
+    shown, relabel = [], {}
+    for r in rows:
+        rep = str(r.get(knocks.COL_REP, "") or "").strip()
+        if rep in borrowed and borrowed[rep]:
+            relabel[rep] = as_of_label(rep, borrowed[rep])
+            r = dict(r, **{knocks.COL_REP: relabel[rep]})
+        shown.append(r)
+    return shown, relabel
+
+
 def borrowed_rows(today: dt.date, own: List[Dict]) -> List[Dict]:
     """Rows for C.BORROWED_ROWS off today's shared/relayed rows (_borrow_sources),
     matched like total_knocks.guests. A name already on `own` is left off, a
     name with no row today is logged. Never raises: the board matters more
     than the borrowed names."""
+    LAST_BORROW.clear()
     want = borrowed_wanted()
     if not want:
         return []
@@ -594,6 +626,7 @@ def borrowed_rows(today: dt.date, own: List[Dict]) -> List[Dict]:
             if keep:
                 row = {k: v for k, v in row.items() if k in keep}
             out.append(row)
+            LAST_BORROW[str(G._rep(src[i]) or "").strip()] = at
             _log("borrowed: %s off %s (shared %s, %s)" % (G._rep(src[i]), key, at_text, where))
         for name in missing:
             # Close spellings, so a roster typo is fixable from the log alone
@@ -623,6 +656,7 @@ def borrowed_rows(today: dt.date, own: List[Dict]) -> List[Dict]:
                 if keep:
                     row = {k: v for k, v in row.items() if k in keep}
                 out.append(row)
+                LAST_BORROW[str(G._rep(src[i]) or "").strip()] = at
                 _log("borrowed: %s off %s via close name (row reads %r; shared %s, %s)"
                      % (name, key, G._rep(src[i]), at_text, where))
                 continue
@@ -1033,14 +1067,19 @@ def tick(*, send: bool, force: bool, board: bool, headless: bool = True,
         return 0
     out_dir = OUTPUT_DIR / today.isoformat()
     out_dir.mkdir(parents=True, exist_ok=True)
-    if want_board and not force:
+    import time as _time
+    t0 = _time.time()
+    if want_board and not force and getattr(C, "BORROWED_WAIT", True):
         # Raf's numbers for the borrowed reps land ~4 min into the slot; our
         # own pull happens AFTER so both halves of the board are fresh.
+        # OFF since 2026-11-19 (config.BORROWED_WAIT): the board goes on time
+        # and the borrowed names say "(as of H:MM)" instead.
         wait_for_fresh_share(now, shared_at=lambda: _shared_at(today))
     # The grid rows are needed for the board AND for the no-dispo check: at
     # 2:45 on 2026-11-09 (no board due) the pull skipped the grid, `rows`
     # was empty, and 17 reps who HAD knocked were texted as "no dispositions".
     over, rows = pull(today, want_board=(want_board or want_nodispo), headless=headless)
+    _log("timing: pull done %.0fs into the tick" % (_time.time() - t0))
     # `None` = the disposition grid failed (see pull). The gaps and the
     # call-out still go out; the board and the no-dispositions check do not,
     # and the tick still ends non-zero so the failure shows on Hub Activity.
@@ -1059,14 +1098,17 @@ def tick(*, send: bool, force: bool, board: bool, headless: bool = True,
         share.share(OK.CARLOS_NDS_KEY, OK.CARLOS_NAME, today, rows, log=_log)
 
     body = gaps_text(over, now) if want_gaps else ""
-    pngs = render_board(board_rows, today, now, out_dir) if (want_board and board_rows) else []
+    # The picture's rows: the borrowed reps carry "(as of H:MM)".
+    shown_rows, relabel = with_as_of(board_rows) if want_board else (board_rows, {})
+    pngs = render_board(shown_rows, today, now, out_dir) if (want_board and board_rows) else []
     pngs30: List[Path] = []
     if want_board and board_rows and C.BOARD_30_TEST:
         since = knocks_since_last(board_rows, state, today)
         _log("board-30: since last board -> %s"
              % ", ".join("%s %d" % (k, v) for k, v in sorted(since.items(), key=lambda kv: -kv[1])[:12]))
-        pngs30 = render_board(board_rows, today, now, out_dir / "last30",
-                              extra_columns={C.BOARD_30_COL: since})
+        pngs30 = render_board(shown_rows, today, now, out_dir / "last30",
+                              extra_columns={C.BOARD_30_COL: {
+                                  relabel.get(k, k): v for k, v in since.items()}})
         # Its OWN file name: the plain board is total_knocks_<day>.png too,
         # and the text sender stages pictures by basename -- same name,
         # one picture wins, and the test board could go out as the plain one.
@@ -1084,9 +1126,19 @@ def tick(*, send: bool, force: bool, board: bool, headless: bool = True,
     no_dispo = "" if grid_failed else _no_dispo_message(
         today, now, rows, state, send=send and C.NO_DISPO_SEND)
 
-    if want_board and C.GPS_ALERTS:
-        # Every board tick (:00/:30), like Raf's: 3 failed-GPS knocks in a row.
-        gps_check(today, now, state, send=send, headless=headless)
+    _log("timing: board drawn %.0fs into the tick" % (_time.time() - t0))
+
+    def _gps():
+        # Every board tick (:00/:30), like Raf's: 3 failed-GPS knocks in a
+        # row. AFTER the board and the gaps are out (2026-11-19): the 3:30
+        # tick had its board drawn 83s in and then sat behind this check until
+        # 296s -- three and a half minutes of a finished board not posted.
+        if want_board and C.GPS_ALERTS:
+            try:
+                gps_check(today, now, state, send=send, headless=headless)
+            except Exception as e:  # noqa: BLE001 -- the board is already out
+                _log("gps check failed: %s: %s" % (type(e).__name__, str(e)[:160]))
+            _log("timing: gps check done %.0fs into the tick" % (_time.time() - t0))
 
     if not send:
         _log("DRY RUN -- would post:")
@@ -1095,6 +1147,7 @@ def tick(*, send: bool, force: bool, board: bool, headless: bool = True,
         _log("  gaps:\n%s" % (body or "(nobody over 15 min)"))
         _log("  call-out: %s" % (callout or "(none)"))
         _log("  no-dispo: %s" % (no_dispo or "(none)"))
+        _gps()
         return 1 if grid_failed else 0
 
     from automations.icd_alerts import post as P
@@ -1124,6 +1177,9 @@ def tick(*, send: bool, force: bool, board: bool, headless: bool = True,
             _log("text: no-dispo queued")
         else:
             _log("no-dispo (NO_DISPO_SEND off, not sent): %s" % no_dispo)
+    _log("timing: board + gaps out %.0fs into the tick" % (_time.time() - t0))
+    _save(state)        # the sends are on record before the slow check runs
+    _gps()
     _save(state)
     return 1 if grid_failed else 0
 

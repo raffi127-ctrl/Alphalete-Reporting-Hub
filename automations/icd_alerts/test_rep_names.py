@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import datetime as dt
 import unittest
+from unittest import mock
 
 from automations.icd_alerts import post, rep_names as RN
 
@@ -125,6 +126,26 @@ class WhatGoesOut(unittest.TestCase):
             {"CALLISA FLYTHE": 2}, {"CALLISA FLYTHE": 1}, self._show())
         self.assertEqual(merged, {"CALLISA FLYTHE": 2})
         self.assertNotIn("Callista Flythe", merged)
+
+
+class SoldUnder(unittest.TestCase):
+    """2026-11-19: Jacob rang his sales under Esmeralda's SaraPlus login."""
+
+    def test_today_only_and_this_office_only(self):
+        import datetime as dt
+        from automations.icd_alerts import rep_names as RN
+        with mock.patch.dict(RN.SOLD_UNDER, {("carlos-b2batt", "2026-11-19"):
+                                             {"ESMERALDA": "Jacob Ortega"}}, clear=True):
+            show = RN.day_resolver(None, "carlos-b2batt", dt.date(2026, 11, 19))
+            self.assertEqual(show("ESMERALDA GONZALEZ LOPEZ"), "Jacob Ortega")
+            self.assertEqual(show("Esmeralda Gonzalez"), "Jacob Ortega")
+            self.assertEqual(show("Roseanna Jurado"), "Roseanna Jurado")
+            base = lambda n: n.title()
+            show = RN.day_resolver(base, "carlos-b2batt", dt.date(2026, 11, 19))
+            self.assertEqual(show("ROSEANNA JURADO"), "Roseanna Jurado")
+            self.assertIs(RN.day_resolver(base, "carlos-b2batt", dt.date(2026, 11, 20)), base)
+            self.assertIsNone(RN.day_resolver(None, "raf", dt.date(2026, 11, 19)))
+
 
 
 if __name__ == "__main__":

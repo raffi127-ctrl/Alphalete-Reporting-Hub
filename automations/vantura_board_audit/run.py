@@ -262,8 +262,8 @@ def _with_aliases(names, alias):
 
 def _load_activity(sh, log=_log, alias=None):
     """Evidence used to explain WHY someone has no board row:
-      - Daily Update col A status ('Not Active', '3 - In Training', '5 - Leader')
-        keyed by the col-I name
+      - Daily Update status ('Not Active', '3 - In Training', '5 - Leader')
+        keyed by the rep's name -- both columns found by HEADER
       - RAW sale counts, last sale date AND a per-week-ending breakdown, keyed
         by col-B rep name
       - the RAW week tags themselves, most-recent-closed first
@@ -291,9 +291,19 @@ def _load_activity(sh, log=_log, alias=None):
 
     du = {}
     try:
-        for r in sh.worksheet("Daily Update").get_all_values()[1:]:
-            if len(r) > 8 and str(r[8]).strip():
-                du.setdefault(_norm(r[8]), str(r[0]).strip())
+        # Columns by HEADER (recruiting_report/du_layout), never by position:
+        # the name sat in column I until 2026-11-19, when a 'Day Zero Date'
+        # column went in at G and pushed it to J. Reading r[8] then keyed this
+        # map by the Training Bonus column, so every rep's Daily Update status
+        # came back blank and 'ROLL CALL STALE' could never fire.
+        from automations.recruiting_report.du_layout import resolve as du_resolve
+        rows = sh.worksheet("Daily Update").get_all_values()
+        lay = du_resolve(rows[0] if rows else [])
+        c_name, c_status = lay["name"], lay["status"]
+        for r in rows[1:]:
+            if len(r) > c_name and str(r[c_name]).strip():
+                du.setdefault(_norm(r[c_name]),
+                              str(r[c_status]).strip() if len(r) > c_status else "")
     except Exception as e:  # noqa: BLE001
         log(f"(no Daily Update tab: {type(e).__name__}) — status evidence unavailable")
 

@@ -72,3 +72,107 @@ def test_send_manifest_sends_once(tmp_path, monkeypatch):
     assert sends == [False] and again.get("skipped")
     tp.send_manifest(man, dry_run=True)                # dry run: no lock, no marker check
     assert sends == [False, True]
+
+
+# ---- SALE ALERTS GO NEXT (Carlos 2026-11-19) --------------------------------
+
+def _other_live_pid() -> int:
+    import os
+    return os.getppid()          # the test runner's parent: alive, not us
+
+
+def _mark(tmp_path, pid, *, age_s=0.0):
+    import os
+    import time
+    p = (tmp_path / "m.lock").with_suffix(".priority")
+    p.write_text("%d test\n" % pid)
+    if age_s:
+        t = time.time() - age_s
+        os.utime(p, (t, t))
+    return p
+
+
+def test_a_sender_stands_aside_while_another_process_has_a_sale_text(tmp_path, monkeypatch):
+    import time
+    lock = tmp_path / "m.lock"
+    monkeypatch.setattr(ml, "LOCK_PATH", lock)
+    holder = subprocess.Popen(
+        [sys.executable, "-c", textwrap.dedent("""
+            import sys, time
+            from pathlib import Path
+            from automations.shared import messages_lock as ml
+            ml.LOCK_PATH = Path(sys.argv[1])
+            with ml.priority("sale"):
+                print("marked", flush=True)
+                time.sleep(2.0)
+            print("unmarked", flush=True)
+            time.sleep(30)
+        """), str(lock)], stdout=subprocess.PIPE, text=True)
+    try:
+        assert holder.stdout.readline().strip() == "marked"
+        t0 = time.monotonic()
+        with ml.held("board"):
+            waited = time.monotonic() - t0
+        assert waited >= 1.0, "the board went ahead of a sale text in hand"
+        assert holder.stdout.readline().strip() == "unmarked"
+        assert not lock.with_suffix(".priority").exists()
+    finally:
+        holder.kill()
+        holder.wait()
+
+
+def test_the_priority_holder_never_waits_on_its_own_mark(tmp_path, monkeypatch):
+    import time
+    monkeypatch.setattr(ml, "LOCK_PATH", tmp_path / "m.lock")
+    t0 = time.monotonic()
+    with ml.priority("sale"):
+        assert ml._priority_path().exists()
+        with ml.held("sale text", wait_s=0.5):
+            pass
+    assert time.monotonic() - t0 < 1.0
+    assert not ml._priority_path().exists()
+
+
+def test_a_stale_mark_is_a_crash_leftover(tmp_path, monkeypatch):
+    import time
+    monkeypatch.setattr(ml, "LOCK_PATH", tmp_path / "m.lock")
+    _mark(tmp_path, _other_live_pid(), age_s=ml.PRIORITY_STALE_S + 60)
+    t0 = time.monotonic()
+    with ml.held("board", wait_s=0.5):
+        pass
+    assert time.monotonic() - t0 < 1.0
+
+
+def test_a_dead_holders_mark_is_ignored(tmp_path, monkeypatch):
+    import time
+    monkeypatch.setattr(ml, "LOCK_PATH", tmp_path / "m.lock")
+    gone = subprocess.Popen([sys.executable, "-c", "pass"])
+    gone.wait()
+    _mark(tmp_path, gone.pid)
+    t0 = time.monotonic()
+    with ml.held("board", wait_s=0.5):
+        pass
+    assert time.monotonic() - t0 < 1.0
+
+
+def test_standing_aside_is_capped_so_boards_still_go(tmp_path, monkeypatch):
+    import time
+    monkeypatch.setattr(ml, "LOCK_PATH", tmp_path / "m.lock")
+    monkeypatch.setattr(ml, "PRIORITY_YIELD_MAX_S", 0.6)
+    _mark(tmp_path, _other_live_pid())          # live, fresh, never released
+    t0 = time.monotonic()
+    with ml.held("board", wait_s=0.5):
+        pass
+    waited = time.monotonic() - t0
+    assert 0.5 <= waited < 3.0
+
+
+def test_a_nested_send_does_not_stand_aside(tmp_path, monkeypatch):
+    import time
+    monkeypatch.setattr(ml, "LOCK_PATH", tmp_path / "m.lock")
+    with ml.held("manifest"):
+        _mark(tmp_path, _other_live_pid())      # a sale text shows up mid-post
+        t0 = time.monotonic()
+        with ml.held("its pictures", wait_s=0.5):
+            pass
+        assert time.monotonic() - t0 < 0.5, "a post must never split for it"

@@ -328,6 +328,27 @@ gspread from the mini. A poller-code change still needs `update` +
 
 ## Changelog (auto-appended daily at 7 PM; newest first)
 
+### 2026-11-19 (manual)
+- **Indeed billing holds reach the live-ads numbers and Slack on their own**
+  (Carlos: "it needs to somehow communicate when the ads go back live").
+  Office side (`octo_lookup.read_billing_mail`, release 2026.11.19.2): with the
+  profile open for the All Jobs read, the account's Gmail tab is searched for
+  Indeed's "Payment declined" / "We received your payment" / job-visible
+  mail and the newest timestamps ride the tally as `billing_mail` (signed-out
+  Gmail = `signed_in: false`, nothing typed). Lucy 1 side
+  (`icd_alerts/billing_holds.py`, called from `post.py --watch` every minute):
+  ok→PROBLEM opens a row on the Recruiting Dashboard's **Billing Holds** tab
+  (start = decline mail, else check time "estimated"; reuses a hand-typed open
+  row), PROBLEM→ok fills Hold Until (payment mail, else check time) and DMs
+  the office group (`dm_office_people`) "ads back live, since when, how
+  long". The live-ads tab's **Days Down** (col N) reads that tab, so Ad CPA /
+  Cost per 2nd Booked drop the hold by themselves (see the Ad Sales Board
+  README §4b). State: `~/.config/recruiting-report/billing_holds_state.json`
+  on Lucy 1. Preview: `python -m automations.icd_alerts.billing_holds`.
+  Morning of 11/19: 4 accounts on hold (Peak, Kinetic, W Edge, New Ascendra)
+  typed into the tab by hand with the emails' times; W Edge's Gmail is signed
+  out in Octo (estimated), Peak's profile was open elsewhere (estimated).
+
 ### 2026-11-18 (manual)
 - **Second day of the Octo run, read through `relay_faults`:** 11/17 1:27pm
   row = "5 found, 1 not" (Baldomar Salazar Jr., Alexandra Camacho, Kiara
