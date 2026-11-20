@@ -97,18 +97,11 @@ def _say(fire):
     return "%s %02d:%02d" % (day, h, m)
 
 
-# KNOWN AND UNFIXED, 2026-11-20. b2b-dispositions-final and
-# b2b-dispositions-hourly both fire Sat 16:00 and refuse to run beside each
-# other, so one of them skips every Saturday and which one is a race. It is
-# the same defect as the no-shows walk and it is NOT fixed here: the right
-# answer is an order (the final post belongs AFTER the last hourly, not racing
-# it), and that is a call about the B2B report, not about this check. Left
-# visible on purpose -- an entry here is a bug with a name, not permission.
-# Delete this line when the B2B schedule is ordered.
-_KNOWN_CLASHES = {
-    frozenset({"com.alphalete.b2b-dispositions-final.plist",
-               "com.alphalete.b2b-dispositions-hourly.plist"}),
-}
+# No known clashes. An entry here is a bug with a name, not permission, and
+# the b2b pair that was listed on 2026-11-20 is fixed rather than excused.
+# test_every_known_clash_is_still_a_real_clash below fails on any entry that
+# has quietly stopped being one, so this cannot rot back into a waiver list.
+_KNOWN_CLASHES = set()
 
 
 class GuardedJobsDoNotShareAFireTime(unittest.TestCase):
@@ -157,6 +150,23 @@ class GuardedJobsDoNotShareAFireTime(unittest.TestCase):
             self.assertTrue(
                 _overlap(min_a or set(), min_b or set()),
                 "%s and %s no longer share a fire time; drop the exception" % (a, b))
+
+    def test_the_b2b_final_stays_an_hour_off_its_hourly(self):
+        """Sat 16:00 for both, fixed 2026-11-20. The shape, not just the minute:
+        gaps ends, the hourly posts 30 min later, the final an hour after that.
+        """
+        final = _fire_minutes(DEPLOY / "com.alphalete.b2b-dispositions-final.plist")
+        hourly = _fire_minutes(DEPLOY / "com.alphalete.b2b-dispositions-hourly.plist")
+        self.assertTrue(final and hourly)
+        self.assertFalse(_overlap(final, hourly),
+                         "the b2b final is back on a minute the hourly owns")
+        by_day = {wd: (h, m) for wd, h, m in hourly}
+        for wd, h, m in final:
+            self.assertIn(wd, by_day, "a final with no hourly that day")
+            hh, hm = by_day[wd]
+            self.assertEqual((h * 60 + m) - (hh * 60 + hm), 60,
+                             "day %s: the final should be 1h after the hourly"
+                             % wd)
 
     def test_the_scan_can_actually_see_the_pair(self):
         """A test that silently matches nothing would pass forever."""
