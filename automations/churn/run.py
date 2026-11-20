@@ -325,6 +325,46 @@ def main(argv=None) -> int:
     return 0
 
 
+# Extra waits when the Sheets READ quota is still exhausted after the shared
+# _retry layer gave up (it already waited ~2.5 min). Kept short enough that two
+# reports' worth fit inside office_metrics' 20-min per-metric limit.
+QUOTA_WAITS_S = (60, 90)
+
+
+def _is_read_quota(e: Exception) -> bool:
+    import gspread
+    if not isinstance(e, gspread.exceptions.APIError):
+        return False
+    return getattr(getattr(e, "response", None), "status_code", None) == 429
+
+
+def _render_patiently(fill_mod, render_mod, today: dt.date, out_dir: Path):
+    """(sections, paths) for one report: open the tab, find its sections, render.
+
+    WHY PATIENT (2026-11-20). Haytham's churn FILLED fine on Lucy 4, then the
+    render's first read hit 'Read requests per minute per user' and stayed
+    there through every retry. Lucy 2, 3 and 4 share ONE Google login and one
+    60-reads/min budget, and Lucy 3's captainship build was using it. All the
+    work was already in the Sheet; only the read-back for the pictures failed,
+    so the metric posted nothing. Waiting a little longer here is cheap. A
+    non-quota error still raises at once."""
+    for i, wait in enumerate((0,) + QUOTA_WAITS_S):
+        if wait:
+            print(f"      ⏳ Sheets read quota still exhausted (shared login) — "
+                  f"waiting {wait}s, then reading the tab again "
+                  f"({i}/{len(QUOTA_WAITS_S)})", flush=True)
+            time.sleep(wait)
+        try:
+            ws = fill_mod.open_ws()
+            sections = fill_mod.find_sections(ws)
+            return sections, render_mod.render_all_sections(ws, sections, today,
+                                                            out_dir)
+        except Exception as e:  # noqa: BLE001 — re-raised unless it's quota
+            if not _is_read_quota(e) or i == len(QUOTA_WAITS_S):
+                raise
+    raise RuntimeError("unreachable")
+
+
 def _post_to_slack(selected, today: dt.date,
                    only_period: str | None = None) -> int:
     """For each selected report: render 4 multi-week PNGs from the
@@ -348,9 +388,7 @@ def _post_to_slack(selected, today: dt.date,
     for slug, label, _pull_mod, fill_mod in selected:
         title_prefix, render_mod, react_emoji = SLACK_CONFIG[slug]
         print(f"  → {label} (​{title_prefix})")
-        ws = fill_mod.open_ws()
-        sections = fill_mod.find_sections(ws)
-        paths = render_mod.render_all_sections(ws, sections, today, out_dir)
+        sections, paths = _render_patiently(fill_mod, render_mod, today, out_dir)
         # Track the first section we actually POST so the parent-thread
         # reaction attaches there. For a fully-populated office (Raf) the
         # first present period is "0-30", identical to before. For a young

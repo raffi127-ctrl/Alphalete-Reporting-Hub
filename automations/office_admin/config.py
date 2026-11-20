@@ -94,7 +94,7 @@ STALE_MINUTES = 90
 class Office:
     key: str              # LucyEco office key (relay) -- also the page's key
     owner: str            # as on the '2R Contacts' tab
-    appstream_id: str     # ApplicantStream office id
+    appstream_id: str     # ApplicantStream office id (the office's own)
     channel: str = ""     # office recruiting channel (the 6pm "not sent yet" alert)
     tz: str = "America/Chicago"   # office local time
     # The "not sent yet" alert, office-local HH:MM, Mon-Fri. 30 min BEFORE the
@@ -117,6 +117,25 @@ class Office:
     # having done anything. Blank means "ask OwnerVille what it offers and
     # tell me" rather than guessing at Alphalete's.
     ov_program: str = ""
+    # OTHER ApplicantStream accounts whose new starts onboard HERE.
+    #
+    # A NEW LAUNCH RECRUITS ON ITS OWN FUNNEL AND ONBOARDS UNDER SOMEBODY
+    # ELSE'S (Megan 2026-11-20: "Al is a new launch so his reps are being
+    # onboarded under Raf, which is why they are in Raf's OV account"). So
+    # "which office recruited them" and "which OwnerVille onboards them" are
+    # two different questions, and one id cannot answer both: the board seeded
+    # from 11280 while the Owner Submit press walked Raf's OwnerVille, where
+    # Algemar's people were sitting ready. Jaime Molina was fully complete and
+    # invisible to the board for exactly this reason -- 7 of them that week,
+    # 16 more scheduled for the next.
+    #
+    # ONLY THE SEED READS THESE. Everything else about the office -- its
+    # reception inbox, its no-show calendar, its Sterling settings -- still
+    # belongs to `appstream_id`, because those are the OFFICE's, not the
+    # funnel's.
+    # Each entry is an id, or ("id", "What to call it on the board") -- the
+    # board draws a labelled divider per funnel, so the name is worth giving.
+    extra_appstream_ids: tuple = ()
 
 
 # Omar first (Raf: "Let's test in Omar's office").
@@ -129,7 +148,10 @@ OFFICES: Dict[str, Office] = {
     # (Megan 2026-11-04): his Sterling account is rahidalgo, codes to raffi127.
     "raf": Office(key="raf", owner="Rafael Hidalgo", appstream_id="11280",
                   channel="C06881A7WLV", bgc_mode="dry", tz="America/Chicago",
-                  alert_at="16:30", apex_mode="dry", ov_program="RES-AT&T"),
+                  alert_at="16:30", apex_mode="dry", ov_program="RES-AT&T",
+                  # 23965 = Algemar Kennel El Paso, a new launch onboarding
+                  # under Raf (Megan 2026-11-20).
+                  extra_appstream_ids=(("23965", "Algemar Kennel El Paso"),)),
 }
 
 

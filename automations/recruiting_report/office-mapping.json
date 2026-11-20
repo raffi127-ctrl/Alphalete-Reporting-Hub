@@ -496,8 +496,9 @@
       "opt_source": "nds"
     },
     {
-      "sheet_tab": "David Paisikian",
-      "reason": "2026-11-20 (Maud/Starr, Eve): tab for Starr's Monday 1on1. ATT B2B owner - no AppStream office or Tableau ATT row found yet. Move to confirmed/sales_only once his office is known."
+      "sheet_tab": "David Pisikian (B2B)",
+      "reason": "2026-11-20 (Maud/Starr, Eve): tab for Starr's Monday 1on1. MIRROR of 'David Pisikian' (office 21658) on the Carlos 1on1s - Focus Report, copied every Monday by nds_mirror_to_att (mirror_nds_tab.py). Neither this pull nor Raf's OPT may write it.",
+      "opt_source": "b2b"
     },
     {
       "sheet_tab": "Spencer Brown",

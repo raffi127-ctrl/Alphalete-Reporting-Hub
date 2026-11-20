@@ -1954,7 +1954,10 @@ var BOARD_MACHINE_COLUMNS = ['Contact Added', 'BG Status', 'Digi Docs',
 // The two columns that carry an ANSWER rather than a tick, and how far along
 // each answer is. Mirrors bg_check_sync parse.RANK through board.status_rank;
 // test_relay_board.py fails if they drift. Blank, or a word not in here, is 0.
-var BOARD_STATUS_COLUMNS = ['BG Status', 'OV BG Status', 'Showed Up'];
+var BOARD_UID_REQUEST = 'UID Request';
+var BOARD_UID_RQ = 'rq';
+var BOARD_STATUS_COLUMNS = ['BG Status', 'OV BG Status', 'Showed Up',
+                            'UID Request'];
 
 // `Showed Up` carries an ANSWER, not a tick, and is ranked on its own scale:
 // blank = nobody has said yet (they may walk in on the Tuesday, so this must
@@ -1979,6 +1982,16 @@ function _boardRank(text, column) {
   if (column === BOARD_SHOWED_UP) {
     if (!want) return 0;
     return want === BOARD_NO_SHOW ? 1 : 2;
+  }
+  // UID Request: blank < RQ < granted. OwnerVille shows the word 'Requested'
+  // until AT&T returns the number, and the board writes RQ for that -- a tick
+  // would say the step is finished while the thing it waits on has not
+  // happened. Ranked so the granted UID can replace RQ and never the reverse;
+  // without this the relay writes the tick ONCE and the cell says RQ forever.
+  // Mirrors board.uid_rank -- test_relay_board pins the two together.
+  if (column === BOARD_UID_REQUEST) {
+    if (!want) return 0;
+    return want === BOARD_UID_RQ ? 1 : 2;
   }
   if (!want || want === 'not sent') return 0;
   return BOARD_STATUS_RANK[want] || 0;

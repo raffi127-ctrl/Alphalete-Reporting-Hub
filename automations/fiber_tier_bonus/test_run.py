@@ -54,7 +54,7 @@ class TierBonus(unittest.TestCase):
         lines = R.away_lines(self.data["Rafael Hidalgo"], self.tiers)
         self.assertTrue(lines[0].startswith("🔥"))
         self.assertNotIn("<@", "\n".join(lines))
-        self.assertIn("*1 sale from Tier 2:* Alyssa Moreno", "\n".join(lines))
+        self.assertIn("*1 sale from Tier 2 ($20/sale):* Alyssa Moreno", "\n".join(lines))
 
     def test_lines_grouped_one_per_gap(self):
         mk = lambda name, tot: R.Rep(name, [""] * 7, tot, "")
@@ -62,12 +62,20 @@ class TierBonus(unittest.TestCase):
                 mk("Di", 9), mk("Ed", 12), mk("Flo", 1)]
         lines = R.away_lines(reps, self.tiers)
         self.assertEqual(lines, [
-            "🔥 *Top tier — locked in:* Ed (12)",
-            "⚡ *1 sale from Tier 2:* Amy, Zed",
-            "*2 sales from Tier 4:* Di",
-            "*2 sales from Tier 2:* Bo, Cy",
-            "*4 sales from Tier 2:* Flo",
+            "🔥 *Top tier ($50/sale) — locked in:* Ed (12)",
+            "⚡ *1 sale from Tier 2 ($20/sale):* Amy, Zed",
+            "*2 sales from Tier 4 ($50/sale):* Di",
+            "*2 sales from Tier 2 ($20/sale):* Bo, Cy",
+            "*4 sales from Tier 2 ($20/sale):* Flo",
         ])
+
+    def test_pay_legend_and_html_show_dollars(self):
+        self.assertEqual(R.pay_legend(self.tiers),
+                         "_Tier bonus per new Fiber sale: Tier 2 $20 · Tier 3 $35 · Tier 4 $50_")
+        h = R.build_html("Rafael Hidalgo", "Week of Nov 9 - Nov 15", self.days,
+                         self.data["Rafael Hidalgo"], self.tiers)
+        self.assertIn("$50/sale", h)
+        self.assertNotIn("$0/sale", h)
 
     def test_html_renders_every_rep(self):
         h = R.build_html("Rafael Hidalgo", "Week of Nov 9 - Nov 15", self.days,

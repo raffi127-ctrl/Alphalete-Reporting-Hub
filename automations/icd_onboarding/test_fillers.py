@@ -286,3 +286,33 @@ def test_an_ask_is_one_line_and_nothing_without_words():
     text = said["Chrisjen Davis"]["Added to APEX"]
     assert text == "NEEDS: packet says Dav, AppStream says Davis", text
     assert seen["kw"]["dry_run"] is False
+
+
+class TestUidRequestAdvances:
+    """RQ is a waypoint, not a destination (Megan 2026-11-20)."""
+
+    def _rows(self, uid=""):
+        return [{"Name": "Jaime", "Last Name": "Molina", "UID Request": uid}]
+
+    def test_requested_writes_rq_not_a_date(self):
+        got = F.plan(self._rows(), "ownerville",
+                     {"Jaime Molina": {"UID Request": "RQ"}})
+        assert got["UID Request"]["Jaime Molina"] == "RQ"
+
+    def test_a_granted_uid_replaces_rq(self):
+        # the trap: fillers writes a tick ONCE, so without ranking the cell
+        # would still say RQ the day AT&T answered
+        got = F.plan(self._rows(uid="RQ"), "ownerville",
+                     {"Jaime Molina": {"UID Request": True}})
+        assert "UID Request" in got
+        assert got["UID Request"]["Jaime Molina"] != "RQ"
+
+    def test_rq_never_pulls_back_a_granted_uid(self):
+        got = F.plan(self._rows(uid="11/14/2026"), "ownerville",
+                     {"Jaime Molina": {"UID Request": "RQ"}})
+        assert got == {}
+
+    def test_rq_is_not_rewritten_over_itself(self):
+        got = F.plan(self._rows(uid="RQ"), "ownerville",
+                     {"Jaime Molina": {"UID Request": "RQ"}})
+        assert got == {}

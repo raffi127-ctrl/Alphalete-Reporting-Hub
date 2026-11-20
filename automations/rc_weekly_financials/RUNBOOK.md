@@ -26,7 +26,7 @@ Re-running fill for a week that already has its column refreshes it in place (no
 | Money in the Bank | Alphalete Marketing + Personal + Personal Savings (Tiller) |
 | Money in Security | Tableau SFDC Total Balance |
 | Personal Pay, NPA - Owner's Draw, Nico's / Sebastian's / Cinthya's Bonus | Apex, via the Thursday `carlos_payroll_pull` → Carlos Business & Personal P&L (`1ngQt…`) tab **Apex Net Pay Detail**, pay period ending one week before the WE: Personal Pay = −(owner gross × 1.12), NPA = −(owner net-pay additions), bonus = −(Nicolas Murrugarra / Sebastian Avellaneda / Cinthya Reyes net-pay addition). No Apex login (Apex forces a 2FA setup screen). Maud's Bonus kept. |
-| Indeed Charges, Outside Deals, ARS (−850), Rent, Food, Travel, Investment into local office | Carlos's month tab (e.g. "September 2026"), the week one back: Indeed/Food/Travel from the summary block, Outside Deal + CARLOS ONLY Weekly from the bottom table; Investment = −(Carlos-only − travel − indeed − 850 − rent); Rent = Carlos-only "Online ACH Payment" ≥ $5k that week (flagged to confirm). If that week isn't finished in the month tab, last week's placeholders stay + a NOTE |
+| Indeed Charges, Outside Deals, ARS (−850), Rent, Food, Travel, Investment into local office | Carlos's month tab (e.g. "September 2026"), the week one back: Indeed/Food/Travel from the summary block, Outside Deal + CARLOS ONLY Weekly from the bottom table; Investment = −(Carlos-only − travel − indeed − 850 − rent); Rent/Utilities = every payment to the landlord (CCINorthHwy360LP) that week, read from his Tiller — catches split payments (Nov 2026: 2 × $2,161.25) even before they're in the month tab; Investment only backs out the rent that's in his Carlos-only total. If that week isn't finished in the month tab, last week's placeholders stay + a NOTE |
 
 | Raf row | Source |
 |---|---|
@@ -40,7 +40,7 @@ Re-running fill for a week that already has its column refreshes it in place (no
 | NC over rides | 0 new week; Tableau ORG Override Summary (Raf) re-checks the 4 prior weeks. A week on a period edge shows in both periods — the number is the SUM (WE 10.11 = 14,588.59 + 74.70) |
 | ATT Program over ride | 0 new week; Tableau Raf Override Bonus ("Raf Payout Total") fills last week + the week before |
 | Bas Overrides | 0, except every 4th week (8.2, 8.30, 9.27, 10.25 …) left blank for Maud |
-| Profit Share | left blank (Maud 2026-10-23) |
+| Profit Share | Raf sheet → Running TOTALS 2026 → 2026 PERIODS table → 'Profit Sharing' (filled once per 4-week period), put in the WE of the week it was paid — date from the 'Profit Sharing Override 2026-N' row in Raf's month tab (P10 24,246 paid 11/9 → WE 11.15). Blank (turquoise) other weeks (Maud 2026-11-13) |
 | Money Given for Interviewers | −ARS PNL "Raf covers", same week; 5 prior weeks re-checked too |
 | Total CC Debt | −(5 Chase CCs + BOFA - LTD + AMEX - Local Office CC) from Raf's Tiller |
 | Money in the Bank | Chase total minus ARS = Local Office + LTD + Personal + Personal Savings + STR Carrollton |

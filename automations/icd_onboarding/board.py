@@ -44,9 +44,40 @@ WEEK = "Week of"
 
 IDENTITY: Sequence[str] = (WEEK, "Name", "Last Name", "Email", "Phone", "Start")
 
+
 # The ICD's own column, and the only one on the chart that needs a person.
 # It also decides which printed sheet somebody lands on.
 CLASSROOM = "Classroom"
+
+# WHICH APPLICANTSTREAM FUNNEL A ROW CAME FROM, blank for the office's own.
+# A new launch recruits on its own account and onboards in the host's
+# OwnerVille, so one board carries people from several funnels and a leader
+# reading the week cannot tell whose is whose. The seed writes this and the
+# board draws a labelled divider above each funnel's block (Megan 2026-11-20:
+# "if we're feeding multiple accounts into one OBCL the OBCL should have
+# dividers that are labeled with that account name since they are all going
+# into the 1 OV").
+FUNNEL = "Funnel"
+
+# A DIVIDER ROW carries the week, so it filters with the block it labels, and
+# puts its text where a person's name is NOT -- `sheet.rows_of` keeps only
+# rows with a Name or Last Name, so every reader, tick and seed steps straight
+# over this and it can never be mistaken for a new start.
+DIVIDER_AT = CLASSROOM
+
+
+def divider_row(week_text: str, label: str) -> dict:
+    """The labelled row that goes above one funnel's block."""
+    return {WEEK: week_text, DIVIDER_AT: "\u2500\u2500 %s \u2500\u2500" % label}
+
+
+def is_divider(row) -> bool:
+    """A divider is a row with no person on it but a label in DIVIDER_AT."""
+    get = row.get if hasattr(row, "get") else (lambda k, d="": d)
+    if str(get("Name", "") or "").strip() or str(get("Last Name", "") or "").strip():
+        return False
+    return "\u2500" in str(get(DIVIDER_AT, "") or "")
+
 
 # THE OTHER COLUMN A PERSON OWNS. Apex wants a gender and an ECO
 # machine has nowhere to read one from: on Raf's office it comes off the sales
@@ -104,7 +135,8 @@ STEPS: Sequence[str] = (
     "Added to APEX",
 )
 
-COLUMNS: Sequence[str] = (tuple(IDENTITY) + (CLASSROOM, GENDER, LOCATION)
+COLUMNS: Sequence[str] = (tuple(IDENTITY) + (FUNNEL, CLASSROOM, GENDER,
+                                              LOCATION)
                           + (SHOWED_UP,) + tuple(STEPS))
 
 # The columns a PERSON owns. No system we read holds any of them, so whatever
@@ -132,7 +164,17 @@ TICKS: Sequence[str] = tuple(STEPS) + (SHOWED_UP,)
 # Passed/Failed/Unperformable, and never goes backwards. Blank means not sent.
 # Both background-check columns ADVANCE rather than tick: the useful thing is
 # which answer is showing, including the ones that are not an answer yet.
-STATUS_STEPS: Sequence[str] = ("BG Status", "OV BG Status", SHOWED_UP)
+UID_REQUEST = "UID Request"
+# RQ, OwnerVille's "Requested" with no number back from AT&T yet (Megan
+# 2026-11-20: "once the uid request shows 'requested' our obcl should say
+# 'RQ'; when it has a number like this it should just green check").
+UID_RQ = "RQ"
+# UID Request IS A STATUS, not a tick, and it has to be: `fillers.plan` writes
+# a tick ONCE and never again, so a cell left reading RQ would still read RQ
+# the day AT&T granted the number. Ranking it lets the date replace it, and
+# only in that direction -- RQ can never pull a granted UID back.
+STATUS_STEPS: Sequence[str] = ("BG Status", "OV BG Status", SHOWED_UP,
+                               UID_REQUEST)
 NOT_SENT = "Not sent"
 
 # WHAT APPLICANTSTREAM SAID ABOUT THE FIRST MORNING (Megan, 2026-11-16, asked
@@ -162,6 +204,20 @@ def showed_up_rank(text) -> int:
     return 1 if want == NO_SHOW.lower() else 2
 
 
+def uid_rank(text) -> int:
+    """blank 0 < RQ 1 < granted 2.
+
+    Anything that is neither blank nor RQ is the UID itself (the board writes
+    a date when OwnerVille shows a number), so it outranks RQ and nothing
+    outranks it. One-way on purpose: a later read that has gone back to
+    "Requested" must not erase a granted UID.
+    """
+    said = str(text or "").strip()
+    if not said:
+        return 0
+    return 1 if said.upper() == UID_RQ else 2
+
+
 def status_rank(text, column: str = "") -> int:
     """How far along a status is. 0 = blank, or a word we do not know.
 
@@ -173,6 +229,8 @@ def status_rank(text, column: str = "") -> int:
     """
     if column == SHOWED_UP:
         return showed_up_rank(text)
+    if column == UID_REQUEST:
+        return uid_rank(text)
     from automations.bg_check_sync import parse
     want = str(text or "").strip().lower()
     if not want or want == NOT_SENT.lower():
@@ -277,7 +335,8 @@ def seed_rows(people: Iterable[Dict], started: Optional[dt.date] = None) -> List
 
     Deliberately fills nothing else. Every other column belongs to whichever
     automation owns that step, and writing a blank here would be this module
-    claiming to know something it does not.
+    claiming to know something it does not. FUNNEL is identity too -- it says
+    which ApplicantStream account the row came from, not how far along it is.
     """
     out = []
     for p in people:
@@ -293,6 +352,10 @@ def seed_rows(people: Iterable[Dict], started: Optional[dt.date] = None) -> List
             "Phone": str(p.get("phone") or "").strip(),
             "Start": (p.get("started") or started).strftime("%m/%d/%Y")
                      if (p.get("started") or started) else "",
+            # Which funnel brought them. Identity, not a step: it is a fact
+            # about where the row came from, and it is what the divider above
+            # their block is labelled with.
+            FUNNEL: str(p.get(FUNNEL) or "").strip(),
         })
     return out
 

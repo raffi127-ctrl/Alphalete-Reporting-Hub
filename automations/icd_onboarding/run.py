@@ -71,6 +71,63 @@ def _appstream_id(office_key: str) -> str:
     return (o.appstream_id if o else "") or ""
 
 
+def _appstream_ids(office_key: str) -> List[str]:
+    """Every ApplicantStream account whose new starts onboard in this office.
+
+    The office's own first, then any funnel that onboards here -- a new launch
+    recruits on its own account and its people land in the host's OwnerVille
+    (config.Office.extra_appstream_ids). ONLY THE SEED uses this; everything
+    keyed to the office itself still uses `_appstream_id`.
+    """
+    from automations.office_admin import config as OC
+    o = OC.office(office_key)
+    if not o:
+        return []
+    ids = [str(o.appstream_id or "").strip()]
+    for extra in (getattr(o, "extra_appstream_ids", ()) or ()):
+        got = _id_and_label(extra)[0]
+        if got and got not in ids:
+            ids.append(got)
+    return [i for i in ids if i]
+
+
+def _id_and_label(entry) -> tuple:
+    """An extra-funnel entry -> (id, label). Accepts a bare id or a pair."""
+    if isinstance(entry, (tuple, list)):
+        got = list(entry) + ["", ""]
+        return str(got[0] or "").strip(), str(got[1] or "").strip()
+    return str(entry or "").strip(), ""
+
+
+def _funnel_labels(office_key: str) -> dict:
+    """{account id: what to call it on the board}. The office's own account
+    gets no label -- its people are the board's default, and a divider over
+    everybody says nothing."""
+    from automations.office_admin import config as OC
+    o = OC.office(office_key)
+    out = {}
+    if not o:
+        return out
+    for extra in (getattr(o, "extra_appstream_ids", ()) or ()):
+        got, label = _id_and_label(extra)
+        if got:
+            out[got] = label or got
+    return out
+
+
+def _person_key(person) -> str:
+    """Who this row is, for de-duping across funnels: email if there is one,
+    else the folded name. Email first because two funnels spell a name two
+    ways far more often than they hold two addresses."""
+    get = person.get if hasattr(person, "get") else (lambda k, d="": d)
+    email = str(get("email", "") or "").strip().lower()
+    if email:
+        return email
+    name = ("%s %s" % (get("first_name", "") or "",
+                       get("last_name", "") or "")).strip()
+    return B._fold(name) if name else ""
+
+
 def _ov_program(office_key: str) -> str:
     from automations.office_admin import config as OC
     o = OC.office(office_key)
@@ -102,37 +159,76 @@ def seed(office_key: str, week_start: dt.date, *, dry_run: bool = True,
 
     from automations.office_admin import retention
 
-    account = _appstream_id(office_key)
-    if not account:
+    accounts = _appstream_ids(office_key)
+    if not accounts:
         log("  seed: %s has no ApplicantStream id" % office_key)
         return 0
+    if len(accounts) > 1:
+        log("  seed: %d funnels onboard here -- %s"
+            % (len(accounts), ", ".join(accounts)))
+    people: List[dict] = []
+    showed = None
+    seen = set()
+    labels = _funnel_labels(office_key)
     with session() as app:
-        app.select_office(account)
-        # WHO IS DUE IN. The Retention Report answers this in TWO page loads
-        # where the calendar walk takes seven (Megan, 2026-11-09: "you should
-        # just look at the retention details report and not walk the calendar
-        # as this would be faster").
-        #
-        # NO FALLBACK HERE, on purpose. The calendar walk answers who SHOWED
-        # UP, which is a different question -- standing in for this one it
-        # would quietly seed a different set of people, and a week that could
-        # not be read must never be seeded from the nearest thing to hand
-        # ([[feedback_empty_means_proven_zero]]).
-        people = retention.read_scheduled_week(app, account, week_start,
-                                               log=log)
-        # AND WHO TURNED UP, of those. Read in the same session; the walk IS
-        # the fallback for this one, because it answers exactly this.
-        try:
-            showed = retention.read_week(app, account, week_start, log=log)
-        except Exception as e:      # noqa: BLE001 — fall back, never give up
-            log("  showed-up row unavailable (%s: %s) — walking the calendar"
-                % (type(e).__name__, str(e)[:120]))
+        for account in accounts:
+            app.select_office(account)
+            # WHO IS DUE IN. The Retention Report answers this in TWO page
+            # loads where the calendar walk takes seven (Megan, 2026-11-09:
+            # "you should just look at the retention details report and not
+            # walk the calendar as this would be faster").
+            #
+            # NO FALLBACK HERE, on purpose. The calendar walk answers who
+            # SHOWED UP, which is a different question -- standing in for this
+            # one it would quietly seed a different set of people, and a week
+            # that could not be read must never be seeded from the nearest
+            # thing to hand ([[feedback_empty_means_proven_zero]]).
+            mine = retention.read_scheduled_week(app, account, week_start,
+                                                 log=log)
+            # ONE PERSON, ONE ROW. Two funnels can hold the same candidate --
+            # a rep re-entered on the new launch's account is still one new
+            # start -- and seeding them twice puts two rows on the board for
+            # one human, which every later tick then has to choose between.
+            label = labels.get(account, "")
+            for person in (mine or []):
+                key = _person_key(person)
+                if key and key in seen:
+                    continue
+                if key:
+                    seen.add(key)
+                # WHICH FUNNEL THIS ROW CAME FROM. The board draws a labelled
+                # divider per funnel because they all land in ONE OwnerVille
+                # and a leader reading the week has no other way to tell whose
+                # new start is whose (Megan 2026-11-20). Blank for the
+                # office's own account: its people are the default and a
+                # divider over everybody says nothing.
+                if label:
+                    try:
+                        person[B.FUNNEL] = label
+                    except TypeError:       # not a dict -- leave it alone
+                        pass
+                people.append(person)
+            if len(accounts) > 1:
+                log("    %s: %d scheduled" % (account, len(mine or [])))
+
+            # AND WHO TURNED UP, of those. Read in the same session; the walk
+            # IS the fallback for this one, because it answers exactly this.
             try:
-                showed = fdot.read_week(app, account, week_start, log=log)
-            except Exception as e2:     # noqa: BLE001 — the seed still stands
-                log("  (nobody could be ticked as shown up: %s — the rows ARE "
-                    "on the board)" % type(e2).__name__)
-                showed = None
+                got = retention.read_week(app, account, week_start, log=log)
+            except Exception as e:  # noqa: BLE001 — fall back, never give up
+                log("  showed-up row unavailable (%s: %s) — walking the "
+                    "calendar" % (type(e).__name__, str(e)[:120]))
+                try:
+                    got = fdot.read_week(app, account, week_start, log=log)
+                except Exception as e2:  # noqa: BLE001 — the seed still stands
+                    log("  (nobody could be ticked as shown up on %s: %s — "
+                        "the rows ARE on the board)"
+                        % (account, type(e2).__name__))
+                    got = None
+            # None means "could not read", which is NOT the same as "nobody
+            # showed" -- so it must never wipe what another funnel answered.
+            if got is not None:
+                showed = list(showed or []) + list(got)
     got = F.seed_anywhere(office_key, week_start, people,
                           dry_run=dry_run, log=log)
     _tick_showed_up(office_key, week_start, showed, dry_run=dry_run, log=log)

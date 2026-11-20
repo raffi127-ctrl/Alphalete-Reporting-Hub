@@ -345,3 +345,42 @@ def test_gender_is_not_counted_as_an_outstanding_step():
     row = {c: "" for c in B.STEPS}
     row.update({"Name": "Ada", "Last Name": "F"})
     assert B.GENDER not in set(B.remaining(row))
+
+
+class TestFunnelDividers:
+    """Several AppStream accounts, one OBCL (Megan 2026-11-20)."""
+
+    def test_the_funnel_rides_along_as_identity(self):
+        rows = B.seed_rows(
+            [{"first_name": "Jaime", "last_name": "Molina",
+              B.FUNNEL: "Algemar Kennel El Paso"},
+             {"first_name": "Mirsha", "last_name": "Ruiz"}],
+            started=dt.date(2026, 11, 16))
+        assert rows[0][B.FUNNEL] == "Algemar Kennel El Paso"
+        assert rows[1][B.FUNNEL] == ""          # the office's own account
+
+    def test_a_divider_is_never_mistaken_for_a_person(self):
+        d = B.divider_row("11/16/2026", "Algemar Kennel El Paso")
+        assert B.is_divider(d)
+        assert d.get("Name", "") == ""
+        assert d.get("Last Name", "") == ""
+        assert "Algemar Kennel El Paso" in d[B.DIVIDER_AT]
+
+    def test_a_divider_carries_the_week_so_it_filters_with_its_block(self):
+        # week_label normalises to the week's Sunday -- a divider built with
+        # the raw start date would drop out of its own block's filter
+        wk = dt.date(2026, 11, 16)
+        d = B.divider_row(B.week_label(wk), "Algemar")
+        assert B.for_week([d], wk) == [d]
+
+    def test_a_real_person_is_not_a_divider(self):
+        assert not B.is_divider({"Name": "Jaime", "Last Name": "Molina"})
+        # a hand-typed Classroom is not a divider either
+        assert not B.is_divider({"Name": "", "Last Name": "",
+                                 B.DIVIDER_AT: "Classroom A"})
+
+    def test_the_funnel_column_is_on_the_board(self):
+        assert B.FUNNEL in B.COLUMNS
+        # identity, not a step -- no automation ticks it, no person types it
+        assert B.FUNNEL not in B.TICKS
+        assert B.FUNNEL not in B.BY_HAND
