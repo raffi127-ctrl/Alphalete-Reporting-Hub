@@ -115,18 +115,22 @@ def _installed_schedule() -> str:
     old time). If this shows Hour 6, THAT'S why the batch starts at 6am even
     though the mini is awake at 4am."""
     import os
-    import plistlib
+    from pathlib import Path
+
+    from automations.day_orchestrator.schedule_guard import _load_plist
     p = os.path.expanduser(
         "~/Library/LaunchAgents/com.alphalete.day-orchestrator.plist")
     if not os.path.exists(p):
         return "orch-plist=MISSING(not in ~/Library/LaunchAgents)"
-    try:
-        with open(p, "rb") as f:
-            d = plistlib.load(f)
-        sci = d.get("StartCalendarInterval")
-        return f"orch-schedule={sci}"
-    except Exception as e:  # noqa: BLE001
-        return f"orch-plist-err={type(e).__name__}:{str(e)[:60]}"
+    # NOT plistlib.load. A double hyphen inside an XML comment is a hard expat
+    # error, so plistlib refuses a plist that `plutil -lint` calls fine and
+    # launchd happily runs. Reading it raw turned that into "orch-plist-err"
+    # and left this diag blind to a job that was firing the whole time.
+    # _load_plist strips comments and retries, so it sees what launchd sees.
+    d = _load_plist(Path(p))
+    if d is None:
+        return "orch-plist-err=UNPARSEABLE(even with comments stripped)"
+    return f"orch-schedule={d.get('StartCalendarInterval')}"
 
 
 def _boot_and_power() -> str:
@@ -168,13 +172,19 @@ def _drift_check() -> str:
     Hour:Minute. Flags LOUDLY when they disagree, with the one-line fix. This is
     what should have caught the 4x-recurring 4am->6am drift."""
     import os
-    import plistlib
+    from pathlib import Path
+
+    from automations.day_orchestrator.schedule_guard import _load_plist
     p = os.path.expanduser(
         "~/Library/LaunchAgents/com.alphalete.day-orchestrator.plist")
     sched_min = None
     try:
-        with open(p, "rb") as f:
-            sci = plistlib.load(f).get("StartCalendarInterval") or {}
+        # _load_plist, not plistlib: see the note in _installed_schedule. A
+        # comment this reader chokes on would make the drift check report
+        # "unknown(no-plist)" forever -- silence from the one check that
+        # exists to catch the 4am->6am drift that has recurred four times.
+        d = _load_plist(Path(p)) or {}
+        sci = d.get("StartCalendarInterval") or {}
         if isinstance(sci, dict):
             sched_min = int(sci.get("Hour", 0)) * 60 + int(sci.get("Minute", 0))
     except Exception:  # noqa: BLE001

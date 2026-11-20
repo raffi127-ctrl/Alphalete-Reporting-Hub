@@ -37,9 +37,16 @@ try:
 except Exception:
     pass
 
-# (tab on the NDS Program workbook, tab on the ATT Program workbook)
+# (tab on the source workbook, tab on the ATT Program workbook[, source
+# captainship]). The source defaults to the NDS Program book; a 3rd element
+# names another captainship's book (e.g. "Carlos" = Carlos 1on1s).
 MIRRORS = [
     ("JC Lopez - NDS", "JC Lopez (NDS)"),
+    # Eve 2026-11-20 (Maud: Starr's Monday 1on1) — sits next to Starr Rodenhurst.
+    ("Sarah Park - NDS", "Sarah Park (NDS)"),
+    # Same 1on1. ATT B2B; his real tab is on the Carlos 1on1s book. Maud wrote
+    # "Paisikian" — AppStream/Tableau/Carlos's tab all say "Pisikian" (21658).
+    ("David Pisikian", "David Pisikian (B2B)", "Carlos"),
 ]
 
 
@@ -98,12 +105,18 @@ def main() -> int:
 
     os.environ.setdefault("CAPTAINSHIP", "Raf")
     from . import fill
-    src_book = fill.open_by_key(fill.captainship_sheet_id("NDS-Program"))
+    books: dict = {}
+
+    def _book(cap: str):
+        if cap not in books:
+            books[cap] = fill.open_by_key(fill.captainship_sheet_id(cap))
+        return books[cap]
     dst_book = fill.open_by_key(fill.captainship_sheet_id("Raf"))
     have = {w.title for w in fill._retry(dst_book.worksheets)}
 
     rc = 0
-    for src_tab, dst_tab in MIRRORS:
+    for src_tab, dst_tab, *rest in MIRRORS:
+        src_book = _book(rest[0] if rest else "NDS-Program")
         print(f"=== {dst_tab} ({'DRY RUN' if args.dry_run else 'LIVE'}) ===")
         if dst_tab not in have:
             if not args.create:

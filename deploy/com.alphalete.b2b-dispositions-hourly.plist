@@ -8,10 +8,15 @@
     <!-- ONCE A DAY since 2026-09-29 (Carlos): Box Today's Activity + 15-min
          gaps into "Hourly Activity", plus Box Territory Stats (one picture per
          territory) into "Territory Stats", plus the 6pm Box 15-min gaps card
-         (Slack + Box B2B text; --text). The -final agent is retired. The 12/2/4
+         (Slack + Box B2B text, the text flag). The final agent is retired. The 12/2/4
          gaps runs are com.alphalete.b2b-dispositions-gaps. Path is the laptop placeholder; on Lucy 2,
          install_agent.py rewrites it to the mini's repo path:
-         python -m automations.day_orchestrator.install_agent b2b-dispositions-hourly -->
+         python -m automations.day_orchestrator.install_agent b2b-dispositions-hourly
+
+         (Flags are written out in words here on purpose: two hyphens
+         together end an XML comment early and make the whole plist
+         unreadable to plistlib. This file carried that defect until
+         2026-11-20, so morning_diag.py could not see this job at all.) -->
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
@@ -32,7 +37,22 @@
     </dict>
 
     <!-- Mon-Fri 6pm, Sat 4pm (Carlos 9/27: no disposition posts after 5:30 on
-         Saturdays), Sunday never. Machine LOCAL time; Lucy 2 is Central. -->
+         Saturdays), Sunday never. Machine LOCAL time; Lucy 2 is Central.
+
+         SATURDAY 16:00 IS THE 4pm CLOSE AND MUST STAY 16:00. Carlos asked
+         for it by name (8/6, commit b8b89e6): "Saturday can the last message
+         on slack and text message be at 4pm." It used to be the -final
+         agent's job; since that agent retired on 2026-09-29 this is the last
+         B2B message of the Saturday, so moving it earlier moves his close.
+         Twice on 2026-11-20 a schedule tidy-up tried to move one end of this
+         or the other, both times from reading the retired -final plist as if
+         it still ran. Pinned by
+         test_schedule_collisions.test_saturday_hourly_is_carloss_4pm_close.
+
+         NOTE ON COMMENTS IN THIS FILE: never write two hyphens together
+         inside an XML comment. It ends the comment early and makes the plist
+         unreadable to plistlib even though plutil still accepts it, so the
+         job keeps running while our own tooling goes blind to it. -->
     <key>StartCalendarInterval</key>
     <array>
         <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>18</integer><key>Minute</key><integer>0</integer></dict>

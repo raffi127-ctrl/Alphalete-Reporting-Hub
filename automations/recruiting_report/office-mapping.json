@@ -1,7 +1,7 @@
 {
   "confirmed_count": 58,
   "needs_review_count": 0,
-  "skip_count": 37,
+  "skip_count": 40,
   "confirmed": [
     {
       "sheet_tab": "Raf Hidalgo",
@@ -489,6 +489,20 @@
       "sheet_tab": "JC Lopez (NDS)",
       "reason": "2026-10-26 (Raf's mail 10/25): JC Lopez sells NDS. This tab is a MIRROR of 'JC Lopez - NDS' on the NDS Program - Focus Report, copied every Monday by nds_mirror_to_att (mirror_nds_tab.py). Neither this pull nor Raf's OPT may write it: its recruiting comes from the NDS Program mapping, its OPT from opt_nds.",
       "opt_source": "nds"
+    },
+    {
+      "sheet_tab": "Sarah Park (NDS)",
+      "reason": "2026-11-20 (Maud/Starr, Eve): tab for Starr's Monday 1on1. MIRROR of 'Sarah Park - NDS' on the NDS Program - Focus Report, copied every Monday by nds_mirror_to_att (mirror_nds_tab.py). Neither this pull nor Raf's OPT may write it.",
+      "opt_source": "nds"
+    },
+    {
+      "sheet_tab": "David Pisikian (B2B)",
+      "reason": "2026-11-20 (Maud/Starr, Eve): tab for Starr's Monday 1on1. MIRROR of 'David Pisikian' (office 21658) on the Carlos 1on1s - Focus Report, copied every Monday by nds_mirror_to_att (mirror_nds_tab.py). Neither this pull nor Raf's OPT may write it.",
+      "opt_source": "b2b"
+    },
+    {
+      "sheet_tab": "Spencer Brown",
+      "reason": "2026-11-20 (Maud/Starr, Eve): tab for Starr's Monday 1on1. LeafGuard owner - the Hub has no LeafGuard sales source and no AppStream office found yet. Move to confirmed/sales_only once his office is known."
     },
     {
       "sheet_tab": "Edgar Muniz II",

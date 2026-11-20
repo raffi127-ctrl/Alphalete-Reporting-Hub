@@ -54,8 +54,8 @@ th.l, td.l {{ text-align: left; }}
 td.rk {{ color: #5f6a63; }}
 td.nm {{ white-space: normal; font-weight: 600; }}
 td.nm div {{ max-width: 340px; }}
-td.ow {{ white-space: normal; color: #5f6a63; font-size: {BASE_PX - 4}px; }}
-td.ow div {{ max-width: 240px; }}   /* a long office list wraps, never widens the table */
+td.ow {{ white-space: normal; color: #3f4742; font-size: {BASE_PX - 4}px; }}
+td.ow div {{ max-width: 200px; }}   /* a long office list wraps, never widens the table */
 td.nm small {{ display: block; font-weight: 400; color: #5f6a63;
               font-size: {BASE_PX - 6}px; margin-top: 2px; }}
 td.good {{ background: {GREEN_BG}; color: {GREEN_FG}; font-weight: 700; }}
@@ -71,32 +71,24 @@ def fmt(p: Optional[float]) -> str:
     return "—" if p is None else f"{round(p * 100)}%"
 
 
-def owner_column(b) -> bool:
-    """Interviewer boards get the owner in its own column right next to the name
-    (Raf 11/12: "separate the owner from the interviewing team")."""
-    return b.name_header == "Interviewer"
-
-
-def owner_td(ln) -> str:
-    return f'<td class="l ow"><div>{html.escape(", ".join(ln.detail))}</div></td>'
-
-
 def board_html(b: Board, show_detail: bool = True) -> str:
     e = html.escape
     hist = b.history_labels
-    own = owner_column(b)
+    oc = getattr(b, "owner_col", False)
     head = (f'<th>#</th><th class="l">{e(b.name_header)}</th>'
-            + ('<th class="l">Owner</th>' if own else '')
-            + '<th>Booked</th><th>Showed</th><th>%</th>'
+            + ('<th class="l">Owner</th>' if oc else '') +
+            '<th>Booked</th><th>Showed</th><th>%</th>'
             + "".join(f'<th class="{"hist" if i == 0 else ""}">{e(l)}</th>'
                       for i, l in enumerate(hist)))
     rows: List[str] = []
     for i, ln in enumerate(b.lines, 1):
         det = (f"<small>{e(', '.join(ln.detail))}</small>"
-               if show_detail and ln.detail and not own else "")
+               if show_detail and ln.detail and not oc else "")
         cells = [f'<td class="rk">{i}</td>',
-                 f'<td class="l nm"><div>{e(ln.name)}{det}</div></td>',
-                 *([owner_td(ln)] if own else []),
+                 f'<td class="l nm"><div>{e(ln.name)}{det}</div></td>']
+        if oc:
+            cells.append(f'<td class="l ow"><div>{e(ln.owner)}</div></td>')
+        cells += [
                  f"<td>{ln.booked}</td>", f"<td>{ln.showed}</td>",
                  f'<td class="{colour(ln.pct)}">{fmt(ln.pct)}</td>']
         for j, p in enumerate(ln.history):
@@ -211,9 +203,9 @@ def day_board_html(b, *, compact: bool, base: int) -> str:
     e = html.escape
     sub_px, th_px, small_px = base - 4, max(base - 8, 12), max(base - 6, 12)
     per_day = 1 if compact else 3
-    own = owner_column(b)
+    oc = getattr(b, "owner_col", False)
     top = [f'<th rowspan="2">#</th>', f'<th rowspan="2" class="l">{e(b.name_header)}</th>']
-    if own:
+    if oc:
         top.append('<th rowspan="2" class="l">Owner</th>')
     # Week total up front (Raf 11/18), right after the name/owner.
     # Raf 11/19: the week columns must jump out from Mon-Fri at a glance -- navy
@@ -233,10 +225,10 @@ def day_board_html(b, *, compact: bool, base: int) -> str:
                    for i, l in enumerate(b.history_labels)]
     rows = []
     for n, ln in enumerate(b.lines, 1):
-        det = f"<small>{e(', '.join(ln.detail))}</small>" if ln.detail and not own else ""
+        det = f"<small>{e(', '.join(ln.detail))}</small>" if ln.detail and not oc else ""
         cells = [f'<td class="rk">{n}</td>', f'<td class="l nm"><div>{e(ln.name)}{det}</div></td>']
-        if own:
-            cells.append(owner_td(ln))
+        if oc:
+            cells.append(f'<td class="l ow"><div>{e(ln.owner)}</div></td>')
         cells += [f'<td class="grp wk wkL">{ln.booked}</td>', f'<td class="wk">{ln.showed}</td>',
                   f'<td class="{colour(ln.pct) or "wk"} wkp wkR">{fmt(ln.pct)}</td>']
         for d in b.days:
@@ -262,9 +254,9 @@ def day_board_html(b, *, compact: bool, base: int) -> str:
     .board td {{ padding:7px 6px; }}
     .board td.h {{ font-size:{base - 2}px; }}
     .board td.nm small {{ font-size:{small_px}px; }}
-    .board td.nm div {{ max-width:{base * 10}px; }}
+    .board td.nm div {{ max-width:{base * 8}px; }}
     .board td.ow {{ font-size:{sub_px}px; }}
-    .board td.ow div {{ max-width:{base * 8}px; }}
+    .board td.ow div {{ max-width:{base * 7}px; }}
     .board th.c {{ text-align:center; }}
     .board th.grp, .board td.grp {{ border-left:2px solid #b9bfb4; }}
     .board th.wk {{ background:{WEEK_HEAD}; color:#ffffff; }}
@@ -281,6 +273,15 @@ def day_board_html(b, *, compact: bool, base: int) -> str:
             f'<div class="title">{e(b.title)}</div><div class="sub">{e(b.subtitle)}</div>'
             f'{counts}</div>{note}<table><thead><tr>{"".join(top)}</tr>'
             f'<tr>{"".join(second)}</tr></thead><tbody>{"".join(rows)}</tbody></table></div>')
+
+
+def _fit_zoom(pg) -> None:
+    """Last resort so nothing is ever cut off: a board still wider than MAX_W
+    (e.g. long names + the Owner column) is scaled down as a whole to fit."""
+    w = pg.evaluate("() => { const b = document.getElementById('board');"
+                    " b.style.maxWidth = 'none'; return b.scrollWidth; }")
+    if w > MAX_W:
+        pg.evaluate(f"() => {{ document.getElementById('board').style.zoom = {MAX_W / w:.4f}; }}")
 
 
 def _fit_day_board(pg, b) -> str:
@@ -311,6 +312,7 @@ def render_day_boards(boards, out_dir: Path, stem: str = "week") -> List[Path]:
         for n, b in enumerate(boards, 1):
             doc = _fit_day_board(pg, b)
             pg.set_content(page(doc))
+            _fit_zoom(pg)
             path = out_dir / f"{stem}-{n}.png"
             pg.locator("#board").screenshot(path=str(path))
             _shrink(path)

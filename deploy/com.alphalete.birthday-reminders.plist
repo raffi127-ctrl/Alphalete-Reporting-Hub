@@ -40,7 +40,7 @@
          have a full working day to get the photo. An evening slot would leave
          them the night.
 
-         Most days this sends nothing and exits 0 -- that is a success, not a
+         Most days this sends nothing and exits 0 — that is a success, not a
          no-op to alarm at. [[findings are not failures]]
 
          TIME KNOB: edit this array, then re-install:

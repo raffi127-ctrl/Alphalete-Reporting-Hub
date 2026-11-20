@@ -10,11 +10,12 @@
          orchestrator flow owns vantura_churn now; this 7:00 backstop was losing
          Chrome to the crowded 7:00 slot and closing the Hub card red every
          morning for a board 04:30 had already written.
-         Re-enable: lucy rerun install_vantura_churn_agent --machine "Lucy 2" -->
+         Re-enable: lucy rerun install_vantura_churn_agent with the
+         machine flag set to "Lucy 2" -->
 
     <!-- Path is the laptop placeholder; on Lucy 2, install_agent.py rewrites it
          to that machine's repo path (lucy rerun install_vantura_churn_agent). -->
-    <!-- --no-post added 2026-07-20: vantura keeps REFRESHING the board (full
+    <!-- The 'no-post' flag, added 2026-07-20: vantura keeps REFRESHING the board (full
          pull + write of LUCY CHURN / Activations) but no longer POSTS the churn
          screenshots — the consolidated b2b_metrics run (7:45am) posts them now,
          in order, with everything else. Revert this arg to restore posting. -->

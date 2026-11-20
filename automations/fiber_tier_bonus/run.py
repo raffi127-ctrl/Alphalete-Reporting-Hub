@@ -78,6 +78,20 @@ EMOJI = "trophy"
 DEFAULT_TIERS: List[Tuple[int, int, Optional[int]]] = [
     (1, 0, 4), (2, 5, 7), (3, 8, 10), (4, 11, None)]
 
+# $ the rep earns PER new Fiber sale at each tier (Raf 2026-11-20: "add how
+# much the tier bonus is worth"). Not on the tier view — read off Tableau's
+# Order Log: ATTTRACKER2_1-D2D -> Order Log -> field 'Bonus Eligible $' per
+# NEW INTERNET row, grouped by rep weekly count (Sep 2026 export, ~4.5k rows):
+# 0-4 = $0, 5-7 = $20, 8-10 = $35, 11+ = $50. A tier missing here shows no $.
+TIER_PAY: Dict[int, int] = {1: 0, 2: 20, 3: 35, 4: 50}
+
+
+def pay_txt(tier: int) -> str:
+    """'$35/sale', '' when the tier has no bonus or no known amount."""
+    amt = TIER_PAY.get(tier)
+    return f"${amt}/sale" if amt else ""
+
+
 OWNER_COL = "Owner Name"
 REP_COL = "Rep"
 TOTAL_COL = "Grand Total"
@@ -391,14 +405,18 @@ def build_html(owner: str, week: str, days: List[str], reps: List[Rep], tiers,
             bg = f' style="background:{NEAR_BG}"' if near else ""
             tier_cell = (f'<td class="tier" rowspan="{len(group)}" style="background:{TIER_BG.get(n, "#eee")}">'
                          f'TIER {n}<br><span style="font-weight:400;font-size:12px">'
-                         f'{_range(lo, hi)} sales</span></td>') if j == 0 else ""
+                         f'{_range(lo, hi)} sales'
+                         + (f'<br><b>{pay_txt(n)}</b>' if pay_txt(n) else '')
+                         + '</span></td>') if j == 0 else ""
             away_txt = "TOP TIER" if gap is None else f"{gap[0]} to Tier {gap[1]}"
             cells = "".join(f"<td{bg}>{e(c)}</td>" for c in rp.days)
             rows.append(f"<tr>{tier_cell}<td class='rep'{bg}>{e(rp.name)}</td>{cells}"
                         f"<td class='tot'{bg}>{rp.total}</td>"
                         f"<td class='away'{bg}>{away_txt}</td></tr>")
     head = "".join(f"<th>{e(d)}</th>" for d in days)
-    ladder = " · ".join(f"Tier {n}: {_range(lo, hi)}" for n, lo, hi in tiers)
+    ladder = " · ".join(f"Tier {n}: {_range(lo, hi)}"
+                        + (f" ({pay_txt(n)})" if pay_txt(n) else "")
+                        for n, lo, hi in tiers)
     return (f"<html><head><meta charset='utf-8'>{_CSS}</head><body><div class='board'>"
             f"<div class='title'>TIER BONUS BREAKDOWN — NEW FIBER INTERNET</div>"
             f"<div class='sub'>{e(owner)} · {e(week)}{' · ' + e(part) if part else ''}</div>"
@@ -427,15 +445,25 @@ def away_lines(reps: List[Rep], tiers) -> List[str]:
     out: List[str] = []
     if top:
         top.sort(key=lambda r: (-r.total, r.name.lower()))
-        out.append("🔥 *Top tier — locked in:* "
+        top_n = max(t[0] for t in tiers)
+        paid = f" ({pay_txt(top_n)})" if pay_txt(top_n) else ""
+        out.append(f"🔥 *Top tier{paid} — locked in:* "
                    + ", ".join(f"{who(r.name)} ({r.total})" for r in top))
     # closest first; same gap -> the higher tier first
     for (n, nxt) in sorted(groups, key=lambda g: (g[0], -g[1])):
         members = sorted(groups[(n, nxt)], key=lambda r: r.name.lower())
         s = "sale" if n == 1 else "sales"
-        out.append(f"{'⚡ ' if n == 1 else ''}*{n} {s} from Tier {nxt}:* "
+        paid = f" ({pay_txt(nxt)})" if pay_txt(nxt) else ""
+        out.append(f"{'⚡ ' if n == 1 else ''}*{n} {s} from Tier {nxt}{paid}:* "
                    + ", ".join(who(r.name) for r in members))
     return out
+
+
+def pay_legend(tiers) -> str:
+    """'Tier bonus per new Fiber sale: Tier 2 $20 · Tier 3 $35 · Tier 4 $50'."""
+    parts = [f"Tier {n} ${TIER_PAY[n]}" for n, _lo, _hi in sorted(tiers)
+             if TIER_PAY.get(n)]
+    return ("_Tier bonus per new Fiber sale: " + " · ".join(parts) + "_") if parts else ""
 
 
 _MD = re.compile(r"\((\d{1,2})-(\d{1,2})\)")
@@ -547,7 +575,8 @@ def run(args) -> int:
                 for i, chunk in enumerate(chunks, 1)]
         lines = away_lines(reps, tiers)
         title = TITLE + (f" — {d.owner}" if shared[d.channel_id] > 1 else "")
-        text = "\n".join([f"*Sales away from the next tier bonus* ({week})", ""] + lines)
+        text = "\n".join([f"*Sales away from the next tier bonus* ({week})",
+                          pay_legend(tiers), ""] + lines)
         print(f"\n[{d.key}] {d.owner} -> {d.channel_name}: {len(reps)} rep(s); "
               f"{len(imgs)} image(s) "
               f"{[len(c) for c in chunks]} reps each: {[str(i) for i in imgs]}", flush=True)

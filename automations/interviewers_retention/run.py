@@ -486,11 +486,27 @@ def run(*, week: Optional[str] = None, date: Optional[dt.date] = None,
     logfn(f"  podiums: {len(pod_int.lines)} interviewers "
           f"({pod_int.green} green / {pod_int.red} red), {len(pod_off.lines)} offices "
           f"({pod_off.green} green / {pod_off.red} red, {off_src})")
+    if resolver.owners_skipped:
+        logfn(f"  OWNERS LEFT OUT of the interviewer tables ({len(resolver.owners_skipped)}) -- "
+              f"the owner interviewing, not the team (still counted in the office tables):")
+        for (owner, short) in sorted(resolver.owners_skipped):
+            logfn(f"    {owner}: '{short}'")
     if resolver.unmatched:
         logfn(f"  NOT MATCHED ({len(resolver.unmatched)}) -- short names kept as written, "
               f"no full name could be chosen among that office's interviewers:")
-        for line in resolver.report():
-            logfn(f"    {line}")
+        everyone = sorted({n for names in people.values() for n in names})
+        lines_out = []
+        for (owner, short) in sorted(resolver.unmatched):
+            # Only a HINT for Camila to confirm in name-aliases.json -- never used.
+            maybe = [n for n in everyone
+                     if build._fits(build.name_key(short).split(), build.name_key(n).split())]
+            hint = f"   maybe: {', '.join(maybe)}" if maybe else ""
+            lines_out.append(f"{owner}: '{short}'{hint}")
+            logfn(f"    {owner}: '{short}'{hint}")
+        out.mkdir(parents=True, exist_ok=True)
+        (out / "not-matched.txt").write_text("\n".join(lines_out) + "\n", encoding="utf-8")
+        logfn(f"  (list saved to {out / 'not-matched.txt'}; confirmed pairs go in "
+              f"automations/interviewers_retention/name-aliases.json)")
     if preview:
         page = write_preview(msg, out / "interviewers-retention-preview.html")
         logfn(f"[preview] nothing sent. Preview page: {page}")

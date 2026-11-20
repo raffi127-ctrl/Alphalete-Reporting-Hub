@@ -27,6 +27,7 @@ from __future__ import annotations
 import datetime as dt
 import re
 import unicodedata
+from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Dict, Iterable, List, Optional, Tuple
 
@@ -200,6 +201,7 @@ class Line:
     showed: int = 0
     detail: List[str] = field(default_factory=list)       # their offices / interviewers
     history: List[Optional[float]] = field(default_factory=list)   # oldest -> newest
+    owner: str = ""            # interviewer rows: the office (owner) of THIS row
     key: str = ""
 
     @property
@@ -207,14 +209,21 @@ class Line:
         return pct(self.showed, self.booked)
 
 
+# Raf 11/12: an interviewer who works for two offices gets TWO rows, one per
+# office, with the owner in its own column -- never summed across offices.
 def ikey(interviewer: str, owner: str) -> str:
-    """One row per interviewer PER OFFICE (Raf 11/12: Rafaela works for Haytham
-    and for Rafael -> two rows, one under each owner, never summed)."""
     return f"{name_key(interviewer)}|{name_key(owner)}"
 
 
+def _add_int(lines: Dict[str, Line], name: str, owner: str, b: int, s: int):
+    k = ikey(name, owner)
+    ln = lines.setdefault(k, Line(name=name, owner=owner, key=k))
+    ln.booked += b
+    ln.showed += s
+
+
 def _add(lines: Dict[str, Line], key: str, name: str, b: int, s: int, detail: str):
-    ln = lines.setdefault(key, Line(name=name, key=key))
+    ln = lines.setdefault(key, Line(name=name))
     ln.booked += b
     ln.showed += s
     if detail and detail not in ln.detail:
@@ -224,7 +233,7 @@ def _add(lines: Dict[str, Line], key: str, name: str, b: int, s: int, detail: st
 def by_interviewer(rows: Iterable[Row]) -> Dict[str, Line]:
     out: Dict[str, Line] = {}
     for r in rows:
-        _add(out, ikey(r.interviewer, r.owner), r.interviewer, r.booked, r.showed, r.owner)
+        _add_int(out, r.interviewer, r.owner, r.booked, r.showed)
     return out
 
 
@@ -249,6 +258,7 @@ class Board:
     lines: List[Line]
     history_labels: List[str] = field(default_factory=list)   # oldest -> newest
     note: str = ""
+    owner_col: bool = False    # interviewer boards: an 'Owner' column next to the name
 
     @property
     def green(self) -> int:
@@ -285,7 +295,7 @@ def podiums(weeks: List[Week], pick: int = 0) -> Tuple[Board, Board]:
             k = ln.key or name_key(ln.name)
             ln.history = [h[k].pct if k in h else None for h in hist]
         return Board(title=title, subtitle=week_span(wk), name_header=header,
-                     lines=out, history_labels=labels)
+                     lines=out, history_labels=labels, owner_col=header == "Interviewer")
 
     return (board(by_interviewer(wk.rows), hist_i, "PODIUM BY INTERVIEWER", "Interviewer"),
             board(by_office(wk.rows), hist_o, "PODIUM BY OFFICE", "Office"))
@@ -306,7 +316,7 @@ def yesterday_boards(second: Dict[str, Dict[dt.date, object]], day: dt.date
         if sr is None:
             continue
         for interviewer, (b, s) in getattr(sr, "by", {}).items():
-            _add(ints, ikey(interviewer, owner), interviewer, b, s, owner)
+            _add(ints, name_key(interviewer), interviewer, b, s, owner)
             _add(offs, name_key(owner), owner, b, s, interviewer)
     sub = f"{day:%A} {md(day)}"
     bi = Board("YESTERDAY BY INTERVIEWER", sub, "Interviewer", ranked(ints))
@@ -475,6 +485,7 @@ class DayLine:
     days: Dict[dt.date, List[int]] = field(default_factory=dict)   # date -> [booked, showed]
     history: List[Optional[float]] = field(default_factory=list)
     key: str = ""
+    owner: str = ""
 
     @property
     def booked(self) -> int:
@@ -501,6 +512,7 @@ class DayBoard:
     days: List[dt.date]
     lines: List[DayLine]
     history_labels: List[str] = field(default_factory=list)
+    owner_col: bool = False
 
     @property
     def green(self) -> int:
@@ -525,18 +537,48 @@ def resolve_interviewer(owner: str, short: str, tab_people: Dict[str, List[str]]
     if not want:
         return short
     people = tab_people.get(name_key(owner), [])
-    hits = []
-    for full in people:
-        have = name_key(full).split()
-        if len(have) >= len(want) and all(h.startswith(w) for w, h in zip(want, have)):
-            hits.append(full)
+    hits = [full for full in people if _fits(want, name_key(full).split())]
     return hits[0] if len(hits) == 1 else short
+
+
+def _fits(want: List[str], have: List[str]) -> bool:
+    """Every short word starts the matching full word, in order -- or, for a
+    trailing word of initials, each letter starts the next full word:
+    'Gabriela MT' fits 'Gabriela Munoz Toro', 'Daniela C' fits 'Daniela Colorado'."""
+    if len(have) >= len(want) and all(h.startswith(w) for w, h in zip(want, have)):
+        return True
+    if len(want) >= 2 and 2 <= len(want[-1]) <= 4:
+        head, inits = want[:-1], want[-1]
+        rest = have[len(head):]
+        return (len(have) >= len(head) + len(inits)
+                and all(h.startswith(w) for w, h in zip(head, have))
+                and all(r.startswith(c) for c, r in zip(inits, rest)))
+    return False
+
+
+# Names nobody can work out from the letters: nicknames ('Maru', 'Mavi') and
+# people who are on the ARS REPORT but not (yet) on the weekly tab. Camila fills
+# them in; each entry is HER decision, so it wins over everything else.
+#   {"*": {"Maru": "Maria Eugenia Soler"},           <- this nickname, any office
+#    "Rafael Hidalgo": {"Angela": "Angela Soriano"}}  <- only in that office
+NAME_ALIASES_FILE = Path(__file__).resolve().parent / "name-aliases.json"
+
+
+def load_name_aliases(path: Optional[Path] = None) -> Dict[str, Dict[str, str]]:
+    import json
+    path = path or NAME_ALIASES_FILE
+    if not path.exists():
+        return {}
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    return {("*" if k == "*" else name_key(k)): {name_key(a): full for a, full in v.items()}
+            for k, v in raw.items() if not k.startswith("_") and isinstance(v, dict)}
 
 
 def interviewer_days(second: Dict[str, Dict[dt.date, object]], days: List[dt.date],
                      tab_people: Dict[str, List[str]], resolve=None) -> Dict[str, DayLine]:
     """{interviewer|owner key: DayLine} from call_list_to_2nd.read_second_rounds'
-    blocks: one row per interviewer PER OFFICE (Raf 11/12)."""
+    blocks: one row per interviewer PER OFFICE (Raf 11/12). Rows that are the
+    owner interviewing themselves are left out (Camila 11/12)."""
     out: Dict[str, DayLine] = {}
     for owner, by_day in second.items():
         for d in days:
@@ -544,15 +586,15 @@ def interviewer_days(second: Dict[str, Dict[dt.date, object]], days: List[dt.dat
             if sr is None:
                 continue
             for short, (b, s) in getattr(sr, "by", {}).items():
+                if resolve is not None and resolve.is_owner(owner, short):
+                    continue
                 name = (resolve(owner, short) if resolve
                         else resolve_interviewer(owner, short, tab_people))
                 k = ikey(name, owner)
-                ln = out.setdefault(k, DayLine(name=name, key=k))
+                ln = out.setdefault(k, DayLine(name=name, key=k, owner=owner))
                 cell = ln.days.setdefault(d, [0, 0])
                 cell[0] += b
                 cell[1] += s
-                if owner not in ln.detail:
-                    ln.detail.append(owner)
     return out
 
 
@@ -601,7 +643,8 @@ def week_board(lines: Dict[str, DayLine], days: List[dt.date], last_week: bool,
     if source:
         sub += f" · source: {source}"
     return DayBoard(title=title, subtitle=sub, name_header=header, days=days,
-                    lines=ranked_lines, history_labels=history_labels)
+                    lines=ranked_lines, history_labels=history_labels,
+                    owner_col=header == "Interviewer")
 
 
 def interviewer_history(weeks: List[Week], pick: int) -> Tuple[List[str], Dict[str, List[Optional[float]]]]:
@@ -649,11 +692,34 @@ def tab_people(week: Week) -> Dict[str, List[str]]:
 # name that doesn't match exactly one interviewer of that office stays short
 # and is listed at the end of the run: never guessed.
 class Resolver:
-    def __init__(self, tab_people: Dict[str, List[str]]):
+    def __init__(self, tab_people: Dict[str, List[str]],
+                 aliases: Optional[Dict[str, Dict[str, str]]] = None):
         self.people = tab_people
+        self.aliases = aliases if aliases is not None else load_name_aliases()
         self.unmatched: Dict[Tuple[str, str], int] = {}
+        self.owners_skipped: Dict[Tuple[str, str], int] = {}
+
+    def is_owner(self, owner: str, short: str) -> bool:
+        """A row that is the OWNER interviewing, not the interviewing team
+        (Camila 11/12: left out of the interviewer tables; it still counts in
+        the office tables, which come from AppStream). 'Owner', the owner's
+        full name, or the owner's first name when no interviewer of that
+        office has that first name."""
+        sk, ok = name_key(short), name_key(owner)
+        hit = sk == "owner" or sk.startswith("owner ") or sk == ok
+        if not hit and sk and " " not in sk and ok.split() and ok.split()[0] == sk:
+            team = [name_key(p).split()[0] for p in self.people.get(ok, []) if name_key(p)]
+            hit = sk not in team
+        if hit:
+            self.owners_skipped[(owner, short)] = self.owners_skipped.get((owner, short), 0) + 1
+        return hit
 
     def __call__(self, owner: str, short: str) -> str:
+        sk = name_key(short)
+        alias = (self.aliases.get(name_key(owner), {}).get(sk)
+                 or self.aliases.get("*", {}).get(sk))
+        if alias:
+            return alias
         full = resolve_interviewer(owner, short, self.people)
         known = {name_key(p) for p in self.people.get(name_key(owner), [])}
         if name_key(full) not in known:
@@ -670,8 +736,8 @@ def sunday_of(d: dt.date) -> dt.date:
 
 def ars_interviewer_weeks(second: Dict[str, Dict[dt.date, object]], sundays: List[dt.date],
                           resolve: "Resolver") -> Dict[dt.date, Dict[str, Line]]:
-    """{week Sunday: {interviewer|owner key: Line}} -- each interviewer's 2nd
-    rounds of that Sun-Sat week, one entry PER OFFICE they worked (Raf 11/12)."""
+    """{week Sunday: {interviewer key: Line}} -- each interviewer's 2nd rounds
+    of that Sun-Sat week, summed across the days and every office they worked."""
     want = set(sundays)
     out: Dict[dt.date, Dict[str, Line]] = {w: {} for w in sundays}
     for owner, by_day in second.items():
@@ -680,8 +746,9 @@ def ars_interviewer_weeks(second: Dict[str, Dict[dt.date, object]], sundays: Lis
             if w not in want:
                 continue
             for short, (b, s) in getattr(sr, "by", {}).items():
-                name = resolve(owner, short)
-                _add(out[w], ikey(name, owner), name, b, s, owner)
+                if resolve.is_owner(owner, short):
+                    continue
+                _add_int(out[w], resolve(owner, short), owner, b, s)
     return out
 
 
@@ -694,7 +761,7 @@ def interviewer_podium_ars(per_week: Dict[dt.date, Dict[str, Line]], week: dt.da
     sub = (f"week of {md(week)} (Sun {md(week)} - Sat {md(week + dt.timedelta(days=6))}) "
            f"· source: ARS REPORT")
     return Board("PODIUM BY INTERVIEWER", sub, "Interviewer", lines,
-                 history_labels=[md(w) for w in weeks])
+                 history_labels=[md(w) for w in weeks], owner_col=True)
 
 
 def interviewer_history_ars(per_week: Dict[dt.date, Dict[str, Line]], week: dt.date

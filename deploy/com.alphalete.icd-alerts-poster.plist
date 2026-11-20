@@ -27,7 +27,7 @@
     <!-- Every minute (was 2, 2026-09-14). The lag an office feels is the
          laptop's sweep (now 2 min) plus this, so the worst case is three
          minutes and the typical case is about ninety seconds.
-         The tick is genuinely cheap -- one read of one tab -- and the wrapper
+         The tick is genuinely cheap — one read of one tab — and the wrapper
          exits in milliseconds outside 08:00-23:00 Mon-Sat, so the off-hours
          ticks cost nothing. A tick that overruns cannot pile up: launchd will
          not start a second copy while one is running, and post.py holds a pid
