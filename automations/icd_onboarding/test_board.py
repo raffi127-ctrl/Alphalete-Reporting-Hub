@@ -384,3 +384,39 @@ class TestFunnelDividers:
         # identity, not a step -- no automation ticks it, no person types it
         assert B.FUNNEL not in B.TICKS
         assert B.FUNNEL not in B.BY_HAND
+
+
+class TestMergeSurvivesAMistypedEmail:
+    """The duplicate is between the calendar and the rows ALREADY THERE --
+    `merge` is what decides that, and it keyed on the address alone."""
+
+    def _row(self, email, first="Carmen", last="Lopez"):
+        return {"Name": first, "Last Name": last, "Email": email}
+
+    def _fresh(self, email, first="Carmen", last="Lopez"):
+        return {"first_name": first, "last_name": last, "email": email}
+
+    def test_one_letter_in_the_domain_is_not_a_second_person(self):
+        got = B.merge([self._row("carmenlopezcr@icloud.co")],
+                      [self._fresh("carmenlopezcr@icloud.com")])
+        assert got["add"] == [], "seeded her twice"
+
+    def test_the_same_address_still_matches(self):
+        got = B.merge([self._row("a@x.com")], [self._fresh("a@x.com")])
+        assert got["add"] == []
+
+    def test_a_genuinely_new_person_is_still_added(self):
+        got = B.merge([self._row("a@x.com")],
+                      [self._fresh("z@x.com", "Zachary", "Murphy")])
+        assert len(got["add"]) == 1
+
+    def test_the_email_is_still_tried_first(self):
+        """Same email, different spelling of the name -- still one person."""
+        got = B.merge([self._row("a@x.com", "Bob", "Smith")],
+                      [self._fresh("a@x.com", "Robert", "Smith")])
+        assert got["add"] == []
+
+    def test_a_row_with_no_name_cannot_swallow_anybody(self):
+        got = B.merge([{"Name": "", "Last Name": "", "Email": "a@x.com"}],
+                      [self._fresh("b@x.com", "Real", "Person")])
+        assert len(got["add"]) == 1

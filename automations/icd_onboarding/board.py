@@ -330,6 +330,16 @@ def person_key(row: Dict) -> str:
                                   row.get("last_name") or row.get("Last Name") or ""))
 
 
+def name_key(row: Dict) -> str:
+    """The folded name, for recognising somebody whose EMAIL was mistyped.
+
+    Never instead of `person_key` -- only after it. Two different people
+    genuinely sharing a name within one week is rare; a typo is not.
+    """
+    return _fold("%s%s" % (row.get("first_name") or row.get("Name") or "",
+                           row.get("last_name") or row.get("Last Name") or ""))
+
+
 def seed_rows(people: Iterable[Dict], started: Optional[dt.date] = None) -> List[Dict]:
     """Training-calendar people -> board rows, identity columns only.
 
@@ -390,16 +400,30 @@ def merge(existing: List[Dict], fresh: List[Dict]) -> Dict:
     still says they showed up for training. That is the whole reason the board
     exists: the calendar cannot know they left.
     """
-    seen = {}
+    seen, by_name = {}, {}
     for r in existing:
         seen[person_key(r)] = r
+        nk = name_key(r)
+        if nk:
+            by_name.setdefault(nk, r)
     add, left = [], []
     for r in existing:
         if str(r.get(TERMINATED_AT) or "").strip():
             left.append(person_key(r))
     for r in fresh:
-        if person_key(r) not in seen:
-            add.append(r)
+        if person_key(r) in seen:
+            continue
+        # THE NAME IS A SECOND LOOK, because an email can be mistyped. One
+        # new start is on two of Raf's funnels as `...@icloud.co` and
+        # `...@icloud.com`, one letter apart, so keying on the address alone
+        # made her two people and put her on the board twice -- one row
+        # carrying eight finished steps and the other none. Fixed in the
+        # seed's own loop first, which was the wrong layer: the duplicate is
+        # between the calendar and the rows ALREADY THERE, and this is what
+        # decides that (2026-11-21).
+        if name_key(r) and name_key(r) in by_name:
+            continue
+        add.append(r)
     return {"add": add, "keep": len(existing), "left": left}
 
 
