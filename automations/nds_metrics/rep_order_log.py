@@ -17,8 +17,12 @@ payout, 40%, 45%, and 50%, and then underneath it a total row that adds all
 those up"):
 
   Order Date | Activation Date | Customer Name | Status |
-  Device | Plan | Next Up | Phone Number | Zip Code | Tier |
+  Device · Phone · Zip | Plan | Tier |
   Est. Revenue | 30% Payout | 40% Payout | 45% Payout | 50% Payout
+
+(Device / Phone Number / Zip Code were three columns and Next Up its own
+until 11/20 night: Plan reads "Extra + Next Up" or just "Extra"; a BYOD line
+says "(BYOD)" on the device, an upgrade "(Upgrade)".)
 
 Tier = the tier bonus that line pays at ("Tier 1" $30 ... "Tier 4" $110, the
 rep_tier bands; blank when it earns none -- not a port line, below Tier 1,
@@ -117,8 +121,13 @@ MONEY_COLS = ("Est. Revenue",) + PAYOUT_COLS
 # Carlos 11/20 evening: "Lets add the revenue to the far right" / "you didnt
 # move the payouts to the far right" -- the five money columns close the table.
 # ... and "a tier column next to the zip code": the tier bonus the line pays at.
+# Carlos 11/20 night, to make it easier to look at: Plan + Next Up in one
+# column ("Extra + Next Up", just "Extra" without it) and "put the device,
+# phone number, and zip code all together" (device on top, number and zip
+# under it). Zip stays: reps use it to help activate a customer.
+DEVICE_COL = "Device \u00b7 Phone \u00b7 Zip"
 COLUMNS = (("Order Date", "Activation Date", "Customer Name", "Status",
-            "Device", "Plan", "Next Up", "Phone Number", "Zip Code", "Tier") + MONEY_COLS)
+            DEVICE_COL, "Plan", "Tier") + MONEY_COLS)
 
 
 def payouts(revenue: float) -> Dict[str, float]:
@@ -653,6 +662,30 @@ def _cols_index(cols) -> dict:
     }
 
 
+def short_plan(pkg: str) -> str:
+    """'AT&T Extra 2.0' -> 'Extra', 'AT&T DataConnect 100GB' -> 'DataConnect 100GB'."""
+    p = str(pkg or "").strip()
+    if p.upper().startswith("AT&T "):
+        p = p[5:].strip()
+    if p.endswith(" 2.0"):
+        p = p[:-4].strip()
+    return p
+
+
+def plan_cell(pkg: str, next_up: str) -> str:
+    """The Plan column: 'Extra + Next Up' when the line has Next Up, else 'Extra'."""
+    base = short_plan(pkg)
+    if next_up == "Next Up":
+        return (base + " + Next Up") if base else "Next Up"
+    return base
+
+
+def fmt_phone(tn: str) -> str:
+    from automations.nds_metrics.order_log_tab import LineIndex
+    d = LineIndex.digits(tn)
+    return "%s-%s-%s" % (d[:3], d[3:6], d[6:]) if len(d) == 10 else str(tn or "")
+
+
 def tier_name_for(rate: float, bands=None) -> str:
     """'Tier 2' for a $50 line bonus; '' for none; '$X' for a rate no band has."""
     if not rate:
@@ -706,8 +739,11 @@ def rep_lines(cols, crew: Sequence, today: dt.date, log=print, tab=None,
             continue                                   # Air / Internet lines are not on the wireless log
         f = line_facts(cols, r, I, rates, tab=tab, sara=sara, tier_by_line=tier_by_line)
         device = g(r, "dev") or f["rec"].get("device", "")
-        if RX.line_kind(f["rec"]) == "upgrade":
+        kind = RX.line_kind(f["rec"])
+        if kind == "upgrade":
             device = (device + " (Upgrade)").strip()   # Carlos 11/20: "next parentheses on the device ... upgrade"
+        elif kind == "byod" and "byo" not in device.lower():
+            device = (device + " (BYOD)").strip()      # the Next Up column used to say BYOD
         line = {
             "Order Date": od,
             "Activation Date": f["act"],
@@ -716,7 +752,8 @@ def rep_lines(cols, crew: Sequence, today: dt.date, log=print, tab=None,
             "Status": f["status"],
             "Est. Revenue": f["revenue"],
             "Device": device,
-            "Plan": f["rec"].get("package", ""),   # Tableau's Package IS the rate plan ("AT&T Extra 2.0")
+            "Plan": plan_cell(f["rec"].get("package", ""), f["next_up"]),   # Tableau's Package IS the rate plan
+            "Plan Name": f["rec"].get("package", ""),
             "Next Up": f["next_up"],
             "Phone Number": g(r, "tn"),
             "Zip Code": g(r, "zip"),
@@ -787,6 +824,7 @@ _CSS = """
  td.tot{background:#D9D9D9;color:#000;font-weight:700;font-size:13px}
  td.tot.lbl{text-align:right}
  tr.gap td{border:none;background:#fff;height:18px;padding:0}
+ .dz{font-size:11px;opacity:.85}
  .row{display:flex;gap:16px;align-items:flex-start;margin-top:6px}
  .cal{margin-top:0}
  .cal td.l{text-align:left}
@@ -885,8 +923,13 @@ def html_for(rep: str, lines: List[dict], today: dt.date, weekly=None, tier=None
         st = ln["Status"]
         bg = STATUS_COLORS.get("Active" if st == ACT_DISC else st, "FFD666")   # paid: green, like Active
         fg = STATUS_TEXT_COLORS.get(st, "000000")
-        tds = "".join(f'<td style="background:#{bg};color:#{fg}">{_fmt_cell(c, ln.get(c))}</td>'
-                      for c in COLUMNS)
+        def cell(c):
+            if c != DEVICE_COL:
+                return _fmt_cell(c, ln.get(c))
+            under = " \u00b7 ".join(v for v in (fmt_phone(ln.get("Phone Number")), str(ln.get("Zip Code") or "")) if v)
+            return (_html.escape(str(ln.get("Device") or ""))
+                    + (f'<br><span class="dz">{_html.escape(under)}</span>' if under else ""))
+        tds = "".join(f'<td style="background:#{bg};color:#{fg}">{cell(c)}</td>' for c in COLUMNS)
         return f"<tr>{tds}</tr>"
 
     body = (f'<div class="rep">{_html.escape(rep.upper())}</div>'

@@ -55,7 +55,7 @@ class Money(unittest.TestCase):
         # 11/20: Ported From / SPM Number / Wireless Order # / BAN gone; "Package" is headed "Plan" and sits
         # next to Next Up; Est. Revenue + the four payout columns close the table, far right
         self.assertEqual(ROL.COLUMNS, ("Order Date", "Activation Date", "Customer Name", "Status",
-                                       "Device", "Plan", "Next Up", "Phone Number", "Zip Code", "Tier", "Est. Revenue",
+                                       "Device \u00b7 Phone \u00b7 Zip", "Plan", "Tier", "Est. Revenue",
                                        "30% Payout", "40% Payout", "45% Payout", "50% Payout"))
 
     def test_payouts_and_totals(self):
@@ -66,7 +66,7 @@ class Money(unittest.TestCase):
         self.assertEqual(ROL.totals(lines), {"Est. Revenue": 426.0, "30% Payout": 127.8, "40% Payout": 170.4,
                                              "45% Payout": 191.7, "50% Payout": 213.0})
         row = ROL.total_row(lines)
-        self.assertIn('colspan="10">Total</td>', row)                      # label spans Order Date..Tier
+        self.assertIn('colspan="7">Total</td>', row)                       # label spans Order Date..Tier
         for money in ("$426", "$127.80", "$170.40", "$191.70", "$213.00"):
             self.assertIn(">%s</td>" % money, row)
         self.assertTrue(row.endswith('<td class="tot">$213.00</td></tr>'))  # the 50% total is the last cell
@@ -88,9 +88,10 @@ class Lines(unittest.TestCase):
         # Est. Revenue = the board's line price + the plan's add-on (Carlos 11/20): port 213 + Extra 10
         self.assertEqual((first["Status"], first["Est. Revenue"], first["30% Payout"], first["50% Payout"],
                           first["Next Up"], first["Plan"]),
-                         ("Posted", 223.0, 66.9, 111.5, "No Next Up", "AT&T Extra 2.0"))
+                         ("Posted", 223.0, 66.9, 111.5, "No Next Up", "Extra"))
         for gone in ("Ported From", "SPM Number", "Wireless Order #", "BAN", "Package"):
             self.assertNotIn(gone, first)
+        self.assertEqual(first["Plan Name"], "AT&T Extra 2.0")
         # priced like the revenue board + the plan: BYOD port 188 + Extra 10, cancelled 0, tablet 25 (a data
         # plan adds nothing), in-footprint port 193 + Premium 15
         self.assertEqual((by_tn["2145550101"]["Status"], by_tn["2145550101"]["Est. Revenue"],
@@ -125,7 +126,7 @@ class Lines(unittest.TestCase):
         bare = ROL.rep_lines(self.cols, [new], TODAY)["Esmeralda Gonzalez"][0]
         self.assertEqual((bare["Plan"], bare["Device"], bare["Est. Revenue"]), ("", "", 213.0))
         line = ROL.rep_lines(self.cols, [new], TODAY, tab=tab)["Esmeralda Gonzalez"][0]
-        self.assertEqual((line["Plan"], line["Device"]), ("AT&T Premium 2.0", "BYOD"))
+        self.assertEqual((line["Plan"], line["Device"]), ("Premium", "BYOD"))
         self.assertEqual(line["Est. Revenue"], 203.0)                                     # BYOD port 188 + Premium 15
         _w, sales = ROL.weekly_sales(self.cols, [new], TODAY, tab=tab)
         self.assertEqual(sales["Esmeralda Gonzalez"][dt.date(2026, 11, 22)]["revenue"], 203.0)
@@ -206,6 +207,8 @@ class Lines(unittest.TestCase):
         self.assertEqual((by["2145550501"]["Device"], by["2145550501"]["Est. Revenue"]),
                          ("iPhone 18 Pro - 256GB - Black (Upgrade)", 30.0))           # no plan add-on on an upgrade
         self.assertEqual(by["2145550502"]["Est. Revenue"], 213.0 + 15 + 15)          # port + Premium + Next Up
+        self.assertEqual(by["2145550502"]["Plan"], "Premium + Next Up")             # Carlos 11/20: one column
+        self.assertEqual(by["2145550504"]["Plan"], "Extra")                         # no Next Up: just the plan
         self.assertEqual((by["2145550503"]["Status"], by["2145550503"]["Est. Revenue"]), (ROL.ACT_DISC, 223.0))
         self.assertEqual((by["2145550506"]["Status"], by["2145550506"]["Est. Revenue"]), ("Disconnected", 0.0))
         weeks, pdc = ROL.group_weeks(esm)
@@ -215,6 +218,20 @@ class Lines(unittest.TestCase):
         self.assertEqual([ln["Phone Number"] for ln in pdc], ["2145550507", "2145550506", "2145550505"])  # pending, disc, cancel
         page = ROL.html_for("Esmeralda Gonzalez", esm, TODAY)
         self.assertIn('<td style="background:#57BB8A;color:#000000">Activated (Disconnected)</td>', page)   # green
+
+    def test_plan_and_device_cells(self):
+        self.assertEqual([ROL.short_plan(p) for p in ("AT&T Extra 2.0", "AT&T Premium 2.0", "AT&T 55+",
+                                                      "AT&T DataConnect 100GB", "")],
+                         ["Extra", "Premium", "55+", "DataConnect 100GB", ""])
+        self.assertEqual(ROL.plan_cell("AT&T Value 2.0", "Next Up"), "Value + Next Up")
+        self.assertEqual(ROL.plan_cell("AT&T Value 2.0", "BYOD"), "Value")
+        self.assertEqual(ROL.plan_cell("", "Next Up"), "Next Up")
+        self.assertEqual(ROL.fmt_phone("(972) 900-1732"), "972-900-1732")
+        byod = _row(**{"spe.TN": "2145550601", "Device Description": "iPhone 13 A2482", "Wireless Installment Plan": "BYOD"})
+        line = ROL.rep_lines(self.cols, [byod], TODAY)["Esmeralda Gonzalez"][0]
+        self.assertEqual(line["Device"], "iPhone 13 A2482 (BYOD)")
+        byo = _row(**{"spe.TN": "2145550602", "Device Description": "SM-G991U BYO", "Wireless Installment Plan": "BYOD"})
+        self.assertEqual(ROL.rep_lines(self.cols, [byo], TODAY)["Esmeralda Gonzalez"][0]["Device"], "SM-G991U BYO")
 
     def test_tier_bonus_per_port_line(self):
         """Carlos 11/20: "are you accounting for the tier in the revenue as well?" -- a port line earns its
@@ -309,15 +326,17 @@ class Lines(unittest.TestCase):
         self.assertIn("Paid Friday 11.13", page)
         self.assertEqual(page.count(">Total</td>"), 2)                     # one per activated week, none under pending
         # a blank row after each grey Total: before the next blue band and before the orange band
-        self.assertEqual(page.count('<tr class="gap"><td colspan="15"></td></tr>'), 2)
-        self.assertIn('</tr><tr class="gap"><td colspan="15"></td></tr><tr><td class="band"', page)
-        self.assertIn('</tr><tr class="gap"><td colspan="15"></td></tr><tr><td class="pdc"', page)
+        self.assertEqual(page.count('<tr class="gap"><td colspan="12"></td></tr>'), 2)
+        self.assertIn('</tr><tr class="gap"><td colspan="12"></td></tr><tr><td class="band"', page)
+        self.assertIn('</tr><tr class="gap"><td colspan="12"></td></tr><tr><td class="pdc"', page)
         self.assertLess(page.rindex(">Total</td>"), page.index("Pending / Disconnect / Cancel"))
         self.assertIn(">$66.90</td>", page)                                # 30% of 213 + the Extra plan's 10
-        self.assertIn("<th>Plan</th><th>Next Up</th>", page)
-        self.assertIn("<th>Zip Code</th><th>Tier</th><th>Est. Revenue</th><th>30% Payout</th><th>40% Payout</th>"
+        self.assertIn("<th>Device \u00b7 Phone \u00b7 Zip</th><th>Plan</th><th>Tier</th>", page)
+        self.assertIn("iPhone 18 Pro - 256GB - Black<br><span class=\"dz\">214-555-0100 \u00b7 75060</span>", page)
+        self.assertIn("<th>Tier</th><th>Est. Revenue</th><th>30% Payout</th><th>40% Payout</th>"
                       "<th>45% Payout</th><th>50% Payout</th></tr>", page)          # the money is far right
-        for gone in ("Ported From", "SPM Number", "Wireless Order", ">BAN<", "<th>Package</th>"):
+        for gone in ("Ported From", "SPM Number", "Wireless Order", ">BAN<", "<th>Package</th>", "<th>Next Up</th>",
+                     "<th>Zip Code</th>", "<th>Phone Number</th>"):
             self.assertNotIn(gone, page)
         # the Activation/Pay Week box: 5 weeks, the current one last and highlighted (Carlos 11/20)
         cal = page[page.index("Activation/Pay Week"):page.index("Payout Levels")]
