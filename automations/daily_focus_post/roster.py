@@ -118,11 +118,11 @@ RAF = FocusOffice(
     # thread, can we do a 2nd post that grabs the LinkedIn Screenshot of whats
     # booked for the next day" -- Megan: "That would be account #24226".
     linkedin_office="24226",
-    # Raf, #rafs-office-recruiting-11280, 2026-11-06: "Can we get this
-    # automatically sent in our 'ADMIN Staff' Chat + 'Alphalete Ateam' Chat".
-    # Both rooms already get Lucy texts from Lucy 1: Admin Staff = birthday
-    # reminders, "Alphalete A-Team Chat🔥🔥" = the stations post.
-    text_groups=("Admin Staff", "Alphalete A-Team Chat"),
+    # NO iMessage chats. Added 2026-11-06 at Raf's ask ('Admin Staff' +
+    # 'Alphalete A-Team Chat'), then pulled 2026-11-20 — Raf: "Can we have it
+    # removed from all my iMessage chats, please?" Slack thread only. Don't
+    # add a chat back unless Raf asks again.
+    text_groups=(),
 )
 
 # ENROLLED — start with Raf alone (his explicit ask: "I would like it for my
