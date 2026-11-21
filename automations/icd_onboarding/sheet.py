@@ -209,6 +209,68 @@ def backfill_funnels(ws, week_start: dt.date, fresh: List[Dict],
     return len(data)
 
 
+def ensure_dividers(ws, week_start: dt.date, log=print) -> int:
+    """Put a labelled divider above each funnel's rows, on ANY week.
+
+    The seed draws dividers above the block it is appending, which only ever
+    reaches people added that run. Every week seeded before the funnel was
+    known -- and every week where the new people arrive in a later pass than
+    the first -- would keep its labels and never get a line (Megan
+    2026-11-20: "we need it correct for every week").
+
+    INSERTS, never reorders. Rows are found by label and week everywhere, so
+    a row shifting down costs nothing; moving somebody's row to group them
+    would mean rewriting cells a person typed, which is the one thing this
+    board does not do.
+
+    A funnel whose rows are NOT contiguous is reported rather than divided:
+    one line above the first of them would silently claim the people in
+    between. That is a sort, and a sort is the caller's decision, not this
+    function's.
+    """
+    cols = layout(_values(ws))
+    if not cols or B.FUNNEL not in cols:
+        return 0
+    want = B.week_label(week_start)
+    grid = _values(ws)
+    width = max(cols.values()) + 1
+
+    seen: Dict[str, List[int]] = {}
+    have: set = set()
+    for n, raw in enumerate(grid[HEADER_ROW:], HEADER_ROW + 1):
+        raw = list(raw) + [""] * width
+        if str(raw[cols[B.WEEK]]).strip() != want:
+            continue
+        row = {name: raw[i] for name, i in cols.items()}
+        if B.is_divider(row):
+            have.add(str(raw[cols[B.DIVIDER_AT]]).strip())
+            continue
+        label = str(raw[cols[B.FUNNEL]]).strip()
+        if label:
+            seen.setdefault(label, []).append(n)
+
+    added = 0
+    for label in sorted(seen):
+        rows = seen[label]
+        text = B.divider_row(want, label)[B.DIVIDER_AT]
+        if text in have:
+            continue                      # this week already has its line
+        if rows != list(range(rows[0], rows[0] + len(rows))):
+            log("  board: %r sits on scattered rows %s — no divider drawn, a "
+                "line above the first would claim the people between them"
+                % (label, rows))
+            continue
+        line = [""] * width
+        line[cols[B.WEEK]] = want
+        line[cols[B.DIVIDER_AT]] = text
+        ws.insert_row(line, rows[0])
+        log("  board: divider for %r above row %d" % (label, rows[0]))
+        added += 1
+        if added:
+            grid = _values(ws)            # rows below just shifted
+    return added
+
+
 def seed(workbook, week_start: dt.date, people: List[Dict],
          *, dry_run: bool = False, log=print) -> Dict:
     """Put this week's training-calendar people on the board.
@@ -244,6 +306,12 @@ def seed(workbook, week_start: dt.date, people: List[Dict],
         log("  (could not add missing columns: %s)" % type(e).__name__)
     backfill_funnels(ws, week_start, fresh, log=log)
     if not plan["add"]:
+        # Nobody new, but the week may still be owed its lines -- that is
+        # every week seeded before the funnel was known.
+        try:
+            ensure_dividers(ws, week_start, log=log)
+        except Exception as e:            # noqa: BLE001 — never fail a seed
+            log("  (dividers not drawn: %s)" % type(e).__name__)
         return plan
     cols = layout(_values(ws)) or {n: i for i, n in enumerate(B.COLUMNS)}
     width = max(cols.values()) + 1

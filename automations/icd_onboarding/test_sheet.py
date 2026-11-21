@@ -355,3 +355,77 @@ def test_the_removal_reason_column_is_not_a_step():
     assert B.REMOVED_WHY not in B.TICKS
     for source, cols in F.SOURCES.items():
         assert B.REMOVED_WHY not in cols, source
+
+
+class _DividerWS(_FakeWS):
+    """A board with a Funnel column and real rows, for divider tests."""
+
+    def __init__(self, rows):
+        head = list(B.COLUMNS) + list(S.PAST_THE_CHART)
+        super().__init__(head)
+        self.col_count = len(head)
+        self._head = head
+        self.inserted = []
+        self._rows = rows
+
+    def add_cols(self, n):
+        self.col_count += n
+
+    def get_all_values(self):
+        at = {c: i for i, c in enumerate(self._head)}
+        out = [list(self._head)]
+        for r in self._rows:
+            line = [""] * len(self._head)
+            for k, v in r.items():
+                line[at[k]] = v
+            out.append(line)
+        return out
+
+    def insert_row(self, values, index):
+        self.inserted.append((index, values))
+
+
+def _funnel_row(name, funnel="", week="11/15/2026"):
+    return {B.WEEK: week, "Name": name, "Last Name": "X", B.FUNNEL: funnel}
+
+
+class TestDividersOnAnyWeek:
+    """Megan 2026-11-20: "we need it correct for every week"."""
+
+    def test_a_week_with_no_new_people_still_gets_its_line(self):
+        ws = _DividerWS([_funnel_row("A"), _funnel_row("B", "Algemar"),
+                         _funnel_row("C", "Algemar")])
+        assert S.ensure_dividers(ws, dt.date(2026, 11, 16),
+                                 log=lambda *a: None) == 1
+        (at, values), = ws.inserted
+        assert at == 3, "above the first Algemar row, not the top of the week"
+        assert "Algemar" in " ".join(values)
+
+    def test_the_office_s_own_people_get_no_divider(self):
+        ws = _DividerWS([_funnel_row("A"), _funnel_row("B")])
+        assert S.ensure_dividers(ws, dt.date(2026, 11, 16),
+                                 log=lambda *a: None) == 0
+        assert ws.inserted == []
+
+    def test_a_line_already_there_is_not_drawn_twice(self):
+        existing = {B.WEEK: "11/15/2026", "Name": "", "Last Name": "",
+                    B.DIVIDER_AT: B.divider_row("11/15/2026",
+                                                "Algemar")[B.DIVIDER_AT]}
+        ws = _DividerWS([_funnel_row("A"), existing, _funnel_row("B", "Algemar")])
+        assert S.ensure_dividers(ws, dt.date(2026, 11, 16),
+                                 log=lambda *a: None) == 0
+
+    def test_scattered_rows_are_reported_not_mislabelled(self):
+        """A line above the first would claim the person in between."""
+        said = []
+        ws = _DividerWS([_funnel_row("A", "Algemar"), _funnel_row("B"),
+                         _funnel_row("C", "Algemar")])
+        assert S.ensure_dividers(ws, dt.date(2026, 11, 16),
+                                 log=said.append) == 0
+        assert ws.inserted == []
+        assert any("scattered" in m for m in said)
+
+    def test_another_week_is_left_alone(self):
+        ws = _DividerWS([_funnel_row("A", "Algemar", week="11/08/2026")])
+        assert S.ensure_dividers(ws, dt.date(2026, 11, 16),
+                                 log=lambda *a: None) == 0
