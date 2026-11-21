@@ -171,7 +171,7 @@ def _save_sent(kind: str, state: Dict[str, dict]) -> None:
 
 
 def run(*, live: bool = False, limit: Optional[int] = None, kinds: Sequence[str] = ("recent", "checkin"),
-        today: Optional[dt.date] = None, log=print) -> int:
+        today: Optional[dt.date] = None, skip: Sequence[str] = (), log=print) -> int:
     from automations.nds_metrics.order_log_tab import TAB, VANTURA_SHEET_ID
     from automations.rc_contact_sync import delivered, wrapup
     from automations.recruiting_report.fill import _retry, open_by_key
@@ -186,6 +186,10 @@ def run(*, live: bool = False, limit: Optional[int] = None, kinds: Sequence[str]
     for kind in kinds:
         state = _load_sent(kind)
         targets = pick_targets(values[0], values[1:], state, today=today, kind=kind)
+        held = [t for t in targets if _who(t["customer"]) in {_who(x) for x in skip}]
+        for t in held:
+            log("  - [%s] %s: held by --skip" % (kind, titlecase_name(t["customer"])))
+        targets = [t for t in targets if t not in held]
         k = KINDS[kind]
         log("%s (first activation %s..%s): %d customer(s) not yet texted"
             % (kind, today - dt.timedelta(days=k["max"]), today - dt.timedelta(days=k["min"]),
@@ -272,10 +276,12 @@ def main(argv=None) -> int:
     ap.add_argument("--kind", choices=sorted(KINDS), default=None, help="only this one (default: both)")
     ap.add_argument("--limit", type=int, default=None, help="only the first N customers per kind")
     ap.add_argument("--date", default=None, metavar="YYYY-MM-DD", help="'today' for the window")
+    ap.add_argument("--skip", action="append", default=[], metavar="CUSTOMER",
+                    help="hold this customer this run (repeatable; exact name as on the tab)")
     a = ap.parse_args(argv)
     today = dt.date.fromisoformat(a.date) if a.date else None
     return run(live=bool(a.live and not a.dry_run), limit=a.limit, today=today,
-               kinds=(a.kind,) if a.kind else ("recent", "checkin"))
+               kinds=(a.kind,) if a.kind else ("recent", "checkin"), skip=a.skip)
 
 
 if __name__ == "__main__":
