@@ -397,6 +397,25 @@ class Lines(unittest.TestCase):
         self.assertIn('<td class="now">Tier 3</td>', ROL.tier_box((week, (8, 20))))
 
 
+class CrossCheck(unittest.TestCase):
+    def test_rep_keys_and_the_deposit_sheet(self):
+        self.assertEqual(ROL._rep_key("Jacob Isaiah Ortega"), ("jacob", "ortega"))
+        self.assertEqual(ROL._rep_key("JACOB ORTEGA"), ("jacob", "ortega"))
+        self.assertEqual(ROL._rep_key("Gary Van Whitaker II"), ("gary", "whitaker"))
+        cs = [["Pick week ending →", "11.15"], [""], ["", "", "", "", "", "", "REP Name", "Sale Date", "Activation Date",
+              "Description", "Product", "Description Detail", "Customer Name", "Total $ to ICD", "Commission"],
+              ["", "", "", "", "", "", "Jacob Isaiah Ortega", "10/30/2026", "11/8/2026", "", "Port Line", "", "X", "$213.00", "$85.20"],
+              ["", "", "", "", "", "", "Jacob Isaiah Ortega", "10/30/2026", "11/8/2026", "", "AT&T Unlimited Extra", "", "X", "$10.00", "$4.00"],
+              ["", "", "", "", "", "", "Jacob Isaiah Ortega", "", "", "", "", "", "", "", "$89.20"],          # his subtotal row
+              ["", "", "", "", "", "", "Nicholas Smedra", "11/1/2026", "11/9/2026", "", "Port Line", "", "Y", "$1,213.00", ""]]
+        book = mock.Mock()
+        book.worksheet.return_value.get_all_values.return_value = cs
+        with mock.patch("automations.recruiting_report.fill.open_by_key", return_value=book):
+            dep = ROL.deposit_by_rep(dt.date(2026, 11, 15), log=lambda *_a: None)
+        book.worksheet.assert_called_once_with("CS 11.15")
+        self.assertEqual(dep, {("jacob", "ortega"): 223.0, ("nicholas", "smedra"): 1213.0})
+
+
 class SoldUnder(unittest.TestCase):
     """Carlos 11/20: this week's sales under Esmeralda's login, last week's under Sebastian's and the
     customer Sundararaghandran Viswanathan all belong to Jacob."""
