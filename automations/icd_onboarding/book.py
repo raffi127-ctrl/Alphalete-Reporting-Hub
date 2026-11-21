@@ -52,8 +52,20 @@ ID_COLUMN = "Onboarding Sheet"
 
 
 def tab_name(week_start: dt.date) -> str:
-    """The tab for a week, named for its MONDAY the way the OBCL names its."""
-    monday = week_start - dt.timedelta(days=week_start.weekday())
+    """The tab for a week, named for its MONDAY the way the OBCL names its.
+
+    TWO CONVENTIONS MEET HERE AND THEY ARE A DAY APART. The board's `Week of`
+    column holds the SUNDAY (`board.week_label`), because the week runs
+    Sunday to Saturday to match ApplicantStream's Retention Report. The OBCL
+    names its tabs for the MONDAY -- "D2D OBCL 11.23" is the week those
+    people start. So the tab is the Sunday PLUS one, not the calendar Monday
+    on or before the date.
+
+    Subtracting `weekday()` is the obvious thing and it is wrong: a Sunday
+    has weekday 6, so 11/15 would land on OBCL 11.9 -- a week early, and
+    every row filed against the wrong week.
+    """
+    monday = B.week_start_of(week_start) + dt.timedelta(days=1)
     return "OBCL %d.%d" % (monday.month, monday.day)
 
 

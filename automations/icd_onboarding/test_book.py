@@ -11,19 +11,28 @@ from automations.icd_onboarding import book as K
 
 
 class TestTabNames:
-    def test_a_week_is_named_for_its_monday(self):
-        # every day of the week of 11/23 lands on the same tab
+    def test_every_day_of_a_week_lands_on_the_same_tab(self):
+        # the week runs SUNDAY to Saturday, so 11/22 through 11/28
         for d in range(7):
-            when = dt.date(2026, 11, 23) + dt.timedelta(days=d)
+            when = dt.date(2026, 11, 22) + dt.timedelta(days=d)
             assert K.tab_name(when) == "OBCL 11.23", when
 
-    def test_the_name_round_trips(self):
-        monday = dt.date(2026, 11, 23)
-        assert K.week_of(K.tab_name(monday), 2026) == monday
+    def test_the_sunday_label_names_the_monday_tab(self):
+        """The two conventions are a day apart: `Week of` holds the SUNDAY,
+        the OBCL names its tab for the MONDAY. Subtracting weekday() is the
+        obvious thing and lands a week early -- 11/15 would be OBCL 11.9."""
+        from automations.icd_onboarding import board as B
+        assert B.week_label(dt.date(2026, 11, 16)) == "11/15/2026"
+        assert K.tab_name(dt.date(2026, 11, 15)) == "OBCL 11.16"
+        assert K.tab_name(dt.date(2026, 11, 16)) == "OBCL 11.16"
 
     def test_no_leading_zeroes(self):
         """The D2D OBCL writes 11.2, not 11.02 -- match what they read."""
         assert K.tab_name(dt.date(2026, 11, 2)) == "OBCL 11.2"
+
+    def test_the_round_trip_is_the_monday(self):
+        assert K.week_of(K.tab_name(dt.date(2026, 11, 16)), 2026) == \
+            dt.date(2026, 11, 16)
 
     def test_somebody_elses_tab_is_not_ours(self):
         for t in ("Sheet1", "Onboarding", "2nd Rds", "D2D OBCL 11.23",
