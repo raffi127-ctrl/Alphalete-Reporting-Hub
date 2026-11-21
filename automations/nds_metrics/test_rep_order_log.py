@@ -16,15 +16,16 @@ RATES = {"wireless": {"port_nonbyod": {"OOF": 213, "INFP": 193}, "port_byod": {"
 HDR = ["Rep", "sp.Order Date (copy)", "DTR Active Date", "Customer Name", "DTR Status", "spe.Status",
        "Device Description", "Package", "Wireless Installment Plan", "spe.TN", "Customer Zip Simple",
        "spe.Port Carrier", "spe.TN Type", "sp.SPM Number", "spe.Account BAN", "spe.Wireless Type",
-       "Product Type (Broken Out)", "spe.Install Date", "IF/OOF", "Auto Bill Pay", "Rep Tier Bonus Status"]
+       "Product Type (Broken Out)", "spe.Install Date", "IF/OOF", "Auto Bill Pay", "Rep Tier Bonus Status",
+       "Status Date", "cl.DD Date"]
 TODAY = dt.date(2026, 11, 20)                       # Friday; its Mon-Sun week ends Sun 11/22
 
 
 def _row(**kw):
     base = dict(zip(HDR, ["Esmeralda Gonzalez", "11/3/2026", "11/5/2026", "FELIPE C", "Posted", "Delivered",
-                          "iPhone 18 Pro - 256GB - Black", "AT&T Extra 2.0", "Next36 w/ Next Up Anytime",
+                          "iPhone 18 Pro - 256GB - Black", "AT&T Extra 2.0", "Next36 w/o Next Up",
                           "2145550100", "75060", "T-MOBILE USA", "port", "DSI1", "177145738935", "Phone",
-                          "WIRELESS", "", "OOF", "", "0"]))
+                          "WIRELESS", "", "OOF", "", "0", "", ""]))
     base.update(kw); return [base[h] for h in HDR]
 
 
@@ -43,7 +44,7 @@ def _crew():
                     "Package": "AT&T DataConnect 100GB"}),                               # tablet: a line, not an app
             _row(**{"spe.TN": "2145550105", "IF/OOF": "IF", "DTR Status": "Disconnected", "spe.Status": "Disconnected",
                     "sp.Order Date (copy)": "11/17/2026", "DTR Active Date": "11/18/2026", "sp.SPM Number": "DSI4",
-                    "Package": "AT&T Premium 2.0"}),
+                    "Package": "AT&T Premium 2.0", "Status Date": "11/19/2026"}),       # same deposit week: unpaid
             _row(**{"spe.TN": "2145550106", "sp.Order Date (copy)": "10/20/2026", "DTR Active Date": "10/22/2026",
                     "sp.SPM Number": "DSI5"}),                                           # sold 5 weeks back
             _row(**{"Rep": "Someone Else", "spe.TN": "2145550109", "sp.SPM Number": "DSI9"})]
@@ -54,7 +55,7 @@ class Money(unittest.TestCase):
         # 11/20: Ported From / SPM Number / Wireless Order # / BAN gone; "Package" is headed "Plan" and sits
         # next to Next Up; Est. Revenue + the four payout columns close the table, far right
         self.assertEqual(ROL.COLUMNS, ("Order Date", "Activation Date", "Customer Name", "Status",
-                                       "Device", "Plan", "Next Up", "Phone Number", "Zip Code", "Est. Revenue",
+                                       "Device \u00b7 Phone \u00b7 Zip", "Plan", "Tier", "Est. Revenue",
                                        "30% Payout", "40% Payout", "45% Payout", "50% Payout"))
 
     def test_payouts_and_totals(self):
@@ -65,7 +66,7 @@ class Money(unittest.TestCase):
         self.assertEqual(ROL.totals(lines), {"Est. Revenue": 426.0, "30% Payout": 127.8, "40% Payout": 170.4,
                                              "45% Payout": 191.7, "50% Payout": 213.0})
         row = ROL.total_row(lines)
-        self.assertIn('colspan="9">Total</td>', row)                       # label spans Order Date..Zip Code
+        self.assertIn('colspan="7">Total</td>', row)                       # label spans Order Date..Tier
         for money in ("$426", "$127.80", "$170.40", "$191.70", "$213.00"):
             self.assertIn(">%s</td>" % money, row)
         self.assertTrue(row.endswith('<td class="tot">$213.00</td></tr>'))  # the 50% total is the last cell
@@ -87,9 +88,10 @@ class Lines(unittest.TestCase):
         # Est. Revenue = the board's line price + the plan's add-on (Carlos 11/20): port 213 + Extra 10
         self.assertEqual((first["Status"], first["Est. Revenue"], first["30% Payout"], first["50% Payout"],
                           first["Next Up"], first["Plan"]),
-                         ("Posted", 223.0, 66.9, 111.5, "Next Up", "AT&T Extra 2.0"))
+                         ("Posted", 223.0, 66.9, 111.5, "No Next Up", "Extra"))
         for gone in ("Ported From", "SPM Number", "Wireless Order #", "BAN", "Package"):
             self.assertNotIn(gone, first)
+        self.assertEqual(first["Plan Name"], "AT&T Extra 2.0")
         # priced like the revenue board + the plan: BYOD port 188 + Extra 10, cancelled 0, tablet 25 (a data
         # plan adds nothing), in-footprint port 193 + Premium 15
         self.assertEqual((by_tn["2145550101"]["Status"], by_tn["2145550101"]["Est. Revenue"],
@@ -97,7 +99,8 @@ class Lines(unittest.TestCase):
         self.assertEqual((by_tn["2145550102"]["Status"], by_tn["2145550102"]["Est. Revenue"],
                           by_tn["2145550102"]["45% Payout"]), ("Cancelled", 0.0, 0.0))
         self.assertEqual(by_tn["2145550104"]["Est. Revenue"], 25.0)
-        self.assertEqual(by_tn["2145550105"]["Est. Revenue"], 208.0)
+        # activated 11/18 and disconnected 11/19, the same Mon-Sun deposit week: never paid (SOW)
+        self.assertEqual((by_tn["2145550105"]["Status"], by_tn["2145550105"]["Est. Revenue"]), ("Disconnected", 0.0))
         value = _row(**{"Package": "AT&T Value 2.0"})
         self.assertEqual(ROL.rep_lines(self.cols, [value], TODAY)["Esmeralda Gonzalez"][0]["Est. Revenue"], 213.0)
         weeks, pdc = ROL.group_weeks(esm)
@@ -123,7 +126,7 @@ class Lines(unittest.TestCase):
         bare = ROL.rep_lines(self.cols, [new], TODAY)["Esmeralda Gonzalez"][0]
         self.assertEqual((bare["Plan"], bare["Device"], bare["Est. Revenue"]), ("", "", 213.0))
         line = ROL.rep_lines(self.cols, [new], TODAY, tab=tab)["Esmeralda Gonzalez"][0]
-        self.assertEqual((line["Plan"], line["Device"]), ("AT&T Premium 2.0", "BYOD"))
+        self.assertEqual((line["Plan"], line["Device"]), ("Premium", "BYOD"))
         self.assertEqual(line["Est. Revenue"], 203.0)                                     # BYOD port 188 + Premium 15
         _w, sales = ROL.weekly_sales(self.cols, [new], TODAY, tab=tab)
         self.assertEqual(sales["Esmeralda Gonzalez"][dt.date(2026, 11, 22)]["revenue"], 203.0)
@@ -139,10 +142,96 @@ class Lines(unittest.TestCase):
         # the tablet (25) is not an app but its money is in the week's revenue
         self.assertEqual(dict(esm[dt.date(2026, 11, 15)]),
                          {"sold": 3, "pending": 1, "cancelled": 1, "activated": 1, "revenue": 316.0})
-        self.assertEqual(dict(esm[dt.date(2026, 11, 22)]), {"sold": 1, "activated": 1, "revenue": 208.0})   # disconnected after activating: IF 193 + Premium 15
+        self.assertEqual(dict(esm[dt.date(2026, 11, 22)]), {"sold": 1, "activated": 1, "revenue": 0.0})     # activated, then disconnected the same week: unpaid
         self.assertNotIn(dt.date(2026, 11, 1), esm)                                               # nothing sold that week
         wes4, _s = ROL.weekly_sales(self.cols, _crew(), TODAY, weeks=4)
         self.assertEqual(wes4[0], dt.date(2026, 11, 1))
+
+    def test_a_line_sara_shows_active_goes_in_saras_week_until_tableau_posts(self):
+        """Carlos 11/20: "Put them wherever Sara shows that they activated under. Once the posted date comes
+        up, you move them if needed"."""
+        shipped = dict(**{"DTR Status": "Shipped", "spe.Status": "Shipped", "DTR Active Date": "",
+                          "sp.Order Date (copy)": "11/10/2026"})
+        rows = [_row(**dict(shipped, **{"spe.TN": "2145550401", "sp.SPM Number": "S1"})),      # Sara: active 11/16
+                _row(**dict(shipped, **{"spe.TN": "2145550402", "sp.SPM Number": "S2"})),      # Sara: not active
+                _row(**{"spe.TN": "2145550403", "sp.SPM Number": "S3", "DTR Active Date": "11/12/2026"}),  # posted
+                _row(**dict(shipped, **{"spe.TN": "2145550404", "sp.SPM Number": "S4",
+                                        "DTR Status": "Canceled", "spe.Status": "Canceled"}))]  # dead stays dead
+        sara = {ROL.line_key("S1", "2145550401"): dt.date(2026, 11, 16),
+                ROL.line_key("S3", "2145550403"): dt.date(2026, 11, 13),                     # Tableau's date wins
+                ROL.line_key("S4", "2145550404"): dt.date(2026, 11, 16),
+                ROL.line_key("", "2145550401"): dt.date(2026, 11, 16)}
+        lines = dict((ln["Phone Number"], ln) for ln in ROL.rep_lines(self.cols, rows, TODAY, sara=sara)["Esmeralda Gonzalez"])
+        self.assertEqual((lines["2145550401"]["Status"], lines["2145550401"]["Activation Date"]),
+                         ("Active", dt.date(2026, 11, 16)))
+        self.assertEqual((lines["2145550402"]["Status"], lines["2145550402"]["Activation Date"]), ("Shipped", None))
+        self.assertEqual((lines["2145550403"]["Status"], lines["2145550403"]["Activation Date"]),
+                         ("Posted", dt.date(2026, 11, 12)))
+        self.assertEqual(lines["2145550404"]["Status"], "Cancelled")
+        weeks, pdc = ROL.group_weeks(list(lines.values()))
+        self.assertEqual(sorted(k[0] for k in weeks), [dt.date(2026, 11, 8), dt.date(2026, 11, 15)])
+        self.assertEqual([ln["Phone Number"] for ln in weeks[(dt.date(2026, 11, 15), dt.date(2026, 11, 21),
+                                                              dt.date(2026, 11, 27))]], ["2145550401"])
+        self.assertEqual(sorted(ln["Phone Number"] for ln in pdc), ["2145550402", "2145550404"])
+        # no SaraPlus read: as before
+        bare = dict((ln["Phone Number"], ln) for ln in ROL.rep_lines(self.cols, rows, TODAY)["Esmeralda Gonzalez"])
+        self.assertEqual(bare["2145550401"]["Status"], "Shipped")
+        # the weekly table counts it activated
+        _w, sales = ROL.weekly_sales(self.cols, rows[:2], TODAY, sara=sara)
+        self.assertEqual(dict(sales["Esmeralda Gonzalez"][dt.date(2026, 11, 15)])["activated"], 1)
+        # and the comparison counts the one line both have dated
+        self.assertEqual(ROL.compare_sara_tableau(self.cols, rows, sara, log=lambda *_a: None), {"both": 1, "moved": 0})
+
+    def test_deposit_itemising_order_and_disconnects(self):
+        """Carlos 11/20: upgrades show '(Upgrade)' and pay $30 flat; plan add-on + Next Up only on port
+        lines; lines by order date with disconnects then cancels at the bottom; a disconnect that was
+        paid stays green as 'Activated (Disconnected)' in its activated week."""
+        rows = [_row(**{"spe.TN": "2145550501", "sp.Order Date (copy)": "11/4/2026", "DTR Active Date": "11/4/2026",
+                        "spe.TN Type": "upgrade", "spe.Port Carrier": "", "sp.SPM Number": "U1"}),
+                _row(**{"spe.TN": "2145550502", "sp.Order Date (copy)": "11/2/2026", "DTR Active Date": "11/5/2026",
+                        "Wireless Installment Plan": "Next36 w/ Next Up Anytime", "Package": "AT&T Premium 2.0",
+                        "sp.SPM Number": "P1"}),
+                _row(**{"spe.TN": "2145550503", "sp.Order Date (copy)": "11/1/2026", "DTR Active Date": "11/3/2026",
+                        "DTR Status": "Disconnected", "spe.Status": "Disconnected", "Status Date": "11/12/2026",
+                        "sp.SPM Number": "D1"}),                                   # disconnected a week later: paid
+                _row(**{"spe.TN": "2145550504", "sp.Order Date (copy)": "11/3/2026", "DTR Active Date": "11/6/2026",
+                        "sp.SPM Number": "P2"}),
+                _row(**{"spe.TN": "2145550505", "sp.Order Date (copy)": "11/1/2026", "DTR Active Date": "",
+                        "DTR Status": "Canceled", "spe.Status": "Canceled", "sp.SPM Number": "C1"}),
+                _row(**{"spe.TN": "2145550506", "sp.Order Date (copy)": "11/2/2026", "DTR Active Date": "",
+                        "DTR Status": "Disconnected", "spe.Status": "Disconnected", "sp.SPM Number": "D2"}),  # never active
+                _row(**{"spe.TN": "2145550507", "sp.Order Date (copy)": "11/5/2026", "DTR Active Date": "",
+                        "DTR Status": "Shipped", "spe.Status": "Shipped", "sp.SPM Number": "S1"})]
+        esm = ROL.rep_lines(self.cols, rows, TODAY)["Esmeralda Gonzalez"]
+        by = dict((ln["Phone Number"], ln) for ln in esm)
+        self.assertEqual((by["2145550501"]["Device"], by["2145550501"]["Est. Revenue"]),
+                         ("iPhone 18 Pro - 256GB - Black (Upgrade)", 30.0))           # no plan add-on on an upgrade
+        self.assertEqual(by["2145550502"]["Est. Revenue"], 213.0 + 15 + 15)          # port + Premium + Next Up
+        self.assertEqual(by["2145550502"]["Plan"], "Premium + Next Up")             # Carlos 11/20: one column
+        self.assertEqual(by["2145550504"]["Plan"], "Extra")                         # no Next Up: just the plan
+        self.assertEqual((by["2145550503"]["Status"], by["2145550503"]["Est. Revenue"]), (ROL.ACT_DISC, 223.0))
+        self.assertEqual((by["2145550506"]["Status"], by["2145550506"]["Est. Revenue"]), ("Disconnected", 0.0))
+        weeks, pdc = ROL.group_weeks(esm)
+        wk = weeks[(dt.date(2026, 11, 1), dt.date(2026, 11, 7), dt.date(2026, 11, 13))]
+        # by ORDER date, the paid disconnect last in its week
+        self.assertEqual([ln["Phone Number"] for ln in wk], ["2145550502", "2145550504", "2145550501", "2145550503"])
+        self.assertEqual([ln["Phone Number"] for ln in pdc], ["2145550507", "2145550506", "2145550505"])  # pending, disc, cancel
+        page = ROL.html_for("Esmeralda Gonzalez", esm, TODAY)
+        self.assertIn('<td style="background:#57BB8A;color:#000000">Activated (Disconnected)</td>', page)   # green
+
+    def test_plan_and_device_cells(self):
+        self.assertEqual([ROL.short_plan(p) for p in ("AT&T Extra 2.0", "AT&T Premium 2.0", "AT&T 55+",
+                                                      "AT&T DataConnect 100GB", "")],
+                         ["Extra", "Premium", "55+", "DataConnect 100GB", ""])
+        self.assertEqual(ROL.plan_cell("AT&T Value 2.0", "Next Up"), "Value + Next Up")
+        self.assertEqual(ROL.plan_cell("AT&T Value 2.0", "BYOD"), "Value")
+        self.assertEqual(ROL.plan_cell("", "Next Up"), "Next Up")
+        self.assertEqual(ROL.fmt_phone("(972) 900-1732"), "972-900-1732")
+        byod = _row(**{"spe.TN": "2145550601", "Device Description": "iPhone 13 A2482", "Wireless Installment Plan": "BYOD"})
+        line = ROL.rep_lines(self.cols, [byod], TODAY)["Esmeralda Gonzalez"][0]
+        self.assertEqual(line["Device"], "iPhone 13 A2482 (BYOD)")
+        byo = _row(**{"spe.TN": "2145550602", "Device Description": "SM-G991U BYO", "Wireless Installment Plan": "BYOD"})
+        self.assertEqual(ROL.rep_lines(self.cols, [byo], TODAY)["Esmeralda Gonzalez"][0]["Device"], "SM-G991U BYO")
 
     def test_tier_bonus_per_port_line(self):
         """Carlos 11/20: "are you accounting for the tier in the revenue as well?" -- a port line earns its
@@ -167,9 +256,16 @@ class Lines(unittest.TestCase):
         per = ROL.rep_lines(self.cols, rows, TODAY, tier_by_line=tiers)
         line = [ln for ln in per["Aaron De La Torre"] if ln["Phone Number"] == "2145550301"][0]
         self.assertEqual((line["Est. Revenue"], line["30% Payout"]), (253.0, 75.9))    # 213 + Extra 10 + tier 30
+        self.assertEqual(line["Tier"], "Tier 1")                                      # Carlos 11/20: the Tier column
+        posted = [ln for ln in per["Aaron De La Torre"] if ln["Phone Number"] == "2145550306"][0]
+        self.assertEqual(posted["Tier"], "Tier 2")
+        upgrade = [ln for ln in per["Aaron De La Torre"] if ln["Phone Number"] == "2145550308"][0]
+        self.assertEqual(upgrade["Tier"], "")                                         # no tier on an upgrade
+        self.assertEqual([ROL.tier_name_for(v) for v in (0, 30, 50, 75, 110, 40)],
+                         ["", "Tier 1", "Tier 2", "Tier 3", "Tier 4", "$40"])
         dead = ROL.rep_lines(self.cols, [mk(1, **{"DTR Status": "Canceled", "spe.Status": "Canceled"})], TODAY,
                              tier_by_line=tiers)["Aaron De La Torre"][0]
-        self.assertEqual(dead["Est. Revenue"], 0.0)
+        self.assertEqual((dead["Est. Revenue"], dead["Tier"]), (0.0, ""))
         _w, sales = ROL.weekly_sales(self.cols, rows[:4], TODAY, tier_by_line=tiers)
         self.assertEqual(sales["Aaron De La Torre"][dt.date(2026, 11, 15)]["revenue"], 4 * 253.0)
 
@@ -212,8 +308,9 @@ class Lines(unittest.TestCase):
         self.assertEqual(paid[dt.date(2026, 11, 8)], {"Esmeralda Gonzalez": 50.0})     # tier week 11/1 - 11/7
         self.assertEqual(paid[dt.date(2026, 11, 22)], {})
         from automations.nds_metrics.run import Cols as _Cols
-        bare = _Cols(HDR[:-1])                                              # an export without the column
-        self.assertEqual(ROL.posted_tier_rates(bare, [r[:-1] for r in crew], wes), {we: {} for we in wes})
+        k = HDR.index("Rep Tier Bonus Status")
+        bare = _Cols(HDR[:k] + HDR[k + 1:])                                 # an export without the column
+        self.assertEqual(ROL.posted_tier_rates(bare, [r[:k] + r[k + 1:] for r in crew], wes), {we: {} for we in wes})
 
     def test_page(self):
         esm = ROL.rep_lines(self.cols, _crew(), TODAY)["Esmeralda Gonzalez"]
@@ -229,15 +326,17 @@ class Lines(unittest.TestCase):
         self.assertIn("Paid Friday 11.13", page)
         self.assertEqual(page.count(">Total</td>"), 2)                     # one per activated week, none under pending
         # a blank row after each grey Total: before the next blue band and before the orange band
-        self.assertEqual(page.count('<tr class="gap"><td colspan="14"></td></tr>'), 2)
-        self.assertIn('</tr><tr class="gap"><td colspan="14"></td></tr><tr><td class="band"', page)
-        self.assertIn('</tr><tr class="gap"><td colspan="14"></td></tr><tr><td class="pdc"', page)
+        self.assertEqual(page.count('<tr class="gap"><td colspan="12"></td></tr>'), 2)
+        self.assertIn('</tr><tr class="gap"><td colspan="12"></td></tr><tr><td class="band"', page)
+        self.assertIn('</tr><tr class="gap"><td colspan="12"></td></tr><tr><td class="pdc"', page)
         self.assertLess(page.rindex(">Total</td>"), page.index("Pending / Disconnect / Cancel"))
         self.assertIn(">$66.90</td>", page)                                # 30% of 213 + the Extra plan's 10
-        self.assertIn("<th>Plan</th><th>Next Up</th>", page)
-        self.assertIn("<th>Zip Code</th><th>Est. Revenue</th><th>30% Payout</th><th>40% Payout</th>"
+        self.assertIn("<th>Device \u00b7 Phone \u00b7 Zip</th><th>Plan</th><th>Tier</th>", page)
+        self.assertIn("iPhone 18 Pro - 256GB - Black<br><span class=\"dz\">214-555-0100 \u00b7 75060</span>", page)
+        self.assertIn("<th>Tier</th><th>Est. Revenue</th><th>30% Payout</th><th>40% Payout</th>"
                       "<th>45% Payout</th><th>50% Payout</th></tr>", page)          # the money is far right
-        for gone in ("Ported From", "SPM Number", "Wireless Order", ">BAN<", "<th>Package</th>"):
+        for gone in ("Ported From", "SPM Number", "Wireless Order", ">BAN<", "<th>Package</th>", "<th>Next Up</th>",
+                     "<th>Zip Code</th>", "<th>Phone Number</th>"):
             self.assertNotIn(gone, page)
         # the Activation/Pay Week box: 5 weeks, the current one last and highlighted (Carlos 11/20)
         cal = page[page.index("Activation/Pay Week"):page.index("Payout Levels")]
@@ -247,9 +346,10 @@ class Lines(unittest.TestCase):
                         cal.index('<td class="now">11/15/26</td><td class="now">11/21/26</td><td class="now">11/27/26</td>'))
         self.assertNotIn("11/22/26", cal)                                  # nothing after the current week
         # the boxes
-        for text in ("Payout Levels", ">Entry Level</td><td class=\"b\">30%</td>", ">Leadership</td><td class=\"b\">40%</td>",
-                     "Leadership, 12 apps the week prior</td><td class=\"b\">45%</td>",
-                     "Leadership, 16 apps the week prior</td><td class=\"b\">50%</td>"):
+        for text in ("Payout Levels", ">Entry-level pay</td><td class=\"b\">30%</td>",
+                     ">Leadership pay</td><td class=\"b\">40%</td>",
+                     ">Leadership pay at 10 apps</td><td class=\"b\">45%</td>",      # Carlos 11/20 night: 10 / 14
+                     ">Leadership pay at 14 apps</td><td class=\"b\">50%</td>"):
             self.assertIn(text, page)
         self.assertIn("Tier Bonus", page)
         for row in ("<td>Tier 1</td><td>4</td><td>$30</td>", '<td class="now">Tier 2</td><td class="now">5\u20136</td>'
@@ -270,7 +370,7 @@ class Lines(unittest.TestCase):
         self.assertIn(cells("alt", "11/1", 4, "Tier 1", 0, 0, 0, 0, "-", "$0"), page)
         self.assertIn(cells("", "11/8", 1, "-", 1, 1, 0, 0, "100%", "$223"), page)
         self.assertIn(cells("alt", "11/15", 3, "-", 3, 1, 1, 1, "33%", "$316"), page)
-        self.assertIn(cells("now", "11/22", 6, "Tier 2", 1, 1, 0, 0, "100%", "$208"), page)
+        self.assertIn(cells("now", "11/22", 6, "Tier 2", 1, 1, 0, 0, "100%", "$0"), page)
 
     def test_tier_box_marks_the_reps_band_only(self):
         week = (dt.date(2026, 11, 15), dt.date(2026, 11, 21))
