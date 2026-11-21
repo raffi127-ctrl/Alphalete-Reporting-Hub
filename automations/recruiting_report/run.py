@@ -344,7 +344,14 @@ def main() -> int:
                 pass
 
         # Step 3: per-office fetch + fill (handles primary + sibling sections)
-        for office in confirmed:
+        # An office whose AppStream fetch ERRORS (e.g. '#weekStart' not loaded
+        # yet) goes to the back of the line ONCE. On 2026-11-16 Raf Hidalgo —
+        # always first, one minute after login — timed out on the week picker;
+        # the other 58 offices filled fine and Raf's tab stayed empty all week.
+        office_queue = list(confirmed)
+        retried_tabs: set = set()
+        for office in office_queue:
+            fetch_error = False
             tab_name = office["sheet_tab"]
             primary_id = office["office_id"]
             owner = office["as_owner"]
@@ -437,6 +444,7 @@ def main() -> int:
                             break
                     except Exception as e:
                         log.exception("  fetch failed for %s week %s: %s", section_label, w, e)
+                        fetch_error = True
                         # If the browser/page died, relaunch the session once and
                         # retry this week — otherwise every remaining owner fails
                         # instantly on the dead page (Eve, 2026-06-02).
@@ -494,6 +502,13 @@ def main() -> int:
 
             # Persist progress now, so a kill on the NEXT office is resumable.
             _checkpoint()
+
+            if (primary_status is None and fetch_error
+                    and tab_name not in retried_tabs):
+                retried_tabs.add(tab_name)
+                office_queue.append(office)
+                log.warning("  %s failed — will try again once after the other offices",
+                            tab_name)
 
         if appstream_dead:
             log.error("AppStream session was unrecoverable — stopped the fetch "
