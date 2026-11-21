@@ -724,6 +724,27 @@
    "verify": null,
    "timeout_minutes": 20
   },
+  "lucy_transcriber_keydrop": {
+   "on_scheduler": false,
+   "_note": "Moves Lucy Pitch Auditor's two Slack keys onto LUCY 3 through this queue WITHOUT the Sheet ever holding a readable key (Megan 2026-11-21: 'you should be able to reach Lucy 3 always'). `lucy rerun lucy_transcriber_keydrop --make-lock --machine \"Lucy 3\"` prints a 43-character public lock; the laptop runs `python -m automations.lucy_transcriber.key_drop --send <lock>`, which queues --receive <sealed> here; Lucy 3 opens it, writes the key files (600), deletes the lock, restarts the bot. Touches no Sheet data and no report.",
+   "machine": "Lucy 3",
+   "stay_home": true,
+   "display_name": "Lucy Pitch Auditor key drop (locked keys to Lucy 3)",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.lucy_transcriber.key_drop"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 10
+  },
   "disable_lucy_transcriber_agent": {
    "on_scheduler": false,
    "_off_scheduler_note": "Retire com.alphalete.lucy-transcriber on LUCY 4 (installed there first on 2026-11-21, then the bot moved to Lucy 3 because Lucy 4 has no Claude key). Without it, a second copy of the bot would answer every DM twice once Lucy 4 ever gets the tokens. disable_agent only boots out the agent and moves its plist aside; it touches no Sheet and no report data. Reversible with install_lucy_transcriber_agent --machine.",

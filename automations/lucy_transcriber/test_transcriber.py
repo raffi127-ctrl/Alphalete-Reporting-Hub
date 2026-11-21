@@ -258,5 +258,51 @@ class Bot(unittest.TestCase):
         self.assertEqual(sorted(B._jobs.get()["ts"] for _ in range(2)), ["1.0", "3.0"])
 
 
+class KeyDrop(unittest.TestCase):
+    """The lock round trip, with fake keys in a temp folder."""
+
+    def test_seal_then_receive_writes_both_keys_and_drops_the_lock(self):
+        import tempfile
+        from pathlib import Path
+        from automations.lucy_transcriber import key_drop as K
+        tmp = Path(tempfile.mkdtemp())
+        saved = (K.LOCK, C.BOT_TOKEN_FILE, C.APP_TOKEN_FILE)
+        K.LOCK, C.BOT_TOKEN_FILE, C.APP_TOKEN_FILE = (
+            tmp / "lock", tmp / "bot", tmp / "app")
+        try:
+            pub = K.make_lock()
+            self.assertEqual(len(pub), 43)                  # 32 bytes, url-safe base64
+            sealed = K.seal(pub, {"bot": "xoxb-fake-1", "app": "xapp-fake-2"})
+            self.assertNotIn("fake", sealed)
+            real = K.subprocess.run
+            K.subprocess.run = lambda *a, **k: None         # no launchctl in a test
+            try:
+                self.assertEqual(K.receive(sealed), 0)
+            finally:
+                K.subprocess.run = real
+            self.assertEqual(C.BOT_TOKEN_FILE.read_text().strip(), "xoxb-fake-1")
+            self.assertEqual(C.APP_TOKEN_FILE.read_text().strip(), "xapp-fake-2")
+            self.assertFalse(K.LOCK.exists())
+            self.assertEqual(oct(C.BOT_TOKEN_FILE.stat().st_mode & 0o777), "0o600")
+        finally:
+            K.LOCK, C.BOT_TOKEN_FILE, C.APP_TOKEN_FILE = saved
+
+    def test_someone_elses_lock_cannot_open_it(self):
+        import tempfile
+        from pathlib import Path
+        from automations.lucy_transcriber import key_drop as K
+        tmp = Path(tempfile.mkdtemp())
+        saved = K.LOCK
+        K.LOCK = tmp / "lock"
+        try:
+            pub = K.make_lock()
+            sealed = K.seal(pub, {"bot": "xoxb-x", "app": "xapp-y"})
+            K.make_lock()                                    # a different lock
+            with self.assertRaises(Exception):
+                K.open_sealed(sealed)
+        finally:
+            K.LOCK = saved
+
+
 if __name__ == "__main__":
     unittest.main()
