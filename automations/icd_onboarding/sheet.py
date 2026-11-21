@@ -167,6 +167,34 @@ def open_week(workbook, week_start=None, *, create: bool = True):
     return open_board(workbook, create=create)
 
 
+def board_for(office_key: str, week_start=None, *, create: bool = False):
+    """THE one way to reach an office's board, old shape or new.
+
+    Megan, 2026-11-21: every ICD gets their own workbook with a tab per
+    week. That is `icd_onboarding.book`. Everything written before it reached
+    for `fillers.workbook_for(...)` and the single `Onboarding` tab inside a
+    sheet the office already owned.
+
+    NO FLAG DAY. An office that has a book of their own is read and written
+    there; one that has not is left exactly as it was. Switching every office
+    at once would mean a window where a tick lands on the old tab and a read
+    looks at the new one, and the board would be telling two stories about
+    the same person.
+
+    Falls back when `week_start` is unknown too: the new shape is a tab PER
+    WEEK, so without one there is no tab to choose, and the old stacked tab
+    is the only honest answer.
+    """
+    from automations.icd_onboarding import book as K
+    from automations.icd_onboarding import fillers as F
+
+    if week_start is not None:
+        their_book = K.open_book(office_key)
+        if their_book is not None:
+            return K.open_week(their_book, week_start, create=create)
+    return open_board(F.workbook_for(office_key), create=create)
+
+
 def backfill_funnels(ws, week_start: dt.date, fresh: List[Dict],
                      log=print) -> int:
     """Write `Funnel` onto rows that are ALREADY on the board.

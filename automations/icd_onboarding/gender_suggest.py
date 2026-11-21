@@ -498,7 +498,7 @@ def fill(office_key: str, week_start=None, *, dry_run: bool = False,
     from automations.icd_onboarding import fillers as F
     from automations.icd_onboarding import sheet as S
 
-    ws = S.open_board(F.workbook_for(office_key), create=False)
+    ws = S.board_for(office_key, week_start, create=False)
     if ws is None:
         log("  no onboarding board for %s yet." % office_key)
         return 0

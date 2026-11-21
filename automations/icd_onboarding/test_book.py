@@ -69,3 +69,45 @@ class TestTheHeadersMatchTheBoard:
         assert want[0] == B.WEEK
         assert B.FUNNEL in want
         assert len(set(want)) == len(want), "a duplicated header"
+
+
+class TestNoFlagDay:
+    """board_for picks the new shape only where it exists."""
+
+    def test_no_week_means_the_old_tab(self, monkeypatch):
+        """The new shape is a tab PER WEEK. With no week there is no tab to
+        choose, so the stacked tab is the only honest answer."""
+        from automations.icd_onboarding import sheet as S
+        seen = {}
+        monkeypatch.setattr(S, "open_board",
+                            lambda wb, create=True: seen.setdefault("old", True))
+        monkeypatch.setattr("automations.icd_onboarding.fillers.workbook_for",
+                            lambda k: object())
+        monkeypatch.setattr(K, "open_book",
+                            lambda *a, **k: (_ for _ in ()).throw(
+                                AssertionError("must not be asked")))
+        S.board_for("raf", None)
+        assert seen.get("old")
+
+    def test_an_office_with_no_book_stays_on_the_old_tab(self, monkeypatch):
+        from automations.icd_onboarding import sheet as S
+        seen = {}
+        monkeypatch.setattr(K, "open_book", lambda *a, **k: None)
+        monkeypatch.setattr(S, "open_board",
+                            lambda wb, create=True: seen.setdefault("old", True))
+        monkeypatch.setattr("automations.icd_onboarding.fillers.workbook_for",
+                            lambda k: object())
+        S.board_for("raf", dt.date(2026, 11, 23))
+        assert seen.get("old")
+
+    def test_an_office_with_a_book_gets_its_week_tab(self, monkeypatch):
+        from automations.icd_onboarding import sheet as S
+        book = object()
+        got = {}
+        monkeypatch.setattr(K, "open_book", lambda *a, **k: book)
+        monkeypatch.setattr(K, "open_week",
+                            lambda b, w, create=True: got.setdefault("w", w))
+        monkeypatch.setattr(S, "open_board", lambda *a, **k: (
+            _ for _ in ()).throw(AssertionError("old tab must not be used")))
+        S.board_for("raf", dt.date(2026, 11, 23))
+        assert got["w"] == dt.date(2026, 11, 23)

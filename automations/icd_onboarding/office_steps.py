@@ -202,7 +202,7 @@ def mark_not_applicable(office_key, week_start, *, dry_run: bool = True,
     steps = skipped_for(office_key)
     if not steps:
         return 0
-    ws = S.open_board(F.workbook_for(office_key), create=False)
+    ws = S.board_for(office_key, week_start, create=False)
     if ws is None:
         return 0
     rows = B.for_week(S.rows_of(ws.get_all_values()), week_start)
