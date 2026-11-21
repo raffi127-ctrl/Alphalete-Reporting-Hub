@@ -63,3 +63,31 @@ class Crew(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OrderLogRepsAreCrew(unittest.TestCase):
+    """11/21: seven reps on the NDS Order Log were never on the hand-kept
+    list -- their customers got no contact and no wrap-up."""
+
+    def tearDown(self):
+        G._TAB_REPS = None
+
+    def test_every_rep_on_the_tab_is_crew(self):
+        G._TAB_REPS = ["Pat Newrep Example"]
+        is_crew = G.crew_matcher()
+        self.assertTrue(is_crew("Pat Newrep Example"))
+        self.assertTrue(is_crew("Nathaly Elizabeth Molina Benitez"))   # the static list still counts
+        self.assertFalse(is_crew("Aaliyah Roberson"))
+
+    def test_unreadable_tab_leaves_the_static_list(self):
+        from unittest import mock
+        with mock.patch("automations.recruiting_report.fill.open_by_key", side_effect=RuntimeError("down")):
+            self.assertEqual(G.order_log_reps(log=lambda *a: None), [])
+
+    def test_reps_read_by_header(self):
+        from unittest import mock
+        sheet = mock.MagicMock()
+        sheet.worksheet.return_value.get_all_values.return_value = [
+            ["Week Ending", "Rep", "Customer"], ["", "Pat A", "x"], ["", "Pat A", "y"], ["", "", "z"], ["", "Lee B", "w"]]
+        with mock.patch("automations.recruiting_report.fill.open_by_key", return_value=sheet):
+            self.assertEqual(G.order_log_reps(log=lambda *a: None), ["Lee B", "Pat A"])

@@ -170,10 +170,34 @@ NDS_EXTRA_CREW = [
 ]
 
 
+def order_log_reps(log=print) -> List[str]:
+    """Every rep on the NDS Order Log tab. 2026-11-21: seven reps (28
+    customers) were on the tab but never on the hand-kept list, so their
+    customers got no contact and no wrap-up -- a customer's reply came in as
+    a bare number and nobody saw it. The tab is the roster Carlos reads;
+    [] when it cannot be read (the static list then stands alone)."""
+    try:
+        from automations.nds_metrics import order_log_tab as T
+        from automations.recruiting_report.fill import _retry, open_by_key
+        rows = _retry(lambda: open_by_key(T.VANTURA_SHEET_ID).worksheet(T.TAB).get_all_values())
+        i = [_norm(h).lower() for h in rows[0]].index("rep")
+        return sorted({_norm(r[i]) for r in rows[1:] if i < len(r) and _norm(r[i])})
+    except Exception as e:  # noqa: BLE001 -- a tab read never sinks the sync
+        log("  (NDS Order Log reps unreadable: %s: %s -- static crew list only)"
+            % (type(e).__name__, str(e)[:120]))
+        return []
+
+
+_TAB_REPS: Optional[List[str]] = None
+
+
 def crew_names() -> List[str]:
+    global _TAB_REPS
     from automations.total_knocks import guests as gst
+    if _TAB_REPS is None:
+        _TAB_REPS = order_log_reps()
     return (gst.roster("Rafael Hidalgo", "Carlos Hidalgo")
-            + ["Carlos Hidalgo"] + list(NDS_EXTRA_CREW))
+            + ["Carlos Hidalgo"] + list(NDS_EXTRA_CREW) + list(_TAB_REPS))
 
 
 def crew_matcher():
