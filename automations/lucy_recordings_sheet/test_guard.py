@@ -163,6 +163,13 @@ class EmailWeekTest(unittest.TestCase):
         self.assertEqual(tot[0][:5], ["W", 2, 4, 0.5, 7.5])
         self.assertEqual(mrows[0][:4], ["November 2026", "Ann", 3, 9])
 
+    def test_sheet_weeks_are_monday_keys_with_a_text_label(self):
+        from automations.lucy_recordings_sheet.run import week_of, week_key_label
+        self.assertEqual(week_of("2026-11-22T09:00"), "2026-11-16")   # Sunday
+        self.assertEqual(week_of("2026-11-23"), "2026-11-23")         # Monday
+        self.assertEqual(week_key_label("2026-11-16"), "Week Nov 16 – Nov 22")
+        self.assertEqual(week_key_label("2026-11-30"), "Week Nov 30 – Dec 6")
+
 
 if __name__ == "__main__":
     unittest.main()

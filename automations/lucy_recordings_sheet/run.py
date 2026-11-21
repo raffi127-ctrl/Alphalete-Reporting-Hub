@@ -467,11 +467,35 @@ def week_period(days: list):
     return lambda day: "week" if day[:10] in want else None
 
 
+# The sheet's weeks (Eve 2026-11-20: "Raf will want a weekly record"): Mon-Sun,
+# same as the email. Retention starts Sun 10/25 -> weeks from Mon 10/26 on are full.
+FIRST_FULL_INTERVIEW_WEEK = "2026-10-26"
+
+
+def week_of(day: str):
+    """'YYYY-MM-DD...' -> that week's Monday 'YYYY-MM-DD'."""
+    try:
+        d = dt.date.fromisoformat(day[:10])
+    except ValueError:
+        return None
+    return (d - dt.timedelta(days=d.weekday())).isoformat()
+
+
+def week_key_label(key: str) -> str:
+    """'2026-11-16' -> 'Week Nov 16 – Nov 22'. Starts with 'Week' so Sheets
+    never turns the picked value into a date."""
+    mon = dt.date.fromisoformat(key)
+    return "Week " + week_label([mon, mon + dt.timedelta(days=6)])
+
+
 def build(export: dict, done: dict, owner_of: dict, guesses: dict | None = None,
-          period=month_period, label=None):
+          period=month_period, label=None, full=None):
     """Rows per period. period(day) -> key (None = skip); label(key) -> the
-    text in the rows. Default: per month, for the sheet."""
+    text in the rows; full(key) -> 2nd-round counts are complete for it.
+    Default: per month, for the sheet."""
     label = label or month_label
+    if full is None:
+        full = (lambda k: k >= FIRST_FULL_INTERVIEW_MONTH) if period is month_period else (lambda k: True)
     # 2nd rounds per (period, office), from the daily retention counts.
     per = defaultdict(int)
     for (day, oid), n in done.items():
@@ -520,8 +544,7 @@ def build(export: dict, done: dict, owner_of: dict, guesses: dict | None = None,
     for (mk, oname), b in own.items():
         oid = name_to_oid.get(oname)
         ivs = None
-        if oid and offices.get(oid) and (period is not month_period
-                                          or mk >= FIRST_FULL_INTERVIEW_MONTH):
+        if oid and offices.get(oid) and full(mk):
             ivs = sum(done.get((mk, x), 0) for x in offices[oid])
         pct = (b["n"] / ivs) if ivs else None
         avg = round(sum(b["scores"]) / len(b["scores"]), 1) if b["scores"] else None
@@ -577,6 +600,7 @@ GOOD, MID, LOW = _rgb("C8E6C9"), _rgb("FFE9A8"), _rgb("F6C1C1")
 # gap, table header, data.
 R_TITLE, R_PICK, R_CARD_LBL, R_CARD_VAL, R_HDR, R_DATA = 0, 1, 3, 4, 6, 7
 MONTH_CELL = "$B$2"
+PICK_LABEL = "Month or week"
 LAST_ROW = 400
 
 # Sheets turns a picked "November 2026" into a DATE, which never equals the
@@ -611,7 +635,7 @@ def table_formula(lay: dict) -> str:
     in_month = "%s!A2:A=%s" % (calc, MONTH_EXPR)
     then = ", %d, FALSE" % lay["then"] if lay.get("then") else ""
     return ('=IFERROR(SORT(FILTER(%s!%s, %s), FILTER(%s!%s, %s)="%s", TRUE, %d, FALSE%s), '
-            '"No data for this month")'
+            '"No data for this period")'
             % (calc, lay["cols"], in_month, calc, lay["owner_col"], in_month, NO_OWNER, lay["sort"], then))
 
 
@@ -692,7 +716,7 @@ def restyle(S, ssid):
             # A link to the other tab, top right - the bottom tab bar is easy to miss.
             {"range": "%s!%s1" % (_q(tab), last), "values": [[
                 '=HYPERLINK("#gid=%d", "%s")' % (ids[lay["other"]], lay["other_label"])]]},
-            {"range": "%s!A2:B2" % _q(tab), "values": [["Month", this_month]]},
+            {"range": "%s!A2:B2" % _q(tab), "values": [[PICK_LABEL, this_month]]},
             {"range": "%s!A4" % _q(tab), "values": [[c[0] for c in lay["cards"]]]},
             {"range": "%s!A5" % _q(tab), "values": [[card_formula(c[1]) for c in lay["cards"]]]},
             {"range": "%s!A7" % _q(tab), "values": [lay["hdr"]]},
@@ -890,9 +914,10 @@ def write(S, ssid, owner_rows, rep_rows, totals, month_list):
             "2nd rounds done: ApplicantStream (Second Interviews Showed Up)" % stamp)
     for tab in LAYOUTS:
         data.append({"range": "%s!C2" % _q(tab), "values": [[note]]})
+        data.append({"range": "%s!A2" % _q(tab), "values": [[PICK_LABEL]]})
     S.post("%s/%s/values:batchUpdate" % (SHEETS, ssid),
            json={"valueInputOption": "RAW", "data": data}).raise_for_status()
-    log("wrote %d owner row(s), %d rep row(s), %d month(s)"
+    log("wrote %d owner row(s), %d rep row(s), %d month/week(s)"
         % (len(owner_rows), len(rep_rows), len(month_list)))
 
 
@@ -1365,6 +1390,12 @@ def main(argv=None) -> int:
         ", ".join("%s -> %s [%s]" % (export["names"].get(u, u), o, src)
                   for u, (o, src) in sorted(guesses.items()))))
     owner_rows, rep_rows, totals, month_list, unmatched = build(export, done, owner_of, guesses)
+    # Same picker, weeks under the months (Eve 2026-11-20).
+    wo, wr, wt, week_list, _u = build(export, done, owner_of, guesses, period=week_of,
+                                      label=week_key_label,
+                                      full=lambda k: k >= FIRST_FULL_INTERVIEW_WEEK)
+    # Keep the sheet's own copies; the email builds its week separately.
+    sheet_rows = (owner_rows + wo, rep_rows + wr, totals + wt, month_list + week_list)
     ns_weeks = closed_weeks(dt.datetime.now(CT).date())
     ns_table, ns_seen = new_starts_table(
         load_new_starts(S), ns_weeks, export["owners"],
@@ -1444,7 +1475,7 @@ def main(argv=None) -> int:
         raise SystemExit("no sheet id - run with --create once, then set SSID")
     if a.restyle and not a.create:
         restyle(S, ssid)
-    write(S, ssid, owner_rows, rep_rows, totals, month_list)
+    write(S, ssid, *sheet_rows)
     rc = 0
     # The EMAIL is per week (Raf 2026-11-20), the sheet stays per month.
     days = email_week(dt.datetime.now(CT).date() - dt.timedelta(days=1))
