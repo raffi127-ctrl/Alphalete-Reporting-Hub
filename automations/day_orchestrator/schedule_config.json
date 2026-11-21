@@ -4149,7 +4149,8 @@
     "automations.program_daily_summary.run"
    ],
    "base_args": [
-    "--enable-rollover"
+    "--enable-rollover",
+    "--post"
    ],
    "cadence": {
     "weekdays": [0, 1, 2, 3, 4, 5, 6]

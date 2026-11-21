@@ -5,6 +5,7 @@
   python -m automations.program_daily_summary.run --enable-rollover
   python -m automations.program_daily_summary.run --no-tableau      # Credico only
   python -m automations.program_daily_summary.run --today 2026-11-24 --dry-run
+  python -m automations.program_daily_summary.run --enable-rollover --post  # daily
 
 Each run: gather COUNTRY per-day totals for every campaign (this week AND last
 week, so a Tuesday roll freezes the closing week with its final Sunday), then
@@ -180,6 +181,9 @@ def main() -> int:
     ap.add_argument("--backfill-last-week", action="store_true",
                     help="also add LAST week to the history for every campaign "
                          "whose full week came back and isn't stored yet")
+    ap.add_argument("--post", action="store_true",
+                    help="after a clean verify, send the top table to the "
+                         "trackers thread + Raf DM (post.py)")
     args = ap.parse_args()
     today = dt.date.fromisoformat(args.today) if args.today else dt.date.today()
 
@@ -209,6 +213,11 @@ def main() -> int:
         print(f"VERIFY FAILED: nothing for yesterday on the board for {missing}")
         return 1
     print("verify OK")
+    if args.post:
+        from automations.program_daily_summary import post
+        if not post.post(today, dry_run=False):
+            print("POST: not every target got the image (see above)")
+            return 1
     return 0
 
 
