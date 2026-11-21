@@ -258,6 +258,26 @@ class Lines(unittest.TestCase):
         byo = _row(**{"spe.TN": "2145550602", "Device Description": "SM-G991U BYO", "Wireless Installment Plan": "BYOD"})
         self.assertEqual(ROL.rep_lines(self.cols, [byo], TODAY)["Esmeralda Gonzalez"][0]["Device"], "SM-G991U BYO")
 
+    def test_tableau_posted_date_only(self):
+        """Carlos 11/20 night: "we could just use the posted date on tableau" -- a line SaraPlus shows Active
+        that Tableau has not posted is Pending ("Active (not posted)"); the posted date places a line too."""
+        rows = [_row(**{"spe.TN": "2145550801", "DTR Status": "Shipped", "spe.Status": "Active", "DTR Active Date": "",
+                        "sp.Order Date (copy)": "11/16/2026"}),
+                _row(**{"spe.TN": "2145550802", "DTR Status": "Posted", "spe.Status": "Active", "DTR Active Date": "",
+                        "spe.dtr Posted Date": "11/17/2026", "sp.Order Date (copy)": "11/16/2026"})]
+        cols = Cols(HDR + ["spe.dtr Posted Date"])
+        rows = [r + ["" if i == 0 else "11/17/2026"] for i, r in enumerate(rows)]
+        esm = dict((ln["Phone Number"], ln) for ln in ROL.rep_lines(cols, rows, TODAY)["Esmeralda Gonzalez"])
+        self.assertEqual((esm["2145550801"]["Status"], esm["2145550801"]["Activation Date"]), (ROL.NOT_POSTED, None))
+        self.assertEqual((esm["2145550802"]["Status"], esm["2145550802"]["Activation Date"]),
+                         ("Posted", dt.date(2026, 11, 17)))
+        weeks, pdc = ROL.group_weeks(list(esm.values()))
+        self.assertEqual([ln["Phone Number"] for ln in pdc], ["2145550801"])
+        self.assertEqual(list(weeks), [(dt.date(2026, 11, 16), dt.date(2026, 11, 22), dt.date(2026, 11, 27))])
+        _w, sales = ROL.weekly_sales(cols, rows, TODAY)
+        c = sales["Esmeralda Gonzalez"][dt.date(2026, 11, 22)]
+        self.assertEqual((c["activated"], c["pending"]), (1, 1))
+
     def test_tier_bonus_per_port_line(self):
         """Carlos 11/20: "are you accounting for the tier in the revenue as well?" -- a port line earns its
         LOGIN's tier for the Sun-Sat week of its order; a Posted line's own status wins."""

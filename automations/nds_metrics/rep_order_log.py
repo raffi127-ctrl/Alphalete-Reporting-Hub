@@ -70,7 +70,15 @@ cl.DD Date (a late Sunday post can roll a week: Sundararaghandran's 11/8
 lines paid on CS 11.15); an unpaid one under the Mon..Sun week of its
 activation day. Tier weeks stay Smart Circle's Sun..Sat (a different rule).
 
-Which week a line is paid in (Carlos 11/20 night: "Put them wherever Sara
+TABLEAU'S POSTED DATE ONLY (Carlos 11/20 night, after the cross-check: "if
+its less complex we could just use the posted date on tableau"): a line is in
+an activated week only once Tableau has posted it (DTR Active Date, else
+spe.dtr Posted Date; the deposit's own cl.DD Date when it has been paid);
+SaraPlus no longer places anything. A line SaraPlus shows Active that
+Tableau has not posted reads "Active (not posted)" in the Pending band. The
+paragraph below is the 11/20 evening rule this replaced.
+
+(Superseded) Which week a line is paid in (Carlos 11/20 night: "Put them wherever Sara
 shows that they activated under. Once the posted date comes up, you move them
 if needed"): Tableau's DTR Active Date once Tableau has posted the line;
 before that, a line SaraPlus already shows Active goes in the week SaraPlus
@@ -667,6 +675,7 @@ def _status(dtr: str, spe: str) -> str:
 # stays "Disconnected", $0, at the bottom. One that disconnected LATER was
 # paid: "Activated (Disconnected)", green, in its activated week.
 ACT_DISC = "Activated (Disconnected)"
+NOT_POSTED = "Active (not posted)"
 PAID_STATUSES = ("Posted", "Active", ACT_DISC)
 
 
@@ -701,6 +710,7 @@ def _cols_index(cols) -> dict:
         "prod": cols.find("product type (broken out)", "product type"),
         "inst": cols.find("spe.install date", "install date"),
         "sdate": cols.find("status date"),
+        "posted": cols.find("spe.dtr posted date", "posted date"),
         "dd": cols.find("cl.dd date"),
     }
 
@@ -747,8 +757,11 @@ def line_facts(cols, r, I: dict, rates: dict, tab=None, sara=None, tier_by_line=
     Revenue (line_value + the tier bonus; $0 cancelled / unpaid)."""
     from automations.nds_metrics.run import _c, _parse_date
     g = lambda k: _c(cols, r, I[k]) if I.get(k) is not None else ""   # noqa: E731
-    status, act = placed(_status(g("dtr"), g("spe")), _parse_date(g("act")), sara, g("spm"), g("tn"))
-    ever = act is not None or status in ("Posted", "Active")
+    status, act = placed(_status(g("dtr"), g("spe")), _parse_date(g("act")) or _parse_date(g("posted")),
+                         sara, g("spm"), g("tn"))
+    if status == "Active" and act is None:
+        status = NOT_POSTED               # SaraPlus says active, Tableau has not posted it: Pending
+    ever = act is not None or status == "Posted"
     if status == "Disconnected" and act is not None:
         disc = _parse_date(g("sdate"))
         if g("dd") or disc is None or _deposit_week(act) != _deposit_week(disc):
@@ -832,7 +845,7 @@ def group_weeks(lines: List[dict]):
     weeks: dict = {}
     pdc: List[dict] = []
     for ln in lines:
-        d = (ln.get("DD Week") or _eff(ln)) if ln["Status"] in PAID_STATUSES else None
+        d = (ln.get("DD Week") or ln.get("Activation Date")) if ln["Status"] in PAID_STATUSES else None
         if d is not None:
             weeks.setdefault(pay_week(d), []).append(ln)
         else:
@@ -1059,8 +1072,7 @@ def picture_lines(cols, crew: Sequence, today: dt.date, log=print) -> dict:
     except Exception as e:  # noqa: BLE001 -- the pictures still ship, under the logins
         log(f"[nds] rep order log: NOTE sold-under moves not applied ({type(e).__name__}: {str(e)[:100]})")
     tab = TabPlans.read(log=log)           # the plan / device of a line the export has none for yet
-    sara = mark_replaced(cols, logins, sara_activations(log=log))   # where SaraPlus shows a line activating
-    compare_sara_tableau(cols, crew, sara, log=log)
+    sara = {}                              # 11/20 night: Tableau's posted date only (no SaraPlus placing)
     dbl = double_days(log=log)
     try:                                   # each port line's tier bonus, at its LOGIN's tier
         tier_by_line = line_tier_rates(cols, logins, log=log, dbl=dbl)
