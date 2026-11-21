@@ -82,7 +82,13 @@ def tableau_days(today: dt.date, logfn=print) -> dict:
                     page, OUT, last_week=lw, logfn=logfn)))
             except fiber.NoDataYet as e:
                 logfn(f"  ATT Fiber {'LW' if lw else 'this week'}: {e}")
-        got["ATT Fiber"] = days
+            except Exception as e:  # noqa: BLE001 — a Tableau load flake on
+                # one pull must not sink the other campaigns (2026-11-20: a
+                # toolbar timeout here killed the whole run)
+                logfn(f"  ATT Fiber {'LW' if lw else 'this week'} FAILED: "
+                      f"{type(e).__name__}: {str(e)[:200]}")
+        if days:
+            got["ATT Fiber"] = days
         for camp, spec in _country_specs().items():
             days = {}
             # ONE pull, pinned to the REPORTING week (Tuesday-rolling): on a
