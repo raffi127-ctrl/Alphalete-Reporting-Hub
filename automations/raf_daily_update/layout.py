@@ -71,6 +71,8 @@ def _key_for(h: str) -> Optional[str]:
         return "ad"
     if h.startswith("owner liked"):
         return "owner_liked"
+    if h.startswith("next step"):
+        return "next_step"
     return None
 
 
@@ -83,7 +85,7 @@ LIKED, NOT_LIKED = "Yes", "No"
 # person's start day, days after the interview this row is about, so the
 # daily run has nothing to put in it. `day1.py` fills it later.
 WRITE_KEYS = ("date", "int1", "int2", "first", "last", "phone", "status",
-              "bob_date", "time", "email", "ad", "owner_liked")
+              "bob_date", "time", "email", "ad", "owner_liked", "next_step")
 
 
 def resolve(header_row: List[str]) -> Dict[str, int]:
@@ -166,6 +168,46 @@ def status_for(c: dict) -> str:
     return TO_CALL
 
 
+# WHAT HAPPENS NEXT, per status (Megan 2026-11-20: "we should just have
+# every 2nd round scheduled on the daily update and then what their next
+# step is").
+#
+# The sheet already carries every second round the day had -- the roster row
+# is the day's whole list, not only the ones that went somewhere. What it
+# never said is which of them is still owed something, so a leader reading
+# the day had to work it out from the Status wording each time.
+#
+# ONLY TWO OF THESE ARE ANYBODY'S MOVE. A blank status and an LM are people
+# waiting on a call; everything else is finished, in one direction or the
+# other, and says so rather than leaving the cell empty -- an empty cell
+# reads as "nobody has looked at this yet", which is the opposite of what
+# BOB or Declined means.
+NEXT_STEP = {
+    BOB: "Starts %s",             # filled with their BOB date where we have one
+    LM: "Call again",
+    TO_CALL: "Call them",
+    LETTING: "Waiting on them",
+    DECLINED: "Closed - they declined",
+    LEADER_NO: "Closed - leader said no",
+    NO_SHOW: "Rebook or close",
+}
+
+
+def next_step(status: str, bob_date: str = "") -> str:
+    """One short line saying what this person is owed, for the sheet.
+
+    Takes the status as the sheet spells it -- the recruiters' wording
+    carries a reason after a colon ("Leader said no: issues with schedule"),
+    so it is matched by rank rather than compared whole.
+    """
+    rank = ORDER[status_rank(status)]
+    said = NEXT_STEP.get(rank, "")
+    if rank == BOB:
+        when = str(bob_date or "").strip()
+        return said % when if when else "Starts - date not set"
+    return said
+
+
 def owner_liked_for(c: dict) -> str:
     """One harvested candidate -> the sheet's 'Owner Liked the applicant Yes
     or No'.
@@ -233,6 +275,7 @@ def build_rows(cands: List[dict]) -> List[dict]:
             "status": st, "bob_date": bob_date, "time": slot,
             "email": c.get("email", ""), "ad": c.get("ad", ""),
             "owner_liked": owner_liked_for(c),
+            "next_step": next_step(st, bob_date),
         })
     rows.sort(key=lambda r: (r["_day"], status_rank(r["status"]),
                              _norm(r["int2"]), _norm(r["first"])))

@@ -97,3 +97,47 @@ class Layout(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NextStep(unittest.TestCase):
+    """Megan 2026-11-20: every 2nd round on the update, and what's next."""
+
+    def test_only_two_statuses_are_still_somebody_s_move(self):
+        owed = {s for s in L.ORDER
+                if L.next_step(s).startswith("Call")}
+        self.assertEqual(owed, {L.LM, L.TO_CALL})
+
+    def test_a_bob_says_when_they_start(self):
+        self.assertEqual(L.next_step(L.BOB, "11/23"), "Starts 11/23")
+
+    def test_a_bob_with_no_date_says_so_rather_than_nothing(self):
+        self.assertEqual(L.next_step(L.BOB, ""), "Starts - date not set")
+
+    def test_the_reason_after_the_colon_does_not_break_the_match(self):
+        self.assertEqual(L.next_step("Leader said no: issues with schedule"),
+                         "Closed - leader said no")
+        self.assertEqual(L.next_step("Declined - going to keep interviewing"),
+                         "Closed - they declined")
+
+    def test_nothing_is_left_blank(self):
+        """A blank cell reads as 'nobody has looked at this', which is the
+        opposite of what BOB or Declined means."""
+        for s in L.ORDER:
+            self.assertTrue(L.next_step(s, "11/23"), "%r said nothing" % s)
+
+    def test_it_is_written_and_found_by_header(self):
+        self.assertIn("next_step", L.WRITE_KEYS)
+        # It has to sit BEFORE the blank spacer: resolve stops at the first
+        # empty header, because everything right of it is MONTHLY TOTALS.
+        at = HDR.index("")
+        head = HDR[:at] + ["Next Step"] + HDR[at:]
+        self.assertEqual(L.resolve(head)["next_step"], at)
+
+    def test_a_column_added_past_the_spacer_is_not_seen(self):
+        """The constraint, written down: a header after the blank is in the
+        MONTHLY TOTALS block and resolve never reaches it."""
+        self.assertNotIn("next_step", L.resolve(HDR + ["Next Step"]))
+
+    def test_build_rows_fills_it(self):
+        row = L.build_rows([cand("a", bob="BOB", orient="11/23/2026 1:00 PM")])[0]
+        self.assertEqual(row["next_step"], "Starts 11/23")
