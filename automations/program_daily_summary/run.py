@@ -66,7 +66,7 @@ def _country_specs():
     return {"ATT NDS": nds, "B2B": b2b}
 
 
-def tableau_days(today: dt.date, logfn=print) -> dict:
+def tableau_days(today: dt.date, logfn=print, last_week: bool = False) -> dict:
     """{campaign: {date: n}} for the AT&T campaigns. Fiber reads this week +
     last week; NDS/B2B read the reporting week only (see below)."""
     import dataclasses
@@ -116,9 +116,57 @@ def tableau_days(today: dt.date, logfn=print) -> dict:
                 days.update(d)
             if days:
                 got[camp] = days
+        if last_week:
+            for camp, d in _last_week_att(page, today, logfn).items():
+                got.setdefault(camp, {}).update(
+                    {k: v for k, v in d.items() if k not in got.get(camp, {})})
     for camp, d in got.items():
         logfn(f"  {camp}: " + ", ".join(f"{k:%m/%d}={v}" for k, v in sorted(d.items())))
     return got
+
+
+MIN_COUNTRY_OWNERS = 40     # this week's base NDS view: 50 owners (2026-11-20)
+
+
+def _last_week_att(page, today: dt.date, logfn=print) -> dict:
+    """LAST week for NDS + B2B, for --backfill-last-week (found by the probe,
+    Lucy 1 2026-11-20):
+      B2B  base D2D1-PAGERV3, sheet 'Sales By ICD (ATT) (V2) (LW2)' — same
+           metric as this week (WE 11/15 Grand Total 6,024).
+      NDS  the ORG board's 'Thisweekandlast' view, WIRELESS rows, the week
+           picked off its date row — same metric as this week. Used only if it
+           carries the whole country (>= MIN_COUNTRY_OWNERS owners): the
+           tracker's 'TT-LineN/P2 (LW)' counts Air too, so mixing it in would
+           make the vs-prior % lie by ~4%.
+    """
+    import dataclasses
+    from automations.org_sales_board import section_pull as sp
+    lw_day = today - dt.timedelta(days=7)
+    specs = {
+        "B2B": dataclasses.replace(
+            sp.B2B_SPEC, view_url=sp._BASE + "ATTTRACKER-B2B/D2D1-PAGERV3",
+            crosstab_sheet="Sales By ICD (ATT) (V2) (LW2)", week_pin=False,
+            out_name="country_campaign_b2b_lw.csv"),
+        "ATT NDS": dataclasses.replace(
+            sp.NDS_BOARD_SPEC, out_name="country_campaign_nds_twl.csv"),
+    }
+    out = {}
+    for camp, spec in specs.items():
+        try:
+            path = sp.pull_section_byday(spec, OUT, page, logfn=logfn, today=lw_day)
+            parsed = sp.parse_byday(spec, path, lw_day)
+        except Exception as e:  # noqa: BLE001 — a backfill never sinks the run
+            logfn(f"  {camp} LW FAILED: {type(e).__name__}: {str(e)[:200]}")
+            continue
+        d = _sum_owners(parsed)
+        logfn(f"  {camp} LW: {len(parsed)} owners, "
+              + ", ".join(f"{k:%a %m/%d}={v}" for k, v in sorted(d.items())))
+        if camp == "ATT NDS" and len(parsed) < MIN_COUNTRY_OWNERS:
+            logfn(f"  {camp} LW: only {len(parsed)} owners — that view is "
+                  f"org-scoped, not country; NOT used")
+            continue
+        out[camp] = d
+    return out
 
 
 def main() -> int:
@@ -144,7 +192,7 @@ def main() -> int:
                 print(f"  {prog}: no scorecard PDF in the last days")
     if not args.no_tableau:
         OUT.mkdir(parents=True, exist_ok=True)
-        data.update(tableau_days(today))
+        data.update(tableau_days(today, last_week=args.backfill_last_week))
 
     monday = board.run(data, today=today, dry_run=args.dry_run,
                        enable_rollover=args.enable_rollover)
