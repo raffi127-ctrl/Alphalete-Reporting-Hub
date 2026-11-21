@@ -4186,6 +4186,30 @@
    "verify": null,
    "timeout_minutes": 30
   },
+  "program_daily_summary_dm_raf_maud": {
+   "hand_run_only": true,
+   "on_scheduler": true,
+   "_note": "ONE-OFF (Eve 2026-11-20): today's Country Campaign Board top table by DM to Raf + Maud only, no trackers thread. Daily posting is program_daily_summary --post. `lucy rerun program_daily_summary_dm_raf_maud`.",
+   "display_name": "Country Campaign Board - DM Raf + Maud (one-off)",
+   "source_type": "sheet",
+   "data_sources": [],
+   "command": [
+    "automations.program_daily_summary.post"
+   ],
+   "base_args": [
+    "--post",
+    "--dm-only",
+    "U045Z8N0ZQC,U045USN7NCD"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 10
+  },
   "nds_mirror_to_att": {
    "on_scheduler": true,
    "order": 41.1,

@@ -77,7 +77,7 @@ def _send(client, channel, png: Path, cap: str, thread_ts=None):
 
 
 def post(today: dt.date, *, dry_run: bool = True, to_eve: bool = False,
-         logfn=print) -> bool:
+         dm_only=(), logfn=print) -> bool:
     """Render + deliver. Returns True if every target got it (or had it)."""
     png = render(today)
     cap = caption(today)
@@ -90,6 +90,14 @@ def post(today: dt.date, *, dry_run: bool = True, to_eve: bool = False,
     if to_eve:
         ok = _send(client, EVE_DM, png, cap)
         logfn(f"  Eve DM: {'sent' if ok else 'FAILED'}")
+        return ok
+    if dm_only:                      # one-off: these people only, no thread
+        ok = True
+        for u in dm_only:
+            dm = client.conversations_open(users=u)["channel"]["id"]
+            sent = _send(client, dm, png, cap)
+            logfn(f"  DM {u}: {'sent' if sent else 'FAILED'}")
+            ok &= sent
         return ok
 
     ok = True
@@ -132,10 +140,13 @@ def main() -> int:
     ap.add_argument("--post", action="store_true", help="actually send")
     ap.add_argument("--to-eve", action="store_true",
                     help="send ONLY to Eve's DM (test)")
+    ap.add_argument("--dm-only", default="",
+                    help="comma Slack user IDs: DM just them, skip the thread")
     ap.add_argument("--today", help="YYYY-MM-DD")
     a = ap.parse_args()
     today = dt.date.fromisoformat(a.today) if a.today else dt.date.today()
-    return 0 if post(today, dry_run=not a.post, to_eve=a.to_eve) else 1
+    return 0 if post(today, dry_run=not a.post, to_eve=a.to_eve,
+                     dm_only=[u for u in a.dm_only.split(",") if u]) else 1
 
 
 if __name__ == "__main__":
