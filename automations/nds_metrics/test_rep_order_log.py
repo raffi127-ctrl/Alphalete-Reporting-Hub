@@ -456,6 +456,23 @@ class ActiveReps(unittest.TestCase):
         self.assertFalse(ROL.is_same_person("Andrew De La Torre", "Aaron De La Torre"))
         self.assertFalse(ROL.is_same_person("Eduardo Alvarez", "Christopher Eduardo Cajabon Penagos"))
 
+    def test_rep_dm_plan_gives_each_rep_only_their_own_picture(self):
+        reps = ["Aaron De La Torre", "Andrew De La Torre", "Elisa Diaz-Garcia", "Cinthya reyes",
+                "Isadora Bazan Puga", "Rodolfo Bazan", "Carlos Adriano Hidalgo"]
+        plan = ROL.rep_dm_plan(reps, "aaron_torre=U0BMDU0MP7U, andrew_torre=U0C5ZE74892,"
+                                     "elisa_diaz=U0CC8U1FN2W,cinthya_reyes=U04GRP800Q4,"
+                                     "isadora_bazan=U0CDRUMEJ7Q,rodolfo_bazan=U0BQ3GB6RA4")
+        self.assertEqual(plan, {"Aaron De La Torre": "U0BMDU0MP7U", "Andrew De La Torre": "U0C5ZE74892",
+                                "Elisa Diaz-Garcia": "U0CC8U1FN2W", "Cinthya reyes": "U04GRP800Q4",
+                                "Isadora Bazan Puga": "U0CDRUMEJ7Q", "Rodolfo Bazan": "U0BQ3GB6RA4"})
+        self.assertNotIn("Carlos Adriano Hidalgo", plan)          # no key = not sent
+        for bad in ("bazan=U0CDRUMEJ7Q",                     # two reps -> refuse
+                    "zed_nobody=U0CDRUMEJ7Q",                # no rep -> refuse
+                    "aaron_torre=U0BMDU0MP7U,aaron=U0BMDU0MP7U",  # two keys, one rep
+                    "aaron_torre=Aaron"):                    # not a Slack id
+            with self.assertRaises(ValueError, msg=bad):
+                ROL.rep_dm_plan(reps, bad)
+
     def test_active_reps_skip_terminated_and_stop_at_totals(self):
         grid = [["", "", "Vantura"], ["WE", "11.22"], [""],
                 ["#", "REP", "Current Week", "", "", "", "", "", "", "", "", "Campaign", "Trainer", "Field Status", "Team",

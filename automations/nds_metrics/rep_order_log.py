@@ -1128,6 +1128,33 @@ def is_same_person(board_name: str, export_name: str) -> bool:
     return first_ok and b[-1] in e
 
 
+# Carlos 11/21: "send them their own order log sheet in slack. If there's anyone
+# you're unsure of ask me." Each rep gets ONLY their own picture, so the plan
+# fails closed: one bad key and nothing goes to anybody.
+
+def rep_dm_plan(reps: Sequence[str], spec: str) -> Dict[str, str]:
+    """{rep: Slack id} from 'jacob_ortega=U0ATXM9KYPM,nathaly_benitez=U0BFJG4J8LB'.
+    A key is name words joined by '_'; every word must be one of the rep's own
+    name words. Raises ValueError -- nothing sent -- when a key matches no rep
+    or two, two keys land on one rep, or an id isn't a Slack user id."""
+    import re
+    plan: Dict[str, str] = {}
+    for part in (p.strip() for p in str(spec or "").split(",")):
+        if not part:
+            continue
+        key, _, uid = part.partition("=")
+        words, uid = _name_words(key.replace("_", " ")), uid.strip()
+        if not words or not re.fullmatch(r"[UW][A-Z0-9]{6,}", uid):
+            raise ValueError(f"bad --dm-reps entry {part!r} (want name_words=U...)")
+        hits = [r for r in reps if set(words) <= set(_name_words(r))]
+        if len(hits) != 1:
+            raise ValueError(f"--dm-reps {key!r} matches {len(hits)} rep(s) {hits} -- want exactly 1")
+        if hits[0] in plan:
+            raise ValueError(f"--dm-reps: two keys land on {hits[0]!r}")
+        plan[hits[0]] = uid
+    return plan
+
+
 def build(cols, crew: Sequence, today: dt.date, out_dir: Path, reps: Optional[Sequence[str]] = None,
           log=print, active_only: bool = False) -> Dict[str, Path]:
     """One PNG per rep (every rep with a wireless line on the log, or only

@@ -2374,6 +2374,12 @@ def main(argv=None) -> int:
     ap.add_argument("--rep-shot", default=None, metavar="NAME",
                     help="build ONE rep's order-log screenshot (name substring; "
                          "'all' = every rep) and DM it to --dm; nothing posted")
+    ap.add_argument("--dm-reps", default=None, metavar="KEY=U...,...",
+                    help="with --rep-shot: DM each rep THEIR OWN picture; KEY = the rep's name "
+                         "words joined by '_' (jacob_ortega=U0ATXM9KYPM). Every KEY must match "
+                         "exactly one rep or nothing is sent; reps with no KEY are skipped")
+    ap.add_argument("--dm-reps-dry", action="store_true",
+                    help="with --dm-reps: log who would get which picture, send nothing")
     ap.add_argument("--tab", action="store_true",
                     help="refresh the 'NDS Order Log' tab on the Vantura board from "
                          "today's wireless feed; alone = ONLY that, no pull, no post")
@@ -2445,6 +2451,36 @@ def main(argv=None) -> int:
                     smp.dm_user_with_file(Path(png), user=user, file_name=Path(png).name,
                                           comment=f"\U0001F4CB *Order Log — {rep}*")
                 print(f"[nds] DM'd rep order log for {rep} to {len(users)} person(s)")
+        if a.dm_reps:
+            # Carlos 11/21: "send them their own order log sheet in slack" --
+            # each rep their own picture only; a bad key sends nothing at all.
+            from automations.shared import slack_metrics_post as smp
+            try:
+                plan = ROL.rep_dm_plan(list(shots), a.dm_reps)
+            except ValueError as e:
+                print(f"[nds] rep DM REFUSED, nothing sent: {e}")
+                return 1
+            for rep in shots:
+                if rep not in plan:
+                    print(f"[nds] rep DM: {rep} -- no Slack id given, not sent")
+            failed = []
+            for rep, uid in plan.items():
+                png = Path(shots[rep])
+                if a.dm_reps_dry:
+                    print(f"[nds] rep DM (dry): {rep} -> {uid} ({png.name})")
+                    continue
+                try:
+                    smp.dm_user_with_file(png, user=uid, file_name=png.name,
+                                          comment=f"\U0001F4CB *Order Log — {rep}*")
+                    print(f"[nds] rep DM sent: {rep} -> {uid}")
+                except Exception as e:  # noqa: BLE001 -- one bad DM never stops the rest
+                    failed.append(rep)
+                    print(f"[nds] rep DM FAILED: {rep} -> {uid}: {type(e).__name__}: {e}")
+            print(f"[nds] rep DMs: {len(plan) - len(failed)}/{len(plan)} "
+                  f"{'planned (dry)' if a.dm_reps_dry else 'sent'}"
+                  + (f"; failed: {', '.join(failed)}" if failed else ""))
+            if failed:
+                return 1
         print("=== done ===", flush=True)
         return 0
     only = set(a.only.split(",")) if a.only else None
