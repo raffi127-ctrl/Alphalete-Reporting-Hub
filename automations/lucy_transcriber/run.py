@@ -26,7 +26,8 @@ from automations.lucy_transcriber import render as R
 from automations.lucy_transcriber import transcribe as T
 
 _PKGS = {"mlx_whisper": "mlx-whisper", "imageio_ffmpeg": "imageio-ffmpeg",
-         "numpy": "numpy", "anthropic": "anthropic", "slack_sdk": "slack-sdk"}
+         "numpy": "numpy", "anthropic": "anthropic", "slack_sdk": "slack-sdk",
+         "reportlab": "reportlab"}
 # What the bot's token must carry (slack_app_manifest.json).
 _SCOPES = ("chat:write", "im:history", "im:read", "im:write", "files:read",
            "files:write", "users:read", "reactions:write")

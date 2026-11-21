@@ -130,17 +130,25 @@ class FakeWeb:
     """Records every Slack call; sends nothing."""
 
     def __init__(self):
-        self.posts, self.reactions = [], []
+        self.posts, self.files, self.updates, self.reactions = [], [], [], []
 
     def chat_postMessage(self, **kw):
         self.posts.append(kw)
         return {"ts": "9{}.0".format(len(self.posts))}
 
+    def files_upload_v2(self, **kw):
+        self.files.append(kw)
+        return {"ok": True}
+
+    def chat_update(self, **kw):
+        self.updates.append(kw)
+
     def conversations_open(self, users):
         return {"channel": {"id": "D-" + users}}
 
     def users_info(self, user):
-        return {"user": {"profile": {"real_name": "Jordan Smith"}}}
+        return {"user": {"profile": {"real_name": {"UREP": "Jordan Smith",
+                                                   "UUP": "Dana Upline"}.get(user, "Raf Hidalgo")}}}
 
     def reactions_add(self, **kw):
         self.reactions.append(kw)
@@ -153,20 +161,41 @@ def _rec_ev(ts="100.0", user="UREP", **kw):
                             "name": "door.m4a", "size": 1000}]}, **kw)
 
 
+def _pick(rec_ts, action, uid=None, rep="UREP"):
+    act = {"action_id": action,
+           "block_id": ("upline:" if action == "upline" else "upbtn:") + rec_ts}
+    if action == "upline":
+        act["selected_user"] = uid
+    elif action == "same":
+        act["value"] = uid
+    return {"type": "block_actions", "user": {"id": rep}, "channel": {"id": "DREP"},
+            "container": {"message_ts": "91.0"}, "actions": [act]}
+
+
+RAF = next(iter(C.COACHES))
+
+
 class Bot(unittest.TestCase):
     def setUp(self):
         import tempfile
         from pathlib import Path
         self.tmp = Path(tempfile.mkdtemp())
-        self._saved = (C.STATE, C.RECORDS, C.AUDIO)
-        C.STATE, C.RECORDS, C.AUDIO = (self.tmp / "state.json", self.tmp / "records",
-                                       self.tmp / "audio")
+        self._saved = (C.STATE, C.RECORDS, C.AUDIO, C.OUT)
+        C.STATE, C.RECORDS, C.AUDIO, C.OUT = (self.tmp / "state.json", self.tmp / "records",
+                                              self.tmp / "audio", self.tmp)
         self.state = B.load_state()
         while not B._jobs.empty():
             B._jobs.get()
+        self._real = (B._download, T.transcribe)
+        B._download = lambda f, tok, dest: dest
+        T.transcribe = lambda *a, **k: _got()
 
     def tearDown(self):
-        C.STATE, C.RECORDS, C.AUDIO = self._saved
+        C.STATE, C.RECORDS, C.AUDIO, C.OUT = self._saved
+        B._download, T.transcribe = self._real
+
+    def _to(self, w, who):
+        return [f for f in w.files if f["channel"] == "D-" + who]
 
     def test_audio_file_detection(self):
         self.assertTrue(B.audio_file({"files": [{"mimetype": "audio/x-m4a"}]}))
@@ -177,13 +206,17 @@ class Bot(unittest.TestCase):
         self.assertIsNone(B.audio_file({"files": [{"mimetype": "image/png",
                                                    "filetype": "png"}]}))
 
-    def test_recording_dm_is_acked_once_and_queued_once(self):
+    def test_recording_dm_asks_for_the_upline_once(self):
         w = FakeWeb()
         B.on_event(w, _rec_ev(), self.state)
         B.on_event(w, _rec_ev(), self.state)      # Socket Mode redelivery
         self.assertEqual(B._jobs.qsize(), 1)
-        self.assertEqual([p["text"] for p in w.posts], [R.GOT_IT])
-        self.assertEqual(w.posts[0]["thread_ts"], "100.0")
+        self.assertEqual(len(w.posts), 1)
+        ask = w.posts[0]
+        self.assertEqual(ask["thread_ts"], "100.0")
+        self.assertEqual(ask["blocks"][0]["accessory"]["type"], "users_select")
+        labels = [b["text"]["text"] for b in ask["blocks"][1]["elements"]]
+        self.assertEqual(labels, ["Just Raf"])     # no "same as last time" yet
 
     def test_bot_messages_and_channels_are_ignored(self):
         w = FakeWeb()
@@ -199,31 +232,63 @@ class Bot(unittest.TestCase):
         B.on_event(w, dict(ev, ts="6.0"), self.state)
         self.assertEqual([p["text"] for p in w.posts], [R.HELP])
 
-    def test_process_sends_rep_copy_and_coach_copy_and_saves_feedback(self):
+    def test_no_pick_yet_rep_and_raf_get_the_pdf(self):
         w = FakeWeb()
-        got = _got()
-        real = (B._download, T.transcribe)
-        B._download = lambda f, tok, dest: dest
-        T.transcribe = lambda *a, **k: got
-        try:
-            self.assertEqual(B.process(w, "xoxb-x", _rec_ev(), self.state), "posted")
-        finally:
-            B._download, T.transcribe = real
-        coach = next(iter(C.COACHES))
-        rep_posts = [p for p in w.posts if p["channel"] == "DREP"]
-        coach_posts = [p for p in w.posts if p["channel"] == "D-" + coach]
-        self.assertTrue(rep_posts[0]["text"].startswith("📝 *Transcript*"))
-        self.assertTrue(rep_posts[-1]["text"].endswith(R.REP_END))
-        # coach: a clean parent line, the transcript in its thread
-        self.assertTrue(coach_posts[0]["text"].startswith("📝 *Jordan Smith's pitch*"))
-        self.assertNotIn("thread_ts", coach_posts[0])
-        self.assertEqual(coach_posts[1]["thread_ts"], "92.0")
-        self.assertNotIn("📝", coach_posts[1]["text"])
-        self.assertIn("feedback for Jordan", coach_posts[-1]["text"])
-        # the coach's reply under the copy is saved and ticked
-        fb = {"type": "message", "channel_type": "im", "channel": "D-" + coach,
-              "ts": "200.0", "thread_ts": "92.0", "user": coach,
+        self.assertEqual(B.process(w, "xoxb-x", _rec_ev(), self.state), "posted")
+        rep = [f for f in w.files if f["channel"] == "DREP"]
+        self.assertEqual(len(rep), 1)
+        self.assertTrue(rep[0]["filename"].endswith(".pdf"))
+        self.assertIn("A copy went to Raf for feedback", rep[0]["initial_comment"])
+        self.assertIn(R.PICK_LATER, rep[0]["initial_comment"])
+        raf = self._to(w, RAF)
+        self.assertEqual(len(raf), 1)
+        parent = [p for p in w.posts if p["channel"] == "D-" + RAF][0]
+        self.assertTrue(parent["text"].startswith("📝 *Jordan Smith's pitch*"))
+        self.assertEqual(raf[0]["thread_ts"], parent and "91.0")
+
+    def test_pick_before_done_sends_the_upline_a_copy_at_delivery(self):
+        w = FakeWeb()
+        B.on_pick(w, _pick("100.0", "upline", "UUP"), self.state)
+        self.assertEqual(w.files, [])                       # nothing to send yet
+        self.assertIn("<@UUP> and Raf", w.updates[0]["text"])
+        B.process(w, "xoxb-x", _rec_ev(), self.state)
+        self.assertEqual(len(self._to(w, "UUP")), 1)
+        self.assertEqual(len(self._to(w, RAF)), 1)
+        rep = [f for f in w.files if f["channel"] == "DREP"][0]
+        self.assertIn("Raf and Dana Upline", rep["initial_comment"])
+        self.assertNotIn(R.PICK_LATER, rep["initial_comment"])
+
+    def test_pick_after_done_sends_then_and_only_once(self):
+        w = FakeWeb()
+        B.process(w, "xoxb-x", _rec_ev(), self.state)
+        B.on_pick(w, _pick("100.0", "upline", "UUP"), self.state)
+        B.on_pick(w, _pick("100.0", "same", "UUP"), self.state)    # a second tap
+        self.assertEqual(len(self._to(w, "UUP")), 1)
+        self.assertEqual(len(self._to(w, RAF)), 1)
+
+    def test_next_recording_offers_same_as_last_time(self):
+        w = FakeWeb()
+        B.on_pick(w, _pick("100.0", "upline", "UUP"), self.state)
+        B.on_event(w, _rec_ev(ts="200.0"), self.state)
+        btns = w.posts[-1]["blocks"][1]["elements"]
+        self.assertEqual(btns[0]["text"]["text"], "Same as last time: Dana Upline")
+        self.assertEqual(btns[0]["value"], "UUP")
+
+    def test_just_raf_and_picking_raf_add_no_one(self):
+        w = FakeWeb()
+        B.on_pick(w, _pick("100.0", "just_raf"), self.state)
+        B.on_pick(w, _pick("100.0", "upline", RAF), self.state)
+        B.process(w, "xoxb-x", _rec_ev(), self.state)
+        self.assertEqual({f["channel"] for f in w.files}, {"DREP", "D-" + RAF})
+
+    def test_coach_reply_under_the_copy_is_saved(self):
+        w = FakeWeb()
+        B.process(w, "xoxb-x", _rec_ev(), self.state)
+        parent = [p for p in w.posts if p["channel"] == "D-" + RAF][0]
+        fb = {"type": "message", "channel_type": "im", "channel": "D-" + RAF,
+              "ts": "300.0", "thread_ts": "91.0", "user": RAF,
               "text": "Ask for the husband's number next time"}
+        self.assertEqual(parent["channel"], "D-" + RAF)
         B.on_event(w, fb, self.state)
         B.on_event(w, fb, self.state)
         rec = json.loads((C.RECORDS / "100.0.json").read_text(encoding="utf-8"))
@@ -231,18 +296,12 @@ class Bot(unittest.TestCase):
                          [("Raf", "Ask for the husband's number next time")])
         self.assertEqual(w.reactions[0]["name"], R.SAVED)
 
-    def test_a_coachs_own_recording_gets_no_copy(self):
+    def test_rafs_own_recording_gets_no_ask_and_no_copy(self):
         w = FakeWeb()
-        coach = next(iter(C.COACHES))
-        real = (B._download, T.transcribe)
-        B._download = lambda f, tok, dest: dest
-        T.transcribe = lambda *a, **k: _got()
-        try:
-            B.process(w, "xoxb-x", _rec_ev(user=coach), self.state)
-        finally:
-            B._download, T.transcribe = real
-        self.assertEqual({p["channel"] for p in w.posts}, {"DREP"})
-        self.assertNotIn(R.REP_END, w.posts[-1]["text"])
+        B.on_event(w, _rec_ev(user=RAF), self.state)
+        self.assertNotIn("blocks", w.posts[0])
+        B.process(w, "xoxb-x", _rec_ev(user=RAF), self.state)
+        self.assertEqual({f["channel"] for f in w.files}, {"DREP"})
 
     def test_catch_up_picks_unanswered_recordings_only(self):
         self.state["done"]["2.0"] = {"status": "posted", "tries": 1}

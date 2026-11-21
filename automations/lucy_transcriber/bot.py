@@ -61,7 +61,7 @@ def load_state() -> Dict:
         s = json.loads(C.STATE.read_text(encoding="utf-8"))
     except Exception:  # noqa: BLE001
         s = {}
-    for k in ("done", "threads", "helped"):
+    for k in ("done", "threads", "helped", "picks", "picked", "last_upline"):
         s.setdefault(k, {})
     return s
 
@@ -203,34 +203,150 @@ def process(webc, token: str, ev: Dict, state: Dict) -> str:
         return "told"
 
     name = _name(webc, rep) or "A rep"
-    first = name.split()[0]
-    coaches = [uid for uid in C.COACHES if uid != rep]
-    post_transcript(webc, ch, thread, got,
-                    end=R.REP_END if coaches else "")
-    threads = [{"who": "rep", "channel": ch, "ts": thread}]
-    for uid in coaches:
-        try:
-            dm = webc.conversations_open(users=uid)["channel"]["id"]
-            parent = webc.chat_postMessage(
-                channel=dm, text=R.header(got, who=name), unfurl_links=False)["ts"]
-            post_transcript(webc, dm, parent, got, head=False,
-                            end=R.COACH_ASK.format(first=first))
-            threads.append({"who": C.COACHES[uid], "channel": dm, "ts": parent})
-        except Exception:  # noqa: BLE001 -- the rep already has theirs
-            traceback.print_exc()
-
+    when = dt.datetime.fromtimestamp(float(ts))
+    path = _pdf(got, name, when)
+    with _lock:
+        picked = ts in state["picked"] or rep in C.COACHES
+        names = [C.COACHES[u] for u in C.COACHES if u != rep] + \
+            [_name(webc, u) or "your upline" for u in state["picks"].get(ts) or []]
+    comment = R.ready(got, names) + ("" if picked else "\n" + R.PICK_LATER)
+    _deliver(webc, ch, thread, got, path, comment, who=None)
     rec = dict(got, ts=ts, user=rep, name=name, file=f.get("name"),
-               sent_text=ev.get("text") or "",
-               received=dt.datetime.fromtimestamp(float(ts)).isoformat(timespec="seconds"),
-               threads=threads, feedback=[])
+               sent_text=ev.get("text") or "", received=when.isoformat(timespec="seconds"),
+               pdf=str(path) if path else None, sent_to=[],
+               threads=[{"who": "rep", "channel": ch, "ts": thread}], feedback=[])
     with _lock:
         _save_json(C.RECORDS / "{}.json".format(ts), rec)
-        for t in threads:
-            state["threads"][thread_key(t["channel"], t["ts"])] = ts
-    _log("  posted: {} lines, {}s, talk {}, copies to {}".format(
-        len(got["lines"]), got["seconds"], got["talk"],
-        [C.COACHES[u] for u in coaches]))
+        state["threads"][thread_key(ch, thread)] = ts
+    sent = flush_copies(webc, ts, state)
+    _log("  posted: {} lines, {}s, talk {}, pdf {}, copies to {}".format(
+        len(got["lines"]), got["seconds"], got["talk"], bool(path), sent))
     return "posted"
+
+
+def _pdf(got: Dict, name: str, when: dt.datetime) -> Optional[Path]:
+    try:
+        from automations.lucy_transcriber import pdf as P
+        return P.render(got, C.OUT / "pdf" / P.filename(name, when), who=name, when=when)
+    except Exception:  # noqa: BLE001 -- the text version still goes out
+        traceback.print_exc()
+        return None
+
+
+def _deliver(webc, channel: str, thread: str, got: Dict, path: Optional[Path],
+             comment: str, who: Optional[str]) -> None:
+    """The PDF with a short line on it; the old text messages only if the
+    PDF couldn't be made."""
+    if path:
+        webc.files_upload_v2(channel=channel, thread_ts=thread, file=str(path),
+                             filename=path.name, title=path.stem,
+                             initial_comment=comment)
+    else:
+        post_transcript(webc, channel, thread, got, end=comment, who=who)
+
+
+def copy_targets(rec: Dict, state: Dict) -> List[str]:
+    """Raf (config.COACHES) always, plus the upline the rep picked -- never
+    the rep themselves, never anyone twice."""
+    rep = rec.get("user")
+    want = [u for u in C.COACHES] + list(state["picks"].get(rec["ts"]) or [])
+    out = []
+    for u in want:
+        if u and u != rep and u not in out and u not in (rec.get("sent_to") or []):
+            out.append(u)
+    return out
+
+
+def flush_copies(webc, rec_ts: str, state: Dict) -> List[str]:
+    """Send every copy that is due and not sent yet. Called when the
+    transcript is done AND when a pick arrives -- whichever is second sends
+    the upline's copy. Who to send to is claimed under the lock, so a pick
+    landing mid-delivery is never sent twice or dropped."""
+    path = C.RECORDS / "{}.json".format(rec_ts)
+    with _lock:
+        if not path.exists():
+            return []                     # transcript not done; it will flush
+        rec = json.loads(path.read_text(encoding="utf-8"))
+        due = copy_targets(rec, state)
+        rec["sent_to"] = list(rec.get("sent_to") or []) + due
+        _save_json(path, rec)
+    sent = []
+    for uid in due:
+        label = C.COACHES.get(uid) or _name(webc, uid) or uid
+        try:
+            dm = webc.conversations_open(users=uid)["channel"]["id"]
+            parent = webc.chat_postMessage(channel=dm, text=R.header(rec, who=rec["name"]),
+                                           unfurl_links=False)["ts"]
+            pdf = Path(rec["pdf"]) if rec.get("pdf") and Path(rec["pdf"]).exists() else None
+            _deliver(webc, dm, parent, rec, pdf,
+                     R.COACH_ASK.format(first=rec["name"].split()[0]), who=None)
+            with _lock:
+                rec = json.loads(path.read_text(encoding="utf-8"))
+                rec.setdefault("threads", []).append(
+                    {"who": label, "uid": uid, "channel": dm, "ts": parent})
+                _save_json(path, rec)
+                state["threads"][thread_key(dm, parent)] = rec_ts
+                save_state(state)
+            sent.append(label)
+        except Exception:  # noqa: BLE001 -- the rep already has theirs
+            traceback.print_exc()
+    return sent
+
+
+# ---------------------------------------------------------------- who gets a copy
+
+def ask_blocks(rec_ts: str, last_uid: Optional[str], last_name: str) -> List[Dict]:
+    """'Who's your upline?' -- one people-picker (7-year-old simple), plus a
+    one-tap 'same as last time' once they've picked before."""
+    blocks = [{
+        "type": "section", "block_id": "upline:" + rec_ts,
+        "text": {"type": "mrkdwn", "text": R.GOT_IT + "\n\n" + R.ASK_UPLINE},
+        "accessory": {"type": "users_select", "action_id": "upline",
+                      "placeholder": {"type": "plain_text", "text": "Pick your upline"}}}]
+    buttons = []
+    if last_uid:
+        buttons.append({"type": "button", "action_id": "same", "value": last_uid,
+                        "style": "primary",
+                        "text": {"type": "plain_text",
+                                 "text": ("Same as last time: " + (last_name or "them"))[:75]}})
+    buttons.append({"type": "button", "action_id": "just_raf", "value": "none",
+                    "text": {"type": "plain_text", "text": "Just Raf"}})
+    blocks.append({"type": "actions", "block_id": "upbtn:" + rec_ts, "elements": buttons})
+    return blocks
+
+
+def on_pick(webc, payload: Dict, state: Dict) -> None:
+    act = (payload.get("actions") or [{}])[0]
+    rec_ts = (act.get("block_id") or ":").split(":", 1)[1]
+    rep = (payload.get("user") or {}).get("id")
+    aid = act.get("action_id")
+    uid = act.get("selected_user") if aid == "upline" else \
+        act.get("value") if aid == "same" else None
+    if not rec_ts or aid not in ("upline", "same", "just_raf"):
+        return
+    if uid in (rep,) or uid in C.COACHES:
+        uid = None                          # themselves / Raf: Raf already gets it
+    with _lock:
+        state["picked"][rec_ts] = True
+        if uid:
+            picks = state["picks"].setdefault(rec_ts, [])
+            if uid not in picks:
+                picks.append(uid)
+            state["last_upline"][rep] = uid
+        save_state(state)
+    who = "<@{}> and Raf".format(uid) if uid else "Raf"
+    msg = payload.get("container") or {}
+    try:
+        webc.chat_update(channel=(payload.get("channel") or {}).get("id"),
+                         ts=msg.get("message_ts"),
+                         text=R.GOT_IT + "\n\n✅ A copy goes to {}.".format(who),
+                         blocks=[{"type": "section", "text": {
+                             "type": "mrkdwn",
+                             "text": R.GOT_IT + "\n\n✅ A copy goes to {}.".format(who)}}])
+    except Exception:  # noqa: BLE001
+        traceback.print_exc()
+    sent = flush_copies(webc, rec_ts, state)
+    _log("pick on {} by {}: {} (sent now: {})".format(rec_ts, rep, uid or "just Raf", sent))
 
 
 def save_feedback(webc, ev: Dict, key: str) -> None:
@@ -295,7 +411,15 @@ def claim(state: Dict, ts: str) -> bool:
 def on_event(webc, ev: Dict, state: Dict) -> None:
     if is_recording(ev):
         if claim(state, ev["ts"]):
-            _say(webc, ev["channel"], ev.get("thread_ts") or ev["ts"], R.GOT_IT)
+            rep, thread = ev.get("user"), ev.get("thread_ts") or ev["ts"]
+            if rep in C.COACHES:              # Raf's own recording: no one to ask about
+                _say(webc, ev["channel"], thread, R.GOT_IT)
+            else:
+                last = state["last_upline"].get(rep)
+                webc.chat_postMessage(channel=ev["channel"], thread_ts=thread,
+                                      text=R.GOT_IT + "\n\n" + R.ASK_UPLINE,
+                                      blocks=ask_blocks(ev["ts"], last,
+                                                        _name(webc, last) if last else ""))
             _jobs.put(ev)
         return
     key = feedback_for(ev, state)
@@ -340,10 +464,13 @@ def catch_up(webc, state: Dict) -> int:
 def _handler(client, req) -> None:
     from slack_sdk.socket_mode.response import SocketModeResponse
     client.send_socket_mode_response(SocketModeResponse(envelope_id=req.envelope_id))
-    if req.type != "events_api":
-        return
     try:
-        on_event(client.web_client, (req.payload or {}).get("event") or {}, _STATE)
+        if req.type == "events_api":
+            on_event(client.web_client, (req.payload or {}).get("event") or {}, _STATE)
+        elif req.type == "interactive" and (req.payload or {}).get("type") == "block_actions":
+            # A pick may send a PDF -- off the listener thread.
+            threading.Thread(target=on_pick, args=(client.web_client, req.payload, _STATE),
+                             daemon=True).start()
     except Exception:  # noqa: BLE001 -- never crash the listener
         traceback.print_exc()
 
