@@ -145,6 +145,14 @@ input.goal{width:84px;text-align:right}
 tbody tr.total input.goal{background:rgba(255,255,255,.12);color:#fff}
 .chg{font-weight:700;color:var(--muted)}.chg.up{color:var(--grn)}.chg.down{color:var(--red)}
 tbody tr.total .chg.up{color:#7ee2b0}tbody tr.total .chg.down{color:#ff9b94}
+.rc.mine{box-shadow:inset 0 0 0 2px var(--blu)}
+.rcf{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:0 22px;font-size:13.5px;color:var(--muted)}
+.rcf label{display:inline-flex;flex-direction:column;gap:2px;font-size:12px;font-weight:600}
+.rcf input,.rcf select{height:36px;border-radius:10px;border:0;padding:0 10px;background:var(--ground);color:var(--ink);font:inherit;font-size:13.5px;font-weight:600}
+.rcf input{width:170px}
+.rcf input:focus-visible,.rcf select:focus-visible,input.xdate:focus-visible{outline:2px solid var(--blu);outline-offset:1px}
+input.xdate{height:36px;border-radius:10px;border:0;padding:0 8px;background:var(--ground);color:var(--ink);font:inherit;font-size:13.5px;font-weight:600}
+.xsel.mine,input.xdate.mine{box-shadow:inset 0 0 0 2px var(--blu)}
 @media (max-width:640px){.banner{padding:18px}.banner h1{font-size:24px}.name{min-width:170px}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
@@ -183,12 +191,14 @@ function levelOf(role){var p=String(role||'').split(',').map(function(s){return 
   for(var i=0;i<LEVELS.length;i++)if(p.indexOf(LEVELS[i].toLowerCase())>=0)return LEVELS[i];return ''}
 
 /* ---------- raw data, indexed once ---------- */
-var D=null, BYDAY={}, HIST={}, TEAMOF={}, ROLEOF={};
+var D=null, BYDAY={}, HIST={}, TEAMOF={}, ROLEOF={}, WAPPS={};
+function monOf(iso){var d=parseIso(iso);return addIso(iso,-((d.getDay()+6)%7))}
 function index(d){
   D=d;
   d.knocks.forEach(function(k){var a=BYDAY[k[1]]||(BYDAY[k[1]]=[]);a.push({pk:k[0],c:k[2],tk:k[3],tt:k[4]})});
   d.sales.forEach(function(s){
     HIST[s[1]]=(HIST[s[1]]||0)+s[2]+s[3]+s[4];
+    var w=WAPPS[s[0]]||(WAPPS[s[0]]={}),m=monOf(s[1]);w[m]=(w[m]||0)+s[2]+s[3]+s[4];
     var a=BYDAY[s[1]]||(BYDAY[s[1]]=[]);a.push({pk:s[0],int:s[2],dtv:s[3],nl:s[4],cx:s[5]});
   });
   // A person on two teams counts under the team they lead, else the first (Team Performance's rule).
@@ -217,26 +227,40 @@ function build(mon){
   var rows=Object.keys(reps).filter(function(pk){var r=reps[pk];return Object.keys(r.days).some(function(d){var c=r.days[d];return c.tk||c.tt||c.int||c.dtv||c.nl||c.cx})}).map(function(pk){
     var r=reps[pk],p=D.people[pk]||{};
     r.name=D.names[pk]||D.saleNames[pk]||p.name||('Rep '+pk);
-    r.team=TEAMOF[pk]||'';r.level=levelOf(ROLEOF[pk]);
-    r.start=p.start||'';r.term=p.term||'';r.email=p.email||'';
-    r.fs=fieldStatus(r.start,mon);
-    r.termed=!!(r.term&&r.term<=addIso(mon,6));
-    var end=r.term&&r.term<todayIso()?r.term:todayIso();
-    r.tenure=r.start?Math.max(daysBetween(r.start,end),0):'';
-    r.campaign=Object.keys(r.clients).sort().join(', ')||(r.att?'AT&T':'');
+    // OwnerVille's values; model() lays the board's own edits (Rep profile dropdowns) on top.
+    r.ov={team:TEAMOF[pk]||'',level:levelOf(ROLEOF[pk]),start:p.start||'',term:p.term||'',
+      campaign:Object.keys(r.clients).sort().join(', ')||(r.att?'AT&T':'')};
+    r.email=p.email||'';
     r.wk=weeks.map(function(w){return weekStats(r.days,w)});
     return r;
   }).sort(function(a,b){return a.name.localeCompare(b.name)});
   return MODELS[mon]={mon:mon,weeks:weeks,rows:rows};
 }
+/* Rep fields as shown: an admin's pick on the board wins, else OwnerVille's. */
+function applyProfile(r,mon){
+  ['team','level','start','term','campaign'].forEach(function(k){r[k]=ORIG()?r.ov[k]:boardVal(r.pk,k,r.ov[k])});
+  r.fs=fieldStatus(r.start,mon);
+  r.termed=!!(r.term&&r.term<=addIso(mon,6));
+  var end=r.term&&r.term<todayIso()?r.term:todayIso();
+  r.tenure=r.start?Math.max(daysBetween(r.start,end),0):'';
+}
+/* Road trips (RT / Roadtrip in the OwnerVille name) knock here but sell under another office: Raf keeps
+   them off his board, except Andrew Sanborn (Raf 9/21 on the sheet, again 11/20 on this board). */
+var RT_KEEP=['andrew sanborn'];
+function isRoadTrip(r){var n=String(D.names[r.pk]||D.people[r.pk]&&D.people[r.pk].name||r.name||'');
+  return /\b(rt|roadtrip|road trip)\s*$/i.test(n.trim())&&RT_KEEP.indexOf(normName(n))<0}
 /* The week as shown: reps who left the board are taken out, and the totals are added up without them
    (the sheet deletes their row, so their numbers leave the totals too). */
+var PREV_N=8;
 function model(mon){
   var B=build(mon),shown=[],gone=[];
-  B.rows.forEach(function(r){r.why=goneWhy(r,mon);r.tag=r.why?'':weekTag(r,mon);(r.why?gone:shown).push(r)});
-  var tdays={};
-  shown.forEach(function(r){Object.keys(r.days).forEach(function(d){var t=tdays[d]||(tdays[d]=blankCell()),c=r.days[d];Object.keys(t).forEach(function(k){t[k]+=c[k]})})});
-  return{mon:mon,weeks:B.weeks,rows:shown,gone:gone,total:{name:'TOTALS',days:tdays,wk:B.weeks.map(function(w){return weekStats(tdays,w)})}};
+  B.rows.forEach(function(r){applyProfile(r,mon);r.why=goneWhy(r,mon);r.tag=r.why?'':weekTag(r,mon);(r.why?gone:shown).push(r)});
+  var tdays={},tprev=[];
+  for(var i=1;i<=PREV_N;i++)tprev.push(addIso(mon,-7*i)<monOf(D.salesFrom||D.firstMon)?'':0);
+  shown.forEach(function(r){Object.keys(r.days).forEach(function(d){var t=tdays[d]||(tdays[d]=blankCell()),c=r.days[d];Object.keys(t).forEach(function(k){t[k]+=c[k]})});
+    r.prev=tprev.map(function(z,i){return z===''?'':((WAPPS[r.pk]||{})[addIso(mon,-7*(i+1))]||0)});
+    r.prev.forEach(function(v,i){if(v!=='')tprev[i]+=v})});
+  return{mon:mon,weeks:B.weeks,rows:shown,gone:gone,total:{name:'TOTALS',days:tdays,prev:tprev,wk:B.weeks.map(function(w){return weekStats(tdays,w)})}};
 }
 
 /* ---------- roll call (typed here by admins, saved in the board's own store) ----------
@@ -247,15 +271,23 @@ var ROLL=['Here','Late','H+DC','H+LM','Off','STF','RT','O-NA','FFP','C-RLM','CC-
 // Not in the field that day (the sheet's rule: STF and RT out, plus days off and terminated).
 var NOT_FIELD=['Off','O-NA','FFP','STF','RT','T','F'];
 var OFF_NAME={T:'Terminated',F:'Off the board'};
-var RC={},RC_DOCS={},OFFS={},DB=null,CANW=null,RC_STATE='loading',RC_ERR='';
+/* Who wins (Raf 11/20): a mark made here on the board, then the sheet's mark (copied every morning),
+   then TeleMapper (knocked or sold that day = Here, dashed). Board marks live in rcboard/<YYYY-MM-DD>
+   = {marks: {<OwnerVille id>: code}}, which the daily copy never touches; '-' = cleared here. */
+var RC={},RCB={},RCB_DOCS={},OFFS={},DB=null,CANW=null,RC_STATE='loading',RC_ERR='';
 function rcClass(code){return 'rc-'+String(code).toLowerCase().replace(/[^a-z]/g,'')}
-function rcOf(pk,iso,c){if(ORIG())return null;var m=RC[iso]&&RC[iso][pk];if(m)return{code:m,auto:false};return(c.tk>0||appsOf(c)>0)?{code:'Here',auto:true}:null}
+function rcMark(iso,pk){var b=RCB[iso]&&RCB[iso][pk];if(b)return b==='-'?null:{code:b,src:'board'};
+  var s=RC[iso]&&RC[iso][pk];return s?{code:s,src:'sheet'}:null}
+function rcOf(pk,iso,c){if(ORIG())return null;var m=rcMark(iso,pk);if(m)return{code:m.code,auto:false,mine:m.src==='board'};
+  if(RCB[iso]&&RCB[iso][pk]==='-')return null;return(c.tk>0||appsOf(c)>0)?{code:'Here',auto:true}:null}
 function inField(pk,iso,c){if(ORIG())return c.tk>0||appsOf(c)>0;var x=rcOf(pk,iso,c);return!!x&&NOT_FIELD.indexOf(x.code)<0}
-function rcBadge(x){return x?'<span class="rc '+(x.auto?'auto':rcClass(x.code))+'"'+(x.auto?' title="Knocked or sold this day, nobody marked roll call"':'')+'>'+esc(x.code)+'</span>':''}
-function indexOffs(){OFFS={};Object.keys(RC).sort().forEach(function(iso){var m=RC[iso];Object.keys(m).forEach(function(pk){
-  if(OFF_MARKS.indexOf(m[pk])>=0)(OFFS[pk]||(OFFS[pk]=[])).push({iso:iso,code:m[pk]})})})}
+function rcBadge(x){return x?'<span class="rc '+(x.auto?'auto':rcClass(x.code))+(x.mine?' mine':'')+'"'+(x.auto?' title="Knocked or sold this day (TeleMapper), nobody marked roll call"':x.mine?' title="Marked here on the board (wins over the sheet)"':' title="From the sheet"')+'>'+esc(x.code)+'</span>':''}
+function indexOffs(){OFFS={};var days={};Object.keys(RC).concat(Object.keys(RCB)).forEach(function(d){days[d]=1});
+  Object.keys(days).sort().forEach(function(iso){var pks={};[RC[iso]||{},RCB[iso]||{}].forEach(function(m){Object.keys(m).forEach(function(pk){pks[pk]=1})});
+    Object.keys(pks).forEach(function(pk){var m=rcMark(iso,pk);if(m&&OFF_MARKS.indexOf(m.code)>=0)(OFFS[pk]||(OFFS[pk]=[])).push({iso:iso,code:m.code,src:m.src})})})}
 function goneWhy(r,mon){
   if(ORIG())return '';
+  if(isRoadTrip(r))return 'Road trip: sells under another office';
   if(r.term&&r.term<mon)return 'Terminated '+mdy(r.term)+' in OwnerVille';
   var before=(OFFS[r.pk]||[]).filter(function(o){return o.iso<mon});
   if(!before.length)return '';var o=before[before.length-1];
@@ -268,15 +300,22 @@ function weekTag(r,mon){
   return r.term&&r.term<=sun?'T':'';
 }
 var WQ={};
-function writeMark(iso,pk,code){
-  var day=RC[iso]||(RC[iso]={});
-  if(code)day[pk]=code;else delete day[pk];
+/* Tap a mark: set it here (no override needed when the sheet already says it). Tap the lit mark: clear it,
+   also over the sheet's mark. */
+function tapMark(iso,pk,code){
+  var m=rcMark(iso,pk),s=RC[iso]&&RC[iso][pk]||'';
+  if(m&&m.code===code)writeMark(iso,pk,s?'-':null);
+  else writeMark(iso,pk,s===code?null:code);
+}
+function writeMark(iso,pk,v){
+  var day=RCB[iso]||(RCB[iso]={});
+  if(v)day[pk]=v;else delete day[pk];
   indexOffs();paint();
   WQ[iso]=(WQ[iso]||Promise.resolve()).then(function(){
-    var ref=DB.doc('rollcall/'+iso),m={},at=new Date().toISOString();m[pk]=code||null;
-    if(RC_DOCS[iso])return ref.update({marks:m,at:at});
+    var ref=DB.doc('rcboard/'+iso),m={},at=new Date().toISOString();m[pk]=v||null;
+    if(RCB_DOCS[iso])return ref.update({marks:m,at:at});
     var all={};Object.keys(day).forEach(function(k){all[k]=day[k]});
-    return ref.set({marks:all,at:at}).then(function(){RC_DOCS[iso]=true});
+    return ref.set({marks:all,at:at}).then(function(){RCB_DOCS[iso]=true});
   }).catch(function(e){
     if(e&&e.code==='invalid_argument'&&CANW!==true)CANW=false;
     RC_ERR='Roll call did not save'+(e&&e.code==='quota_exceeded'?' (the board’s store is full)':'')+'. Try again in a moment.';paint();
@@ -293,12 +332,17 @@ function startRollCall(){
     db.doc('meta/sync').onSnapshot(function(snap){SYNC_AT=snap.exists&&(snap.data()||{}).at||'';paint()},function(){});
     db.doc('meta/profiles').onSnapshot(function(snap){PROF_DOC=snap.exists;var sd=snap.exists&&snap.data()||{},reps=withNames(sd.reps,sd.byName),o={};
       Object.keys(reps).forEach(function(pk){var p=reps[pk]||{},q={};Object.keys(p).forEach(function(k){if(p[k])q[k]=String(p[k])});o[pk]=q});PROF=o;paint()},function(){});
+    db.doc('meta/board_profiles').onSnapshot(function(snap){BPROF_DOC=snap.exists;var r=(snap.exists&&snap.data()||{}).reps||{},o={};
+      Object.keys(r).forEach(function(pk){var p=r[pk]||{},q={};Object.keys(p).forEach(function(k){if(p[k])q[k]=String(p[k])});o[pk]=q});BPROF=o;paint()},function(){});
+    db.collection('rcboard').onSnapshot(function(snap){var next={},docs={};
+      snap.docs.forEach(function(d){docs[d.id]=true;var m=(d.data()||{}).marks||{},o={};Object.keys(m).forEach(function(k){if(m[k])o[k]=String(m[k])});next[d.id]=o});
+      RCB=next;RCB_DOCS=docs;indexOffs();paint()},function(){});
     db.doc('meta/goals').onSnapshot(function(snap){GOALS_DOC=snap.exists;var d=snap.exists&&snap.data()||{},t={};
       Object.keys(d.teams||{}).forEach(function(k){if(d.teams[k]!=null)t[k]=d.teams[k]});GOALS={office:d.office==null?null:d.office,teams:t};paint()},function(){});
     db.collection('rollcall').onSnapshot(function(snap){
       var next={},docs={};
       snap.docs.forEach(function(d){docs[d.id]=true;var dd=d.data()||{},m=withNames(dd.marks,dd.byName),o={};Object.keys(m).forEach(function(k){if(m[k])o[k]=String(m[k])});next[d.id]=o});
-      RC=next;RC_DOCS=docs;indexOffs();
+      RC=next;indexOffs();
       if(!snap.metadata.fromCache){clearTimeout(timer);RC_STATE='live'}
       paint();
     },function(e){clearTimeout(timer);RC_STATE='error';RC_ERR='Roll call could not load ('+(e&&e.code||'error')+'). Reload the page.';paint()});
@@ -396,8 +440,8 @@ var DAY_COLS=[
   {k:'tk',h:'AVG app per TT',raw:function(c){return dayAppTT(c)},fmt:p1},
   {k:'cx',h:'Cx',raw:function(c){return blank0(c.cx)},fmt:n0},
   {k:'rc',h:'Roll Call',rc:true,fmt:rcBadge}];
-// Compact day: the three numbers you scan for (apps, knocks, talk-tos). Click the day to open the rest.
-var DAY_COMPACT=[DAY_COLS[0],DAY_COLS[5],DAY_COLS[6]];
+// A closed day shows only its apps (Raf 11/20). Click the day to open the rest.
+var DAY_COMPACT=[DAY_COLS[0]];
 /* ---------- rep extras (from our sheet, then kept here; admins change them with a dropdown) ---------- */
 var EXTRA=[
   {k:'trainer',h:'Trainer',opts:'trainer'},
@@ -407,8 +451,13 @@ var EXTRA=[
   {k:'location',h:'Location',opts:'location'},
   {k:'gas',h:'Gas Bonus',opts:['$100','$100 5 Apps']},
   {k:'addto',h:'Add applied to',opts:['Completed','Submitted','Pending',"Can't get DD"]}];
-var PROF={},GOALS={office:null,teams:{}},PROF_DOC=false,GOALS_DOC=false;
-function extraVal(pk,k){var p=PROF[pk];return p&&p[k]?String(p[k]).trim():''}
+var PROF={},BPROF={},GOALS={office:null,teams:{}},PROF_DOC=false,BPROF_DOC=false,GOALS_DOC=false;
+/* A Rep profile field as shown: an admin's pick on the board (meta/board_profiles, never touched by the
+   daily copy; '-' = cleared here) wins over the sheet / OwnerVille value it is given. */
+function boardVal(pk,k,base){var b=BPROF[pk]&&BPROF[pk][k];return b?(b==='-'?'':b):(base||'')}
+function isMine(pk,k){return!ORIG()&&!!(BPROF[pk]&&BPROF[pk][k])}
+function sheetVal(pk,k){var p=PROF[pk];return p&&p[k]?String(p[k]).trim():''}
+function extraVal(pk,k){return boardVal(pk,k,sheetVal(pk,k))}
 function extraOpts(f,M){
   if(typeof f.opts!=='string')return f.opts;
   var seen={};Object.keys(PROF).forEach(function(pk){var v=extraVal(pk,f.k);if(v)seen[v]=1});
@@ -416,23 +465,34 @@ function extraOpts(f,M){
   return Object.keys(seen).sort(function(a,b){return a.localeCompare(b)});
 }
 var CUR_M=null;
-// For now roll call, rep extras and goals are typed ONLY on the Alphalete SALES BOARD sheet and copied here
-// (Eve 11/20). Flip SHEET_IS_SOURCE to false to let the board's admins type them here instead.
-var SHEET_IS_SOURCE=true;
-function canWrite(){return !SHEET_IS_SOURCE&&!!DB&&CANW!==false}
-function extraCell(r,f){
-  var v=extraVal(r.pk,f.k);
+/* Roll call and Rep profile: the sheet's values are copied every morning; the board's admins (shared as
+   Editor) can change them here and their change wins (Raf 11/20). Weekly goals stay sheet-only. */
+var GOALS_EDIT=false;
+function canWrite(){return !ORIG()&&!!DB&&CANW===true}
+function pickCell(r,k,h,v,opts,base){
   if(!canWrite())return esc(v);
-  var o=extraOpts(f,CUR_M);if(v&&o.indexOf(v)<0)o=o.concat([v]);
-  return '<select class="xsel" data-pk="'+esc(r.pk)+'" data-k="'+f.k+'" aria-label="'+esc(f.h+' for '+r.name)+'"><option value=""></option>'+
+  var o=opts.slice();if(v&&o.indexOf(v)<0)o=o.concat([v]);
+  return '<select class="xsel'+(isMine(r.pk,k)?' mine':'')+'" data-pk="'+esc(r.pk)+'" data-k="'+k+'" data-base="'+esc(base)+'" aria-label="'+esc(h+' for '+r.name)+'"'+
+    (isMine(r.pk,k)?' title="Changed here on the board'+(base?' (was '+esc(base)+')':'')+'"':'')+'><option value=""></option>'+
     o.map(function(x){return '<option'+(x===v?' selected':'')+'>'+esc(x)+'</option>'}).join('')+'</select>';
 }
+function extraCell(r,f){return pickCell(r,f.k,f.h,extraVal(r.pk,f.k),extraOpts(f,CUR_M),sheetVal(r.pk,f.k))}
+function dateCell(r,k,h){
+  var v=r[k];if(!canWrite())return esc(mdy(v));
+  return '<input type="date" class="xdate'+(isMine(r.pk,k)?' mine':'')+'" data-pk="'+esc(r.pk)+'" data-k="'+k+'" data-base="'+esc(r.ov[k])+'" value="'+esc(v)+'" aria-label="'+esc(h+' for '+r.name)+'"'+
+    (isMine(r.pk,k)?' title="Changed here on the board'+(r.ov[k]?' (OwnerVille: '+esc(mdy(r.ov[k]))+')':'')+'"':'')+'>';
+}
+function teamOpts(){return D.teams.map(function(t){return t.name}).sort()}
+function campaignOpts(){return D.clients.concat(['AT&T']).filter(function(x,i,a){return a.indexOf(x)===i}).sort()}
 var PQ=Promise.resolve(),GQ=Promise.resolve();
-function writeExtra(pk,k,v){
-  var p=PROF[pk]||(PROF[pk]={});if(v)p[k]=v;else delete p[k];
-  PQ=PQ.then(function(){var ref=DB.doc('meta/profiles'),reps={};reps[pk]={};reps[pk][k]=v||null;
-    if(PROF_DOC)return ref.update({reps:reps,at:new Date().toISOString()});
-    return ref.set({reps:PROF,at:new Date().toISOString()}).then(function(){PROF_DOC=true})
+/* Picking the value the sheet / OwnerVille already has drops the override; blank over a value = '-'. */
+function writeExtra(pk,k,v,base){
+  var o=v===(base||'')?null:(v||'-'),p=BPROF[pk]||(BPROF[pk]={});
+  if(o)p[k]=o;else delete p[k];
+  paint();
+  PQ=PQ.then(function(){var ref=DB.doc('meta/board_profiles'),reps={},at=new Date().toISOString();reps[pk]={};reps[pk][k]=o;
+    if(BPROF_DOC)return ref.update({reps:reps,at:at});
+    return ref.set({reps:BPROF,at:at}).then(function(){BPROF_DOC=true})
   }).catch(function(){RC_ERR='That change did not save. Try again in a moment.';paint()});
 }
 function writeGoal(team,n){
@@ -445,20 +505,21 @@ function writeGoal(team,n){
   }).catch(function(){RC_ERR='The goal did not save. Try again in a moment.';paint()});
 }
 var PROFILE_COLS=[
-  {h:'Team',left:true,v:function(r){return esc(r.team)}},
-  {h:'Leadership Status',left:true,v:function(r){return esc(r.level)}},
-  {h:'Field Status',left:true,v:function(r){return esc(r.fs)}},
-  {h:'Campaign',left:true,v:function(r){return esc(r.campaign)}},
+  {h:'Team',left:true,v:function(r){return pickCell(r,'team','Team',r.team,teamOpts(),r.ov.team)}},
+  {h:'Leadership Status',left:true,v:function(r){return pickCell(r,'level','Leadership Status',r.level,LEVELS,r.ov.level)}},
+  {h:'Field Status',left:true,title:'Worked out from the start date',v:function(r){return esc(r.fs)}},
+  {h:'Campaign',left:true,v:function(r){return pickCell(r,'campaign','Campaign',r.campaign,campaignOpts(),r.ov.campaign)}},
   {h:'Email',left:true,v:function(r){return esc(r.email)}},
   {h:'# Days Worked',title:'Days since the start date (to the termination date once terminated)',v:function(r){return r.tenure===''?'':nz(r.tenure)}},
-  {h:'Start Date',v:function(r){return esc(mdy(r.start))}},
-  {h:'Termination Date',v:function(r){return esc(mdy(r.term))}}].concat(EXTRA.map(function(f){return{h:f.h,left:true,v:function(r){return extraCell(r,f)}}}));
+  {h:'Start Date',v:function(r){return dateCell(r,'start','Start Date')}},
+  {h:'Termination Date',v:function(r){return dateCell(r,'term','Termination Date')}}].concat(EXTRA.map(function(f){return{h:f.h,left:true,v:function(r){return extraCell(r,f)}}}));
 
 /* ---------- table ---------- */
 function table(groups,rows,total,opts){
   opts=opts||{};
   var grp='<tr class="grow"><th class="n"></th><th class="name"></th>'+groups.map(function(g){
-    var lab=g.tone==='day'?'<button type="button" class="daybtn" data-day="'+g.dayIdx+'" title="'+(g.open?'Collapse':'Expand')+' this day">'+esc(g.label)+'<span class="ar">'+(g.open?'◀':'▶')+'</span></button>':'<span class="glabel">'+esc(g.label)+'</span>';
+    var btn=g.tone==='day'?'data-day="'+g.dayIdx+'"':g.grp?'data-grp="'+g.grp+'"':'';
+    var lab=btn?'<button type="button" class="daybtn" '+btn+' title="'+(g.open?'Close':'Open')+' '+(g.tone==='day'?'this day':'this group')+'">'+esc(g.label)+'<span class="ar">'+(g.open?'◀':'▶')+'</span></button>':'<span class="glabel">'+esc(g.label)+'</span>';
     return '<th colspan="'+g.cols.length+'">'+lab+'</th>'}).join('')+'</tr>';
   var cols='<tr class="crow"><th class="n" data-sort>#</th><th class="name left" data-sort>'+esc(opts.nameHead||'Rep')+'</th>'+groups.map(function(g){
     return g.cols.map(function(c,ci){return '<th class="k-'+(c.k||'plain')+(ci===0?' sep':'')+(c.left?' left':'')+'" data-sort'+(c.title?' title="'+esc(c.title)+'"':'')+'>'+esc(c.h)+'</th>'}).join('')}).join('')+'</tr>';
@@ -503,8 +564,20 @@ function repTable(M,view){
   if(view==='week')g=[weekGroup('This week · '+weekLabel(M.weeks[0]),0,'cur'),{label:'Rep',tone:'plain',cols:[PROFILE_COLS[0],PROFILE_COLS[2]]}];
   else if(view==='weeks')g=[weekGroup('This week · '+weekLabel(M.weeks[0]),0,'cur',(ORIG()?WEEK_COLS:WEEK_COLS.concat(CHANGE_COLS))),weekGroup('Last week · '+weekLabel(M.weeks[1]),1,'lw'),weekGroup('Prior week · '+weekLabel(M.weeks[2]),2,'pw')];
   else if(view==='profile')g=[{label:'Rep profile',tone:'plain',cols:ORIG()?PROFILE_COLS.slice(0,8):PROFILE_COLS}];
-  else g=[weekGroup('This week',0,'cur',[WEEK_COLS[0]]),weekGroup('Last week',1,'lw',APPS_ONLY)].concat(dayGroups(M.mon,ORIG()?DAY_COLS.slice(0,-1):DAY_COLS,DAY_COMPACT));
+  else if(ORIG())g=[weekGroup('This week',0,'cur',[WEEK_COLS[0]]),weekGroup('Last week',1,'lw',APPS_ONLY)].concat(dayGroups(M.mon,DAY_COLS.slice(0,-1),DAY_COMPACT));
+  else{
+    // Total Apps opens to what was sold and the week's knocks; Previous weeks (closed: 8-week total) at the end (Raf 11/20).
+    var wk=weekGroup('This week',0,'cur',st.wkOpen?WEEK_COLS:[WEEK_COLS[0]]);wk.grp='wk';wk.open=st.wkOpen;
+    g=[wk,weekGroup('Last week',1,'lw',APPS_ONLY)].concat(dayGroups(M.mon,DAY_COLS,DAY_COMPACT)).concat([prevGroup(M)]);
+  }
   return table(g,M.rows,M.total,{totalLabel:'Totals · '+M.rows.length+' reps',sub:fsSub});
+}
+function prevGroup(M){
+  var sum={k:'apps',h:'Last '+PREV_N+' weeks',title:'Apps in the '+PREV_N+' weeks before this one, added up',raw:function(r){var t=0,any=false;r.prev.forEach(function(v){if(v!==''){t+=v;any=true}});return any?t:''},fmt:nzOrBlank};
+  var cols=[sum];
+  if(st.prevOpen)for(var i=0;i<PREV_N;i++)(function(i){var mon=addIso(M.mon,-7*(i+1));
+    cols.push({k:'apps',h:'WE '+md(addIso(mon,6)),title:weekLabel(mon),raw:function(r){return r.prev[i]},fmt:nzOrBlank})})(i);
+  return{label:'Previous weeks',tone:'prev',grp:'prev',open:st.prevOpen,cols:cols,value:function(r,c){return c.raw(r)}};
 }
 function smallTable(head,rows){
   return '<div class="scroll"><table class="small"><thead><tr class="crow">'+head.map(function(h,i){return '<th'+(i===0?' class="left"':'')+'>'+h+'</th>'}).join('')+'</tr></thead><tbody>'+
@@ -535,7 +608,7 @@ var TEAM_DAY_COLS=[
   {k:'dtv',h:'DTV',raw:function(d){return blank0(d.dtv)},fmt:n0},{k:'nl',h:'NL',raw:function(d){return blank0(d.nl)},fmt:n0},
   {k:'tk',h:'TK',raw:function(d){return blank0(d.tk)},fmt:n0},{k:'tk',h:"TT's",raw:function(d){return blank0(d.tt)},fmt:n0},
   {k:'tk',h:'% TT',raw:function(d){return d.pct},fmt:p1},{k:'tk',h:'Units / TT',raw:function(d){return d.perTT},fmt:p1}];
-var TEAM_DAY_COMPACT=[TEAM_DAY_COLS[0],TEAM_DAY_COLS[4],TEAM_DAY_COLS[5]];
+var TEAM_DAY_COMPACT=[TEAM_DAY_COLS[0]];
 var TEAM_HEAD_COLS=[
   {h:'Entry Level',v:function(t){return nz(t.entry)}},{h:'Total Leaders',title:'Level 1, 2, 3 or Mastermind',v:function(t){return nz(t.leaders)}},
   {h:'Active Reps',title:'Sold this week, not terminated, not in the first week',v:function(t){return nz(t.active)}},{h:'Total Reps',v:function(t){return nz(t.n)}},
@@ -545,7 +618,7 @@ var TEAM_HEAD_COLS=[
   {h:'Weekly goal',title:'Units the team aims for this week. Admins type it.',v:function(t){return goalCell(t.name==='All teams'?'':t.name)}},
   {h:'% of goal',v:function(t){var g=t.name==='All teams'?GOALS.office:GOALS.teams[t.name];return g?Math.round(t.wk[0].units/g*100)+'%':''}}];
 function goalCell(team){var g=team?GOALS.teams[team]:GOALS.office;
-  if(!canWrite())return g==null?'':nz(g);
+  if(!GOALS_EDIT||!canWrite())return g==null?'':nz(g);
   return '<input class="goal" type="number" min="0" step="1" inputmode="numeric" data-team="'+esc(team)+'" value="'+(g==null?'':g)+'" aria-label="'+esc((team||'Office')+' weekly goal')+'">'}
 function teamTable(M,view){
   var T=teamSummary(M),g;
@@ -573,7 +646,7 @@ function sortBy(th){
 }
 
 /* ---------- page ---------- */
-var st={mon:null,view:'board',teamView:'week',compact:true,open:{},rcDay:null,showGone:false,orig:false};
+var st={mon:null,view:'board',teamView:'week',compact:true,open:{},rcDay:null,showGone:false,orig:false,wkOpen:false,prevOpen:false,rcF:{}};
 /* "OwnerVille original": every change we made switched off, so the board reads exactly as OwnerVille's
    CEO Dashboard Sales Board (same reps, same columns, same week picker, no roll call, no compact days). */
 function ORIG(){return st.orig}
@@ -594,27 +667,44 @@ function weekOptions(){return allWeeks().filter(function(w){return monthOf(w)===
   return '<option value="'+w+'"'+(w===st.mon?' selected':'')+'>WE '+esc(md(addIso(w,6)))+(w===D.thisMon?' (so far)':'')+'</option>'}).join('')}
 
 /* ---------- roll call view ---------- */
+/* Filters like a spreadsheet's (Raf 11/20): one per column, picked from the values in it. They hide rows
+   in place, so typing a name never redraws the table. */
+var RCF_COLS=[['team','Team'],['fs','Field status'],['tk','Knocks'],['apps','Apps'],['rc','Roll call']];
 function rollCard(M){
   var iso=addIso(M.mon,st.rcDay),can=canWrite();
   var dayPills=pills('rcday',DAYS.map(function(d,i){return[String(i),dayLabel(M.mon,i)]}),String(st.rcDay));
-  var count={},none=0;
+  var count={},none=0,vals={};RCF_COLS.forEach(function(c){vals[c[0]]={}});
   var rows=M.rows.map(function(r,i){
-    var c=cellOf(r.days,iso),x=rcOf(r.pk,iso,c),mark=RC[iso]&&RC[iso][r.pk]||'';
+    var c=cellOf(r.days,iso),x=rcOf(r.pk,iso,c),m=rcMark(iso,r.pk),mark=m?m.code:'';
     if(x)count[x.code]=(count[x.code]||0)+1;else none++;
+    var f={team:r.team||'(blank)',fs:r.fs||'(blank)',tk:c.tk?String(c.tk):'(blank)',apps:appsOf(c)?String(appsOf(c)):'(blank)',rc:x?x.code+(x.auto?' (TeleMapper)':''):'(blank)'};
+    RCF_COLS.forEach(function(k){vals[k[0]][f[k[0]]]=1});
     var btns=can?'<div class="rcb">'+ROLL.map(function(code){return '<button type="button" data-pk="'+esc(r.pk)+'" data-code="'+esc(code)+'" class="'+(mark===code?'on':'')+'" aria-pressed="'+(mark===code)+'">'+esc(code)+'</button>'}).join('')+
       '<span class="gap"></span>'+OFF_MARKS.map(function(code){return '<button type="button" class="off-mark'+(mark===code?' on':'')+'" data-pk="'+esc(r.pk)+'" data-code="'+code+'" title="'+esc(OFF_NAME[code])+': off the board from next week" aria-pressed="'+(mark===code)+'">'+code+'</button>'}).join('')+'</div>':'';
-    return '<tr><td class="n">'+(i+1)+'</td><td class="name"><div class="nw"><span class="dot '+fsCls(r.fs)+'" title="'+esc(r.fs||'No start date')+'"></span><span class="who">'+esc(r.name)+'</span>'+fsSub(r)+'</div></td>'+
-      '<td class="sep">'+n0(c.tk)+'</td><td>'+n0(appsOf(c))+'</td><td class="sep">'+rcBadge(x)+'</td>'+(can?'<td class="left">'+btns+'</td>':'')+'</tr>';
+    return '<tr data-name="'+esc(normName(r.name))+'"'+RCF_COLS.map(function(k){return ' data-f-'+k[0]+'="'+esc(f[k[0]])+'"'}).join('')+'><td class="n">'+(i+1)+'</td><td class="name"><div class="nw"><span class="dot '+fsCls(r.fs)+'" title="'+esc(r.fs||'No start date')+'"></span><span class="who">'+esc(r.name)+'</span>'+fsSub(r)+'</div></td>'+
+      '<td class="left">'+esc(r.team)+'</td><td class="sep">'+n0(c.tk)+'</td><td>'+n0(appsOf(c))+'</td><td class="sep">'+rcBadge(x)+'</td>'+(can?'<td class="left">'+btns+'</td>':'')+'</tr>';
   }).join('');
   var sum=ROLL.concat(OFF_MARKS).filter(function(k){return count[k]}).map(function(k){return '<span>'+esc(k)+' <b>'+count[k]+'</b></span>'}).join('')+'<span>Not marked <b>'+none+'</b></span>';
+  function sortV(a,b){var x=parseFloat(a),y=parseFloat(b);if(a==='(blank)')return 1;if(b==='(blank)')return-1;return!isNaN(x)&&!isNaN(y)?x-y:a.localeCompare(b)}
+  var filters='<div class="rcf"><label>Rep<input type="search" id="rcfName" placeholder="Type a name" value="'+esc(st.rcF.name||'')+'" autocomplete="off"></label>'+
+    RCF_COLS.map(function(k){var v=st.rcF[k[0]]||'',o=Object.keys(vals[k[0]]).sort(sortV);if(v&&o.indexOf(v)<0)o.push(v);
+      return '<label>'+esc(k[1])+'<select class="rcfsel" data-f="'+k[0]+'"><option value="">All</option>'+o.map(function(x){return '<option'+(x===v?' selected':'')+'>'+esc(x)+'</option>'}).join('')+'</select></label>'}).join('')+
+    '<button type="button" class="linkbtn" id="rcfClear">Clear filters</button><span id="rcfCount"></span></div>';
   var note=RC_STATE==='none'?'<div class="note">Roll call is saved inside claude.ai. Open the board there to see and mark it.</div>'
     :RC_STATE==='slow'?'<div class="note">Roll call has not loaded yet. It may be out of date until it does.</div>'
-    :SHEET_IS_SOURCE?'<div class="note">Roll call is marked on the Alphalete SALES BOARD sheet and copied here'+(SYNC_AT?' (last copy '+esc(SYNC_AT)+')':'')+'. Change it on the sheet.</div>'
-    :(!can&&DB)?'<div class="note">Only the board’s admins can mark roll call. You can see it.</div>':'';
+    :'<div class="note">Marks come from the Alphalete SALES BOARD sheet every morning'+(SYNC_AT?' (last copy '+esc(SYNC_AT)+')':'')+'. '+
+      (can?'A mark you make here wins over the sheet (blue outline). ':(DB?'Only the board’s admins can mark here. ':''))+'No mark + knocked or sold that day = Here, dashed (TeleMapper).</div>';
   var err=RC_ERR?'<div class="err" style="margin:0 22px">'+esc(RC_ERR)+'</div>':'';
-  var body=dayPills.replace('class="pills rcday"','class="pills rcday" style="margin:0 22px;justify-self:start"')+note+err+'<div class="rcbar">'+sum+'</div>'+
-    '<div class="scroll"><table class="rct"><thead><tr class="crow"><th class="n">#</th><th class="name left">Rep</th><th class="k-tk sep">Knocks</th><th class="k-apps">Apps</th><th class="sep">Roll Call</th>'+(can?'<th class="left">Mark</th>':'')+'</tr></thead><tbody>'+rows+'</tbody></table></div>';
-  return card('Roll Call · '+DAYS[st.rcDay]+' '+md(iso),'Reps who knocked show <b>Here</b> on their own (dashed). Mark only the rest. Tap a mark again to clear it. <b>T</b> = terminated, <b>F</b> = off the board: the rep leaves the board from next week.','',body);
+  var body=dayPills.replace('class="pills rcday"','class="pills rcday" style="margin:0 22px;justify-self:start"')+note+err+'<div class="rcbar">'+sum+'</div>'+filters+
+    '<div class="scroll"><table class="rct"><thead><tr class="crow"><th class="n">#</th><th class="name left">Rep</th><th class="left">Team</th><th class="k-tk sep">Knocks</th><th class="k-apps">Apps</th><th class="sep">Roll Call</th>'+(can?'<th class="left">Mark</th>':'')+'</tr></thead><tbody id="rcBody">'+rows+'</tbody></table></div>';
+  return card('Roll Call · '+DAYS[st.rcDay]+' '+md(iso),'Order: a mark made here, then the sheet, then TeleMapper. '+(can?'Tap a mark again to clear it. ':'')+'<b>T</b> = terminated, <b>F</b> = off the board: the rep leaves the board from next week.','',body);
+}
+function applyRcFilter(){
+  var tb=document.getElementById('rcBody');if(!tb)return;
+  var q=normName(st.rcF.name||''),shown=0,all=tb.rows.length;
+  [].forEach.call(tb.rows,function(tr){var ok=(!q||tr.dataset.name.indexOf(q)>=0)&&RCF_COLS.every(function(k){var v=st.rcF[k[0]];return!v||tr.getAttribute('data-f-'+k[0])===v});
+    tr.hidden=!ok;if(ok)shown++});
+  var c=document.getElementById('rcfCount');if(c)c.textContent=shown===all?'':'Showing '+shown+' of '+all;
 }
 /* ---------- New Starts (the sheet's 'New Starts/Raf' box: people in classroom week, not on the board yet) ---------- */
 var NEWS={},SYNC_AT='';
@@ -660,7 +750,7 @@ function goneLine(M){
   var list=st.showGone?'<div class="scroll"><table class="small"><thead><tr class="crow"><th class="left">Off this week’s board</th><th class="left">Why</th>'+(canWrite()?'<th></th>':'')+'</tr></thead><tbody>'+
     M.gone.map(function(r){var marked=r.why.indexOf('Marked')===0;return '<tr class="gone"><td class="left strong">'+esc(r.name)+'</td><td class="left">'+esc(r.why)+'</td>'+
       (canWrite()?'<td>'+(marked?'<button type="button" class="linkbtn" data-back="'+esc(r.pk)+'">Bring back</button>':'')+'</td>':'')+'</tr>'}).join('')+'</tbody></table></div>':'';
-  return '<div class="hid"><span>'+M.gone.length+' rep'+(M.gone.length===1?'':'s')+' left the board before this week (terminated or marked F).</span><button type="button" class="linkbtn" id="goneBtn">'+(st.showGone?'Hide':'Show')+'</button></div>'+list;
+  return '<div class="hid"><span>'+M.gone.length+' rep'+(M.gone.length===1?'':'s')+' are off this week’s board (terminated, marked F, or road trip).</span><button type="button" class="linkbtn" id="goneBtn">'+(st.showGone?'Hide':'Show')+'</button></div>'+list;
 }
 var LEGEND='<div class="legend"><span>Apps a day</span><span class="chip s0">0</span><span class="chip s1">1-2</span><span class="chip s3">3-4</span><span class="chip s5">5+</span><span>Field status</span>'+
   ['1st Wk','2nd Wk','3rd Wk','4th Wk','5th wk+'].map(function(f){return '<span><span class="dot '+fsCls(f)+'"></span> '+f+'</span>'}).join('')+'</div>';
@@ -686,7 +776,7 @@ function paint(){
   var VIEWS_NOW=ORIG()?VIEWS.filter(function(v){return v[0]!=='roll'&&v[0]!=='new'}):VIEWS;
   if(ORIG()&&(st.view==='roll'||st.view==='new'))st.view='board';
   var dayToggle=!ORIG()&&(st.view==='board'||st.teamView==='days')?pills('days',[['compact','Compact days'],['full','Full days']],st.compact?'compact':'full'):'';
-  var sub={board:ORIG()?'Monday to Sunday, as on OwnerVille. Click a column to sort.':'Days start compact (apps, knocks, talk-tos). Click a day to open all its columns, roll call included. Click a column to sort.',week:"This week's totals, the sheet's running week columns.",weeks:'This week, last week and the week before, side by side.',profile:'Start dates and status from OwnerVille; team and level from the team builder.'}[st.view];
+  var sub={board:ORIG()?'Monday to Sunday, as on OwnerVille. Click a column to sort.':'Days and groups start closed, showing apps only. Click a day to open all its columns (roll call included); click This week for what was sold and the knocks; Previous weeks for the last 8 weeks. Click a column to sort.',week:"This week's totals, the sheet's running week columns.",weeks:'This week, last week and the week before, side by side.',profile:'From OwnerVille and the sheet. Admins can change any dropdown or date here; a change made here wins (blue outline). Pick the original value again to undo.'}[st.view];
   app.innerHTML='<div class="top">'+pills('view',VIEWS_NOW,st.view)+'<div class="ctrl">'+pills('ver',[['ours','Our version'],['orig','OwnerVille original']],ORIG()?'orig':'ours')+'<span class="stamp">'+esc(stamp())+'</span>'+
     (ORIG()?'<select id="week" aria-label="Week">'+origWeekOptions()+'</select>':'<select id="month" aria-label="Month">'+monthOptions()+'</select><select id="week" aria-label="Weekending">'+weekOptions()+'</select>')+'<button type="button" class="btn" id="infoBtn"><span class="i" aria-hidden="true">i</span>How it’s built</button></div></div>'+
     banner(M)+errs+
@@ -694,6 +784,7 @@ function paint(){
     card('Reps',sub,(st.view==='board'?dayToggle:'')+LEGEND,(M.rows.length?repTable(M,st.view):'<div class="msg">No knocks, sales or cancels in '+esc(weekLabel(M.mon))+' or the two weeks before.</div>')+(ORIG()?'':goneLine(M))))+
     '<div class="two">'+card('Board stats','Reps past their 1st week.','',statsTable(M))+card('Recent weeks','Apps by day, the six weeks before.','',historyTable(M))+'</div>'+
     card('Teams','From the OwnerVille team builder.',(st.teamView==='days'?dayToggle:'')+pills('tview',TEAM_VIEWS,st.teamView),teamTable(M,st.teamView));
+  if(st.view==='roll')applyRcFilter();
   window.scrollTo(x,y);
 }
 document.addEventListener('click',function(e){
@@ -703,41 +794,44 @@ document.addEventListener('click',function(e){
   if((b=t.closest('.view button'))){st.view=b.dataset.v;store('view',st.view);paint();return}
   if((b=t.closest('.tview button'))){st.teamView=b.dataset.v;paint();return}
   if((b=t.closest('.days button'))){st.compact=b.dataset.v==='compact';st.open={};store('compact',st.compact?'1':'0');paint();return}
+  if((b=t.closest('.daybtn[data-grp]'))){if(b.dataset.grp==='wk')st.wkOpen=!st.wkOpen;else st.prevOpen=!st.prevOpen;paint();return}
   if((b=t.closest('.daybtn'))){var i=+b.dataset.day;st.open[i]=!dayOpen(i);paint();return}
+  if(t.closest('#rcfClear')){st.rcF={};paint();return}
   if((b=t.closest('.rcday button'))){st.rcDay=+b.dataset.v;RC_ERR='';paint();return}
-  if((b=t.closest('.rcb button'))){var iso=addIso(st.mon,st.rcDay),cur=RC[iso]&&RC[iso][b.dataset.pk];RC_ERR='';
-    writeMark(iso,b.dataset.pk,cur===b.dataset.code?null:b.dataset.code);return}
+  if((b=t.closest('.rcb button'))){RC_ERR='';tapMark(addIso(st.mon,st.rcDay),b.dataset.pk,b.dataset.code);return}
   if(t.closest('#goneBtn')){st.showGone=!st.showGone;paint();return}
-  if((b=t.closest('[data-back]'))){var pk=b.dataset.back;(OFFS[pk]||[]).filter(function(o){return o.iso<st.mon}).forEach(function(o){writeMark(o.iso,pk,null)});return}
+  if((b=t.closest('[data-back]'))){var pk=b.dataset.back;(OFFS[pk]||[]).filter(function(o){return o.iso<st.mon}).forEach(function(o){writeMark(o.iso,pk,RC[o.iso]&&RC[o.iso][pk]?'-':null)});return}
   if(t.closest('#infoBtn')){document.getElementById('info').showModal();return}
   if(t.closest('#infoX')){document.getElementById('info').close();return}
   if((b=t.closest('th[data-sort]')))sortBy(b);
 });
 document.addEventListener('change',function(e){
   var el=e.target;
-  if(el.classList&&el.classList.contains('xsel')){RC_ERR='';writeExtra(el.dataset.pk,el.dataset.k,el.value);return}
+  if(el.classList&&(el.classList.contains('xsel')||el.classList.contains('xdate'))){RC_ERR='';writeExtra(el.dataset.pk,el.dataset.k,el.value,el.dataset.base);return}
+  if(el.classList&&el.classList.contains('rcfsel')){st.rcF[el.dataset.f]=el.value;applyRcFilter();return}
   if(el.classList&&el.classList.contains('goal')){var n=el.value===''?null:Math.max(0,Math.round(+el.value));RC_ERR='';writeGoal(el.dataset.team||'',isNaN(n)?null:n);return}
   if(e.target.id==='week'){st.mon=e.target.value;st.open={};st.rcDay=null;paint()}
   if(e.target.id==='month'){var k=e.target.value;st.mon=allWeeks().filter(function(w){return monthOf(w)===k})[0];st.open={};st.rcDay=null;paint()}
 });
+document.addEventListener('input',function(e){if(e.target.id==='rcfName'){st.rcF.name=e.target.value;applyRcFilter()}});
 document.getElementById('info').addEventListener('click',function(e){if(e.target.id==='info')e.target.close()});
 
 function dl(items){return '<dl>'+items.map(function(i){return '<dt>'+i[0]+'</dt><dd>'+i[1]+'</dd>'}).join('')+'</dl>'}
 document.getElementById('infoBody').innerHTML=
- '<h4>What this page is</h4><p>Alphalete’s own copy of the CEO Dashboard Sales Board, so we can change it. Every number is read from OwnerVille (knocks, AT&amp;T orders, people, teams) and worked out with the same formulas as Raf’s "Alphalete SALES BOARD" sheet. Nothing is typed except roll call. The time the data was pulled shows at the top.</p>'+
+ '<h4>What this page is</h4><p>Alphalete’s own copy of the CEO Dashboard Sales Board, so we can change it. Every number is read from OwnerVille (knocks, AT&amp;T orders, people, teams) and worked out with the same formulas as Raf’s "Alphalete SALES BOARD" sheet. Nothing is typed except roll call and the rep profile changes admins make. The time the data was pulled shows at the top.</p>'+
  '<h4>Where the data comes from</h4>'+dl([['TeleMapper knocks','Knocks, talk-tos and campaign, read with OwnerVille’s own Knocking daily board, on the office’s local day.'],['AT&amp;T order log','INT, DTV, NL, Cx and Recent weeks. Each order goes to the rep whose OwnerVille ID is on it as the AT&amp;T rep number. Orders arrive about a day after they are placed.'],['OwnerVille people','Names, start date, termination date, email.'],['Team builder','Team and Leadership Status.']])+
  '<h4>Who is on the board</h4><p>Everyone with a knock, an AT&amp;T order or a cancel in the chosen week or the two weeks before, sorted by name.</p>'+
  '<h4>What each number means</h4>'+dl([['TK','Every knock logged in TeleMapper that day.'],['Total Talk-To’s','Doors where someone was spoken to, from the last status logged at each address that day. AT&amp;T fiber campaigns: Talk To - Not Interested, Presentation - Not Interested, Come Back, Sale, Do Not Knock. Other campaigns: every status except No Answer, Inaccessible, Inaccurate, Inaccurate Lead, No Contact.'],['INT / DTV / NL','AT&amp;T internet, DirecTV, and new or ported lines, on the day ordered. Rejected orders never count.'],['Apps','INT + DTV + NL. INT UP is not an app.'],['Cx','AT&amp;T cancels, on the day AT&amp;T cancelled.']])+
  '<h4>Formulas (the sheet’s)</h4>'+dl([['% of TT’s per knock','Talk-tos ÷ knocks.'],['AVG app per TT','A day’s apps ÷ its talk-tos.'],['Days worked','Monday to Saturday days with knocks or apps. Sunday adds up but never counts as worked.'],['AVG Total Knocks per day','Week knocks ÷ days worked.'],['AVG TT’s per day','Week talk-tos ÷ days worked.'],['AVG TTs per app','Week talk-tos ÷ week apps.'],['Totals row','Every rep added up; ratios use the same formulas on the totals.']])+
- '<h4>Rep profile</h4>'+dl([['Field Status','Weeks since the OwnerVille start date, counted from the board week’s Monday: 1st Wk to 4th Wk, then 5th wk+.'],['Campaign','TeleMapper campaign(s) knocked in the three weeks shown; AT&amp;T when the rep only has orders.'],['# Days Worked','Calendar days from the start date to today, or to the termination date.']])+
+ '<h4>Rep profile</h4><p>Admins can change Team, Leadership Status, Campaign, Start Date, Termination Date and the sheet’s extras (Trainer, Drug Test, Direct Deposit, A-Play, Location, Gas Bonus, Add applied to) right in the table. The change wins over OwnerVille and the sheet, the next morning’s copy does not undo it, and Team / level / dates feed every table. Picking the original value again undoes it. Weekly goals still come only from the sheet.</p>'+dl([['Field Status','Weeks since the OwnerVille start date, counted from the board week’s Monday: 1st Wk to 4th Wk, then 5th wk+.'],['Campaign','TeleMapper campaign(s) knocked in the three weeks shown; AT&amp;T when the rep only has orders.'],['# Days Worked','Calendar days from the start date to today, or to the termination date.']])+
  '<h4>Board stats</h4>'+dl([['Reps in the Field','Reps in the field by roll call (see Roll Call), not in their 1st week.'],['On the Board','In the field with at least one app.'],['Rolled a Zero','In the field with no apps.'],['New INT / App per Rep','Total INT or apps ÷ reps in the field.']])+
  '<h4>Team summary</h4>'+dl([['Teams','A rep on two teams counts under the team they lead, else their first. No team: shown as "No team".'],['Active Reps','Sold this week, not terminated by Sunday, not in their 1st week. LW averages divide by this week’s active reps, as the sheet does.']])+
  '<h4>Colours</h4>'+dl([['Name dot','Field status: 1st Wk lavender, 2nd yellow, 3rd light blue, 4th brown, 5th+ green.'],['Total Apps','Red 0, yellow 1–9, green 10–19, cyan 20+.'],['Day apps','Red 0, yellow 1–2, green 3–4, blue 5+. Zeros and cancels in red.']])+
- '<h4>Roll Call</h4>'+dl([['Who marks it','Only the board’s admins (people it is shared with as Editor). Everyone else sees it. It saves as soon as you tap and everyone sees the change.'],['Here on its own','A rep with knocks or an app that day and no mark shows Here, dashed. Mark only the rest.'],['In the field','Board stats count a rep in the field on a day when roll call says they worked: every mark except Off, O-NA, FFP, STF, RT, T and F. An unmarked rep counts only on a day they knocked or sold.'],['From the sheet','For now roll call, the rep extras (Trainer, Drug Test, Direct Deposit, A-Play, Location, Gas Bonus, Add applied to), the weekly goal and New Starts are typed only on the Alphalete SALES BOARD sheet and copied here. Change them on the sheet.'],['T and F','T = terminated, F = off the board. The rep stays this week, marked, and leaves the board from next week. A rep with an OwnerVille termination date before the week also leaves. "Show" under the reps lists who left and why; Bring back removes the T or F.'],['Totals','Reps who left the board leave the totals too, as when their row is deleted from the sheet.']])+
+ '<h4>Roll Call</h4>'+dl([['Who marks it','Only the board’s admins (people it is shared with as Editor). Everyone else sees it. It saves as soon as you tap and everyone sees the change.'],['Here on its own','A rep with knocks or an app that day and no mark shows Here, dashed. Mark only the rest.'],['In the field','Board stats count a rep in the field on a day when roll call says they worked: every mark except Off, O-NA, FFP, STF, RT, T and F. An unmarked rep counts only on a day they knocked or sold.'],['Which mark wins','A mark made here on the board, then the sheet’s mark (copied every morning), then TeleMapper (knocked or sold that day = Here, dashed). Marks made here have a blue outline. Tapping a lit mark clears it, even one from the sheet.'],['Filters','Above the list: type a name, or pick a value for Team, Field status, Knocks, Apps or Roll call. Clear filters shows everyone again.'],['Road trips','Reps whose OwnerVille name ends in RT or Roadtrip knock here but sell under another office, so they are off this board (Andrew Sanborn stays, as on the sheet). Show lists them.'],['T and F','T = terminated, F = off the board. The rep stays this week, marked, and leaves the board from next week. A rep with an OwnerVille termination date before the week also leaves. "Show" under the reps lists who left and why; Bring back removes the T or F.'],['Totals','Reps who left the board leave the totals too, as when their row is deleted from the sheet.']])+
  '<h4>Our version / OwnerVille original</h4><p>The switch at the top turns every change we made off or on. “OwnerVille original” shows the board exactly as OwnerVille’s CEO Dashboard does: every rep, the same columns and week picker, no roll call, New Starts, extras, goals or compact days. Each viewer’s choice is remembered on their browser.</p>'+
  '<h4>Picking a week</h4><p>Pick the month, then the weekending (the Sunday). The board always opens on the newest week.</p>'+
- '<h4>Weekly goals</h4><p>The office goal (in the banner) and each team’s goal (in Teams) are typed here by admins. % of goal = units ÷ goal.</p><h4>Changes against past weeks</h4><p>Last / prior weeks shows each rep’s apps this week against last week and the week before, ▲ up or ▼ down in %. While the week is still going, both sides count the same days (Monday to the day the data was pulled), so the number moves every day until Sunday. “new” = no apps in those days of the week compared.</p><h4>Not in OwnerVille, so not here yet</h4><p>INT UP.</p>'+
- '<h4>What is different from the OwnerVille page</h4><p>Days can be compacted to apps, knocks and talk-tos, and opened one at a time. Roll call. Month and weekending picker. Terminated reps leave the board.</p>';
+ '<h4>Weekly goals</h4><p>The office goal (the sheet’s Goal row) shows in the banner and in Teams. % of goal = units ÷ goal.</p><h4>Previous weeks</h4><p>At the end of the Board: closed it shows each rep’s apps in the 8 weeks before the chosen one, added up; open it shows each week.</p><h4>Changes against past weeks</h4><p>Last / prior weeks shows each rep’s apps this week against last week and the week before, ▲ up or ▼ down in %. While the week is still going, both sides count the same days (Monday to the day the data was pulled), so the number moves every day until Sunday. “new” = no apps in those days of the week compared.</p><h4>Not in OwnerVille, so not here yet</h4><p>INT UP.</p>'+
+ '<h4>What is different from the OwnerVille page</h4><p>Days and This week close to apps only and open one at a time. Previous weeks. Roll call with filters. Month and weekending picker. Terminated reps and road trips leave the board. Admins can edit roll call and the rep profile.</p>';
 
 fetch('data.json').then(function(r){if(!r.ok)throw new Error('data.json '+r.status);return r.json()}).then(function(d){
   index(d);
