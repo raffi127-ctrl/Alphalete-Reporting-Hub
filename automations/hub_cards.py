@@ -1426,7 +1426,7 @@ AUTOMATED_REPORTS = [
         # Amber = an ongoing self-running job, like the other 24/7 Ops cards.
         "color": "#F59E0B",
         "category": "📲 Ops",
-        "assignees": ["Lucy 4"],
+        "assignees": ["Lucy 3"],
         "description": "Reps DM the Lucy Pitch Auditor bot a recording of their door pitch → she DMs back who said what (🟦 Rep / 🟧 Customer) and the talk-time split, and sends Raf a copy. His feedback replies are saved so she can learn what closes deals.",
         "breakdown": (
             "WHAT IT DOES\n"
@@ -1447,10 +1447,10 @@ AUTOMATED_REPORTS = [
             "talk time** on the right person. The misses are one-word replies "
             "(\"okay\", \"yeah\").\n\n"
             "WHEN IT RUNS\n"
-            "**Always on, 24/7** on Lucy 4, in the background. A quiet card is "
+            "**Always on, 24/7** on Lucy 3, in the background. A quiet card is "
             "normal — it only lights up when a transcript goes out."
         ),
-        "assignee_note": "Runs 24/7 on Lucy 4 as its own Slack bot (deploy/com.alphalete.lucy-transcriber.plist, KeepAlive), not the 4 AM orchestrator. Not a Hub-run report — nothing to trigger from here.",
+        "assignee_note": "Runs 24/7 on Lucy 3 as its own Slack bot (deploy/com.alphalete.lucy-transcriber.plist, KeepAlive), not the 4 AM orchestrator. Not a Hub-run report — nothing to trigger from here.",
         "self_scheduled": True,
         "hide_schedule": True,
         "schedule": {

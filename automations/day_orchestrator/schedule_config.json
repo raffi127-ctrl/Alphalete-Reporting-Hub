@@ -705,8 +705,8 @@
   },
   "lucy_transcriber": {
    "on_scheduler": false,
-   "_note": "Raf's ask (#lucy-projects 2026-11-21); Megan: a BOT, not a channel, like the 2nd round auditor. Reps DM the Lucy Pitch Auditor Slack app (code folder lucy_transcriber) (its own app, automations/lucy_transcriber/slack_app_manifest.json, Socket Mode) a pitch recording; it replies in the DM with a Rep/Customer transcript and DMs Raf a copy; replies under either copy are saved as feedback for Phase 2. The bot = com.alphalete.lucy-transcriber on LUCY 4, always on (KeepAlive; install_lucy_transcriber_agent). STAYS ON LUCY 4: that box holds the bot tokens (~/.config/recruiting-report/transcriber-bot-token + transcriber-app-token), state and saved feedback in output/lucy_transcriber/ -- two copies of the bot would answer every DM twice. Needs Apple silicon (mlx-whisper) and the Anthropic key. This entry is for hand checks only, posts nothing: `lucy rerun lucy_transcriber --doctor --fix --machine \"Lucy 4\"`.",
-   "machine": "Lucy 4",
+   "_note": "Raf's ask (#lucy-projects 2026-11-21); Megan: a BOT, not a channel, like the 2nd round auditor. Reps DM the Lucy Pitch Auditor Slack app (code folder lucy_transcriber) (its own app, automations/lucy_transcriber/slack_app_manifest.json, Socket Mode) a pitch recording; it replies in the DM with a Rep/Customer transcript and DMs Raf a copy; replies under either copy are saved as feedback for Phase 2. The bot = com.alphalete.lucy-transcriber on LUCY 3, always on (KeepAlive; install_lucy_transcriber_agent). STAYS ON LUCY 3: that box holds the bot tokens (~/.config/recruiting-report/transcriber-bot-token + transcriber-app-token), state and saved feedback in output/lucy_transcriber/ -- two copies of the bot would answer every DM twice. Needs Apple silicon (mlx-whisper) and the Anthropic key -- Lucy 3 has both (its --doctor 2026-11-21); Lucy 4 has no Claude key, which is why it moved off Lucy 4 the same day. This entry is for hand checks only, posts nothing: `lucy rerun lucy_transcriber --doctor --fix --machine \"Lucy 3\"`.",
+   "machine": "Lucy 3",
    "stay_home": true,
    "display_name": "Lucy Pitch Auditor (pitch recordings)",
    "source_type": "local",
@@ -724,10 +724,33 @@
    "verify": null,
    "timeout_minutes": 20
   },
+  "disable_lucy_transcriber_agent": {
+   "on_scheduler": false,
+   "_off_scheduler_note": "Retire com.alphalete.lucy-transcriber on LUCY 4 (installed there first on 2026-11-21, then the bot moved to Lucy 3 because Lucy 4 has no Claude key). Without it, a second copy of the bot would answer every DM twice once Lucy 4 ever gets the tokens. disable_agent only boots out the agent and moves its plist aside; it touches no Sheet and no report data. Reversible with install_lucy_transcriber_agent --machine.",
+   "machine": "Lucy 4",
+   "display_name": "Retire Lucy Pitch Auditor agent on Lucy 4",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.day_orchestrator.disable_agent"
+   ],
+   "base_args": [
+    "lucy-transcriber"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": {
+    "type": "not_configured"
+   }
+  },
   "install_lucy_transcriber_agent": {
    "on_scheduler": false,
-   "_off_scheduler_note": "Install/refresh com.alphalete.lucy-transcriber on LUCY 4 (the always-on Lucy Transcriber bot). install_agent only rewrites and reloads the plist; it touches no Sheet and no report data.",
-   "machine": "Lucy 4",
+   "_off_scheduler_note": "Install/refresh com.alphalete.lucy-transcriber on LUCY 3 (the always-on Lucy Transcriber bot). install_agent only rewrites and reloads the plist; it touches no Sheet and no report data.",
+   "machine": "Lucy 3",
    "display_name": "Install Lucy Pitch Auditor bot (always on)",
    "source_type": "local",
    "data_sources": [],

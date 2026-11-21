@@ -4,7 +4,7 @@
 
 Nothing you paste is shown or printed. Each key is checked against Slack
 before it is saved to ~/.config/recruiting-report/ (only you can read the
-files). Then, if Lucy 4 answers on the office network, both files are copied
+files). Then, if Lucy 3 answers on the office network, both files are copied
 there and the bot is (re)started -- otherwise it says so and the copy waits
 for the next time this laptop is at the office.
 """
@@ -17,7 +17,7 @@ import sys
 
 from automations.lucy_transcriber import config as C
 
-LUCY4 = "lucy4@Lucys-Mac-mini-2.local"
+LUCY = "lucy3@Lucys-Mac-mini.local"     # Lucy 3: has the Claude key + Apple chip
 REMOTE_CFG = ".config/recruiting-report"
 
 
@@ -36,16 +36,16 @@ def _save(path, tok: str) -> None:
         f.write(tok + "\n")
 
 
-def ship_to_lucy4() -> bool:
-    """Copy both token files to Lucy 4 and restart the bot there. False when
-    Lucy 4 isn't reachable (off the office network)."""
-    ssh = ["ssh", "-o", "ConnectTimeout=6", "-o", "BatchMode=yes", LUCY4]
+def ship_to_lucy() -> bool:
+    """Copy both token files to Lucy 3 and restart the bot there. False when
+    Lucy 3 isn't reachable (off the office network)."""
+    ssh = ["ssh", "-o", "ConnectTimeout=6", "-o", "BatchMode=yes", LUCY]
     if subprocess.run(ssh + ["true"], capture_output=True).returncode != 0:
         return False
     subprocess.run(ssh + ["mkdir -p ~/{0} && chmod 700 ~/{0}".format(REMOTE_CFG)], check=True)
     for p in (C.BOT_TOKEN_FILE, C.APP_TOKEN_FILE):
         subprocess.run(["scp", "-q", "-o", "BatchMode=yes", str(p),
-                        "{}:{}/{}".format(LUCY4, REMOTE_CFG, p.name)], check=True)
+                        "{}:{}/{}".format(LUCY, REMOTE_CFG, p.name)], check=True)
     subprocess.run(ssh + ["chmod 600 ~/{0}/transcriber-*-token".format(REMOTE_CFG)], check=True)
     subprocess.run(ssh + ["launchctl kickstart -k gui/$(id -u)/com.alphalete.lucy-transcriber "
                           "2>/dev/null || true"], check=True)
@@ -64,10 +64,10 @@ def main() -> int:
     _save(C.BOT_TOKEN_FILE, bot)
     _save(C.APP_TOKEN_FILE, app)
     print("Saved. The bot is '{}' in your Slack.".format(auth.get("user")))
-    if ship_to_lucy4():
-        print("Copied to Lucy 4 and started the bot there.")
+    if ship_to_lucy():
+        print("Copied to Lucy 3 and started the bot there.")
     else:
-        print("Lucy 4 isn't reachable from here (not on the office Wi-Fi) -- "
+        print("Lucy 3 isn't reachable from here (not on the office Wi-Fi) -- "
               "the keys are saved on this laptop and get copied over next time.")
     return 0
 
