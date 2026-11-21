@@ -1784,11 +1784,61 @@ function _admBgStatus(office) {
 // waits three minutes to see a board. Reading a sheet is what Apps Script is
 // for.
 
-function _boardTab(office) {
+// A WEEK TAB: 'OBCL 11.23', named for its Monday. Megan 2026-11-21: every
+// ICD who launches gets their own workbook with a new tab each week. The old
+// shape was one 'Onboarding' tab with the weeks stacked inside it, in a
+// workbook the office already owned.
+var BOARD_WEEK_RE = /^\s*OBCL\s+(\d{1,2})\.(\d{1,2})\s*$/i;
+
+function _boardWeekTab(monday) {
+  var d = new Date(monday);
+  return 'OBCL ' + (d.getMonth() + 1) + '.' + d.getDate();
+}
+
+// Every week the book holds, newest first -- what the picker offers. Falls
+// back to the stacked tab's own 'Week of' column for an office that has not
+// been moved over, so the picker looks the same either way.
+function _boardWeeks(office) {
+  var book = _boardBook(office);
+  if (!book) return [];
+  var out = [], sheets = book.getSheets();
+  for (var i = 0; i < sheets.length; i++) {
+    var m = BOARD_WEEK_RE.exec(sheets[i].getName());
+    if (m) out.push(sheets[i].getName());
+  }
+  if (out.length) {
+    return out.sort().reverse();
+  }
+  var old = book.getSheetByName(BOARD_TAB);
+  if (!old) return [];
+  var grid = old.getDataRange().getValues();
+  var head = grid[BOARD_HEADER_ROW - 1].map(function (h) { return String(h).trim(); });
+  var at = head.indexOf('Week of');
+  if (at < 0) return [];
+  var seen = {};
+  for (var r = BOARD_FIRST_ROW - 1; r < grid.length; r++) {
+    var v = String(grid[r][at] || '').trim();
+    if (v) seen[v] = 1;
+  }
+  return Object.keys(seen).sort().reverse();
+}
+
+function _boardBook(office) {
   var set = _admSettings(office);
   if (!set.sheet) return null;
-  var book;
-  try { book = SpreadsheetApp.openById(set.sheet); } catch (err) { return null; }
+  try { return SpreadsheetApp.openById(set.sheet); } catch (err) { return null; }
+}
+
+// `week` is a tab name ('OBCL 11.23') when the office has week tabs, and is
+// ignored for one still on the stacked tab -- there the whole board is one
+// sheet and the caller filters by the 'Week of' column as it always has.
+function _boardTab(office, week) {
+  var book = _boardBook(office);
+  if (!book) return null;
+  if (week) {
+    var ws = book.getSheetByName(String(week).trim());
+    if (ws) return ws;
+  }
   return book.getSheetByName(BOARD_TAB);
 }
 
@@ -1810,7 +1860,7 @@ function _boardRows(sh) {
 }
 
 function _boardWeek(office, a) {
-  var sh = _boardTab(office);
+  var sh = _boardTab(office, a.weekTab || '');
   if (!sh) {
     return {ok: false, error: "This office has no onboarding board yet. " +
             "Ask Lucy's team to switch it on."};
@@ -1834,7 +1884,7 @@ function _boardWeek(office, a) {
 // hidden from the board and the printout, still there to answer what happened
 // to a person months later.
 function _boardMark(office, a) {
-  var sh = _boardTab(office);
+  var sh = _boardTab(office, a.weekTab || '');
   if (!sh) return {ok: false, error: 'No onboarding board for this office.'};
   var got = _boardRows(sh);
   var col = got.head.indexOf('Terminated');
@@ -1886,7 +1936,7 @@ function _boardColumn(office, a, colName) {
   // was asked about, only on the week it was given, and only when the value
   // actually differs -- so a panel save never rewrites the whole column and
   // never touches another week.
-  var sh = _boardTab(office);
+  var sh = _boardTab(office, a.weekTab || '');
   if (!sh) return {ok: false, error: 'No onboarding board for this office.'};
   var got = _boardRows(sh);
   var col = got.head.indexOf(colName);
@@ -2012,7 +2062,7 @@ function _boardRank(text, column) {
 // step that earns it, and writing a blank would be this call claiming to know
 // something it does not.
 function _boardSeed(office, a) {
-  var sh = _boardTab(office);
+  var sh = _boardTab(office, a.weekTab || '');
   if (!sh) return {ok: false, error: 'No onboarding board for this office.'};
   var week = String(a.week || '').trim();
   if (!week) return {ok: false, error: 'board_seed needs a week.'};
@@ -2069,7 +2119,7 @@ function _boardSeed(office, a) {
 // The two status columns ADVANCE instead, and only forwards, so a late "Sent"
 // email can never pull somebody back from Passed.
 function _boardTick(office, a) {
-  var sh = _boardTab(office);
+  var sh = _boardTab(office, a.weekTab || '');
   if (!sh) return {ok: false, error: 'No onboarding board for this office.'};
   var week = String(a.week || '').trim();
   if (!week) return {ok: false, error: 'board_tick needs a week.'};

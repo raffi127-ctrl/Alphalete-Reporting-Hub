@@ -284,3 +284,42 @@ class AnOfficeMachineNeverTouchesGspread(unittest.TestCase):
         self.assertEqual(got["add"], ["Ada Byron"])
         self.assertEqual(got["keep"], 3)
         self.assertEqual(got["left"], [])
+
+
+class TheRelayKnowsWeekTabs(unittest.TestCase):
+    """Megan 2026-11-21: own workbook per ICD, a new tab each week."""
+
+    def _src(self):
+        return RELAY.read_text(encoding="utf-8")
+
+    def test_the_week_tab_name_matches_the_python_side(self):
+        """`book.tab_name` and the relay must spell a week the same way, or
+        each makes a tab the other cannot find."""
+        import datetime as dt
+
+        from automations.icd_onboarding import book as K
+        src = self._src()
+        self.assertIn("'OBCL ' + (d.getMonth() + 1) + '.' + d.getDate()", src)
+        self.assertEqual(K.tab_name(dt.date(2026, 11, 23)), "OBCL 11.23")
+        self.assertEqual(K.tab_name(dt.date(2026, 11, 2)), "OBCL 11.2")
+
+    def test_it_still_falls_back_to_the_stacked_tab(self):
+        """An office not moved over yet must keep working -- no flag day."""
+        src = self._src()
+        self.assertIn("return book.getSheetByName(BOARD_TAB);", src)
+
+    def test_the_picker_falls_back_to_the_week_column(self):
+        """With no week tabs it reads the stacked tab's own 'Week of', so
+        the picker looks the same either way."""
+        src = self._src()
+        at = src.index("function _boardWeeks(")
+        body = src[at:at + 1400]
+        self.assertIn("'Week of'", body)
+        self.assertIn("BOARD_WEEK_RE", body)
+
+    def test_every_board_call_can_name_a_week_tab(self):
+        """A caller that cannot say which week would silently read whichever
+        tab the fallback returns."""
+        src = self._src()
+        self.assertEqual(src.count("_boardTab(office, a.weekTab || '')"), 5)
+        self.assertNotIn("_boardTab(office);", src)
