@@ -17,8 +17,12 @@ payout, 40%, 45%, and 50%, and then underneath it a total row that adds all
 those up"):
 
   Order Date | Activation Date | Customer Name | Status |
-  Device | Plan | Next Up | Phone Number | Zip Code |
+  Device | Plan | Next Up | Phone Number | Zip Code | Tier |
   Est. Revenue | 30% Payout | 40% Payout | 45% Payout | 50% Payout
+
+Tier = the tier bonus that line pays at ("Tier 1" $30 ... "Tier 4" $110, the
+rep_tier bands; blank when it earns none -- not a port line, below Tier 1,
+or not paid). Carlos 11/20: "add a tier column next to the zip code".
 
 (the money columns sat right after Status until the evening of 11/20, when
 Carlos had them moved to the far right).
@@ -112,8 +116,9 @@ PAYOUT_COLS = tuple("%d%% Payout" % p for p in PAYOUT_PCTS)
 MONEY_COLS = ("Est. Revenue",) + PAYOUT_COLS
 # Carlos 11/20 evening: "Lets add the revenue to the far right" / "you didnt
 # move the payouts to the far right" -- the five money columns close the table.
+# ... and "a tier column next to the zip code": the tier bonus the line pays at.
 COLUMNS = (("Order Date", "Activation Date", "Customer Name", "Status",
-            "Device", "Plan", "Next Up", "Phone Number", "Zip Code") + MONEY_COLS)
+            "Device", "Plan", "Next Up", "Phone Number", "Zip Code", "Tier") + MONEY_COLS)
 
 
 def payouts(revenue: float) -> Dict[str, float]:
@@ -648,6 +653,17 @@ def _cols_index(cols) -> dict:
     }
 
 
+def tier_name_for(rate: float, bands=None) -> str:
+    """'Tier 2' for a $50 line bonus; '' for none; '$X' for a rate no band has."""
+    if not rate:
+        return ""
+    from automations.nds_metrics.run import tier_bands
+    for k, (_thr, r) in enumerate(bands or tier_bands(), 1):
+        if abs(float(r) - float(rate)) < 0.01:
+            return "Tier %d" % k
+    return "$%s" % format(rate, ",.0f")
+
+
 def line_facts(cols, r, I: dict, rates: dict, tab=None, sara=None, tier_by_line=None) -> dict:
     """One export row -> {status, act, revenue, rec, next_up, ever_active}:
     the status and activation day the picture uses (placed: Tableau's once
@@ -664,9 +680,10 @@ def line_facts(cols, r, I: dict, rates: dict, tab=None, sara=None, tier_by_line=
     rec = _filled_rec(cols, r, I["idx"], tab, I["tn"], I["spm"])
     nu = _next_up(g("wip"), g("wt"))
     revenue = line_value(rec, status, rates, next_up=(nu == "Next Up"))
-    if revenue:
-        revenue += (tier_by_line or {}).get(line_key(g("spm"), g("tn")), 0.0)
-    return {"status": status, "act": act, "revenue": revenue, "rec": rec, "next_up": nu, "ever_active": ever}
+    tier = (tier_by_line or {}).get(line_key(g("spm"), g("tn")), 0.0) if revenue else 0.0
+    revenue += tier
+    return {"status": status, "act": act, "revenue": revenue, "rec": rec, "next_up": nu, "ever_active": ever,
+            "tier": tier}
 
 
 def rep_lines(cols, crew: Sequence, today: dt.date, log=print, tab=None,
@@ -703,6 +720,7 @@ def rep_lines(cols, crew: Sequence, today: dt.date, log=print, tab=None,
             "Next Up": f["next_up"],
             "Phone Number": g(r, "tn"),
             "Zip Code": g(r, "zip"),
+            "Tier": tier_name_for(f["tier"]),
         }
         line.update(payouts(f["revenue"]))
         out.setdefault(rep, []).append(line)

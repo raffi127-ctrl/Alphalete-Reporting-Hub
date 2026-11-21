@@ -55,7 +55,7 @@ class Money(unittest.TestCase):
         # 11/20: Ported From / SPM Number / Wireless Order # / BAN gone; "Package" is headed "Plan" and sits
         # next to Next Up; Est. Revenue + the four payout columns close the table, far right
         self.assertEqual(ROL.COLUMNS, ("Order Date", "Activation Date", "Customer Name", "Status",
-                                       "Device", "Plan", "Next Up", "Phone Number", "Zip Code", "Est. Revenue",
+                                       "Device", "Plan", "Next Up", "Phone Number", "Zip Code", "Tier", "Est. Revenue",
                                        "30% Payout", "40% Payout", "45% Payout", "50% Payout"))
 
     def test_payouts_and_totals(self):
@@ -66,7 +66,7 @@ class Money(unittest.TestCase):
         self.assertEqual(ROL.totals(lines), {"Est. Revenue": 426.0, "30% Payout": 127.8, "40% Payout": 170.4,
                                              "45% Payout": 191.7, "50% Payout": 213.0})
         row = ROL.total_row(lines)
-        self.assertIn('colspan="9">Total</td>', row)                       # label spans Order Date..Zip Code
+        self.assertIn('colspan="10">Total</td>', row)                      # label spans Order Date..Tier
         for money in ("$426", "$127.80", "$170.40", "$191.70", "$213.00"):
             self.assertIn(">%s</td>" % money, row)
         self.assertTrue(row.endswith('<td class="tot">$213.00</td></tr>'))  # the 50% total is the last cell
@@ -239,9 +239,16 @@ class Lines(unittest.TestCase):
         per = ROL.rep_lines(self.cols, rows, TODAY, tier_by_line=tiers)
         line = [ln for ln in per["Aaron De La Torre"] if ln["Phone Number"] == "2145550301"][0]
         self.assertEqual((line["Est. Revenue"], line["30% Payout"]), (253.0, 75.9))    # 213 + Extra 10 + tier 30
+        self.assertEqual(line["Tier"], "Tier 1")                                      # Carlos 11/20: the Tier column
+        posted = [ln for ln in per["Aaron De La Torre"] if ln["Phone Number"] == "2145550306"][0]
+        self.assertEqual(posted["Tier"], "Tier 2")
+        upgrade = [ln for ln in per["Aaron De La Torre"] if ln["Phone Number"] == "2145550308"][0]
+        self.assertEqual(upgrade["Tier"], "")                                         # no tier on an upgrade
+        self.assertEqual([ROL.tier_name_for(v) for v in (0, 30, 50, 75, 110, 40)],
+                         ["", "Tier 1", "Tier 2", "Tier 3", "Tier 4", "$40"])
         dead = ROL.rep_lines(self.cols, [mk(1, **{"DTR Status": "Canceled", "spe.Status": "Canceled"})], TODAY,
                              tier_by_line=tiers)["Aaron De La Torre"][0]
-        self.assertEqual(dead["Est. Revenue"], 0.0)
+        self.assertEqual((dead["Est. Revenue"], dead["Tier"]), (0.0, ""))
         _w, sales = ROL.weekly_sales(self.cols, rows[:4], TODAY, tier_by_line=tiers)
         self.assertEqual(sales["Aaron De La Torre"][dt.date(2026, 11, 15)]["revenue"], 4 * 253.0)
 
@@ -302,13 +309,13 @@ class Lines(unittest.TestCase):
         self.assertIn("Paid Friday 11.13", page)
         self.assertEqual(page.count(">Total</td>"), 2)                     # one per activated week, none under pending
         # a blank row after each grey Total: before the next blue band and before the orange band
-        self.assertEqual(page.count('<tr class="gap"><td colspan="14"></td></tr>'), 2)
-        self.assertIn('</tr><tr class="gap"><td colspan="14"></td></tr><tr><td class="band"', page)
-        self.assertIn('</tr><tr class="gap"><td colspan="14"></td></tr><tr><td class="pdc"', page)
+        self.assertEqual(page.count('<tr class="gap"><td colspan="15"></td></tr>'), 2)
+        self.assertIn('</tr><tr class="gap"><td colspan="15"></td></tr><tr><td class="band"', page)
+        self.assertIn('</tr><tr class="gap"><td colspan="15"></td></tr><tr><td class="pdc"', page)
         self.assertLess(page.rindex(">Total</td>"), page.index("Pending / Disconnect / Cancel"))
         self.assertIn(">$66.90</td>", page)                                # 30% of 213 + the Extra plan's 10
         self.assertIn("<th>Plan</th><th>Next Up</th>", page)
-        self.assertIn("<th>Zip Code</th><th>Est. Revenue</th><th>30% Payout</th><th>40% Payout</th>"
+        self.assertIn("<th>Zip Code</th><th>Tier</th><th>Est. Revenue</th><th>30% Payout</th><th>40% Payout</th>"
                       "<th>45% Payout</th><th>50% Payout</th></tr>", page)          # the money is far right
         for gone in ("Ported From", "SPM Number", "Wireless Order", ">BAN<", "<th>Package</th>"):
             self.assertNotIn(gone, page)
