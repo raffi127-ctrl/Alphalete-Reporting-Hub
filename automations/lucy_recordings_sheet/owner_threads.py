@@ -248,8 +248,8 @@ def post(client, owner_plan: dict, pdfs: dict, list_text, month_png: Path | None
         if month_png and month_png.exists():
             time.sleep(PAUSE_S)
             client.files_upload_v2(channel=where, thread_ts=ts, file=str(month_png),
-                                   filename=month_png.name, title="Month to date",
-                                   initial_comment="Month to date, all offices:")
+                                   filename=month_png.name, title="Week to date",
+                                   initial_comment="Week to date, all offices:")
         posted += 1
         log("[owner threads] %s -> %s ts=%s (%d PDF(s))" % (owner, where, ts, len(files)))
         if not test_to:

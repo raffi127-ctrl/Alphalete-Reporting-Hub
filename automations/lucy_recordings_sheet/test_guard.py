@@ -130,6 +130,40 @@ class NewStartsTest(unittest.TestCase):
         self.assertIn(">8<", html)
 
 
+class EmailWeekTest(unittest.TestCase):
+    """Raf 2026-11-20: the email is week to date, the sheet stays per month."""
+
+    def test_week_is_monday_to_yesterday_and_monday_gets_last_week(self):
+        from automations.lucy_recordings_sheet.run import email_week, week_label
+        thu = email_week(dt.date(2026, 11, 19))
+        self.assertEqual((thu[0], thu[-1]), (dt.date(2026, 11, 16), dt.date(2026, 11, 19)))
+        self.assertEqual(week_label(thu), "Nov 16 – Nov 19")
+        sun = email_week(dt.date(2026, 11, 22))        # Monday's email
+        self.assertEqual(len(sun), 7)
+        self.assertEqual(week_label(email_week(dt.date(2026, 11, 16))), "Nov 16")
+
+    def test_build_counts_only_the_week(self):
+        from automations.lucy_recordings_sheet import run
+        export = {"owners": [{"id": "o1", "name": "Ann"}],
+                  "reps": {"u1": {"owner_id": "o1"}}, "names": {"u1": "Rep One"},
+                  "records": [{"ts": "2026-11-10T10:00", "uid": "u1", "score": 9},
+                              {"ts": "2026-11-17T10:00", "uid": "u1", "score": 7},
+                              {"ts": "2026-11-18T10:00", "uid": "u1", "score": 8}]}
+        done = {("2026-11-10", "100"): 5, ("2026-11-17", "100"): 3, ("2026-11-18", "100"): 1}
+        days = run.email_week(dt.date(2026, 11, 19))
+        orig = run.map_owners_to_offices
+        run.map_owners_to_offices = lambda owners, owner_of: {"o1": ["100"]}
+        try:
+            rows, _r, tot, _m, _u = run.build(export, done, {"100": "Ann"}, {},
+                                              period=run.week_period(days), label=lambda _k: "W")
+            mrows, *_ = run.build(export, done, {"100": "Ann"}, {})
+        finally:
+            run.map_owners_to_offices = orig
+        self.assertEqual(rows, [["W", "Ann", 2, 4, 0.5, 7.5]])
+        self.assertEqual(tot[0][:5], ["W", 2, 4, 0.5, 7.5])
+        self.assertEqual(mrows[0][:4], ["November 2026", "Ann", 3, 9])
+
+
 if __name__ == "__main__":
     unittest.main()
 

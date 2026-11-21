@@ -126,8 +126,8 @@ def _session():
 
 
 def load_interviews(S) -> tuple[dict, dict]:
-    """({(month, office_id): showed}, {office_id: owner name}) from the
-    retention sheet's Datos tab."""
+    """({(day YYYY-MM-DD, office_id): showed}, {office_id: owner name}) from
+    the retention sheet's Datos tab. build() rolls the days up per period."""
     r = S.get("%s/%s/values/Datos!A2:I100000" % (SHEETS, RETENTION_SSID))
     r.raise_for_status()
     done, owner_of = defaultdict(int), {}
@@ -139,7 +139,7 @@ def load_interviews(S) -> tuple[dict, dict]:
             n = int(float(showed or 0))
         except ValueError:
             continue
-        done[(fecha[:7], oid)] += n
+        done[(fecha[:10], oid)] += n
         owner_of[oid] = owner
     return dict(done), owner_of
 
@@ -442,7 +442,43 @@ def owner_rank_key(row: list) -> tuple:
     return (row[1] == NO_OWNER, pct == "", -(pct or 0), -row[2], row[1])
 
 
-def build(export: dict, done: dict, owner_of: dict, guesses: dict | None = None):
+def month_period(day: str):
+    """'YYYY-MM-DD...' -> month key 'YYYY-MM' (the sheet's periods)."""
+    return day[:7] if len(day) >= 7 else None
+
+
+def email_week(yesterday: dt.date) -> list:
+    """The email's days (Raf 2026-11-20: "weekly ... versus monthly"): Monday of
+    yesterday's week .. yesterday; on a Monday that's the whole last week. Same
+    week as the scorecard PDFs in the owner threads (owner_threads.week_days)."""
+    mon = yesterday - dt.timedelta(days=yesterday.weekday())
+    return [mon + dt.timedelta(days=i) for i in range((yesterday - mon).days + 1)]
+
+
+def week_label(days: list) -> str:
+    a, b = days[0], days[-1]
+    fa, fb = "%s %d" % (a.strftime("%b"), a.day), "%s %d" % (b.strftime("%b"), b.day)
+    return fa if a == b else "%s – %s" % (fa, fb)
+
+
+def week_period(days: list):
+    """period() for build(): every day of `days` -> one key, others -> None."""
+    want = {d.isoformat() for d in days}
+    return lambda day: "week" if day[:10] in want else None
+
+
+def build(export: dict, done: dict, owner_of: dict, guesses: dict | None = None,
+          period=month_period, label=None):
+    """Rows per period. period(day) -> key (None = skip); label(key) -> the
+    text in the rows. Default: per month, for the sheet."""
+    label = label or month_label
+    # 2nd rounds per (period, office), from the daily retention counts.
+    per = defaultdict(int)
+    for (day, oid), n in done.items():
+        k = period(day)
+        if k is not None:
+            per[(k, oid)] += n
+    done = per
     owners = {o["id"]: o.get("name", o["id"]) for o in export["owners"]}
     reps, names = export["reps"], export["names"]
     offices = map_owners_to_offices(export["owners"], owner_of)
@@ -463,9 +499,9 @@ def build(export: dict, done: dict, owner_of: dict, guesses: dict | None = None)
     months = set()
     for r in export["records"]:
         ts = r.get("ts") or ""
-        if len(ts) < 7:
+        mk = period(ts) if len(ts) >= 7 else None
+        if mk is None:
             continue
-        mk = ts[:7]
         months.add(mk)
         uid = r.get("uid") or ""
         oname, _guessed = owner_for(uid)
@@ -484,11 +520,12 @@ def build(export: dict, done: dict, owner_of: dict, guesses: dict | None = None)
     for (mk, oname), b in own.items():
         oid = name_to_oid.get(oname)
         ivs = None
-        if oid and offices.get(oid) and mk >= FIRST_FULL_INTERVIEW_MONTH:
+        if oid and offices.get(oid) and (period is not month_period
+                                          or mk >= FIRST_FULL_INTERVIEW_MONTH):
             ivs = sum(done.get((mk, x), 0) for x in offices[oid])
         pct = (b["n"] / ivs) if ivs else None
         avg = round(sum(b["scores"]) / len(b["scores"]), 1) if b["scores"] else None
-        owner_rows.append([month_label(mk), oname, b["n"],
+        owner_rows.append([label(mk), oname, b["n"],
                            "" if ivs is None else ivs,
                            "" if pct is None else round(pct, 4),
                            "" if avg is None else avg])
@@ -496,14 +533,14 @@ def build(export: dict, done: dict, owner_of: dict, guesses: dict | None = None)
     for (mk, uid), b in rep.items():
         oname, guessed = owner_for(uid)
         avg = round(sum(b["scores"]) / len(b["scores"]), 1) if b["scores"] else None
-        rep_rows.append([month_label(mk), names.get(uid) or NO_NAME,
+        rep_rows.append([label(mk), names.get(uid) or NO_NAME,
                          oname + (AUTO if guessed else ""), b["n"],
                          "" if avg is None else avg])
     # Month totals for the cards: % = recordings of owners whose 2nd rounds we
     # know / those 2nd rounds; score = average over every scored recording.
     totals = []
     for mk in sorted(months):
-        lab = month_label(mk)
+        lab = label(mk)
         recs = [r for r in owner_rows if r[0] == lab]
         known = [r for r in recs if r[3] != ""]
         ivs = sum(r[3] for r in known)
@@ -514,7 +551,7 @@ def build(export: dict, done: dict, owner_of: dict, guesses: dict | None = None)
                        sum(1 for (m2, u), b in rep.items() if m2 == mk and u != "?" and b["n"])])
     owner_rows.sort(key=lambda x: (x[0],) + owner_rank_key(x))
     rep_rows.sort(key=lambda x: (x[0], -x[3], x[1]))
-    month_list = [month_label(m) for m in sorted(months, reverse=True)]
+    month_list = [label(m) for m in sorted(months, reverse=True)]
     unmatched = sorted(owners[o] for o, offs in offices.items() if not offs)
     return owner_rows, rep_rows, totals, month_list, unmatched
 
@@ -879,11 +916,8 @@ def _cell_color(v, cuts):
 
 
 def date_range() -> str:
-    """'Nov 1 – Nov 5' - the 1st of the month through yesterday (CT)."""
-    y = dt.datetime.now(CT).date() - dt.timedelta(days=1)
-    first = y.replace(day=1)
-    a, b = "%s %d" % (first.strftime("%b"), first.day), "%s %d" % (y.strftime("%b"), y.day)
-    return a if a == b else "%s – %s" % (a, b)
+    """'Nov 16 – Nov 19' - Monday of the week through yesterday (CT)."""
+    return week_label(email_week(dt.datetime.now(CT).date() - dt.timedelta(days=1)))
 
 
 # Raf 2026-11-10: the 4-week new start % as a column (and card) of the first
@@ -979,7 +1013,7 @@ def build_email_html(month: str, totals: list, owner_rows: list, ssid: str,
         'LUCY · 2nd Round Recordings</div>' + day_note_html() +
         '<div style="background:#FFF4CC;border-left:5px solid #E0B84C;padding:10px 14px;margin:6px 0">'
         '<span style="font-size:22px;font-weight:bold;color:#1F2A44">%s</span>'
-        '<span style="font-size:14px;color:#5B6478;padding-left:8px">· Month to date</span></div>'
+        '<span style="font-size:14px;color:#5B6478;padding-left:8px">· Week to date</span></div>'
         '<table style="width:100%%;border-collapse:separate;border-spacing:4px"><tr>%s</tr></table>'
         '<table style="width:100%%;border-collapse:collapse;font-size:13px;margin-top:10px">'
         '<tr style="background:#2E3E61;color:#fff"><th style="text-align:left;padding:8px 10px">Owner</th>'
@@ -1048,10 +1082,10 @@ def send_email(to: list, month: str, totals: list, owner_rows: list, ssid: str,
     from email.message import EmailMessage
     from automations.org_sales_board.screenshot_email import FROM_ADDR, send
     msg = EmailMessage()
-    msg["Subject"] = "LUCY 2nd Round Recordings — %s (month to date)" % date_range()
+    msg["Subject"] = "LUCY 2nd Round Recordings — %s (week to date)" % date_range()
     msg["From"] = FROM_ADDR
     msg["To"] = ", ".join(to)
-    msg.set_content("LUCY 2nd Round Recordings - %s, month to date." % month + (
+    msg.set_content("LUCY 2nd Round Recordings - %s, week to date." % month + (
         " Open the sheet: https://docs.google.com/spreadsheets/d/%s" % ssid if show_link else ""))
     msg.add_alternative(build_email_html(month, totals, owner_rows, ssid, show_link) + extra_html,
                         subtype="html")
@@ -1389,6 +1423,13 @@ def main(argv=None) -> int:
         log("--- %s, by rep (top 15) ---" % cur)
         for r in [x for x in rep_rows if x[0] == cur][:15]:
             print("  %-28s %-28s grab=%-4s nota=%s" % tuple(r[1:]))
+        wdays = email_week(dt.datetime.now(CT).date() - dt.timedelta(days=1))
+        wk = week_label(wdays)
+        w_rows, _r, w_tot, _m, _u = build(export, done, owner_of, guesses,
+                                          period=week_period(wdays), label=lambda _k: wk)
+        log("--- EMAIL: %s (week to date), by owner --- totals %s" % (wk, w_tot[:1]))
+        for r in sorted((x for x in w_rows if x[0] == wk), key=owner_rank_key):
+            print("  %-32s grab=%-4s hechas=%-5s pct=%-7s nota=%s" % tuple(r[1:]))
         log("--- new starts, last %d weeks ---" % len(ns_seen))
         for r in ns_table:
             print("  %-32s sched=%-4s started=%-4s pct=%-7s avg=%s" % tuple(r))
@@ -1405,8 +1446,11 @@ def main(argv=None) -> int:
         restyle(S, ssid)
     write(S, ssid, owner_rows, rep_rows, totals, month_list)
     rc = 0
-    # The report covers through yesterday: on the 1st, that's last month.
-    month = month_label((dt.datetime.now(CT).date() - dt.timedelta(days=1)).strftime("%Y-%m"))
+    # The EMAIL is per week (Raf 2026-11-20), the sheet stays per month.
+    days = email_week(dt.datetime.now(CT).date() - dt.timedelta(days=1))
+    month = week_label(days)
+    owner_rows, _r, totals, _m, _u = build(export, done, owner_of, guesses,
+                                           period=week_period(days), label=lambda _k: month)
     if a.email or a.email_to or a.email_org:
         if a.email_to:
             send_email([x.strip() for x in a.email_to.split(",") if x.strip()], month, totals,
@@ -1448,7 +1492,7 @@ def _owner_threads(a, kept_all, export, guesses, day, y_all, month_html, dry_run
     png = None
     if month_html:
         try:
-            png = ot.render_png(month_html, ot.PDF_DIR / today.isoformat() / "month_to_date.png")
+            png = ot.render_png(month_html, ot.PDF_DIR / today.isoformat() / "week_to_date.png")
         except Exception as e:  # noqa: BLE001 - the threads still go without the picture
             log("month picture NOT rendered: %s" % e)
 
