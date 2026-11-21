@@ -121,13 +121,19 @@ class BookedReplies(unittest.TestCase):
     def test_one_reply_per_funnel_then_picture_into_daily_update(self):
         with mock.patch.object(S, "read", return_value=_ok(*self.funnels)) as rd, \
                 mock.patch.object(R.smp, "post_reply_text_only") as txt, \
+                mock.patch.object(R, "_post_in_own_channel") as own, \
                 mock.patch.object(R.smp, "post_reply_with_image") as img:
             out = R.booked_office(roster.RAF, FRI, "DF.1", dry_run=False)
         rd.assert_called_once_with(dt.date(2026, 11, 16), self.funnels)
-        self.assertEqual(txt.call_count, 4)
+        self.assertEqual(txt.call_count, 3)
         heads = [c.args[0].split("\n")[0] for c in txt.call_args_list]
-        for (oid, label), head in zip(roster.RAF.booked_funnels, heads):
+        in_thread = [f for f in roster.RAF.booked_funnels if f[0] != "23965"]
+        for (oid, label), head in zip(in_thread, heads):
             self.assertIn(f"{label.upper()} FUNNEL* ({oid})", head)
+        # Raf 2026-11-19: El Paso goes to Al's channel, top level.
+        own.assert_called_once()
+        self.assertIn("EL PASO FUNNEL* (23965)", own.call_args.args[0])
+        self.assertEqual(own.call_args.args[1], "C0CFLK9MK4H")
         for c in txt.call_args_list + img.call_args_list:
             self.assertEqual(c.kwargs["thread_ts"], "DU.1")
         img.assert_called_once()
@@ -147,10 +153,12 @@ class BookedReplies(unittest.TestCase):
         self.assertNotIn("raf|booked|23965", self.state)
         with mock.patch.object(S, "read", return_value=_ok("23965")) as rd, \
                 mock.patch.object(R.smp, "post_reply_text_only") as txt, \
+                mock.patch.object(R, "_post_in_own_channel") as own, \
                 mock.patch.object(R.smp, "post_reply_with_image") as img:
             R.booked_office(roster.RAF, FRI, "DF.1", dry_run=False)
         rd.assert_called_once_with(dt.date(2026, 11, 16), ["23965"])
-        txt.assert_called_once()
+        txt.assert_not_called()
+        own.assert_called_once()
         img.assert_not_called()
 
     def test_appstream_down_is_reported_not_raised(self):

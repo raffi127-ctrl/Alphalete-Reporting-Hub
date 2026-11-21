@@ -197,6 +197,16 @@ def _booked_thread(office: "roster.FocusOffice", today: dt.date,
     return focus_ts, f"Daily Focus thread {focus_ts} (no Daily Update today)"
 
 
+def _post_in_own_channel(text: str, channel_id: str, *, dry_run: bool) -> None:
+    """Top-level post in a funnel's own channel (Raf 2026-11-19: El Paso's
+    numbers go to the El Paso channel, not his Daily Update thread)."""
+    if dry_run:
+        return
+    resp = smp._client().chat_postMessage(channel=channel_id, text=text)
+    if not resp.get("ok"):
+        raise RuntimeError(f"chat.postMessage {channel_id}: {resp.get('error')}")
+
+
 def booked_office(office: "roster.FocusOffice", today: dt.date,
                   focus_ts: Optional[str] = None, *, dry_run: bool = True,
                   force: bool = False) -> dict:
@@ -219,6 +229,8 @@ def booked_office(office: "roster.FocusOffice", today: dt.date,
         return {"skipped": True}
 
     day = schedule.next_day(today)
+    own_channels = {oid: (ch, name) for oid, ch, name in
+                    (getattr(office, "booked_own_channel", ()) or ())}
     ts, where = _booked_thread(office, today, focus_ts, dry_run=dry_run)
     errors, posted = [], []
 
@@ -235,15 +247,20 @@ def booked_office(office: "roster.FocusOffice", today: dt.date,
                       f"{d['error']}")
                 continue
             text = schedule.format_funnel(day, label, oid, d)
+            own = own_channels.get(oid)
             try:
-                smp.post_reply_text_only(text, today=today, dry_run=dry_run,
-                                         channel_id=office.channel_id,
-                                         thread_ts=ts)
+                if own:
+                    _post_in_own_channel(text, own[0], dry_run=dry_run)
+                else:
+                    smp.post_reply_text_only(text, today=today, dry_run=dry_run,
+                                             channel_id=office.channel_id,
+                                             thread_ts=ts)
             except Exception as e:  # noqa: BLE001
                 errors.append(f"booked {label} ({oid}): {type(e).__name__}: {e}")
                 continue
+            dest = f"{own[1]} ({own[0]}), top level" if own else where
             print(f"[{office.key}] {'WOULD POST' if dry_run else 'POSTED'} "
-                  f"booked {label} ({oid}) for {day} -> {where}:\n{text}")
+                  f"booked {label} ({oid}) for {day} -> {dest}:\n{text}")
             posted.append(oid)
             if not dry_run:
                 st = _load_state()

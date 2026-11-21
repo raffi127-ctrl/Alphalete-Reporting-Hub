@@ -73,6 +73,10 @@ class FocusOffice:
     # the day's "Daily Update M/D" thread (Raf, Loom 2026-11-18); the Daily
     # Focus thread only if no Daily Update was posted. Empty = no replies.
     booked_funnels: tuple = ()
+    # Funnels whose booked post goes to THEIR OWN channel instead of the
+    # Daily Update thread: (AppStream office id, channel id, channel name).
+    # Posted top-level there (that channel has no Daily Update thread).
+    booked_own_channel: tuple = ()
     # One AppStream office whose Weekly Calendar for the next day is posted as
     # a PICTURE, right after the booked replies. Empty = none.
     linkedin_office: str = ""
@@ -113,6 +117,13 @@ RAF = FocusOffice(
         ("23965", "El Paso"),
         ("24065", "AI"),
         ("24226", "LinkedIn"),
+    ),
+    # Raf, 2026-11-19 (thread with Megan): "Algemar has his own recruiting
+    # funnel ... labeled El Paso. Let's go ahead and post the El Paso
+    # recruiting numbers for the next day in the El Paso Slack channel."
+    # Lucy is already a member (push report + ad photos post there).
+    booked_own_channel=(
+        ("23965", "C0CFLK9MK4H", "#aglemar-kennel-recruiting"),
     ),
     # Raf, Daily Recruiting Message Post thread, 2026-11-13: "in the same
     # thread, can we do a 2nd post that grabs the LinkedIn Screenshot of whats
