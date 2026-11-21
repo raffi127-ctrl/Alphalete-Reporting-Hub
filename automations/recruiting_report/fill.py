@@ -144,7 +144,18 @@ def _resolve_sheet_id() -> str:
 SPREADSHEET_ID = _resolve_sheet_id()
 OAUTH_CLIENT_PATH = Path.home() / ".config" / "recruiting-report" / "oauth-client.json"
 OAUTH_TOKEN_PATH = Path.home() / ".config" / "recruiting-report" / "oauth-token.json"
-SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
+# `drive.file` is NARROW on purpose: it reaches only files this app created
+# or that somebody explicitly opened with it -- never the rest of Megan's
+# Drive. It is here because creating a workbook is a Drive write, and the
+# Sheets scope alone answers 403 "insufficient authentication scopes"
+# (2026-11-21, making an ICD their own onboarding book). Every office
+# enrolling in LucyECO Onboarding needs one, so this is not a one-off.
+#
+# ADDING A SCOPE INVALIDATES THE TOKEN. The saved one was consented to the
+# old list, so it has to be re-authorised once, attended:
+#     python -m automations.recruiting_report.sheets_auth
+SCOPES = ["https://www.googleapis.com/auth/spreadsheets",
+          "https://www.googleapis.com/auth/drive.file"]
 
 MAPPING_PATH = Path(__file__).resolve().parent / _CFG["mapping_filename"]
 ALL_OFFICES_PATH = Path(__file__).resolve().parent / "all-offices.json"

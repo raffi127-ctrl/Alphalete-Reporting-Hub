@@ -39,7 +39,12 @@ from pathlib import Path
 
 # Mirror fill.py exactly (kept local so this script imports nothing heavy -
 # fill.py pulls in gspread etc. and resolves the sheet config at import time).
-SHEETS_SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
+# Kept in step with fill.SCOPES -- consented here, used there, so a scope
+# in one and not the other is a token that passes this check and then 403s
+# in a run. `drive.file` reaches only files this app made or somebody opened
+# with it, never the rest of the Drive.
+SHEETS_SCOPES = ["https://www.googleapis.com/auth/spreadsheets",
+                 "https://www.googleapis.com/auth/drive.file"]
 SHEETS_ACCOUNT = "alphaletereporting@gmail.com"   # the shared reporting identity
 
 _CONFIG_DIR = Path.home() / ".config" / "recruiting-report"
