@@ -151,14 +151,59 @@ def open_week(book, week_start: dt.date, *, create: bool = True):
     from automations.shared import sheets_retry
 
     want = tab_name(week_start)
-    for ws in sheets_retry.call(book.worksheets, tries=6):
+    tabs = sheets_retry.call(book.worksheets, tries=6)
+    for ws in tabs:
         if ws.title.strip().lower() == want.lower():
             return ws
     if not create:
         return None
+
+    # A NEW WEEK IS A COPY OF THE LAST ONE, not a fresh grid. That is how a
+    # metrics sheet is made -- `office_onboarding.schema` copies each tab
+    # from the Master Templates workbook rather than writing headers into an
+    # empty sheet -- and for the same reason: the formatting, the column
+    # widths, the frozen row and anything the office added by hand come with
+    # it. A hand-built grid looks subtly different every week, and the office
+    # is the one who notices.
+    #
+    # The previous week IS the template here, so there is no separate asset
+    # to keep in step with `board.COLUMNS`. The very first week has nothing
+    # to copy and is laid from the columns themselves.
+    newest = _newest_week(tabs, week_start.year)
+    if newest is not None:
+        ws = book.duplicate_sheet(newest.id, new_sheet_name=want)
+        _clear_rows(ws)
+        return ws
+
     ws = book.add_worksheet(title=want, rows=200,
                             cols=len(B.COLUMNS) + len(S.PAST_THE_CHART) + 2)
     ws.update(values=[list(B.COLUMNS) + list(S.PAST_THE_CHART)],
               range_name="A1")
     ws.freeze(rows=S.HEADER_ROW)
     return ws
+
+
+def _newest_week(tabs, year: int):
+    """The latest week tab in the book, or None if it has none yet."""
+    best, best_when = None, None
+    for ws in tabs:
+        when = week_of(ws.title, year)
+        if when and (best_when is None or when > best_when):
+            best, best_when = ws, when
+    return best
+
+
+def _clear_rows(ws) -> None:
+    """Everything below the header, so a copied week starts empty.
+
+    The HEADER stays: it is what was being copied for. Cleared rather than
+    deleted so the sheet keeps its size and formatting -- deleting the rows
+    would take the formatting with them, which is the thing the copy exists
+    to carry.
+    """
+    from automations.icd_onboarding import sheet as S
+    last = getattr(ws, "row_count", 0) or 0
+    if last > S.HEADER_ROW:
+        ws.batch_clear(["A%d:%s%d" % (S.HEADER_ROW + 1,
+                                      S._a1(getattr(ws, "col_count", 26) or 26),
+                                      last)])

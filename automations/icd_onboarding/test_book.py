@@ -111,3 +111,71 @@ class TestNoFlagDay:
             _ for _ in ()).throw(AssertionError("old tab must not be used")))
         S.board_for("raf", dt.date(2026, 11, 23))
         assert got["w"] == dt.date(2026, 11, 23)
+
+
+class _Tab:
+    def __init__(self, title, id=1, rows=200, cols=26):
+        self.title, self.id = title, id
+        self.row_count, self.col_count = rows, cols
+        self.cleared = []
+
+    def batch_clear(self, ranges):
+        self.cleared.extend(ranges)
+
+
+class TestANewWeekCopiesTheLastOne:
+    """Same reason a metrics sheet copies its tabs from the template: the
+    formatting comes with it, and a hand-built grid differs every week."""
+
+    class _Book:
+        def __init__(self, tabs):
+            self._tabs = tabs
+            self.duplicated = []
+            self.added = []
+
+        def worksheets(self):
+            return self._tabs
+
+        def duplicate_sheet(self, sid, new_sheet_name=""):
+            self.duplicated.append((sid, new_sheet_name))
+            got = _Tab(new_sheet_name, id=sid + 100)
+            self._tabs.append(got)
+            return got
+
+        def add_worksheet(self, title, rows, cols):
+            self.added.append(title)
+            got = _Tab(title, rows=rows, cols=cols)
+            got.update = lambda **kw: None
+            got.freeze = lambda **kw: None
+            self._tabs.append(got)
+            return got
+
+    def test_it_copies_the_most_recent_week(self):
+        book = self._Book([_Tab("OBCL 11.9", id=1), _Tab("OBCL 11.16", id=2)])
+        ws = K.open_week(book, dt.date(2026, 11, 23))
+        assert book.duplicated == [(2, "OBCL 11.23")], "not the newest week"
+        assert ws.title == "OBCL 11.23"
+        assert book.added == [], "should not have built a fresh grid"
+
+    def test_the_copy_starts_empty_below_the_header(self):
+        book = self._Book([_Tab("OBCL 11.16", id=2)])
+        ws = K.open_week(book, dt.date(2026, 11, 23))
+        assert ws.cleared, "a copied week kept last week's people"
+        assert ws.cleared[0].startswith("A2"), ws.cleared
+
+    def test_the_very_first_week_is_laid_from_the_columns(self):
+        book = self._Book([_Tab("Sheet1", id=9)])
+        K.open_week(book, dt.date(2026, 11, 23))
+        assert book.added == ["OBCL 11.23"]
+        assert book.duplicated == []
+
+    def test_an_existing_week_is_returned_not_remade(self):
+        book = self._Book([_Tab("OBCL 11.23", id=3)])
+        ws = K.open_week(book, dt.date(2026, 11, 23))
+        assert ws.id == 3
+        assert book.duplicated == [] and book.added == []
+
+    def test_create_false_never_makes_one(self):
+        book = self._Book([_Tab("OBCL 11.16", id=2)])
+        assert K.open_week(book, dt.date(2026, 11, 23), create=False) is None
+        assert book.duplicated == [] and book.added == []
