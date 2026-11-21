@@ -435,7 +435,11 @@ def run_threads(names: Sequence[str], since: dt.date, last: int = 12, log=print)
     watch_token = RC.token(creds, jwt=creds["watch_jwt"]) if creds.get("watch_jwt") else token
     book = RC.address_book(token, str(creds["contacts_extension_id"]))
     msgs = inbox._messages_since(watch_token, watch_ext, since)
-    say("Customer threads on Taylor's line since %s (%d texts on the line)" % (since, len(msgs)))
+    calls = call_log(watch_token, watch_ext, since, log=say)
+    say("Customer threads on Taylor's line since %s (%d texts%s on the line)"
+        % (since, len(msgs), "" if calls is None else ", %d calls" % len(calls)))
+    if calls is None:
+        say("  -> calls are NOT shown: the app lacks the 'Read Call Log' permission")
     say("")
     for name in names:
         words = name.split()
@@ -466,6 +470,14 @@ def run_threads(names: Sequence[str], since: dt.date, last: int = 12, log=print)
                 tag = "REP"
             thread.append({"when": when, "tag": tag, "body": body})
         thread.sort(key=lambda m: m["when"])
+        # Carlos 2026-11-21: "can you check the call log" -- every call with them, both ways
+        mine = sorted((k for k in (calls or []) if k["from"] in numbers or k["to"] in numbers),
+                      key=lambda k: k["when"])
+        if calls is not None:
+            if not mine:
+                say("  calls: none with any of their %d number(s)" % len(numbers))
+            for k in mine:
+                say("  CALL " + call_line(k))
         if not thread:
             say("  no texts with any of their %d number(s)" % len(numbers))
             say("")

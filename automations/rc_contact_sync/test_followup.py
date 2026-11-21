@@ -110,3 +110,36 @@ class Verdicts(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ThreadsShowCalls(unittest.TestCase):
+    """11/21: Carlos asked for the call log on a disconnected customer; the
+    per-customer report read only texts. Calls with their numbers now show."""
+
+    def test_named_customer_gets_their_calls_and_nobody_elses(self):
+        from unittest import mock
+        from automations.rc_contact_sync import inbox
+        rows = [HDR, row(Customer="Pat Example", **{"Phone #": "214-555-0144", "Line Status": "Disconnected"})]
+        when = dt.datetime(2026, 11, 19, 15, 20)
+        calls = [{"when": when, "inbound": False, "from": "2145550199", "to": "2145550144",
+                  "result": "Call connected", "seconds": 125},
+                 {"when": when, "inbound": True, "from": "2145550000", "to": "2145550199",
+                  "result": "Missed", "seconds": 0}]
+        out = []
+        sheet = mock.MagicMock()
+        sheet.worksheet.return_value.get_all_values.return_value = rows
+        with mock.patch("automations.recruiting_report.fill.open_by_key", return_value=sheet), \
+             mock.patch.object(F.C, "rc_creds", return_value={"watch_extension_id": 1, "contacts_extension_id": 2}), \
+             mock.patch.object(F.RC, "token_info", return_value={"access_token": "t"}), \
+             mock.patch.object(F.RC, "identity", return_value={}), \
+             mock.patch.object(F.RC, "assert_identity"), \
+             mock.patch.object(F.RC, "address_book", return_value=[]), \
+             mock.patch.object(inbox, "_messages_since", return_value=[]), \
+             mock.patch.object(F, "call_log", return_value=calls), \
+             mock.patch("automations.rc_contact_sync.status_probe._upload_bytes"):
+            F.run_threads(["Pat Example"], dt.date(2026, 11, 10), log=out.append)
+        text = "\n".join(out)
+        self.assertIn("2 calls", text)
+        self.assertIn("CALL 11/19 15:20  OUT call  Call connected  2:05", text)
+        self.assertNotIn("Missed", text)
+        self.assertIn("no texts with any of their 1 number(s)", text)
