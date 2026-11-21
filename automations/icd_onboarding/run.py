@@ -123,6 +123,23 @@ def _person_key(person) -> str:
     email = str(get("email", "") or "").strip().lower()
     if email:
         return email
+    return _name_key(person)
+
+
+def _name_key(person) -> str:
+    """The folded name, as a SECOND way to recognise the same person.
+
+    AN EMAIL CAN BE MISTYPED AND AN ADDRESS IS NOT AN IDENTITY. Carmen Lopez
+    is on both of Raf's funnels as `Carmenlopezcr@icloud.co` and
+    `carmenlopezcr@icloud.com` -- one letter apart -- so keying on the
+    address alone made her two people and put her on the board twice, one
+    row carrying eight finished steps and the other none (2026-11-20).
+
+    Used as a fallback, never instead of the email: two different people
+    genuinely sharing a name is rarer than a typo, but it is not impossible,
+    so a name-only match is reported rather than taken quietly.
+    """
+    get = person.get if hasattr(person, "get") else (lambda k, d="": d)
     name = ("%s %s" % (get("first_name", "") or "",
                        get("last_name", "") or "")).strip()
     return B._fold(name) if name else ""
@@ -169,6 +186,7 @@ def seed(office_key: str, week_start: dt.date, *, dry_run: bool = True,
     people: List[dict] = []
     showed = None
     seen = set()
+    by_name: Dict[str, str] = {}
     labels = _funnel_labels(office_key)
     with session() as app:
         for account in accounts:
@@ -192,6 +210,15 @@ def seed(office_key: str, week_start: dt.date, *, dry_run: bool = True,
             label = labels.get(account, "")
             for person in (mine or []):
                 key = _person_key(person)
+                nkey = _name_key(person)
+                # A name we already hold under a DIFFERENT address is the
+                # typo case: same person, one row. Said out loud, because
+                # the alternative reading -- two people of one name -- is
+                # rare but real, and this is the line that would be wrong.
+                if key and key not in seen and nkey and nkey in by_name:
+                    log("    %s: already here as %s — treating the two "
+                        "addresses as one person" % (nkey, by_name[nkey]))
+                    key = by_name[nkey]
                 if key and key in seen:
                     # ALREADY HELD FROM ANOTHER FUNNEL -- keep the LABELLED
                     # one. The office's own account is read first and carries
@@ -214,6 +241,8 @@ def seed(office_key: str, week_start: dt.date, *, dry_run: bool = True,
                     continue
                 if key:
                     seen.add(key)
+                if nkey:
+                    by_name.setdefault(nkey, key)
                 # WHICH FUNNEL THIS ROW CAME FROM. The board draws a labelled
                 # divider per funnel because they all land in ONE OwnerVille
                 # and a leader reading the week has no other way to tell whose

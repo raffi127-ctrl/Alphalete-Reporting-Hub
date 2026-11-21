@@ -254,7 +254,8 @@ def ensure_dividers(ws, week_start: dt.date, log=print) -> int:
         rows = seen[label]
         text = B.divider_row(want, label)[B.DIVIDER_AT]
         if text in have:
-            continue                      # this week already has its line
+            log("  board: %r already has its divider on this week" % label)
+            continue
         if rows != list(range(rows[0], rows[0] + len(rows))):
             log("  board: %r sits on scattered rows %s — no divider drawn, a "
                 "line above the first would claim the people between them"
