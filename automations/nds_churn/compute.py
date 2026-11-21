@@ -35,7 +35,7 @@ import collections
 import datetime as dt
 import re
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 from automations.nds_churn import comp
 
@@ -210,17 +210,29 @@ def load_owner_lines(path: Path, log=print, owner_tokens=OWNER_TOKENS
         owner = str(r[i_owner]).upper()
         if not all(t in owner for t in owner_tokens):
             continue
-        rec = {k: ("" if i is None or i >= len(r) else str(r[i]).strip())
-               for k, i in ix.items()}
-        rec["order_date"] = parse_date(rec["order_date"])
-        rec["posted"] = parse_date(rec["posted"])
-        rec["status_date_d"] = parse_date(rec["status_date"])
-        rec["prod"] = product_of(rec["product"])
-        rec["byod"] = is_byod(rec)
-        out.append(rec)
+        out.append(_record(r, ix))
     log(f"[nds_churn] {len(out)} line(s) on Carlos's owner "
         f"({len(data)} in the export)")
     return header, ix, out
+
+
+def _record(r: Sequence[str], ix: Dict[str, Optional[int]]) -> dict:
+    rec = {k: ("" if i is None or i >= len(r) else str(r[i]).strip())
+           for k, i in ix.items()}
+    rec["order_date"] = parse_date(rec["order_date"])
+    rec["posted"] = parse_date(rec["posted"])
+    rec["status_date_d"] = parse_date(rec["status_date"])
+    rec["prod"] = product_of(rec["product"])
+    rec["byod"] = is_byod(rec)
+    return rec
+
+
+def records_from_rows(header: Sequence[str], rows: Sequence[Sequence[str]]) -> List[dict]:
+    """load_owner_lines' line records from rows someone else already loaded
+    and filtered (nds_metrics' crew rows of the same NDS-SN export)."""
+    header = [str(h or "").strip() for h in header]
+    ix = {k: find_col(header, cands) for k, cands in FIELDS.items()}
+    return [_record(r, ix) for r in rows]
 
 
 def _line_key(ln: dict):
@@ -609,6 +621,43 @@ def product_box(lines: List[dict], today: dt.date) -> dict:
             out[cls]["pend"] += 1
     out["all_orders"] = {k: out["wireless"][k] + out["byod"][k] + out["air"][k]
                          for k in ("act", "disc", "pend")}
+    return out
+
+
+# Carlos 2026-11-21, holding the Churn by Rep picture: "this isnt matching up
+# with what i see on the churn report". That picture bucketed every wireless
+# line by SALE date; this tab counts by POSTED date on box_class lines. So the
+# per-rep split now comes from here, on product_box's own rules: summed over
+# the reps, the 0-30 bucket IS the box's All Wireless / BYODs / Air rows.
+REP_BUCKETS = (("0-30 Day", 0, WINDOW_DAYS), ("31-60 Day", WINDOW_DAYS + 1, 2 * WINDOW_DAYS))
+TOTAL = "__TOTAL__"
+
+
+def rep_churn(lines: List[dict], today: dt.date, buckets=REP_BUCKETS
+              ) -> Dict[Tuple[str, str], Dict[str, Dict[str, int]]]:
+    """(box class, rep) -> {bucket: {'act', 'disc'}}, plus (box class,
+    TOTAL). Distinct activated lines (Posted / Disconnected) by POSTED-date
+    age, box_class lines only (phones of any TN type, Air, Internet; no
+    upgrades, tablets or wearables), one count per line key per bucket --
+    product_box's rules, so the 0-30 totals equal its act / disc."""
+    out: Dict[Tuple[str, str], Dict[str, Dict[str, int]]] = {}
+    seen = set()
+    for ln in lines:
+        cls = box_class(ln)
+        st = (ln.get("status") or "").lower()
+        posted = ln.get("posted")
+        if cls is None or st not in ACTIVATED or not posted or posted > today:
+            continue
+        age = (today - posted).days
+        label = next((b for b, lo, hi in buckets if lo <= age <= hi), None)
+        if label is None or (label, cls, _line_key(ln)) in seen:
+            continue
+        seen.add((label, cls, _line_key(ln)))
+        for key in ((cls, ln.get("rep") or "(no rep)"), (cls, TOTAL)):
+            c = out.setdefault(key, {b: {"act": 0, "disc": 0} for b, _lo, _hi in buckets})[label]
+            c["act"] += 1
+            if st in DISCONNECTED:
+                c["disc"] += 1
     return out
 
 

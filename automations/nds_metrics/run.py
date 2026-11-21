@@ -1285,44 +1285,33 @@ def build_churn_by_rep_png(cols, crew, today, log=print) -> Path:
     2026-11-14: "one that has all of the wireless orders without the BYODs,
     one that's got just the BYODs, one for the Airs. Above them all ... the
     country's national average"). Disconnects / activated per rep per
-    sale-date bucket from the 60-day D2D log; each table worst 0-30 churn
-    first (churn_rep_order)."""
+    POSTED-date bucket on the NDS CHURN tab's own rules (nds_churn.compute.
+    rep_churn; until 2026-11-21 it was sale-date buckets over every wireless
+    line and did not match that tab); each table worst 0-30 churn first
+    (churn_rep_order)."""
     from automations.b2b_metrics.rep_boards import render_sections_png
-    i_od = cols.need("order date", "sp.order date")
-    i_st = cols.find("dtr status", "spe.status")
-    i_rep = cols.need("rep", "rep")
-    i_prod = cols.find("product type (broken out)", "product")
-    i_wip = cols.find("wireless installment plan")
-    i_dev = cols.find("device description")
-    i_pkg = cols.find("package")
+    from automations.nds_churn import compute as NCC
+    # Carlos 2026-11-21: "this isnt matching up with what i see on the churn
+    # report" -- this picture bucketed every wireless line (upgrades and
+    # tablets too) by SALE date; the NDS CHURN tab counts phones by POSTED
+    # date. Same rules now (NCC.rep_churn = product_box per rep): each
+    # table's 0-30 Crew Total IS that tab's All Wireless / BYODs / Air row.
+    lines = NCC.records_from_rows(cols.header, crew)
+    by_cls = NCC.rep_churn(lines, today)
+    section_of = {"wireless": "nonbyod", "byod": "byod", "air": "air"}
     agg: Dict[tuple, dict] = {}
     dropped = 0
-    for r in crew:
-        od = _parse_date(_c(cols, r, i_od))
-        if od is None:
+    for (cls, rep), d in by_cls.items():
+        if cls not in section_of:
+            dropped += sum(b["act"] for b in d.values()) if rep != NCC.TOTAL else 0
             continue
-        age = (today - od).days
-        bucket = ("0-30 Day" if 0 <= age <= 30
-                  else "31-60 Day" if 31 <= age <= 60 else None)
-        if bucket is None:
-            continue
-        st = _c(cols, r, i_st).lower()
-        if not (st in POSTED or st == "disconnected"):
-            continue
-        section = churn_section_for(_c(cols, r, i_prod),
-                                    {"wireless_ip": _c(cols, r, i_wip),
-                                     "package": _c(cols, r, i_pkg),
-                                     "device": _c(cols, r, i_dev)})
-        if section is None:
-            dropped += 1
-            continue
-        rep = _c(cols, r, i_rep) or "(no rep)"
-        for key in ((section, rep), (section, "__TOTAL__")):
-            c = agg.setdefault(key, {b: {"act": 0, "disc": 0}
-                                     for b in BUCKETS})[bucket]
-            c["act"] += 1
-            if st == "disconnected":
-                c["disc"] += 1
+        agg[(section_of[cls], "__TOTAL__" if rep == NCC.TOTAL else rep)] = d
+    box = NCC.product_box(lines, today)
+    for cls, key in section_of.items():
+        tot = (agg.get((key, "__TOTAL__")) or {}).get("0-30 Day") or {"act": 0, "disc": 0}
+        same = (tot["act"], tot["disc"]) == (box[cls]["act"], box[cls]["disc"])
+        log(f"[nds] churn by rep: {NCC.BOX_LABELS[cls]} 0-30 crew total {tot['disc']}/{tot['act']} "
+            f"{'= the churn report box' if same else '!= the churn report box %d/%d' % (box[cls]['disc'], box[cls]['act'])}")
 
     def _cells(d):
         cells = {}
@@ -1360,12 +1349,13 @@ def build_churn_by_rep_png(cols, crew, today, log=print) -> Path:
             rows.append((rep, "", False, _cells(sec[(rep, "")])))
         sections.append((heading, rows))
     n_rows = sum(len(rows) for _h, rows in sections)
-    log(f"[nds] churn by rep: 3 tables side by side, {n_rows} row(s), {dropped} non-wireless/non-Air "
+    log(f"[nds] churn by rep: 3 tables side by side, {n_rows} row(s), {dropped} Internet "
         "line(s) left out, worst 0-30 churn first")
     return render_sections_png(
         "NDS \u2014 CHURN BY REP",
         f"Carlos's crew on his own NDS code \u2014 {today.strftime('%B %d, %Y')} "
-        "(disconnects \u00f7 activated by sale-date age, from the D2D order log; "
+        "(disconnects \u00f7 activated by ACTIVATION-date age, the NDS CHURN report's rules: "
+        "phones only, no upgrades / tablets / watches -- each Crew Total = that report's row; "
         "wireless non-BYOD / wireless BYOD / Internet Air, worst 0-30 day churn first; "
         "NATIONAL AVG = Smart Circle's all-offices Churn Rates view, port phone lines; "
         "provisional bands green<4% yellow<6%)",

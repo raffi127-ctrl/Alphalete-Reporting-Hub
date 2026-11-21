@@ -255,6 +255,28 @@ class Compute(unittest.TestCase):
         s = C.churn_summary(self.lines, TODAY)
         self.assertEqual(box["wireless"]["act"] + box["byod"]["act"], s["base"]["Wireless"])
 
+    def test_rep_churn_adds_up_to_the_box(self):
+        # Carlos 11/21: the Churn by Rep picture must match this report.
+        # Extra lines: SOLD 35 days back but POSTED in the window (counts
+        # 0-30, by posted date), a line posted 45 days back (31-60), and a
+        # duplicate row of a counted line (once).
+        extra = [dict(self.lines[0], spe="SPE40", customer="LATE L", rep="Jacob Ortega",
+                      order_date=TODAY - dt.timedelta(days=35),
+                      posted=TODAY - dt.timedelta(days=3), status="Disconnected"),
+                 dict(self.lines[0], spe="SPE41", customer="OLDER O", rep="Jacob Ortega",
+                      posted=TODAY - dt.timedelta(days=45), status="Disconnected")]
+        lines = self.lines + extra + [dict(extra[0])]
+        box = C.product_box(lines, TODAY)
+        reps = C.rep_churn(lines, TODAY)
+        for cls in ("wireless", "byod", "air"):
+            tot = reps.get((cls, C.TOTAL), {}).get("0-30 Day", {"act": 0, "disc": 0})
+            self.assertEqual((tot["act"], tot["disc"]), (box[cls]["act"], box[cls]["disc"]), cls)
+            per_rep = [d["0-30 Day"] for (c, r), d in reps.items() if c == cls and r != C.TOTAL]
+            self.assertEqual(sum(x["act"] for x in per_rep), tot["act"], cls)
+        self.assertEqual(reps[("wireless", "Jacob Ortega")]["0-30 Day"], {"act": 1, "disc": 1})
+        self.assertEqual(reps[("wireless", "Jacob Ortega")]["31-60 Day"], {"act": 1, "disc": 1})
+        self.assertNotIn(("wireless", "Andrew Park"), reps)    # upgrade / tablet / iPad only
+
     def test_rolloff_formula_template_defaults(self):
         from automations.vantura_churn import fill as VF
         cols = {"rem": "X", "key": "AD"}
