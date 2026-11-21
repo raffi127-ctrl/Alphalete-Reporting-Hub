@@ -373,37 +373,80 @@ def _when(m: dict) -> str:
             .strftime("%Y-%m-%d %H:%M"))
 
 
-def replies_after(msgs: List[dict], names: Dict[str, str], after: str) -> List[str]:
-    """Every customer text (Inbound, sender in Taylor's book) stamped after
-    `after` ('YYYY-MM-DD HH:MM', local), oldest first, one line each:
-    'HH:MM  Name  [group]  text'. Rep / unknown senders are left out."""
-    out = []
-    for m in sorted(msgs, key=lambda x: x.get("creationTime") or ""):
-        if m.get("direction") != "Inbound":
-            continue
+def _base(name: str) -> str:
+    """'Pat Example - Line 2' -> 'Pat Example' (the sync's line contacts)."""
+    return name.split(" - Line")[0].strip()
+
+
+def replies_report(msgs: List[dict], calls, names: Dict[str, str], start: str,
+                   new_after: str = "") -> List[str]:
+    """Every customer who texted Taylor's line after `start` ('YYYY-MM-DD
+    HH:MM', local), one block each, and whether WE answered since their
+    LAST text -- Taylor texting back, a rep answering in the group thread,
+    or a phone call either way with any of their numbers (Carlos 2026-11-21:
+    "make sure you also check the call log. if they texted us we may have
+    just called them instead of texting them back"). `calls` = followup.
+    call_log's list, or None when the call log can't be read (said so).
+    NEW marks a customer whose latest text is after `new_after`."""
+    nums_of: Dict[str, set] = {}
+    for n, nm in names.items():
+        nums_of.setdefault(_base(nm), set()).add(n)
+    msgs = sorted(msgs, key=lambda x: x.get("creationTime") or "")
+    replies: Dict[str, List[dict]] = {}
+    for m in msgs:
         snd = _sender(m)
-        if snd not in names or _when(m) <= after:
-            continue
-        group = len([n for n in _recipients(m) if n]) > 1
-        body = " ".join(str(m.get("subject") or "").split()) or "(picture / blank)"
-        out.append("%s  %s%s  %s" % (_when(m)[11:], names[snd], "  [group]" if group else "", body))
+        if m.get("direction") == "Inbound" and snd in names and _when(m) > start:
+            replies.setdefault(_base(names[snd]), []).append(m)
+    out = []
+    for who, rs in sorted(replies.items(), key=lambda kv: _when(kv[1][-1])):
+        nums = nums_of.get(who, set())
+        last = _when(rs[-1])
+        answers = []
+        for m in msgs:
+            if _when(m) <= last:
+                continue
+            snd, to = _sender(m), _recipients(m)
+            if m.get("direction") == "Outbound" and nums & set(to):
+                answers.append("texted back %s" % _when(m)[11:])
+            elif (m.get("direction") == "Inbound" and snd not in names
+                  and nums & set(to)):
+                answers.append("rep answered in group %s" % _when(m)[11:])
+        for c in calls or []:
+            if c["when"].strftime("%Y-%m-%d %H:%M") >= last and (c["from"] in nums or c["to"] in nums):
+                d = int(c.get("seconds") or 0)
+                answers.append("%s call %s %s %d:%02d" % ("got a" if c["inbound"] else "we made a",
+                                                          c["when"].strftime("%H:%M"),
+                                                          c.get("result") or "", d // 60, d % 60))
+        texts = " / ".join('"%s"' % (" ".join(str(m.get("subject") or "").split()) or "(picture / blank)")
+                           for m in rs)
+        group = any(len([n for n in _recipients(m) if n]) > 1 for m in rs)
+        status = ("ANSWERED: " + "; ".join(answers) if answers
+                  else "WAITING ON US since %s%s" % (last[11:], "" if calls is not None
+                                                      else " (call log unreadable)"))
+        out.append("%s %s  %s%s  texts: %s\n    %s" % (
+            "NEW " if (not new_after or last > new_after) else "OLD ", last[11:], who,
+            "  [group]" if group else "", texts, status))
     return out
 
 
-def run_replies(after: str, log=print) -> int:
+def run_replies(after: str, new_after: str = "", log=print) -> int:
     """Carlos 2026-11-21: "every hour until 9pm tonight give sebastian and i
-    summary of any responses" -- the raw replies since `after`, to the
-    'RC Inbox' tab; the summary is written from that."""
+    summary of any responses" -- every customer who texted since `after`,
+    with whether we texted or CALLED them back, to the 'RC Inbox' tab."""
+    from automations.rc_contact_sync import followup as F
     creds = C.rc_creds()
     info = RC.token_info(creds)
     token = info["access_token"]
     RC.assert_identity(RC.identity(info), creds.get("expected_owner_id") or C.RC_OWNER_ID)
     watch_token = RC.token(creds, jwt=creds["watch_jwt"]) if creds.get("watch_jwt") else token
+    watch_ext = str(creds["watch_extension_id"])
     names = name_map(RC.address_book(token, str(creds["contacts_extension_id"])))
     day = dt.date.fromisoformat(after[:10])
-    msgs = _messages_since(watch_token, str(creds["watch_extension_id"]), day)
-    rows = replies_after(msgs, names, after)
-    head = "customer replies after %s: %d\n" % (after, len(rows))
+    msgs = _messages_since(watch_token, watch_ext, day)
+    calls = F.call_log(watch_token, watch_ext, day, log=log)
+    rows = replies_report(msgs, calls, names, after, new_after)
+    head = "customer replies after %s (new after %s): %d customer(s); %s call(s) on the line\n" % (
+        after, new_after or after, len(rows), "?" if calls is None else len(calls))
     log(head.strip())
     for r in rows:
         log("  " + r)
@@ -507,10 +550,13 @@ def main(argv=None) -> int:
                     help="with --all: flip every unanswered customer text back "
                          "to Unread in RingCentral (Carlos 2026-11-09)")
     ap.add_argument("--replies-after", default=None, metavar="YYYY-MM-DD HH:MM",
-                    help="every customer text after this local time (one line each)")
+                    help="every customer who texted after this local time, and whether "
+                         "we texted or called them back")
+    ap.add_argument("--new-after", default=None, metavar="YYYY-MM-DD HH:MM",
+                    help="with --replies-after: mark customers whose latest text is after this NEW")
     args = ap.parse_args(argv)
     if args.replies_after:
-        return run_replies(args.replies_after)
+        return run_replies(args.replies_after, args.new_after or "")
     since = (dt.date.fromisoformat(args.since) if args.since
              else dt.date.today() - dt.timedelta(days=30))
     if args.all:

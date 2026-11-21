@@ -78,22 +78,54 @@ if __name__ == "__main__":
     unittest.main()
 
 
-class RepliesAfter(unittest.TestCase):
-    def test_only_customer_texts_after_the_time(self):
+class RepliesReport(unittest.TestCase):
+    ME = {"phoneNumber": "+19453372199"}
+
+    def msg(self, d, t, frm, to, body):
+        return {"direction": d, "creationTime": "2026-11-21T%s:00Z" % t,
+                "from": {"phoneNumber": frm}, "to": [{"phoneNumber": x} for x in to], "subject": body}
+
+    def report(self, msgs, calls=()):
         from automations.rc_contact_sync import inbox as I
-        names = {"2145550101": "Pat Example"}
-        me = {"phoneNumber": "+19453372199"}
-        msgs = [
-            {"direction": "Inbound", "creationTime": "2026-11-21T17:00:00Z",      # 11:00 CST, before
-             "from": {"phoneNumber": "+12145550101"}, "to": [me], "subject": "old"},
-            {"direction": "Inbound", "creationTime": "2026-11-21T19:00:00Z",
-             "from": {"phoneNumber": "+12145550101"}, "to": [me], "subject": "all good thanks"},
-            {"direction": "Inbound", "creationTime": "2026-11-21T19:05:00Z",      # a rep, not a customer
-             "from": {"phoneNumber": "+12145550199"}, "to": [me], "subject": "rep text"},
-            {"direction": "Outbound", "creationTime": "2026-11-21T19:10:00Z",
-             "from": me, "to": [{"phoneNumber": "+12145550101"}], "subject": "ours"},
-        ]
-        out = I.replies_after(msgs, names, "2026-11-21 12:05")
+        names = {"2145550101": "Pat Example", "2145550102": "Pat Example - Line 2",
+                 "2145550201": "Sam Sample"}
+        return I.replies_report(msgs, list(calls), names, "2026-11-21 12:05", "2026-11-21 13:00")
+
+    def call(self, hhmm, num, inbound=False):
+        import datetime as dt
+        h, m = map(int, hhmm.split(":"))
+        return {"when": dt.datetime(2026, 11, 21, h, m), "inbound": inbound,
+                "from": "9453372199", "to": num, "result": "Call connected", "seconds": 151}
+
+    def test_a_call_after_the_text_counts_as_answered(self):
+        T = "+19453372199"
+        out = self.report([self.msg("Inbound", "19:10", "+12145550102", [T], "my bill is wrong")],
+                          [self.call(self.local_hhmm("19:20"), "2145550101")])
         self.assertEqual(len(out), 1)
         self.assertIn("Pat Example", out[0])
-        self.assertIn("all good thanks", out[0])
+        self.assertIn("ANSWERED: we made a call", out[0])
+
+    def test_text_back_and_waiting(self):
+        T = "+19453372199"
+        out = self.report([
+            self.msg("Inbound", "17:00", "+12145550201", [T], "too early"),           # 11:00 CST
+            self.msg("Inbound", "19:10", "+12145550101", [T], "thanks"),
+            self.msg("Outbound", "19:15", T, ["+12145550101"], "you're welcome"),
+            self.msg("Inbound", "19:30", "+12145550201", [T], "need help"),
+        ])
+        self.assertEqual(len(out), 2)
+        self.assertIn("texted back", out[0])
+        self.assertIn("Sam Sample", out[1])
+        self.assertIn("WAITING ON US", out[1])
+        self.assertIn('"need help"', out[1])
+        self.assertNotIn("too early", out[1])
+
+    @staticmethod
+    def local_hhmm(utc_hhmm):
+        import datetime as dt
+        h, m = map(int, utc_hhmm.split(":"))
+        return dt.datetime(2026, 11, 21, h, m, tzinfo=dt.timezone.utc).astimezone().strftime("%H:%M")
+
+
+if __name__ == "__main__":
+    unittest.main()
