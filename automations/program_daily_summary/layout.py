@@ -271,6 +271,94 @@ def _requests(sid):
     return reqs
 
 
+def _col(i: int) -> str:
+    """0-based column index -> A1 letters (works past Z)."""
+    out = ""
+    i += 1
+    while i:
+        i, r = divmod(i - 1, 26)
+        out = chr(65 + r) + out
+    return out
+
+
+def _irng(sid, r0, r1, c0, c1):
+    """Like _rng but with 0-based column indexes (c1 inclusive)."""
+    return {"sheetId": sid, "startRowIndex": r0 - 1, "endRowIndex": r1,
+            "startColumnIndex": c0, "endColumnIndex": c1 + 1}
+
+
+FIRST_HIST_COL = 2                       # C
+VISIBLE_HIST_COLS = len(WEEKCOLS)        # C..J stay open; K+ grouped
+
+
+def history_formulas(c: int) -> dict:
+    """A1 -> formula for history column index `c` (k-th week back)."""
+    col, k = _col(c), c - FIRST_HIST_COL
+    v = {f"{col}{R_HIST_HDR}": f"=$C$3-{7 * (k + 1)}"}
+    for r, name in [(R_HIST_FIRST + i, x) for i, x in enumerate(CAMPAIGNS)] +                    [(R_HIST_TOTAL, ALL)]:
+        crit = f'{_d("B")},{col}${R_HIST_HDR},{_d("C")},"{name}"'
+        v[f"{col}{r}"] = f'=IF(COUNTIFS({crit})=0,"",SUMIFS({_d("K")},{crit}))'
+    return v
+
+
+def grow_history(ws, n_weeks: int, *, dry_run=False, logfn=print) -> int:
+    """Weekly History accumulates to the RIGHT (Eve 2026-11-20): one column
+    per stored week (newest left), never fewer than C..J. Columns past J are
+    grouped (collapsed by default) so the box still reads as 8 weeks.
+    Idempotent: only adds what is missing. Returns columns added."""
+    have = len(ws.row_values(R_HIST_HDR)) - FIRST_HIST_COL
+    want = max(VISIBLE_HIST_COLS, n_weeks)
+    if want <= have:
+        return 0
+    first, last = FIRST_HIST_COL + have, FIRST_HIST_COL + want - 1
+    logfn(f"  Weekly History: adding {want - have} week column(s) "
+          f"{_col(first)}..{_col(last)}")
+    if dry_run:
+        return want - have
+    sid = ws.id
+    if ws.col_count < last + 1:
+        ws.add_cols(last + 1 - ws.col_count)
+    num = {"type": "NUMBER", "pattern": "#,##0"}
+    reqs = [
+        {"unmergeCells": {"range": _irng(sid, R_HIST_BAR, R_HIST_BAR, 1, last)}},
+        {"mergeCells": {"range": _irng(sid, R_HIST_BAR, R_HIST_BAR, 1, last),
+                        "mergeType": "MERGE_ALL"}},
+        _fmt(_irng(sid, R_HIST_BAR, R_HIST_BAR, first, last), DARK, WHITE, True, 11),
+        _fmt(_irng(sid, R_HIST_HDR, R_HIST_HDR, first, last), HEAD, INK, True, 9,
+             num={"type": "DATE", "pattern": "\"WE\" m/d"}),
+        _fmt(_irng(sid, R_HIST_FIRST, R_HIST_TOTAL - 1, first, last), WHITE, INK,
+             False, 9, num=num),
+        _fmt(_irng(sid, R_HIST_TOTAL, R_HIST_TOTAL, first, last), HEAD, INK, True,
+             10, num=num),
+        _border(_irng(sid, R_HIST_HDR, R_HIST_TOTAL, 1, last)),
+        {"updateDimensionProperties": {"range": {
+            "sheetId": sid, "dimension": "COLUMNS", "startIndex": first,
+            "endIndex": last + 1}, "properties": {"pixelSize": 92},
+            "fields": "pixelSize"}},
+    ]
+    g0 = FIRST_HIST_COL + VISIBLE_HIST_COLS                 # K
+    meta = ws.spreadsheet.fetch_sheet_metadata(
+        {"fields": "sheets(properties.sheetId,columnGroups)"})
+    groups = next((x.get("columnGroups", []) for x in meta["sheets"]
+                   if x["properties"]["sheetId"] == sid), [])
+    for g in groups:
+        reqs.append({"deleteDimensionGroup": {"range": g["range"]}})
+    if last >= g0:
+        rng = {"sheetId": sid, "dimension": "COLUMNS", "startIndex": g0,
+               "endIndex": last + 1}
+        reqs += [{"addDimensionGroup": {"range": rng}},
+                 {"updateDimensionGroup": {"dimensionGroup": {
+                     "range": rng, "depth": 1, "collapsed": True},
+                     "fields": "collapsed"}}]
+    ws.spreadsheet.batch_update({"requests": reqs})
+    vals = {}
+    for c in range(first, last + 1):
+        vals.update(history_formulas(c))
+    ws.batch_update([{"range": a, "values": [[f]]} for a, f in vals.items()],
+                    value_input_option="USER_ENTERED")
+    return want - have
+
+
 def build(*, logfn=print):
     """Create both tabs if missing. Never touches an existing one.
     Returns (board ws, data ws)."""

@@ -222,7 +222,23 @@ def run(data: Data, *, today: Optional[dt.date] = None, dry_run: bool = False,
         logfn(f"  no data this run (left as is): {skipped}")
     if updates and not dry_run:
         ws.batch_update(updates, value_input_option="USER_ENTERED")
+    grow(ws, want, dry_run=dry_run, logfn=logfn, data_ws=data_ws)
     return want
+
+
+def history_span(week_endings, shown_we: dt.date) -> int:
+    """Columns the Weekly History needs: from last week back to the OLDEST
+    stored week (column k = shown WE - 7*(k+1))."""
+    old = [w for w in week_endings if w and w < shown_we]
+    return max(((shown_we - min(old)).days // 7) if old else 0, 0)
+
+
+def grow(ws, monday: dt.date, *, dry_run=False, logfn=print, data_ws=None):
+    """Keep Weekly History wide enough for every stored week (layout.grow_history)."""
+    grid = _data_tab(data_ws).get("B2:B", value_render_option="UNFORMATTED_VALUE")
+    n = history_span([parse_we(r[0]) for r in grid if r],
+                     monday + dt.timedelta(days=6))
+    L.grow_history(ws, n, dry_run=dry_run, logfn=logfn)
 
 
 def verify(ws, monday: dt.date, today: dt.date) -> List[str]:

@@ -85,6 +85,24 @@ class Backfill(unittest.TestCase):
         self.assertEqual(fake.inserted, [])
 
 
+class History(unittest.TestCase):
+    def test_span_reaches_oldest_week(self):
+        shown = D(2026, 11, 22)
+        self.assertEqual(B.history_span([D(2026, 11, 15)], shown), 1)
+        self.assertEqual(B.history_span([D(2026, 11, 15), D(2026, 9, 27), None],
+                                        shown), 8)
+        self.assertEqual(B.history_span([], shown), 0)
+
+    def test_column_letters_past_z(self):
+        self.assertEqual([L._col(i) for i in (2, 9, 10, 25, 26, 27)],
+                         ["C", "J", "K", "Z", "AA", "AB"])
+
+    def test_formulas_step_back_a_week_per_column(self):
+        f = L.history_formulas(10)                       # K = 9th week back
+        self.assertEqual(f[f"K{L.R_HIST_HDR}"], "=$C$3-63")
+        self.assertIn(f"K${L.R_HIST_HDR}", f[f"K{L.R_HIST_FIRST}"])
+
+
 class Locate(unittest.TestCase):
     def test_rows_by_label(self):
         col = ["", "COUNTRY", L.WE_LABEL, L.PS_BAR, "Product Type",
