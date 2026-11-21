@@ -167,9 +167,15 @@ def run(workbook, people, starts: Dict[str, dt.date], *, today: dt.date,
         if not mine:
             log("    %-28s already signed — no reminder" % name)
             continue
-        key = str(mine[0].get("key") or mine[0].get("id") or "")
+        # THE `id`, NEVER THE `key`. A packet carries both, and they are not
+        # interchangeable: `key` is the template's role label ("employee-1",
+        # the same string on every bundle made from that template) while `id`
+        # is this packet's own ("pEBs3Kgr2g"). Reminding by key answers
+        # 404 "No Packet matches the given query" -- proved live 2026-11-20,
+        # which is the whole reason one real reminder was worth sending.
+        key = str(mine[0].get("id") or "")
         if not key:
-            log("    %-28s SKIPPED — packet has no key" % name)
+            log("    %-28s SKIPPED — packet has no id" % name)
             continue
         if not send:
             log("    %-28s would remind (%s, starts %s)"

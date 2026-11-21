@@ -143,11 +143,18 @@ def send_from_template(name: str, email: str, phone: str = "",
 PACKET_REMIND = "/packets/%s/remind/"
 
 
-def remind_packet(packet_key: str) -> None:
-    """Re-send one signer's invitation. No new bundle, no second contract."""
-    if not str(packet_key or "").strip():
-        raise BlueInkError("remind_packet needs a packet key")
-    _request("PUT", PACKET_REMIND % packet_key)
+def remind_packet(packet_id: str) -> None:
+    """Re-send one signer's invitation. No new bundle, no second contract.
+
+    TAKES THE PACKET'S `id`, NOT ITS `key`. A packet carries both: `key` is
+    the template's role label ("employee-1" on every bundle from the same
+    template), `id` is this packet's own ("pEBs3Kgr2g"). The route resolves
+    the id alone -- by key it answers 404 "No Packet matches the given
+    query", proved live on 2026-11-20.
+    """
+    if not str(packet_id or "").strip():
+        raise BlueInkError("remind_packet needs a packet id")
+    _request("PUT", PACKET_REMIND % packet_id)
 
 
 def packets_of(bundle_id: str) -> list:
