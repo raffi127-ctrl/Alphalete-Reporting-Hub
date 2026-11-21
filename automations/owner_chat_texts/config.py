@@ -49,11 +49,14 @@ GROUP_KNOCKING = "Knocking Chat A-Players"
 # row `colten` -> 'Texts Approved JSON'. A bare "A Players" needle would also
 # hit any other chat with that in its name. If Colten's group changes, update
 # both places.
+#
+# Re-pinned 2026-11-21: +14407893938 left the chat and every text to it
+# refused from 8am (WOW board + scoreboard). Now owner + his 2 A players,
+# the standing pin rule; the trio is in no other chat on Lucy 1.
 GROUP_COLTEN_A_PLAYERS = {
     "group": "A Players",
     "chat_guid": "any;+;9da0dbee269e4010a1fa0ebbe9a37e2f",
-    "require_handles": ["+17867976902", "+14407893938",
-                        "+18176299630", "+17863655377"],
+    "require_handles": ["+18176299630", "+17867976902", "+17863655377"],
 }
 GROUP_SOUTHSHORE_ORG = "SOUTHSHORE ORG"
 
