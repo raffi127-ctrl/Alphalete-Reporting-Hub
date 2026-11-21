@@ -22,8 +22,20 @@ TARGETS = {
     # on the LAN (peer_probe from Lucy 1: ping + :22 answer). Same fix, run
     # from Lucy 1 as `lucy rerun kick_lucy3_queue`.
     "lucy3": ("lucy3", ("Lucys-Mac-mini.local",)),
+    # 2026-11-21: Lucy 2 and Lucy 4 went silent at 17:06-17:08 (Sheets token
+    # refresh refused, see fill.load_token_credentials). Whether Lucy 1 holds a
+    # key for them is unproven; BatchMode makes a missing key fail in seconds.
+    "lucy2": ("lucy2", ("Lucys-MacBook-Neo.local",)),
+    "lucy4": ("lucy4", ("Lucys-Mac-mini-2.local",)),
 }
-CMD = ("launchctl kickstart -k gui/$(id -u)/com.alphalete.mini-control; "
+# PULL FIRST (2026-11-21). A queue that died on BROKEN CODE can't take the
+# `update` that carries the fix, and a kickstart alone just relaunches the
+# same broken code. --ff-only never merges or discards anything: a box with
+# local edits in the way simply isn't pulled, and the kick still happens.
+CMD = ("cd ~/recruiting-report 2>/dev/null && "
+       "(git pull --ff-only -q && echo PULLED $(git log --oneline -1) "
+       "|| echo 'PULL SKIPPED'); "
+       "launchctl kickstart -k gui/$(id -u)/com.alphalete.mini-control; "
        "launchctl kickstart -k gui/$(id -u)/com.alphalete.mini-control-read "
        "2>/dev/null; "
        "launchctl kickstart -k gui/$(id -u)/com.alphalete.mini-control-text "
