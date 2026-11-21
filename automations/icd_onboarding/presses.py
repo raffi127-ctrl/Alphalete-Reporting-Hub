@@ -230,7 +230,8 @@ def _press(office_key: str, week_start: dt.date, *, column: str, what: str,
         log("  %s: every name is on that cooldown — nothing to search for "
             "this pass" % what)
         return F.apply(F.workbook_for(office_key), week_start, "ownerville",
-                       {}, dry_run=dry_run, log=log)
+                       {}, dry_run=dry_run, log=log,
+                       office_key=office_key)
     budget = OVC.SEARCH_BUDGET_S if budget_s is None else budget_s
     verdicts: Dict[str, Dict[str, object]] = {}
     failures: List = []
@@ -270,7 +271,8 @@ def _press(office_key: str, week_start: dt.date, *, column: str, what: str,
         _alert(office_key, what, failures, log=log)
     # Ticked off what OWNERVILLE says, through the one place a tick is decided.
     return F.apply(F.workbook_for(office_key), week_start, "ownerville",
-                   verdicts, dry_run=dry_run, log=log)
+                   verdicts, dry_run=dry_run, log=log,
+                   office_key=office_key)
 
 
 def press_owner_submit(office_key: str, week_start: dt.date, *,

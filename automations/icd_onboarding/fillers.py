@@ -155,7 +155,7 @@ def describe(got: Dict[str, Dict[str, str]]) -> str:
 
 def apply(workbook, week_start, source: str,
           verdicts: Mapping[str, Mapping[str, object]],
-          *, dry_run: bool = True, log=print) -> int:
+          *, dry_run: bool = True, log=print, office_key: str = "") -> int:
     """Tick what `source` has earned. DRY BY DEFAULT.
 
     Every filler goes through here rather than writing cells itself, so the
@@ -164,9 +164,11 @@ def apply(workbook, week_start, source: str,
     """
     from automations.icd_onboarding import sheet as S
 
-    ws = S.open_board(workbook, create=False)
+    # Their own week tab where they have a book, the stacked tab otherwise.
+    ws = S.board_for(office_key, week_start, create=False) if office_key \
+        else S.open_board(workbook, create=False)
     if ws is None:
-        log("  no %s tab on this workbook" % B.TAB)
+        log("  no board to tick for %s" % (office_key or "this workbook"))
         return 0
     # A column this code knows about and the tab has not got would otherwise
     # never appear on a board that already existed.
@@ -323,7 +325,9 @@ def seed_anywhere(office_key: str, week_start, people, *,
 
     if not on_office_machine(office_key):
         return S.seed(workbook_for(office_key), week_start, people,
-                      dry_run=dry_run, log=log)
+                      dry_run=dry_run, log=log,
+                      ws=S.board_for(office_key, week_start,
+                                     create=not dry_run))
     out = RB.seed(office_key, week_start, people, dry_run=dry_run, log=log)
     # Same shape sheet.seed answers with, so callers counting `add` do not
     # have to know which machine they are on.

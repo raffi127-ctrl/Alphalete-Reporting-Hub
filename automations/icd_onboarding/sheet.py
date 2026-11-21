@@ -301,7 +301,7 @@ def ensure_dividers(ws, week_start: dt.date, log=print) -> int:
 
 
 def seed(workbook, week_start: dt.date, people: List[Dict],
-         *, dry_run: bool = False, log=print) -> Dict:
+         *, dry_run: bool = False, log=print, ws=None) -> Dict:
     """Put this week's training-calendar people on the board.
 
     Idempotent on purpose. Running it twice, or every day, adds whoever the
@@ -309,7 +309,9 @@ def seed(workbook, week_start: dt.date, people: List[Dict],
     and every tick an automation has earned survive untouched, and a person the
     ICD marked off does not reappear.
     """
-    ws = open_board(workbook, create=not dry_run)
+    # `ws` when the caller already resolved it -- that is how an office with
+    # their own workbook gets this week's tab instead of the stacked one.
+    ws = ws or open_board(workbook, create=not dry_run)
     if ws is None:
         log("  (dry run — no %s tab on this workbook yet)" % B.TAB)
         all_rows, existing = [], []

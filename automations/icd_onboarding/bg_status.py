@@ -230,7 +230,7 @@ def run(week_start: Optional[dt.date] = None, *, offices: Sequence[str] = (),
             continue
         total += F.apply(books[office], week, "sterling",
                          {n: {"BG Status": s} for n, s in people.items()},
-                         dry_run=dry_run, log=log)
+                         dry_run=dry_run, log=log, office_key=office)
     if not routed:
         log("  nothing to tick")
     return total
