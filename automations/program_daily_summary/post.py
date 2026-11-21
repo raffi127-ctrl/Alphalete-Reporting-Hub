@@ -56,6 +56,49 @@ def render(today: dt.date, ws=None) -> Path:
                        _access_token(), spreadsheet_id=L.SHEET_ID)
 
 
+def pending_note(missing) -> str:
+    """'Pending update: Frontier' — what the image + caption say when the run
+    hit the time cap with a campaign's numbers still missing for yesterday."""
+    return "Pending update: " + ", ".join(missing) if missing else ""
+
+
+def stamp_pending(png: Path, missing) -> Path:
+    """Add a yellow band ABOVE the table naming the campaign(s) whose numbers
+    for yesterday aren't in yet (Eve 2026-11-21: post at the time cap anyway,
+    but say what's missing ON the image, since it gets forwarded without the
+    caption). Same file, overwritten; the table itself is untouched."""
+    if not missing:
+        return png
+    from PIL import Image, ImageDraw, ImageFont
+    img = Image.open(png).convert("RGB")
+    w, h = img.size
+    size = max(16, w // 45)
+    font = None
+    for name in ("Arial Bold.ttf", "Arial.ttf", "arialbd.ttf", "arial.ttf",
+                 "DejaVuSans-Bold.ttf", "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+                 "/Library/Fonts/Arial.ttf"):
+        try:
+            font = ImageFont.truetype(name, size)
+            break
+        except Exception:  # noqa: BLE001 — try the next font
+            continue
+    if font is None:
+        try:
+            font = ImageFont.load_default(size=size)
+        except TypeError:   # old Pillow: fixed-size bitmap font
+            font = ImageFont.load_default()
+    text = (f"{pending_note(missing)} - yesterday's numbers hadn't come in "
+            f"yet when this was sent")
+    band = int(size * 2.2)
+    out = Image.new("RGB", (w, h + band), "white")
+    d = ImageDraw.Draw(out)
+    d.rectangle([0, 0, w, band - 1], fill="#FFF2CC")
+    d.text((size // 2, (band - size) // 2), text, fill="#7F4F00", font=font)
+    out.paste(img, (0, band))
+    out.save(png)
+    return png
+
+
 def _already(client, channel: str, cap: str, today: dt.date,
              thread_ts: str | None = None) -> bool:
     oldest = str(dt.datetime.combine(today, dt.time.min).timestamp())
@@ -121,25 +164,26 @@ def announce_only(today: dt.date, logfn=print) -> int:
 
 
 def post(today: dt.date, *, dry_run: bool = True, to_eve: bool = False,
-         dm_only=(), logfn=print) -> bool:
+         dm_only=(), missing=(), logfn=print) -> bool:
     """Render + deliver. Returns True if every target got it (or had it)."""
-    png = render(today)
-    cap = caption(today)
+    png = stamp_pending(render(today), missing)
+    cap = caption(today)            # base caption: what the dedup looks for
+    msg = cap + (f"  _({pending_note(missing)})_" if missing else "")
     logfn(f"  image: {png}")
     if dry_run:
-        logfn(f"  DRY RUN — would post {cap!r} to the trackers thread + Raf DM")
+        logfn(f"  DRY RUN — would post {msg!r} to the trackers thread + Raf DM")
         return True
     from automations.shared import slack_metrics_post as smp
     client = smp._client()
     if to_eve:
-        ok = _send(client, EVE_DM, png, cap)
+        ok = _send(client, EVE_DM, png, msg)
         logfn(f"  Eve DM: {'sent' if ok else 'FAILED'}")
         return ok
     if dm_only:                      # one-off: these people only, no thread
         ok = True
         for u in dm_only:
             dm = client.conversations_open(users=u)["channel"]["id"]
-            sent = _send(client, dm, png, cap)
+            sent = _send(client, dm, png, msg)
             logfn(f"  DM {u}: {'sent' if sent else 'FAILED'}")
             ok &= sent
         return ok
@@ -159,7 +203,7 @@ def post(today: dt.date, *, dry_run: bool = True, to_eve: bool = False,
         logfn("  trackers thread: already posted today")
         _announce(client, ts, True, logfn)
     else:
-        sent = _send(client, TRACKERS_CHANNEL, png, cap, thread_ts=ts)
+        sent = _send(client, TRACKERS_CHANNEL, png, msg, thread_ts=ts)
         logfn(f"  trackers thread: {'posted' if sent else 'FAILED'}")
         ok &= sent
         _announce(client, ts, sent, logfn)
@@ -173,10 +217,10 @@ def post(today: dt.date, *, dry_run: bool = True, to_eve: bool = False,
     if done:
         logfn("  Raf DM: already sent today")
     else:
-        sent = _send(client, dm, png, cap)
+        sent = _send(client, dm, png, msg)
         logfn(f"  Raf DM: {'sent' if sent else 'FAILED'}")
         if sent:
-            marker.write_text(cap, encoding="utf-8")
+            marker.write_text(msg, encoding="utf-8")
         ok &= sent
     return ok
 

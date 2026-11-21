@@ -209,13 +209,20 @@ def main() -> int:
                 if c in data or not args.no_tableau]
     missing = [c for c in board.verify(board._tab(), monday, today)
                if c in expected]
-    if missing:
+    if missing and not args.post:
         print(f"VERIFY FAILED: nothing for yesterday on the board for {missing}")
         return 1
-    print("verify OK")
+    if missing:
+        # The readiness gate already waited for the mails up to its time cap.
+        # Past it, Raf still gets the board, with the missing campaign(s)
+        # named on the image + caption (Eve 2026-11-21).
+        print(f"VERIFY: nothing for yesterday for {missing} — posting anyway "
+              f"with a 'Pending update' note")
+    else:
+        print("verify OK")
     if args.post:
         from automations.program_daily_summary import post
-        if not post.post(today, dry_run=False):
+        if not post.post(today, dry_run=False, missing=missing):
             print("POST: not every target got the image (see above)")
             return 1
     return 0
