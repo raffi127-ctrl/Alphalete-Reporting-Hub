@@ -71,7 +71,11 @@ def write(office_key: str, column: str, want: Dict[str, str],
                 "Apex spells these %s, so %s would never match its dropdown."
                 % (" / ".join(GENDERS), ", ".join(repr(o) for o in odd)))
 
-    ws = S.open_board(F.workbook_for(office_key), create=False)
+    # Their own week tab where they have a book. It DOES take a week -- I
+    # read this signature as having none and left it on the old board, so
+    # gender_suggest reported writing values that landed on the sheet
+    # nobody is looking at any more (2026-11-21).
+    ws = S.board_for(office_key, week_start, create=False)
     if ws is None:
         log("  no onboarding board for %s yet." % office_key)
         return 0
