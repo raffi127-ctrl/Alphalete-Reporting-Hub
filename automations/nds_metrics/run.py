@@ -2428,18 +2428,23 @@ def main(argv=None) -> int:
         # Carlos 2026-11-14: the order log as a per-rep screenshot, not a
         # file. Preview path: build the named rep(s), DM them, stop.
         from automations.nds_metrics import rep_order_log as ROL
-        reps = None if a.rep_shot.strip().lower() == "all" else [a.rep_shot]
-        shots = ROL.build(cols, crew, today, OUT_DIR, reps=reps)
+        which = a.rep_shot.strip().lower()
+        reps = None if which in ("all", "active") else [a.rep_shot]
+        # Carlos 11/20: "send me everything actives reps order log sheet" /
+        # "send to sebastian and I" -- `active` = not Terminated on the NDS
+        # Sales Board; --dm takes several Slack ids, comma-separated.
+        shots = ROL.build(cols, crew, today, OUT_DIR, reps=reps, active_only=(which == "active"))
         if not shots:
             print(f"[nds] rep order log: no rep matches {a.rep_shot!r}")
             return 1
         if a.dm:
             from automations.shared import slack_metrics_post as smp
+            users = [u.strip() for u in a.dm.split(",") if u.strip()]
             for rep, png in shots.items():
-                smp.dm_user_with_file(Path(png), user=a.dm, file_name=Path(png).name,
-                                      comment=f"\U0001F4CB *Order Log — {rep}* — preview of the "
-                                              "per-rep screenshot (not sent to anyone else).")
-                print(f"[nds] DM'd rep order log for {rep}")
+                for user in users:
+                    smp.dm_user_with_file(Path(png), user=user, file_name=Path(png).name,
+                                          comment=f"\U0001F4CB *Order Log — {rep}*")
+                print(f"[nds] DM'd rep order log for {rep} to {len(users)} person(s)")
         print("=== done ===", flush=True)
         return 0
     only = set(a.only.split(",")) if a.only else None

@@ -1087,10 +1087,52 @@ def picture_lines(cols, crew: Sequence, today: dt.date, log=print) -> dict:
             "dbl": dbl, "tier_by_line": tier_by_line}
 
 
+def active_board_reps(log=print) -> Optional[List[str]]:
+    """The NDS Sales Board's reps whose Leadership Status is not Terminated
+    (Carlos 11/20: "send me everything actives reps order log sheet"): column
+    B from the REP header down to the first totals label, status by the
+    'Leadership Status' header. None when the board can't be read."""
+    from automations.recruiting_report.fill import _retry, open_by_key
+    from automations.vantura_payroll import run as VP
+    try:
+        vals = _retry(lambda: open_by_key(VP.SHEET_ID).worksheet("NDS Sales Board").get("A1:Z120")) or []
+    except Exception as e:  # noqa: BLE001
+        log(f"[nds] rep order log: NOTE NDS Sales Board unreadable ({type(e).__name__})")
+        return None
+    hdr_i = next((i for i, r in enumerate(vals) if len(r) > 1 and str(r[1]).strip().upper() == "REP"), None)
+    if hdr_i is None:
+        return None
+    hdr = [str(c).strip().lower() for c in vals[hdr_i]]
+    i_st = hdr.index("leadership status") if "leadership status" in hdr else None
+    out = []
+    for r in vals[hdr_i + 1:]:
+        name = str(r[1]).strip() if len(r) > 1 else ""
+        if not name:
+            continue
+        if name.upper().startswith(("AT&T", "TOTAL", "LAST WEEK")):
+            break                                    # the totals block
+        status = str(r[i_st]).strip().lower() if i_st is not None and i_st < len(r) else ""
+        if status != "terminated":
+            out.append(name)
+    return out
+
+
+def is_same_person(board_name: str, export_name: str) -> bool:
+    """'Nick Smedra' ~ 'Nicholas Paul Smedra', 'Stefany Zaldivar' ~ 'Stefany
+    Michelle Zaldivar Justiniano': first names share their first three
+    letters and the board's last name is one of the export name's words."""
+    b, e = _name_words(board_name), _name_words(export_name)
+    if not b or not e:
+        return False
+    first_ok = b[0][:3] == e[0][:3]      # Nick / Nicholas, Will / William
+    return first_ok and b[-1] in e
+
+
 def build(cols, crew: Sequence, today: dt.date, out_dir: Path, reps: Optional[Sequence[str]] = None,
-          log=print) -> Dict[str, Path]:
+          log=print, active_only: bool = False) -> Dict[str, Path]:
     """One PNG per rep (every rep with a wireless line on the log, or only
-    `reps` -- case-blind substrings). -> {rep: png}."""
+    `reps` -- case-blind substrings; `active_only` = only reps on the NDS
+    Sales Board who are not Terminated). -> {rep: png}."""
     from automations.uploaded.order_log import _md
     P = picture_lines(cols, crew, today, log=log)
     per_rep, crew, owner, logins = P["per_rep"], P["crew"], P["owner"], P["logins"]
@@ -1119,6 +1161,15 @@ def build(cols, crew: Sequence, today: dt.date, out_dir: Path, reps: Optional[Se
     if reps:
         want = [w.lower() for w in reps]
         per_rep = {r: v for r, v in per_rep.items() if any(w in r.lower() for w in want)}
+    if active_only:
+        active = active_board_reps(log=log)
+        if active is None:
+            raise RuntimeError("the NDS Sales Board could not be read -- no 'active' list")
+        keep = {r: v for r, v in per_rep.items() if any(is_same_person(a, r) for a in active)}
+        log(f"[nds] rep order log: active = {len(active)} rep(s) on the NDS Sales Board; "
+            f"{len(keep)} with lines on the log; left out: "
+            f"{', '.join(sorted(set(per_rep) - set(keep))) or 'nobody'}")
+        per_rep = keep
     out: Dict[str, Path] = {}
     for rep, lines in sorted(per_rep.items()):
         slug = "_".join(rep.lower().split())

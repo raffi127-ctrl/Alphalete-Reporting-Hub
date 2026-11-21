@@ -444,6 +444,32 @@ class CrossCheck(unittest.TestCase):
         self.assertEqual(dep, {("jacob", "ortega"): 223.0, ("nicholas", "smedra"): 1213.0})
 
 
+class ActiveReps(unittest.TestCase):
+    def test_board_names_match_export_names(self):
+        for board, export in (("Nick Smedra", "Nicholas Paul Smedra"),
+                              ("Stefany Zaldivar", "Stefany Michelle Zaldivar Justiniano"),
+                              ("Nathaly Benitez", "Nathaly Elizabeth Molina Benitez"),
+                              ("Diego Borres", "Diego Javier Del Pozo Borres"),
+                              ("Jacob Ortega", "Jacob Isaiah Ortega"), ("Cinthya Reyes", "Cinthya reyes"),
+                              ("Jorge Hernandez", "Jorge Jose Hernandez Molina")):
+            self.assertTrue(ROL.is_same_person(board, export), (board, export))
+        self.assertFalse(ROL.is_same_person("Andrew De La Torre", "Aaron De La Torre"))
+        self.assertFalse(ROL.is_same_person("Eduardo Alvarez", "Christopher Eduardo Cajabon Penagos"))
+
+    def test_active_reps_skip_terminated_and_stop_at_totals(self):
+        grid = [["", "", "Vantura"], ["WE", "11.22"], [""],
+                ["#", "REP", "Current Week", "", "", "", "", "", "", "", "", "Campaign", "Trainer", "Field Status", "Team",
+                 "Leadership Status", "Secondary Status"],
+                ["1", "Aaron De La Torre", "3", "", "", "", "", "", "", "", "", "NDS", "", "", "", "Level 1"],
+                ["2", "Brianna Belen Contreras", "0", "", "", "", "", "", "", "", "", "NDS", "", "", "", "Terminated"],
+                ["3", "Carlos Hidalgo", "1", "", "", "", "", "", "", "", "", "NDS", "", "", "", "Mastermind", "Floater"],
+                ["", "AT&T NDS", "70"], ["", "Last Week"], ["", "Zed Afterwards"]]
+        book = mock.Mock()
+        book.worksheet.return_value.get.return_value = grid
+        with mock.patch("automations.recruiting_report.fill.open_by_key", return_value=book):
+            self.assertEqual(ROL.active_board_reps(log=lambda *_a: None), ["Aaron De La Torre", "Carlos Hidalgo"])
+
+
 class SoldUnder(unittest.TestCase):
     """Carlos 11/20: this week's sales under Esmeralda's login, last week's under Sebastian's and the
     customer Sundararaghandran Viswanathan all belong to Jacob."""
