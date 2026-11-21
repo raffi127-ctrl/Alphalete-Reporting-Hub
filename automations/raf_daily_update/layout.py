@@ -69,8 +69,6 @@ def _key_for(h: str) -> Optional[str]:
         return "day1"
     if h.startswith("ad applied"):
         return "ad"
-    if h.startswith("owner liked"):
-        return "owner_liked"
     if h.startswith("next step"):
         return "next_step"
     return None
@@ -79,13 +77,11 @@ def _key_for(h: str) -> Optional[str]:
 REQUIRED = ("date", "int1", "int2", "first", "last", "phone", "status",
             "email")
 
-LIKED, NOT_LIKED = "Yes", "No"
-
 # What a run writes. SHOWED TO DAY 1 is NOT here: it is decided on the
 # person's start day, days after the interview this row is about, so the
 # daily run has nothing to put in it. `day1.py` fills it later.
 WRITE_KEYS = ("date", "int1", "int2", "first", "last", "phone", "status",
-              "bob_date", "time", "email", "ad", "owner_liked", "next_step")
+              "bob_date", "time", "email", "ad", "next_step")
 
 
 def resolve(header_row: List[str]) -> Dict[str, int]:
@@ -208,28 +204,6 @@ def next_step(status: str, bob_date: str = "") -> str:
     return said
 
 
-def owner_liked_for(c: dict) -> str:
-    """One harvested candidate -> the sheet's 'Owner Liked the applicant Yes
-    or No'.
-
-    THE QUESTION IS THE OFFER, not the acceptance. AppStream's Offered page
-    is the leader saying "I want this person"; everything after it belongs to
-    the applicant. So the November tab's own wording splits cleanly:
-    "Leader said no: issues with schedule" is a No, while "Declined - doesnt
-    think its a good idea after talking to wife" is a Yes the applicant
-    turned down. This is also the '2nd Rds' tab's own counting rule
-    (Offered = Status not "*Leader said no*"), so the column and the KPI
-    above it can never disagree.
-
-    A no-show gets '' -- nobody formed an opinion, and the KPI leaves them
-    out anyway (their 2nd Round Interviewer cell is blank).
-    """
-    offered = str(c.get("offered") or "").strip().upper()
-    if not offered:
-        return ""
-    return LIKED if offered == "Y" else NOT_LIKED
-
-
 def split_orientation(text: str) -> Tuple[str, str]:
     """AppStream 'Brought on Board (10/19/2026 1:00 PM)' text → ('10/19',
     '1:00'), the sheet's BOB Date / Time Slot shape. Either part may be ''."""
@@ -274,7 +248,6 @@ def build_rows(cands: List[dict]) -> List[dict]:
             "first": first, "last": last, "phone": phone(c.get("phone", "")),
             "status": st, "bob_date": bob_date, "time": slot,
             "email": c.get("email", ""), "ad": c.get("ad", ""),
-            "owner_liked": owner_liked_for(c),
             "next_step": next_step(st, bob_date),
         })
     rows.sort(key=lambda r: (r["_day"], status_rank(r["status"]),
