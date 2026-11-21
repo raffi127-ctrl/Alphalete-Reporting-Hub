@@ -128,6 +128,56 @@ def send_from_template(name: str, email: str, phone: str = "",
                       label=str(data.get("label", "")))
 
 
+# THE REMIND CALL LIVES ON THE PACKET, NOT THE BUNDLE (probed 2026-11-20).
+#   OPTIONS /bundles/<id>/remind/            -> 404, no such route
+#   OPTIONS /packets/<key>/remind/           -> 200, allow='PUT, OPTIONS'
+# Confirmed meaningful by checking OPTIONS against routes that do exist
+# (/bundles/ answers 200 with an Allow header), so the 404 is an absence and
+# not an unsupported method.
+#
+# THIS IS WHY THE CHASES ARE SAFE. Our client could only ever CREATE a bundle,
+# and creating one launches it -- so "they have not signed yet" would have
+# meant sending a second contract packet, the exact thing the double-send
+# guard exists to stop. A remind re-sends the invitation for the packet that
+# is already out: same bundle, same link, nothing duplicated.
+PACKET_REMIND = "/packets/%s/remind/"
+
+
+def remind_packet(packet_key: str) -> None:
+    """Re-send one signer's invitation. No new bundle, no second contract."""
+    if not str(packet_key or "").strip():
+        raise BlueInkError("remind_packet needs a packet key")
+    _request("PUT", PACKET_REMIND % packet_key)
+
+
+def packets_of(bundle_id: str) -> list:
+    """The signer packets on a bundle, each with its own status and key.
+
+    `?include=packets` is REFUSED -- the API answers 400 and names what it
+    will take ("events, files, data") -- but the bundle detail carries the
+    packets anyway, so ask for the bundle plainly.
+    """
+    data = _request("GET", f"/bundles/{bundle_id}/") or {}
+    return list(data.get("packets") or [])
+
+
+def unsigned_packets(bundle_id: str) -> list:
+    """Only the packets still owed a signature.
+
+    A reminder to somebody who has already signed is the one thing a chase
+    must never do, so the filter is on what the packet SAYS it is rather than
+    on the bundle's overall state: a bundle reads "started" the moment one of
+    several signers is done.
+    """
+    done = ("complete", "cancelled", "expired", "failed", "declined")
+    out = []
+    for p in packets_of(bundle_id):
+        said = PACKET_STATUS.get(str(p.get("status", "")), str(p.get("status", "")))
+        if said not in done:
+            out.append(p)
+    return out
+
+
 def bundle_status(bundle_id: str) -> str:
     """Human-readable status for one bundle ('sent', 'complete', ...)."""
     data = _request("GET", f"/bundles/{bundle_id}/") or {}
