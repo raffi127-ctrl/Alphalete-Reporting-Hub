@@ -133,8 +133,9 @@ class FakeWeb:
         self.posts, self.files, self.updates, self.reactions = [], [], [], []
 
     def chat_postMessage(self, **kw):
-        self.posts.append(kw)
-        return {"ts": "9{}.0".format(len(self.posts))}
+        ts = "9{}.0".format(len(self.posts) + 1)
+        self.posts.append(dict(kw, _ts=ts))
+        return {"ts": ts}
 
     def files_upload_v2(self, **kw):
         self.files.append(kw)
@@ -161,15 +162,19 @@ def _rec_ev(ts="100.0", user="UREP", **kw):
                             "name": "door.m4a", "size": 1000}]}, **kw)
 
 
-def _pick(rec_ts, action, uid=None, rep="UREP"):
+def _pick(rec_ts, action, uids=None, rep="UREP", shown=None):
+    """A tap in the 'Who should get a copy?' message. `shown` = what the
+    picker holds at that moment (Slack sends it as state.values)."""
     act = {"action_id": action,
-           "block_id": ("upline:" if action == "upline" else "upbtn:") + rec_ts}
-    if action == "upline":
-        act["selected_user"] = uid
-    elif action == "same":
-        act["value"] = uid
-    return {"type": "block_actions", "user": {"id": rep}, "channel": {"id": "DREP"},
-            "container": {"message_ts": "91.0"}, "actions": [act]}
+           "block_id": ("upline:" if action == "uplines" else "upbtn:") + rec_ts}
+    if action == "uplines":
+        act["selected_users"] = uids or []
+    payload = {"type": "block_actions", "user": {"id": rep}, "channel": {"id": "DREP"},
+               "container": {"message_ts": "91.0"}, "actions": [act]}
+    if shown is not None:
+        payload["state"] = {"values": {"upline:" + rec_ts: {
+            "uplines": {"type": "multi_users_select", "selected_users": shown}}}}
+    return payload
 
 
 RAF = next(iter(C.COACHES))
@@ -206,7 +211,7 @@ class Bot(unittest.TestCase):
         self.assertIsNone(B.audio_file({"files": [{"mimetype": "image/png",
                                                    "filetype": "png"}]}))
 
-    def test_recording_dm_asks_for_the_upline_once(self):
+    def test_recording_dm_asks_who_gets_a_copy_once(self):
         w = FakeWeb()
         B.on_event(w, _rec_ev(), self.state)
         B.on_event(w, _rec_ev(), self.state)      # Socket Mode redelivery
@@ -214,9 +219,11 @@ class Bot(unittest.TestCase):
         self.assertEqual(len(w.posts), 1)
         ask = w.posts[0]
         self.assertEqual(ask["thread_ts"], "100.0")
-        self.assertEqual(ask["blocks"][0]["accessory"]["type"], "users_select")
+        picker = ask["blocks"][0]["accessory"]
+        self.assertEqual(picker["type"], "multi_users_select")
+        self.assertNotIn("initial_users", picker)          # nobody picked before
         labels = [b["text"]["text"] for b in ask["blocks"][1]["elements"]]
-        self.assertEqual(labels, ["Just Raf"])     # no "same as last time" yet
+        self.assertEqual(labels, ["Submit", "Just Raf"])
 
     def test_bot_messages_and_channels_are_ignored(self):
         w = FakeWeb()
@@ -232,61 +239,77 @@ class Bot(unittest.TestCase):
         B.on_event(w, dict(ev, ts="6.0"), self.state)
         self.assertEqual([p["text"] for p in w.posts], [R.HELP])
 
-    def test_no_pick_yet_rep_and_raf_get_the_pdf(self):
+    def test_before_submit_only_the_rep_gets_the_pdf(self):
         w = FakeWeb()
         self.assertEqual(B.process(w, "xoxb-x", _rec_ev(), self.state), "posted")
         rep = [f for f in w.files if f["channel"] == "DREP"]
         self.assertEqual(len(rep), 1)
         self.assertTrue(rep[0]["filename"].endswith(".pdf"))
-        self.assertIn("A copy went to Raf for feedback", rep[0]["initial_comment"])
-        self.assertIn(R.PICK_LATER, rep[0]["initial_comment"])
-        raf = self._to(w, RAF)
-        self.assertEqual(len(raf), 1)
+        self.assertTrue(rep[0]["initial_comment"].startswith("📝 *Your pitch transcript* · 0:12 long"))
+        self.assertIn(R.SUBMIT_LATER, rep[0]["initial_comment"])
+        self.assertNotIn("Raf", rep[0]["initial_comment"].replace(R.SUBMIT_LATER, ""))
+        self.assertEqual(self._to(w, RAF), [])             # nothing before Submit
+
+    def test_choosing_sends_nothing_submit_sends_to_all_picked_and_raf(self):
+        w = FakeWeb()
+        B.process(w, "xoxb-x", _rec_ev(), self.state)
+        B.on_pick(w, _pick("100.0", "uplines", ["UUP", "UUP2"]), self.state)
+        self.assertEqual(self._to(w, RAF) + self._to(w, "UUP"), [])
+        B.on_pick(w, _pick("100.0", "submit", shown=["UUP", "UUP2"]), self.state)
+        for who in (RAF, "UUP", "UUP2"):
+            self.assertEqual(len(self._to(w, who)), 1, who)
+        self.assertIn("✅ Submitted — <@UUP>, <@UUP2> and Raf get a copy.", w.updates[-1]["text"])
         parent = [p for p in w.posts if p["channel"] == "D-" + RAF][0]
         self.assertTrue(parent["text"].startswith("📝 *Jordan Smith's pitch*"))
-        self.assertEqual(raf[0]["thread_ts"], parent and "91.0")
+        B.on_pick(w, _pick("100.0", "submit", shown=["UUP", "UUP2"]), self.state)  # double tap
+        self.assertEqual(len(self._to(w, "UUP")), 1)
 
-    def test_pick_before_done_sends_the_upline_a_copy_at_delivery(self):
+    def test_submit_before_done_sends_everyone_at_delivery_without_the_nudge(self):
         w = FakeWeb()
-        B.on_pick(w, _pick("100.0", "upline", "UUP"), self.state)
-        self.assertEqual(w.files, [])                       # nothing to send yet
-        self.assertIn("<@UUP> and Raf", w.updates[0]["text"])
+        B.on_pick(w, _pick("100.0", "submit", shown=["UUP"]), self.state)
+        self.assertEqual(w.files, [])
         B.process(w, "xoxb-x", _rec_ev(), self.state)
         self.assertEqual(len(self._to(w, "UUP")), 1)
         self.assertEqual(len(self._to(w, RAF)), 1)
         rep = [f for f in w.files if f["channel"] == "DREP"][0]
-        self.assertIn("Raf and Dana Upline", rep["initial_comment"])
-        self.assertNotIn(R.PICK_LATER, rep["initial_comment"])
+        self.assertEqual(rep["initial_comment"], "📝 *Your pitch transcript* · 0:12 long")
 
-    def test_pick_after_done_sends_then_and_only_once(self):
+    def test_submit_without_touching_the_picker_uses_what_it_showed(self):
         w = FakeWeb()
         B.process(w, "xoxb-x", _rec_ev(), self.state)
-        B.on_pick(w, _pick("100.0", "upline", "UUP"), self.state)
-        B.on_pick(w, _pick("100.0", "same", "UUP"), self.state)    # a second tap
+        self.state["last_upline"]["UREP"] = ["UUP"]
+        B.on_pick(w, _pick("100.0", "submit"), self.state)      # no state.values sent
         self.assertEqual(len(self._to(w, "UUP")), 1)
-        self.assertEqual(len(self._to(w, RAF)), 1)
 
-    def test_next_recording_offers_same_as_last_time(self):
+    def test_next_recording_opens_with_last_times_people(self):
         w = FakeWeb()
-        B.on_pick(w, _pick("100.0", "upline", "UUP"), self.state)
+        B.on_pick(w, _pick("100.0", "submit", shown=["UUP", "UUP2"]), self.state)
         B.on_event(w, _rec_ev(ts="200.0"), self.state)
-        btns = w.posts[-1]["blocks"][1]["elements"]
-        self.assertEqual(btns[0]["text"]["text"], "Same as last time: Dana Upline")
-        self.assertEqual(btns[0]["value"], "UUP")
+        self.assertEqual(w.posts[-1]["blocks"][0]["accessory"]["initial_users"], ["UUP", "UUP2"])
 
-    def test_just_raf_and_picking_raf_add_no_one(self):
+    def test_just_raf_and_picking_raf_or_yourself_add_no_one(self):
         w = FakeWeb()
-        B.on_pick(w, _pick("100.0", "just_raf"), self.state)
-        B.on_pick(w, _pick("100.0", "upline", RAF), self.state)
+        B.on_pick(w, _pick("100.0", "submit", shown=[RAF, "UREP"]), self.state)
         B.process(w, "xoxb-x", _rec_ev(), self.state)
         self.assertEqual({f["channel"] for f in w.files}, {"DREP", "D-" + RAF})
+        self.assertIn("Raf gets a copy", w.updates[-1]["text"])
+
+    def test_no_submit_after_two_hours_sends_raf_only(self):
+        w = FakeWeb()
+        B.process(w, "xoxb-x", _rec_ev(), self.state)
+        self.assertEqual(B.raf_fallback(w, self.state, now=100.0 + 60), [])
+        self.assertEqual(B.raf_fallback(w, self.state, now=100.0 + B.RAF_FALLBACK_S + 1),
+                         ["100.0"])
+        self.assertEqual(len(self._to(w, RAF)), 1)
+        self.assertEqual(B.raf_fallback(w, self.state, now=100.0 + 3 * B.RAF_FALLBACK_S), [])
 
     def test_coach_reply_under_the_copy_is_saved(self):
         w = FakeWeb()
         B.process(w, "xoxb-x", _rec_ev(), self.state)
+        B.on_pick(w, _pick("100.0", "just_raf"), self.state)
         parent = [p for p in w.posts if p["channel"] == "D-" + RAF][0]
         fb = {"type": "message", "channel_type": "im", "channel": "D-" + RAF,
-              "ts": "300.0", "thread_ts": "91.0", "user": RAF,
+              "ts": "300.0", "thread_ts": parent["_ts"], "user": RAF,
               "text": "Ask for the husband's number next time"}
         self.assertEqual(parent["channel"], "D-" + RAF)
         B.on_event(w, fb, self.state)

@@ -16,23 +16,22 @@ CHUNK = 3500
 # Past this many messages the thread is a wall -- send a file instead.
 MAX_MESSAGES = 5
 
-# The rep's copy ends here; the coach's copy ends asking for feedback.
-# Megan 2026-11-21 ("What coach?"): name who actually gets the copy.
-REP_END = "📬 A copy went to {names} for feedback."
+# Text fallback only (the PDF couldn't be made).
+REP_END = ""
 COACH_ASK = ("💬 Reply right here with feedback for {first} 👇 "
              "I keep every note so I can learn what closes deals.")
 
-GOT_IT = ("🎧 Got it! Transcribing now -- I'll reply right here in a minute or "
-          "two (longer recordings take a little longer).")
+GOT_IT = "🎧 Got it! Your transcript will be here in a minute or two."
 HELP = ("👋 Send me a recording of your pitch -- a Voice Memo or a Slack audio "
         "clip -- and I'll send back the whole conversation, every line marked "
         "🟦 Rep or 🟧 Customer.")
 SAVED = "white_check_mark"     # reaction on a coach's feedback reply
 
 # Megan 2026-11-21: ask each rep who their upline is; Raf always gets a copy.
-ASK_UPLINE = ("👤 *Who's your upline?* Pick them and they'll get your "
-              "transcript too. Raf always gets one.")
-PICK_LATER = "👆 Pick your upline in the message above and they'll get a copy too."
+ASK_UPLINE = ("👤 *Who should get a copy?* Pick your upline -- as many people "
+              "as you want -- then tap *Submit*. Raf always gets one.")
+SUBMIT_LATER = ("👆 Tap *Submit* in the message above to send copies to your "
+                "upline and Raf.")
 
 NO_TALK = ("🎧 I listened to the whole thing but couldn't hear anyone talking. "
            "Hold the phone a little closer (screen up, in a top pocket) and send it again?")
@@ -54,15 +53,11 @@ def header(t: Dict, who: Optional[str] = None) -> str:
     return "📝 {} · {} long\n{}".format(title, _clock(t["seconds"]), split)
 
 
-def ready(t: Dict, names: List[str]) -> str:
-    """The rep's DM line that carries the PDF."""
-    talk = t.get("talk") or {}
-    split = " · ".join("{} {} {}%".format(DOT[sp], ROLES[sp], talk[sp])
-                       for sp in ("R", "C", "O") if talk.get(sp))
-    out = "📝 *Your pitch transcript is ready* · {} long\n{}".format(_clock(t["seconds"]), split)
-    if names:
-        out += "\n" + REP_END.format(names=" and ".join(names))
-    return out
+def ready(t: Dict) -> str:
+    """The one line on the rep's PDF. Who gets copies is said ONCE, on the
+    'Got it' message after Submit -- not again here (Megan 2026-11-21: "it's
+    redundant, says it went to Raf twice")."""
+    return "📝 *Your pitch transcript* · {} long".format(_clock(t["seconds"]))
 
 
 def turn_lines(t: Dict, mrkdwn: bool = True) -> List[str]:

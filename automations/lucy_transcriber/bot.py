@@ -44,6 +44,7 @@ from automations.lucy_transcriber import transcribe as T
 REPORT_ID = "lucy_transcriber"
 REPORT_NAME = "Lucy Pitch Auditor"
 HELP_EVERY_S = 6 * 3600
+RAF_FALLBACK_S = 2 * 3600
 RETRY_AFTER_S = 60
 
 _lock = threading.RLock()       # state.json + records/*.json
@@ -61,7 +62,7 @@ def load_state() -> Dict:
         s = json.loads(C.STATE.read_text(encoding="utf-8"))
     except Exception:  # noqa: BLE001
         s = {}
-    for k in ("done", "threads", "helped", "picks", "picked", "last_upline"):
+    for k in ("done", "threads", "helped", "picks", "picked", "last_upline", "draft"):
         s.setdefault(k, {})
     return s
 
@@ -206,10 +207,8 @@ def process(webc, token: str, ev: Dict, state: Dict) -> str:
     when = dt.datetime.fromtimestamp(float(ts))
     path = _pdf(got, name, when)
     with _lock:
-        picked = ts in state["picked"] or rep in C.COACHES
-        names = [C.COACHES[u] for u in C.COACHES if u != rep] + \
-            [_name(webc, u) or "your upline" for u in state["picks"].get(ts) or []]
-    comment = R.ready(got, names) + ("" if picked else "\n" + R.PICK_LATER)
+        submitted = ts in state["picked"] or rep in C.COACHES
+    comment = R.ready(got) + ("" if submitted else "\n" + R.SUBMIT_LATER)
     _deliver(webc, ch, thread, got, path, comment, who=None)
     rec = dict(got, ts=ts, user=rep, name=name, file=f.get("name"),
                sent_text=ev.get("text") or "", received=when.isoformat(timespec="seconds"),
@@ -246,9 +245,12 @@ def _deliver(webc, channel: str, thread: str, got: Dict, path: Optional[Path],
 
 
 def copy_targets(rec: Dict, state: Dict) -> List[str]:
-    """Raf (config.COACHES) always, plus the upline the rep picked -- never
-    the rep themselves, never anyone twice."""
+    """Raf (config.COACHES) always, plus every upline the rep picked -- but
+    only once they tapped Submit (or the Raf fallback fired). Never the rep
+    themselves, never anyone twice."""
     rep = rec.get("user")
+    if not state["picked"].get(rec["ts"]):
+        return []
     want = [u for u in C.COACHES] + list(state["picks"].get(rec["ts"]) or [])
     out = []
     for u in want:
@@ -295,24 +297,38 @@ def flush_copies(webc, rec_ts: str, state: Dict) -> List[str]:
 
 # ---------------------------------------------------------------- who gets a copy
 
-def ask_blocks(rec_ts: str, last_uid: Optional[str], last_name: str) -> List[Dict]:
-    """'Who's your upline?' -- one people-picker (7-year-old simple), plus a
-    one-tap 'same as last time' once they've picked before."""
-    blocks = [{
-        "type": "section", "block_id": "upline:" + rec_ts,
-        "text": {"type": "mrkdwn", "text": R.GOT_IT + "\n\n" + R.ASK_UPLINE},
-        "accessory": {"type": "users_select", "action_id": "upline",
-                      "placeholder": {"type": "plain_text", "text": "Pick your upline"}}}]
-    buttons = []
-    if last_uid:
-        buttons.append({"type": "button", "action_id": "same", "value": last_uid,
-                        "style": "primary",
-                        "text": {"type": "plain_text",
-                                 "text": ("Same as last time: " + (last_name or "them"))[:75]}})
-    buttons.append({"type": "button", "action_id": "just_raf", "value": "none",
-                    "text": {"type": "plain_text", "text": "Just Raf"}})
-    blocks.append({"type": "actions", "block_id": "upbtn:" + rec_ts, "elements": buttons})
-    return blocks
+def _last(state: Dict, rep: str) -> List[str]:
+    v = state["last_upline"].get(rep) or []
+    return [v] if isinstance(v, str) else list(v)      # older state kept one id
+
+
+def ask_blocks(rec_ts: str, last: List[str]) -> List[Dict]:
+    """'Who should get a copy?' -- pick as many people as they want, then
+    Submit (Megan 2026-11-21). Opens with last time's people already picked,
+    so a repeat is one tap."""
+    picker = {"type": "multi_users_select", "action_id": "uplines",
+              "placeholder": {"type": "plain_text", "text": "Pick your upline(s)"}}
+    if last:
+        picker["initial_users"] = last
+    return [
+        {"type": "section", "block_id": "upline:" + rec_ts,
+         "text": {"type": "mrkdwn", "text": R.GOT_IT + "\n\n" + R.ASK_UPLINE},
+         "accessory": picker},
+        {"type": "actions", "block_id": "upbtn:" + rec_ts, "elements": [
+            {"type": "button", "action_id": "submit", "style": "primary", "value": "go",
+             "text": {"type": "plain_text", "text": "Submit"}},
+            {"type": "button", "action_id": "just_raf", "value": "none",
+             "text": {"type": "plain_text", "text": "Just Raf"}}]}]
+
+
+def _chosen(payload: Dict, rec_ts: str, state: Dict) -> List[str]:
+    """What the picker shows at the moment Submit was tapped."""
+    vals = ((payload.get("state") or {}).get("values") or {}).get("upline:" + rec_ts) or {}
+    got = (vals.get("uplines") or {}).get("selected_users")
+    if got is not None:
+        return list(got)
+    with _lock:
+        return list(state["draft"].get(rec_ts) or _last(state, (payload.get("user") or {}).get("id")))
 
 
 def on_pick(webc, payload: Dict, state: Dict) -> None:
@@ -320,33 +336,72 @@ def on_pick(webc, payload: Dict, state: Dict) -> None:
     rec_ts = (act.get("block_id") or ":").split(":", 1)[1]
     rep = (payload.get("user") or {}).get("id")
     aid = act.get("action_id")
-    uid = act.get("selected_user") if aid == "upline" else \
-        act.get("value") if aid == "same" else None
-    if not rec_ts or aid not in ("upline", "same", "just_raf"):
+    if not rec_ts or aid not in ("uplines", "submit", "just_raf"):
         return
-    if uid in (rep,) or uid in C.COACHES:
-        uid = None                          # themselves / Raf: Raf already gets it
+    if aid == "uplines":                    # still choosing: remember, send nothing
+        with _lock:
+            state["draft"][rec_ts] = list(act.get("selected_users") or [])
+            save_state(state)
+        return
+    with _lock:
+        if state["picked"].get(rec_ts):
+            return                          # already submitted (a double tap)
+    chosen = _chosen(payload, rec_ts, state) if aid == "submit" else []
+    picks = []
+    for u in chosen:
+        if u and u != rep and u not in C.COACHES and u not in picks:
+            picks.append(u)
     with _lock:
         state["picked"][rec_ts] = True
-        if uid:
-            picks = state["picks"].setdefault(rec_ts, [])
-            if uid not in picks:
-                picks.append(uid)
-            state["last_upline"][rep] = uid
+        state["picks"][rec_ts] = picks
+        state["draft"].pop(rec_ts, None)
+        if picks:
+            state["last_upline"][rep] = picks
         save_state(state)
-    who = "<@{}> and Raf".format(uid) if uid else "Raf"
+    who = ", ".join("<@{}>".format(u) for u in picks)
+    who = (who + " and Raf") if who else "Raf"
+    text = R.GOT_IT + "\n\n✅ Submitted — {} get{} a copy.".format(who, "" if picks else "s")
     msg = payload.get("container") or {}
     try:
         webc.chat_update(channel=(payload.get("channel") or {}).get("id"),
-                         ts=msg.get("message_ts"),
-                         text=R.GOT_IT + "\n\n✅ A copy goes to {}.".format(who),
-                         blocks=[{"type": "section", "text": {
-                             "type": "mrkdwn",
-                             "text": R.GOT_IT + "\n\n✅ A copy goes to {}.".format(who)}}])
+                         ts=msg.get("message_ts"), text=text,
+                         blocks=[{"type": "section", "text": {"type": "mrkdwn", "text": text}}])
     except Exception:  # noqa: BLE001
         traceback.print_exc()
     sent = flush_copies(webc, rec_ts, state)
-    _log("pick on {} by {}: {} (sent now: {})".format(rec_ts, rep, uid or "just Raf", sent))
+    _log("submit on {} by {}: {} (sent now: {})".format(rec_ts, rep, picks or "just Raf", sent))
+
+
+def raf_fallback(webc, state: Dict, now: Optional[float] = None) -> List[str]:
+    """Every pitch reaches Raf (Megan: 'they all should include Raf'): a
+    transcript nobody tapped Submit on is sent to Raf alone after
+    RAF_FALLBACK_S. Returns the recordings it released."""
+    now = now or time.time()
+    out = []
+    for p in sorted(C.RECORDS.glob("*.json")):
+        ts = p.stem
+        with _lock:
+            if state["picked"].get(ts):
+                continue
+            rec = json.loads(p.read_text(encoding="utf-8"))
+            if rec.get("user") in C.COACHES or now - float(ts) < RAF_FALLBACK_S:
+                continue
+            state["picked"][ts] = True
+            state["picks"][ts] = []
+            save_state(state)
+        flush_copies(webc, ts, state)
+        out.append(ts)
+    return out
+
+
+def _fallback_loop(webc, state: Dict) -> None:
+    while True:
+        time.sleep(10 * 60)
+        try:
+            for ts in raf_fallback(webc, state):
+                _log("no Submit on {} after 2 h -- sent to Raf".format(ts))
+        except Exception:  # noqa: BLE001
+            traceback.print_exc()
 
 
 def save_feedback(webc, ev: Dict, key: str) -> None:
@@ -415,11 +470,9 @@ def on_event(webc, ev: Dict, state: Dict) -> None:
             if rep in C.COACHES:              # Raf's own recording: no one to ask about
                 _say(webc, ev["channel"], thread, R.GOT_IT)
             else:
-                last = state["last_upline"].get(rep)
                 webc.chat_postMessage(channel=ev["channel"], thread_ts=thread,
                                       text=R.GOT_IT + "\n\n" + R.ASK_UPLINE,
-                                      blocks=ask_blocks(ev["ts"], last,
-                                                        _name(webc, last) if last else ""))
+                                      blocks=ask_blocks(ev["ts"], _last(state, rep)))
             _jobs.put(ev)
         return
     key = feedback_for(ev, state)
@@ -492,6 +545,7 @@ def run() -> int:
     _log("Lucy Pitch Auditor is {} ({})".format(me.get("user"), me.get("user_id")))
     _STATE = load_state()
     threading.Thread(target=worker, args=(webc, bt, _STATE), daemon=True).start()
+    threading.Thread(target=_fallback_loop, args=(webc, _STATE), daemon=True).start()
     client = SocketModeClient(app_token=at, web_client=webc)
     client.socket_mode_request_listeners.append(_handler)
     client.connect()
