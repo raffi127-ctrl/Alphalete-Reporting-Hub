@@ -2368,6 +2368,9 @@ def main(argv=None) -> int:
     ap.add_argument("--force", action="store_true",
                     help="re-post sections already in today's thread state "
                          "(replace a bad one); pair with --only")
+    ap.add_argument("--rep-check", action="store_true",
+                    help="read-only: the per-rep order-log pictures vs the morning activation revenue "
+                         "overview vs the last deposit (CS tab), per rep and per order; logs only")
     ap.add_argument("--rep-shot", default=None, metavar="NAME",
                     help="build ONE rep's order-log screenshot (name substring; "
                          "'all' = every rep) and DM it to --dm; nothing posted")
@@ -2414,6 +2417,13 @@ def main(argv=None) -> int:
             print(f"[nds] --repull: dropped {f.name}")
     path = pull(today)
     cols, crew = load_crew(path)
+    if a.rep_check:
+        # Carlos 2026-11-20: "does this match the activation revenue report
+        # that you send every morning? Cross-reference everything."
+        from automations.nds_metrics import rep_order_log as ROL
+        ROL.cross_check(cols, crew, today)
+        print("=== done ===", flush=True)
+        return 0
     if a.rep_shot:
         # Carlos 2026-11-14: the order log as a per-rep screenshot, not a
         # file. Preview path: build the named rep(s), DM them, stop.

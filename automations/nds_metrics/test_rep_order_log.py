@@ -174,6 +174,14 @@ class Lines(unittest.TestCase):
         self.assertEqual([ln["Phone Number"] for ln in weeks[(dt.date(2026, 11, 16), dt.date(2026, 11, 22),
                                                               dt.date(2026, 11, 27))]], ["2145550401"])
         self.assertEqual(sorted(ln["Phone Number"] for ln in pdc), ["2145550402", "2145550404"])
+        # 11/20 cross-check: a number re-placed on a NEW order activates there only, never the old order's line
+        moved = _row(**dict(shipped, **{"spe.TN": "2145550401", "sp.SPM Number": "OLD1"}))
+        both = ROL.mark_replaced(self.cols, [rows[0], moved], sara)
+        old_line = ROL.rep_lines(self.cols, [moved], TODAY, sara=both)["Esmeralda Gonzalez"][0]
+        self.assertEqual((old_line["Status"], old_line["Activation Date"]), ("Shipped", None))
+        # ... but a number on ONE export order is placed by number (the export's id can be an SPM id)
+        alone = ROL.mark_replaced(self.cols, [moved], sara)
+        self.assertEqual(ROL.rep_lines(self.cols, [moved], TODAY, sara=alone)["Esmeralda Gonzalez"][0]["Status"], "Active")
         # no SaraPlus read: as before
         bare = dict((ln["Phone Number"], ln) for ln in ROL.rep_lines(self.cols, rows, TODAY)["Esmeralda Gonzalez"])
         self.assertEqual(bare["2145550401"]["Status"], "Shipped")
@@ -249,6 +257,26 @@ class Lines(unittest.TestCase):
         self.assertEqual(line["Device"], "iPhone 13 A2482 (BYOD)")
         byo = _row(**{"spe.TN": "2145550602", "Device Description": "SM-G991U BYO", "Wireless Installment Plan": "BYOD"})
         self.assertEqual(ROL.rep_lines(self.cols, [byo], TODAY)["Esmeralda Gonzalez"][0]["Device"], "SM-G991U BYO")
+
+    def test_tableau_posted_date_only(self):
+        """Carlos 11/20 night: "we could just use the posted date on tableau" -- a line SaraPlus shows Active
+        that Tableau has not posted is Pending ("Active (not posted)"); the posted date places a line too."""
+        rows = [_row(**{"spe.TN": "2145550801", "DTR Status": "Shipped", "spe.Status": "Active", "DTR Active Date": "",
+                        "sp.Order Date (copy)": "11/16/2026"}),
+                _row(**{"spe.TN": "2145550802", "DTR Status": "Posted", "spe.Status": "Active", "DTR Active Date": "",
+                        "spe.dtr Posted Date": "11/17/2026", "sp.Order Date (copy)": "11/16/2026"})]
+        cols = Cols(HDR + ["spe.dtr Posted Date"])
+        rows = [r + ["" if i == 0 else "11/17/2026"] for i, r in enumerate(rows)]
+        esm = dict((ln["Phone Number"], ln) for ln in ROL.rep_lines(cols, rows, TODAY)["Esmeralda Gonzalez"])
+        self.assertEqual((esm["2145550801"]["Status"], esm["2145550801"]["Activation Date"]), (ROL.NOT_POSTED, None))
+        self.assertEqual((esm["2145550802"]["Status"], esm["2145550802"]["Activation Date"]),
+                         ("Posted", dt.date(2026, 11, 17)))
+        weeks, pdc = ROL.group_weeks(list(esm.values()))
+        self.assertEqual([ln["Phone Number"] for ln in pdc], ["2145550801"])
+        self.assertEqual(list(weeks), [(dt.date(2026, 11, 16), dt.date(2026, 11, 22), dt.date(2026, 11, 27))])
+        _w, sales = ROL.weekly_sales(cols, rows, TODAY)
+        c = sales["Esmeralda Gonzalez"][dt.date(2026, 11, 22)]
+        self.assertEqual((c["activated"], c["pending"]), (1, 1))
 
     def test_tier_bonus_per_port_line(self):
         """Carlos 11/20: "are you accounting for the tier in the revenue as well?" -- a port line earns its
@@ -395,6 +423,25 @@ class Lines(unittest.TestCase):
         self.assertNotIn('class="now"', ROL.tier_box((week, (2, 3))))      # below the first band: nothing marked
         self.assertNotIn('class="now"', ROL.tier_box(None))                # the bands alone when the count is unavailable
         self.assertIn('<td class="now">Tier 3</td>', ROL.tier_box((week, (8, 20))))
+
+
+class CrossCheck(unittest.TestCase):
+    def test_rep_keys_and_the_deposit_sheet(self):
+        self.assertEqual(ROL._rep_key("Jacob Isaiah Ortega"), ("jacob", "ortega"))
+        self.assertEqual(ROL._rep_key("JACOB ORTEGA"), ("jacob", "ortega"))
+        self.assertEqual(ROL._rep_key("Gary Van Whitaker II"), ("gary", "whitaker"))
+        cs = [["Pick week ending →", "11.15"], [""], ["", "", "", "", "", "", "REP Name", "Sale Date", "Activation Date",
+              "Description", "Product", "Description Detail", "Customer Name", "Total $ to ICD", "Commission"],
+              ["", "", "", "", "", "", "Jacob Isaiah Ortega", "10/30/2026", "11/8/2026", "", "Port Line", "", "X", "$213.00", "$85.20"],
+              ["", "", "", "", "", "", "Jacob Isaiah Ortega", "10/30/2026", "11/8/2026", "", "AT&T Unlimited Extra", "", "X", "$10.00", "$4.00"],
+              ["", "", "", "", "", "", "Jacob Isaiah Ortega", "", "", "", "", "", "", "", "$89.20"],          # his subtotal row
+              ["", "", "", "", "", "", "Nicholas Smedra", "11/1/2026", "11/9/2026", "", "Port Line", "", "Y", "$1,213.00", ""]]
+        book = mock.Mock()
+        book.worksheet.return_value.get_all_values.return_value = cs
+        with mock.patch("automations.recruiting_report.fill.open_by_key", return_value=book):
+            dep = ROL.deposit_by_rep(dt.date(2026, 11, 15), log=lambda *_a: None)
+        book.worksheet.assert_called_once_with("CS 11.15")
+        self.assertEqual(dep, {("jacob", "ortega"): 223.0, ("nicholas", "smedra"): 1213.0})
 
 
 class SoldUnder(unittest.TestCase):

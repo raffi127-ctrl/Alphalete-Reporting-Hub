@@ -70,7 +70,15 @@ cl.DD Date (a late Sunday post can roll a week: Sundararaghandran's 11/8
 lines paid on CS 11.15); an unpaid one under the Mon..Sun week of its
 activation day. Tier weeks stay Smart Circle's Sun..Sat (a different rule).
 
-Which week a line is paid in (Carlos 11/20 night: "Put them wherever Sara
+TABLEAU'S POSTED DATE ONLY (Carlos 11/20 night, after the cross-check: "if
+its less complex we could just use the posted date on tableau"): a line is in
+an activated week only once Tableau has posted it (DTR Active Date, else
+spe.dtr Posted Date; the deposit's own cl.DD Date when it has been paid);
+SaraPlus no longer places anything. A line SaraPlus shows Active that
+Tableau has not posted reads "Active (not posted)" in the Pending band. The
+paragraph below is the 11/20 evening rule this replaced.
+
+(Superseded) Which week a line is paid in (Carlos 11/20 night: "Put them wherever Sara
 shows that they activated under. Once the posted date comes up, you move them
 if needed"): Tableau's DTR Active Date once Tableau has posted the line;
 before that, a line SaraPlus already shows Active goes in the week SaraPlus
@@ -299,6 +307,25 @@ def sara_activations(log=print) -> Dict[tuple, dt.date]:
 
 
 DEAD_STATUSES = ("Cancelled", "Disconnected")
+REPLACED = ("__replaced__", "")       # sara[REPLACED] = numbers the export carries on 2+ orders
+
+
+def mark_replaced(cols, rows: Sequence, sara: dict) -> dict:
+    """Add the set of numbers the export carries on two or more orders, so a
+    SaraPlus activation only places the line on its own order there."""
+    import collections
+    from automations.nds_metrics.run import _c
+    if not sara:
+        return sara
+    i_tn, i_spm = cols.find("spe.tn"), cols.find("sp.spm number", "spm number")
+    by_tn = collections.defaultdict(set)
+    for r in rows:
+        k = line_key(_c(cols, r, i_spm) if i_spm is not None else "", _c(cols, r, i_tn) if i_tn is not None else "")
+        if k[1]:
+            by_tn[k[1]].add(k[0])
+    out = dict(sara)
+    out[REPLACED] = {tn for tn, orders in by_tn.items() if len(orders) > 1}
+    return out
 
 
 def placed(status: str, tableau_act: Optional[dt.date], sara: Optional[dict], spm, tn):
@@ -307,7 +334,12 @@ def placed(status: str, tableau_act: Optional[dt.date], sara: Optional[dict], sp
     SaraPlus's activation day); else as it was. A dead line is never revived."""
     if tableau_act is not None or status == "Posted" or status in DEAD_STATUSES or not sara:
         return status, tableau_act
-    d = sara.get(line_key(spm, tn)) or (sara.get(line_key("", tn)) if tn else None)
+    d = sara.get(line_key(spm, tn))
+    if d is None and tn and line_key("", tn)[1] not in sara.get(REPLACED, ()):
+        # by number: the export's order id is not always SaraPlus's (SPM orders), so a number
+        # alone places a line -- unless the export carries that number on two orders (re-placed:
+        # Sundararaghandran's 858-722-3126, 10/30 -> 11/12), where only the exact order counts
+        d = sara.get(line_key("", tn))
     return ("Active", d) if d is not None else (status, tableau_act)
 
 
@@ -643,6 +675,7 @@ def _status(dtr: str, spe: str) -> str:
 # stays "Disconnected", $0, at the bottom. One that disconnected LATER was
 # paid: "Activated (Disconnected)", green, in its activated week.
 ACT_DISC = "Activated (Disconnected)"
+NOT_POSTED = "Active (not posted)"
 PAID_STATUSES = ("Posted", "Active", ACT_DISC)
 
 
@@ -677,6 +710,7 @@ def _cols_index(cols) -> dict:
         "prod": cols.find("product type (broken out)", "product type"),
         "inst": cols.find("spe.install date", "install date"),
         "sdate": cols.find("status date"),
+        "posted": cols.find("spe.dtr posted date", "posted date"),
         "dd": cols.find("cl.dd date"),
     }
 
@@ -723,8 +757,11 @@ def line_facts(cols, r, I: dict, rates: dict, tab=None, sara=None, tier_by_line=
     Revenue (line_value + the tier bonus; $0 cancelled / unpaid)."""
     from automations.nds_metrics.run import _c, _parse_date
     g = lambda k: _c(cols, r, I[k]) if I.get(k) is not None else ""   # noqa: E731
-    status, act = placed(_status(g("dtr"), g("spe")), _parse_date(g("act")), sara, g("spm"), g("tn"))
-    ever = act is not None or status in ("Posted", "Active")
+    status, act = placed(_status(g("dtr"), g("spe")), _parse_date(g("act")) or _parse_date(g("posted")),
+                         sara, g("spm"), g("tn"))
+    if status == "Active" and act is None:
+        status = NOT_POSTED               # SaraPlus says active, Tableau has not posted it: Pending
+    ever = act is not None or status == "Posted"
     if status == "Disconnected" and act is not None:
         disc = _parse_date(g("sdate"))
         if g("dd") or disc is None or _deposit_week(act) != _deposit_week(disc):
@@ -778,6 +815,7 @@ def rep_lines(cols, crew: Sequence, today: dt.date, log=print, tab=None,
             "Zip Code": g(r, "zip"),
             "Tier": tier_name_for(f["tier"]),
             "DD Week": f["dd"],               # the deposit that paid it (cl.DD Date, a Sunday), if any
+            "Order": g(r, "spm"),             # not shown; the cross-check matches orders by it
         }
         line.update(payouts(f["revenue"]))
         out.setdefault(rep, []).append(line)
@@ -807,7 +845,7 @@ def group_weeks(lines: List[dict]):
     weeks: dict = {}
     pdc: List[dict] = []
     for ln in lines:
-        d = (ln.get("DD Week") or _eff(ln)) if ln["Status"] in PAID_STATUSES else None
+        d = (ln.get("DD Week") or ln.get("Activation Date")) if ln["Status"] in PAID_STATUSES else None
         if d is not None:
             weeks.setdefault(pay_week(d), []).append(ln)
         else:
@@ -1011,17 +1049,18 @@ def compare_sara_tableau(cols, crew: Sequence, sara: dict, log=print) -> dict:
             if len(examples) < 4:
                 examples.append("%s %s sara %d/%d tableau %d/%d" % (_c(cols, r, i_rep).split(" ")[0], tn[-4:],
                                                                    d.month, d.day, t.month, t.day))
-    waiting = sum(1 for k in (sara or {}) if k[0])
+    waiting = sum(1 for k in (sara or {}) if k[0] and k != REPLACED)
     log(f"[nds] rep order log: sara vs tableau: {both} line(s) dated by both, {moved} in a different "
         f"pay week{(' (' + '; '.join(examples) + ')') if examples else ''}; {waiting} SaraPlus-active line(s) seen")
     return {"both": both, "moved": moved}
 
 
-def build(cols, crew: Sequence, today: dt.date, out_dir: Path, reps: Optional[Sequence[str]] = None,
-          log=print) -> Dict[str, Path]:
-    """One PNG per rep (every rep with a wireless line on the log, or only
-    `reps` -- case-blind substrings). -> {rep: png}."""
-    from automations.uploaded.order_log import _md
+def picture_lines(cols, crew: Sequence, today: dt.date, log=print) -> dict:
+    """Everything the pictures are drawn from, before any drawing: the
+    sold-under moves, the tab's plans, SaraPlus's activation days, each port
+    line's tier -> {per_rep, crew, owner, logins, tab, sara, dbl, tier_by_line}.
+    build() draws it; cross_check() compares it with the morning report and
+    the deposit."""
     owner = getattr(cols, "owner_lines", None) or crew
     logins = owner                         # the export as Smart Circle sees it: one rep per LOGIN
     try:                                   # lines rung under someone else's login go to the real seller
@@ -1033,8 +1072,7 @@ def build(cols, crew: Sequence, today: dt.date, out_dir: Path, reps: Optional[Se
     except Exception as e:  # noqa: BLE001 -- the pictures still ship, under the logins
         log(f"[nds] rep order log: NOTE sold-under moves not applied ({type(e).__name__}: {str(e)[:100]})")
     tab = TabPlans.read(log=log)           # the plan / device of a line the export has none for yet
-    sara = sara_activations(log=log)       # where SaraPlus shows a line activating (Tableau not posted yet)
-    compare_sara_tableau(cols, crew, sara, log=log)
+    sara = {}                              # 11/20 night: Tableau's posted date only (no SaraPlus placing)
     dbl = double_days(log=log)
     try:                                   # each port line's tier bonus, at its LOGIN's tier
         tier_by_line = line_tier_rates(cols, logins, log=log, dbl=dbl)
@@ -1045,6 +1083,18 @@ def build(cols, crew: Sequence, today: dt.date, out_dir: Path, reps: Optional[Se
     if tab is not None and (tab.filled or tab.missed):
         log(f"[nds] rep order log: the export had no Package / Device on some line(s): "
             f"{tab.filled} cell(s) filled from the NDS Order Log tab, {tab.missed} still blank")
+    return {"per_rep": per_rep, "crew": crew, "owner": owner, "logins": logins, "tab": tab, "sara": sara,
+            "dbl": dbl, "tier_by_line": tier_by_line}
+
+
+def build(cols, crew: Sequence, today: dt.date, out_dir: Path, reps: Optional[Sequence[str]] = None,
+          log=print) -> Dict[str, Path]:
+    """One PNG per rep (every rep with a wireless line on the log, or only
+    `reps` -- case-blind substrings). -> {rep: png}."""
+    from automations.uploaded.order_log import _md
+    P = picture_lines(cols, crew, today, log=log)
+    per_rep, crew, owner, logins = P["per_rep"], P["crew"], P["owner"], P["logins"]
+    tab, sara, dbl, tier_by_line = P["tab"], P["sara"], P["dbl"], P["tier_by_line"]
     wes, sales = weekly_sales(cols, crew, today, tab=tab, tier_by_line=tier_by_line, sara=sara)
     from automations.nds_metrics import revenue_extras as RX
     from automations.nds_metrics.activation_by_week import week_ending
@@ -1094,3 +1144,141 @@ def build(cols, crew: Sequence, today: dt.date, out_dir: Path, reps: Optional[Se
             f"{' '.join('%d(%s)' % (orders[we][0], orders[we][1].replace('Tier ', 'T')) for we in wes) if orders is not None else 'n/a'}"
             f" -> {png.name}")
     return out
+
+
+# ------------------------------------------------------------- cross-check ----
+# Carlos 2026-11-20: "does this match the activation revenue report that you
+# send every morning? Cross-reference everything." Three sources for the last
+# closed Mon-Sun week -- the DEPOSIT (the board's 'CS m.d' commission sheet,
+# real sellers after the Payroll Transfers moves), the morning ACTIVATION
+# REVENUE overview (line_revenue: SaraPlus logins, SaraPlus activation days)
+# and these PICTURES -- plus this week for the last two. Read-only: logs the
+# comparison, writes nothing, sends nothing.
+#   lucy rerun nds_metrics --rep-check
+
+def _rep_key(name: str) -> tuple:
+    w = [x for x in _name_words(name) if x not in ("jr", "sr", "ii", "iii", "iv")]
+    return (w[0], w[-1]) if w else ("", "")
+
+
+def deposit_by_rep(week_ending: dt.date, log=print) -> Optional[Dict[tuple, float]]:
+    """{rep key: $ to ICD} off the board's 'CS m.d' tab for that week ending
+    (columns found by the header row: REP Name / Total $ to ICD); None when
+    the tab is missing (the week's payroll has not run)."""
+    from automations.recruiting_report.fill import _retry, open_by_key
+    from automations.vantura_payroll import run as VP
+    title = "CS %d.%d" % (week_ending.month, week_ending.day)
+    try:
+        vals = _retry(lambda: open_by_key(VP.SHEET_ID).worksheet(title).get_all_values()) or []
+    except Exception as e:  # noqa: BLE001
+        log(f"[nds] rep check: no {title!r} commission sheet ({type(e).__name__})")
+        return None
+    hdr_i = ir = im = None
+    for i, row in enumerate(vals):
+        cells = [str(c).strip().lower() for c in row]
+        if "rep name" in cells and any("to icd" in c for c in cells):
+            hdr_i, ir = i, cells.index("rep name")
+            im = [k for k, c in enumerate(cells) if "to icd" in c][0]
+            break
+    if hdr_i is None:
+        log(f"[nds] rep check: {title!r} has no REP Name / $ to ICD header")
+        return None
+    out: Dict[tuple, float] = {}
+    for row in vals[hdr_i + 1:]:
+        rep = str(row[ir]).strip() if ir < len(row) else ""
+        amt = str(row[im]).strip() if im < len(row) else ""
+        if not rep or not amt or "total" in rep.lower():
+            continue
+        try:
+            v = float(amt.replace("$", "").replace(",", ""))
+        except ValueError:
+            continue
+        out[_rep_key(rep)] = out.get(_rep_key(rep), 0.0) + v
+    return out
+
+
+def cross_check(cols, crew: Sequence, today: dt.date, log=print) -> dict:
+    """Log, per rep: the deposit / the morning report / the pictures for the
+    last closed week, and the morning report / the pictures for this week;
+    then every ORDER whose $ differs between the morning report and the
+    pictures, with each side's activation day. -> the numbers, for tests."""
+    import collections
+    from automations.nds_metrics import line_revenue as LR
+    from automations.nds_metrics.run import load_soh
+    quiet = lambda *_a, **_k: None   # noqa: E731
+    this_mon = _deposit_week(today)
+    last_mon = this_mon - dt.timedelta(days=7)
+    weeks = {"last": last_mon, "this": this_mon}
+    names: Dict[tuple, str] = {}
+    # 1. the pictures, per rep and pay week, and per order
+    P = picture_lines(cols, crew, today, log=quiet)
+    pic = collections.defaultdict(float)                 # (rep key, monday) -> $
+    pic_orders = collections.defaultdict(float)          # (rep key, monday, order) -> $
+    pic_act: Dict[tuple, str] = {}
+    for rep, lines in P["per_rep"].items():
+        k = _rep_key(rep)
+        names.setdefault(k, rep)
+        wk, _pdc = group_weeks(lines)
+        for (mon, _sun, _fri), lns in wk.items():
+            if mon not in weeks.values():
+                continue
+            for ln in lns:
+                pic[(k, mon)] += float(ln.get("Est. Revenue") or 0)
+                o = (k, mon, str(ln.get("Order") or "").upper())
+                pic_orders[o] += float(ln.get("Est. Revenue") or 0)
+                d = ln.get("Activation Date")
+                pic_act[o] = d.strftime("%m/%d") if d else ""
+    # 2. the morning Activation Revenue overview, recomputed now
+    rev = collections.defaultdict(float)
+    rev_orders = collections.defaultdict(float)
+    rev_act: Dict[tuple, str] = {}
+    try:
+        soh = load_soh(log=quiet)
+        res = LR.prepare(soh, today, log=quiet, save=False, tableau=(cols, P["owner"])) if soh else None
+    except Exception as e:  # noqa: BLE001
+        res = None
+        log(f"[nds] rep check: NOTE the activation revenue overview could not run ({type(e).__name__}: {str(e)[:100]})")
+    if res:
+        for d in res["detail"]:
+            b = str(d.get("bucket") or "")
+            if not b.startswith("posted_"):
+                continue
+            which = b.split("_")[1].split("+")[0]
+            if which not in weeks:
+                continue
+            k = _rep_key(d["rep"])
+            names.setdefault(k, d["rep"])
+            amt = sum(float(d.get(x) or 0) for x in ("base", "addon", "tier", "bundle"))
+            rev[(k, weeks[which])] += amt
+            o = (k, weeks[which], str(d.get("order_id") or "").upper())
+            rev_orders[o] += amt
+            rev_act[o] = (d.get("activation") or "")[5:].replace("-", "/")
+    # 3. the deposit for the last closed week
+    dep = deposit_by_rep(last_mon + dt.timedelta(days=6), log=log) or {}
+    # report
+    keys = sorted({k for k, _m in list(pic) + list(rev)} | set(dep), key=lambda k: names.get(k, " ".join(k)))
+    log("[nds] rep check: week %s-%s (deposit CS %d.%d) and this week %s-" % (
+        last_mon.strftime("%m/%d"), (last_mon + dt.timedelta(days=6)).strftime("%m/%d"),
+        (last_mon + dt.timedelta(days=6)).month, (last_mon + dt.timedelta(days=6)).day, this_mon.strftime("%m/%d")))
+    log("[nds] rep check: rep | LAST deposit / morning / picture | THIS morning / picture")
+    rows = []
+    for k in keys:
+        r = (names.get(k, " ".join(k)), dep.get(k, 0.0), rev.get((k, last_mon), 0.0), pic.get((k, last_mon), 0.0),
+             rev.get((k, this_mon), 0.0), pic.get((k, this_mon), 0.0))
+        if not any(r[1:]):
+            continue
+        rows.append(r)
+        flag = "" if abs(r[1] - r[3]) < 1 and abs(r[2] - r[3]) < 1 and abs(r[4] - r[5]) < 1 else "  <-- differs"
+        log("[nds] rep check: %-26s | %6.0f / %6.0f / %6.0f | %6.0f / %6.0f%s" % ((r[0][:26],) + r[1:] + (flag,)))
+    tot = [sum(r[i] for r in rows) for i in range(1, 6)]
+    log("[nds] rep check: %-26s | %6.0f / %6.0f / %6.0f | %6.0f / %6.0f" % (("TOTAL",) + tuple(tot)))
+    diffs = []
+    for o in sorted(set(pic_orders) | set(rev_orders), key=lambda o: (names.get(o[0], ""), o[1], o[2])):
+        a, b = rev_orders.get(o, 0.0), pic_orders.get(o, 0.0)
+        if abs(a - b) >= 1:
+            diffs.append(o)
+            log("[nds] rep check:   %s wk %s order %s: morning $%.0f (act %s) vs picture $%.0f (act %s)" % (
+                names.get(o[0], " ".join(o[0]))[:22], o[1].strftime("%m/%d"), o[2] or "?", a,
+                rev_act.get(o, "-"), b, pic_act.get(o, "-")))
+    log(f"[nds] rep check: {len(diffs)} order-week(s) differ between the morning report and the pictures")
+    return {"rows": rows, "totals": tot, "order_diffs": len(diffs)}
