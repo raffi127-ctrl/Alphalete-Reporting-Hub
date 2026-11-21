@@ -1,4 +1,4 @@
-"""Paste Lucy Transcriber's two Slack keys into hidden prompts.
+"""Paste Lucy Pitch Auditor's two Slack keys into hidden prompts.
 
     python -m automations.lucy_transcriber.set_tokens
 
@@ -46,9 +46,9 @@ def ship_to_lucy4() -> bool:
     for p in (C.BOT_TOKEN_FILE, C.APP_TOKEN_FILE):
         subprocess.run(["scp", "-q", "-o", "BatchMode=yes", str(p),
                         "{}:{}/{}".format(LUCY4, REMOTE_CFG, p.name)], check=True)
-    subprocess.run(ssh + ["chmod 600 ~/{0}/transcriber-*-token; "
-                          "launchctl kickstart -k gui/$(id -u)/com.alphalete.lucy-transcriber "
-                          "2>/dev/null || true".format(REMOTE_CFG)], check=True)
+    subprocess.run(ssh + ["chmod 600 ~/{0}/transcriber-*-token".format(REMOTE_CFG)], check=True)
+    subprocess.run(ssh + ["launchctl kickstart -k gui/$(id -u)/com.alphalete.lucy-transcriber "
+                          "2>/dev/null || true"], check=True)
     return True
 
 

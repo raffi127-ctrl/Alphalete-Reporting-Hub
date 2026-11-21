@@ -1420,18 +1420,18 @@ AUTOMATED_REPORTS = [
     },
     {
         "id": "lucy-transcriber",
-        "name": "Lucy Transcriber — Pitch Recordings (24/7)",
+        "name": "Lucy Pitch Auditor (24/7)",
         "creator": "Raf & Claude",
         "emoji": "📝",
         # Amber = an ongoing self-running job, like the other 24/7 Ops cards.
         "color": "#F59E0B",
         "category": "📲 Ops",
         "assignees": ["Lucy 4"],
-        "description": "Reps DM the Lucy Transcriber bot a recording of their door pitch → she DMs back who said what (🟦 Rep / 🟧 Customer) and the talk-time split, and sends Raf a copy. His feedback replies are saved so she can learn what closes deals.",
+        "description": "Reps DM the Lucy Pitch Auditor bot a recording of their door pitch → she DMs back who said what (🟦 Rep / 🟧 Customer) and the talk-time split, and sends Raf a copy. His feedback replies are saved so she can learn what closes deals.",
         "breakdown": (
             "WHAT IT DOES\n"
             "**•** A rep records their pitch (Voice Memos or a Slack audio clip) "
-            "and **DMs it to Lucy Transcriber** — same idea as the 2nd-round "
+            "and **DMs it to Lucy Pitch Auditor** — same idea as the 2nd-round "
             "auditor bot.\n"
             "**•** She answers \"Got it\" right away, and a minute or two later "
             "replies with the transcript — every line marked 🟦 **Rep** or "

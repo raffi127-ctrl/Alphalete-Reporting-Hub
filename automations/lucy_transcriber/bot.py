@@ -1,8 +1,10 @@
-"""Lucy Transcriber -- the bot reps DM their pitch recordings to.
+"""Lucy Pitch Auditor -- the bot reps DM their pitch recordings to.
+
+(Megan named it 2026-11-21; the code folder kept its first name, lucy_transcriber.)
 
 Megan 2026-11-21: "a bot, not a channel -- like the 2nd round auditor bot."
 
-  1. A rep DMs Lucy Transcriber a recording (Voice Memo, Slack audio clip,
+  1. A rep DMs Lucy Pitch Auditor a recording (Voice Memo, Slack audio clip,
      any audio/video file). She answers "Got it" in that DM right away.
   2. One recording at a time, on this machine: Whisper hears the words,
      Claude marks each line Rep or Customer (transcribe.py).
@@ -40,7 +42,7 @@ from automations.lucy_transcriber import render as R
 from automations.lucy_transcriber import transcribe as T
 
 REPORT_ID = "lucy_transcriber"
-REPORT_NAME = "Lucy Transcriber"
+REPORT_NAME = "Lucy Pitch Auditor"
 HELP_EVERY_S = 6 * 3600
 RETRY_AFTER_S = 60
 
@@ -360,7 +362,7 @@ def run() -> int:
     from slack_sdk.socket_mode.builtin import SocketModeClient
     webc = web(bt)
     me = webc.auth_test()
-    _log("Lucy Transcriber is {} ({})".format(me.get("user"), me.get("user_id")))
+    _log("Lucy Pitch Auditor is {} ({})".format(me.get("user"), me.get("user_id")))
     _STATE = load_state()
     threading.Thread(target=worker, args=(webc, bt, _STATE), daemon=True).start()
     client = SocketModeClient(app_token=at, web_client=webc)

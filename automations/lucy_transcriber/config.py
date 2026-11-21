@@ -1,4 +1,4 @@
-"""Who Lucy Transcriber is, who gets copies, and what it keeps."""
+"""Who Lucy Pitch Auditor is, who gets copies, and what it keeps."""
 from __future__ import annotations
 
 import os

@@ -1,8 +1,8 @@
 {
   "display_information": {
-    "name": "Lucy Transcriber",
+    "name": "Lucy Pitch Auditor",
     "description": "Send me a recording of your pitch. I send back who said what.",
-    "long_description": "DM Lucy Transcriber a recording of a door pitch (a Voice Memo or a Slack audio clip). A minute or two later she replies with the whole conversation, every line marked Rep or Customer, plus how much each side talked. A copy goes to your coach so they can give you feedback.",
+    "long_description": "DM Lucy Pitch Auditor a recording of a door pitch (a Voice Memo or a Slack audio clip). A minute or two later she replies with the whole conversation, every line marked Rep or Customer, plus how much each side talked. A copy goes to your coach so they can give you feedback.",
     "background_color": "#1F2A44"
   },
   "features": {
@@ -12,7 +12,7 @@
       "messages_tab_read_only_enabled": false
     },
     "bot_user": {
-      "display_name": "Lucy Transcriber",
+      "display_name": "Lucy Pitch Auditor",
       "always_online": true
     }
   },
