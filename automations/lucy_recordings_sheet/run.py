@@ -61,8 +61,13 @@ CT = ZoneInfo("America/Chicago")
 FIRST_FULL_INTERVIEW_MONTH = "2026-11"
 
 TAB_OWNER, TAB_REP = "By Owner", "By Rep"
+# Weeks get their OWN tabs + "Week" dropdown (Eve 2026-11-21: months and weeks
+# in one dropdown was "super confuso"). Same calc tabs underneath.
+TAB_WEEK_OWNER, TAB_WEEK_REP = "Weekly by Owner", "Weekly by Rep"
+VISIBLE_TABS = (TAB_OWNER, TAB_REP, TAB_WEEK_OWNER, TAB_WEEK_REP)
 CALC_OWNER, CALC_REP, CALC_TOTALS, MONTHS = "calc owners", "calc reps", "calc totals", "months"
-HIDDEN_TABS = (CALC_OWNER, CALC_REP, CALC_TOTALS, MONTHS)
+WEEKS = "weeks"
+HIDDEN_TABS = (CALC_OWNER, CALC_REP, CALC_TOTALS, MONTHS, WEEKS)
 # First (Spanish) sandbox layout -> renamed in place by --restyle.
 OLD_TAB_NAMES = {"Por dueño": TAB_OWNER, "Por rep": TAB_REP, "calc dueños": CALC_OWNER,
                  "meses": MONTHS}
@@ -600,7 +605,6 @@ GOOD, MID, LOW = _rgb("C8E6C9"), _rgb("FFE9A8"), _rgb("F6C1C1")
 # gap, table header, data.
 R_TITLE, R_PICK, R_CARD_LBL, R_CARD_VAL, R_HDR, R_DATA = 0, 1, 3, 4, 6, 7
 MONTH_CELL = "$B$2"
-PICK_LABEL = "Month or week"
 LAST_ROW = 400
 
 # Sheets turns a picked "November 2026" into a DATE, which never equals the
@@ -616,6 +620,7 @@ LAYOUTS = {
         "calc": CALC_OWNER, "cols": "B2:F", "owner_col": "B2:B", "sort": 4, "then": 2,
         "pct": 3, "score": 4, "widths": [250, 150, 150, 150, 150],
         "other": TAB_REP, "other_label": "View by Rep  →",
+        "kind": "owner", "pick": "Month", "list": MONTHS,
         "cards": [("RECORDINGS", 2, "0"), ("2ND ROUNDS DONE", 3, "0"),
                   ("% RECORDED", 4, "0%"), ("AVG SCORE", 5, "0.0")],
     },
@@ -624,10 +629,13 @@ LAYOUTS = {
         "calc": CALC_REP, "cols": "B2:E", "owner_col": "C2:C", "sort": 3,
         "pct": None, "score": 3, "widths": [230, 230, 150, 150],
         "other": TAB_OWNER, "other_label": "←  View by Owner",
+        "kind": "rep", "pick": "Month", "list": MONTHS,
         "cards": [("RECORDINGS", 2, "0"), ("REPS RECORDING", 6, "0"),
                   ("AVG SCORE", 5, "0.0")],
     },
 }
+LAYOUTS[TAB_WEEK_OWNER] = dict(LAYOUTS[TAB_OWNER], pick="Week", list=WEEKS, other=TAB_WEEK_REP)
+LAYOUTS[TAB_WEEK_REP] = dict(LAYOUTS[TAB_REP], pick="Week", list=WEEKS, other=TAB_WEEK_OWNER)
 
 
 def table_formula(lay: dict) -> str:
@@ -672,7 +680,7 @@ def _ensure_tabs(S, ssid) -> dict:
                 "properties": {"sheetId": p["sheetId"], "title": title},
                 "fields": "title"}})
         have[title] = p["sheetId"]
-    for i, t in enumerate((TAB_OWNER, TAB_REP) + HIDDEN_TABS):
+    for i, t in enumerate(VISIBLE_TABS + HIDDEN_TABS):
         if t not in have:
             reqs.append({"addSheet": {"properties": {"title": t, "index": i,
                                                      "hidden": t in HIDDEN_TABS}}})
@@ -706,7 +714,9 @@ def restyle(S, ssid):
             "fields": "gridProperties.frozenRowCount"}})
     S.post("%s/%s:batchUpdate" % (SHEETS, ssid), json={"requests": wipe}).raise_for_status()
 
-    this_month = month_label(dt.datetime.now(CT).strftime("%Y-%m"))
+    now = dt.datetime.now(CT)
+    start = {MONTHS: month_label(now.strftime("%Y-%m")),
+             WEEKS: week_key_label(week_of(now.date().isoformat()))}
     vals, reqs = [], []
     for tab, lay in LAYOUTS.items():
         sid, ncol = ids[tab], len(lay["hdr"])
@@ -716,7 +726,7 @@ def restyle(S, ssid):
             # A link to the other tab, top right - the bottom tab bar is easy to miss.
             {"range": "%s!%s1" % (_q(tab), last), "values": [[
                 '=HYPERLINK("#gid=%d", "%s")' % (ids[lay["other"]], lay["other_label"])]]},
-            {"range": "%s!A2:B2" % _q(tab), "values": [[PICK_LABEL, this_month]]},
+            {"range": "%s!A2:B2" % _q(tab), "values": [[lay["pick"], start[lay["list"]]]]},
             {"range": "%s!A4" % _q(tab), "values": [[c[0] for c in lay["cards"]]]},
             {"range": "%s!A5" % _q(tab), "values": [[card_formula(c[1]) for c in lay["cards"]]]},
             {"range": "%s!A7" % _q(tab), "values": [lay["hdr"]]},
@@ -761,7 +771,7 @@ def restyle(S, ssid):
                                   for side in ("top", "bottom", "left", "right")}}},
             {"setDataValidation": {"range": _rng(sid, R_PICK, R_PICK + 1, 1, 2), "rule": {
                 "condition": {"type": "ONE_OF_RANGE",
-                              "values": [{"userEnteredValue": "=%s!A1:A" % _q(MONTHS)}]},
+                              "values": [{"userEnteredValue": "=%s!A1:A" % _q(lay["list"])}]},
                 "showCustomUi": True, "strict": True}}},
             {"mergeCells": {"range": _rng(sid, R_PICK, R_PICK + 1, 2, ncol), "mergeType": "MERGE_ALL"}},
             _fmt(sid, R_PICK, R_PICK + 1, 2, ncol,
@@ -794,7 +804,7 @@ def restyle(S, ssid):
             # Data: names left (padded), numbers centered.
             _fmt(sid, R_DATA, LAST_ROW, 0, ncol, {"padding": {"left": 10}},
                  "userEnteredFormat.padding"),
-            _fmt(sid, R_DATA, LAST_ROW, 1 if tab == TAB_OWNER else 2, ncol,
+            _fmt(sid, R_DATA, LAST_ROW, 1 if lay["kind"] == "owner" else 2, ncol,
                  {"horizontalAlignment": "CENTER"}, "userEnteredFormat.horizontalAlignment"),
             _fmt(sid, R_DATA, LAST_ROW, lay["score"], lay["score"] + 1,
                  {"numberFormat": {"type": "NUMBER", "pattern": "0.0"}},
@@ -839,13 +849,13 @@ def restyle(S, ssid):
         # Conditional formats - the first matching rule wins, so in order:
         # the "no owner" row (gray), score colors, % gradient.
         data = _rng(sid, R_DATA, LAST_ROW, 0, ncol)
-        owner_letter = "A" if tab == TAB_OWNER else "B"
+        owner_letter = "A" if lay["kind"] == "owner" else "B"
         reqs.append({"addConditionalFormatRule": {"rule": {"ranges": [data], "booleanRule": {
             "condition": {"type": "CUSTOM_FORMULA", "values": [
                 {"userEnteredValue": '=$%s%d="%s"' % (owner_letter, R_DATA + 1, NO_OWNER)}]},
             "format": {"backgroundColor": NO_OWNER_BG,
                        "textFormat": {"italic": True, "foregroundColor": MUTED}}}}}})
-        if tab == TAB_REP:      # an owner Lucy guessed ("... (auto)") reads as a guess
+        if lay["kind"] == "rep":      # an owner Lucy guessed ("... (auto)") reads as a guess
             reqs.append({"addConditionalFormatRule": {"rule": {
                 "ranges": [_rng(sid, R_DATA, LAST_ROW, 1, 2)], "booleanRule": {
                     "condition": {"type": "CUSTOM_FORMULA", "values": [
@@ -880,7 +890,7 @@ def restyle(S, ssid):
 def create_sheet(S, share: list) -> str:
     body = {"properties": {"title": "LUCY 2nd Round Recordings (TEST)"},
             "sheets": [{"properties": {"title": t, "hidden": t in HIDDEN_TABS}}
-                       for t in (TAB_OWNER, TAB_REP) + HIDDEN_TABS]}
+                       for t in VISIBLE_TABS + HIDDEN_TABS]}
     r = S.post(SHEETS, json=body)
     r.raise_for_status()
     ssid = r.json()["spreadsheetId"]
@@ -893,8 +903,11 @@ def create_sheet(S, share: list) -> str:
     return ssid
 
 
-def write(S, ssid, owner_rows, rep_rows, totals, month_list):
+def write(S, ssid, owner_rows, rep_rows, totals, month_list, week_list=()):
     stamp = dt.datetime.now(CT).strftime("%b %d, %Y %I:%M %p CT")
+    have = {sh["properties"]["title"] for sh in _sheet_meta(S, ssid)}
+    if not all(t in have for t in VISIBLE_TABS):
+        restyle(S, ssid)        # a new visible tab (the weekly ones) needs its layout
     ids = _ensure_tabs(S, ssid)
     for tab in HIDDEN_TABS:
         if tab in ids:
@@ -910,14 +923,16 @@ def write(S, ssid, owner_rows, rep_rows, totals, month_list):
                      "Reps Recording"]] + totals},
         {"range": "%s!A1" % _q(MONTHS), "values": [[m] for m in month_list]},
     ]
+    if week_list:
+        data.append({"range": "%s!A1" % _q(WEEKS), "values": [[w] for w in week_list]})
     note = ("Updated %s  ·  Recordings + scores: LUCY 2nd round audit  ·  "
             "2nd rounds done: ApplicantStream (Second Interviews Showed Up)" % stamp)
     for tab in LAYOUTS:
         data.append({"range": "%s!C2" % _q(tab), "values": [[note]]})
-        data.append({"range": "%s!A2" % _q(tab), "values": [[PICK_LABEL]]})
+        data.append({"range": "%s!A2" % _q(tab), "values": [[LAYOUTS[tab]["pick"]]]})
     S.post("%s/%s/values:batchUpdate" % (SHEETS, ssid),
            json={"valueInputOption": "RAW", "data": data}).raise_for_status()
-    log("wrote %d owner row(s), %d rep row(s), %d month/week(s)"
+    log("wrote %d owner row(s), %d rep row(s), %d month(s)"
         % (len(owner_rows), len(rep_rows), len(month_list)))
 
 
@@ -1390,12 +1405,12 @@ def main(argv=None) -> int:
         ", ".join("%s -> %s [%s]" % (export["names"].get(u, u), o, src)
                   for u, (o, src) in sorted(guesses.items()))))
     owner_rows, rep_rows, totals, month_list, unmatched = build(export, done, owner_of, guesses)
-    # Same picker, weeks under the months (Eve 2026-11-20).
+    # Weeks for the Weekly tabs (Eve 2026-11-20/21), own dropdown.
     wo, wr, wt, week_list, _u = build(export, done, owner_of, guesses, period=week_of,
                                       label=week_key_label,
                                       full=lambda k: k >= FIRST_FULL_INTERVIEW_WEEK)
     # Keep the sheet's own copies; the email builds its week separately.
-    sheet_rows = (owner_rows + wo, rep_rows + wr, totals + wt, month_list + week_list)
+    sheet_rows = (owner_rows + wo, rep_rows + wr, totals + wt, month_list, week_list)
     ns_weeks = closed_weeks(dt.datetime.now(CT).date())
     ns_table, ns_seen = new_starts_table(
         load_new_starts(S), ns_weeks, export["owners"],
