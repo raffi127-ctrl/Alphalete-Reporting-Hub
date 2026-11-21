@@ -319,6 +319,29 @@ class Bot(unittest.TestCase):
                          [("Raf", "Ask for the husband's number next time")])
         self.assertEqual(w.reactions[0]["name"], R.SAVED)
 
+    def test_only_rafs_feedback_teaches_lucy(self):
+        w = FakeWeb()
+        B.process(w, "xoxb-x", _rec_ev(), self.state)
+        B.on_pick(w, _pick("100.0", "submit", shown=["UUP"]), self.state)
+        raf_parent = [p for p in w.posts if p["channel"] == "D-" + RAF][0]
+        up_parent = [p for p in w.posts if p["channel"] == "D-UUP"][0]
+        # the upline's copy has no feedback ask; Raf's does
+        self.assertIn("feedback", self._to(w, RAF)[0]["initial_comment"])
+        self.assertNotIn("feedback", self._to(w, "UUP")[0]["initial_comment"])
+        base = {"type": "message", "channel_type": "im"}
+        B.on_event(w, dict(base, channel="D-UUP", ts="301.0", thread_ts=up_parent["_ts"],
+                           user="UUP", text="Smile more"), self.state)
+        B.on_event(w, dict(base, channel="DREP", ts="302.0", thread_ts="100.0",
+                           user="UREP", text="thanks!"), self.state)
+        B.on_event(w, dict(base, channel="D-" + RAF, ts="303.0", thread_ts=raf_parent["_ts"],
+                           user=RAF, text="Ask for the close sooner"), self.state)
+        rec = json.loads((C.RECORDS / "100.0.json").read_text(encoding="utf-8"))
+        self.assertEqual([f["grader"] for f in rec["feedback"]], [False, False, True])
+        self.assertEqual([r["timestamp"] for r in w.reactions], ["303.0"])   # ✅ only on Raf's
+        ex = B.training_examples()
+        self.assertEqual([[f["text"] for f in e["feedback"]] for e in ex],
+                         [["Ask for the close sooner"]])
+
     def test_rafs_own_recording_gets_no_ask_and_no_copy(self):
         w = FakeWeb()
         B.on_event(w, _rec_ev(user=RAF), self.state)

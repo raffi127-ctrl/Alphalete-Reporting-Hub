@@ -280,8 +280,9 @@ def flush_copies(webc, rec_ts: str, state: Dict) -> List[str]:
             parent = webc.chat_postMessage(channel=dm, text=R.header(rec, who=rec["name"]),
                                            unfurl_links=False)["ts"]
             pdf = Path(rec["pdf"]) if rec.get("pdf") and Path(rec["pdf"]).exists() else None
-            _deliver(webc, dm, parent, rec, pdf,
-                     R.COACH_ASK.format(first=rec["name"].split()[0]), who=None)
+            first = rec["name"].split()[0]
+            line = R.COACH_ASK if uid == C.GRADER else R.UPLINE_FYI
+            _deliver(webc, dm, parent, rec, pdf, line.format(first=first), who=None)
             with _lock:
                 rec = json.loads(path.read_text(encoding="utf-8"))
                 rec.setdefault("threads", []).append(
@@ -412,15 +413,31 @@ def save_feedback(webc, ev: Dict, key: str) -> None:
             return
         where = next((t["who"] for t in rec.get("threads") or []
                       if t["channel"] == ev.get("channel")), "?")
+        grader = ev.get("user") == C.GRADER
         rec.setdefault("feedback", []).append({
             "ts": ev["ts"], "user": ev.get("user"), "name": _name(webc, ev.get("user") or ""),
-            "where": where, "text": ev.get("text") or ""})
+            "where": where, "grader": grader, "text": ev.get("text") or ""})
         _save_json(path, rec)
-    try:
-        webc.reactions_add(channel=ev["channel"], timestamp=ev["ts"], name=R.SAVED)
-    except Exception:  # noqa: BLE001
-        pass
-    _log("feedback saved on {} from {} ({})".format(key, ev.get("user"), where))
+    if grader:                      # the ✅ means "Lucy will learn from this"
+        try:
+            webc.reactions_add(channel=ev["channel"], timestamp=ev["ts"], name=R.SAVED)
+        except Exception:  # noqa: BLE001
+            pass
+    _log("feedback saved on {} from {} ({}{})".format(
+        key, ev.get("user"), where, ", GRADER" if grader else ", not training"))
+
+
+def training_examples() -> List[Dict]:
+    """What Phase 2 learns from: every transcript Raf graded, with ONLY his
+    replies. Anyone else's reply is dropped here, so no later code has to
+    remember the rule."""
+    out = []
+    for p in sorted(C.RECORDS.glob("*.json")):
+        rec = json.loads(p.read_text(encoding="utf-8"))
+        notes = [f for f in rec.get("feedback") or [] if f.get("user") == C.GRADER]
+        if notes:
+            out.append(dict(rec, feedback=notes))
+    return out
 
 
 # ---------------------------------------------------------------- the loop

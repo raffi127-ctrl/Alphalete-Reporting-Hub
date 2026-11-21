@@ -18,6 +18,8 @@ MAX_MESSAGES = 5
 
 # Text fallback only (the PDF couldn't be made).
 REP_END = ""
+# Uplines get the PDF with this line -- no feedback ask: only Raf grades.
+UPLINE_FYI = "📎 A copy of {first}'s pitch for you."
 COACH_ASK = ("💬 Reply right here with feedback for {first} 👇 "
              "I keep every note so I can learn what closes deals.")
 

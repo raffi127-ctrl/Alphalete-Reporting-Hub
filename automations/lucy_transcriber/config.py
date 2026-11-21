@@ -17,6 +17,12 @@ COACHES = {
     "U045Z8N0ZQC": "Raf",      # Rafael Hidalgo
 }
 
+# THE GRADER. Only this person's feedback teaches Lucy (Megan 2026-11-21:
+# "we shouldn't learn from any feedback other than Raf's so that he is the
+# grader"). Uplines get copies and can read them; their replies are kept
+# for context but are never training examples. See bot.training_examples().
+GRADER = "U045Z8N0ZQC"         # Rafael Hidalgo
+
 OUT = Path(__file__).resolve().parents[2] / "output" / "lucy_transcriber"
 STATE = OUT / "state.json"
 # One JSON per recording: who sent it, the transcript, where it was posted,
