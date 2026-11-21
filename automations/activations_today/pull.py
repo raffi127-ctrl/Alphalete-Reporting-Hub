@@ -189,8 +189,9 @@ def wireless_pending(rows: List[Dict[str, str]]) -> List[Dict[str, str]]:
 
     Raf 11/16: "every line is different... they have to each be an itemized
     line" -> ONE ROW PER LINE, each with its own status, all lines of an
-    order together (open ones first, already-activated ones after so the rep
-    sees the whole order). Canceled / disconnected lines stay out. Rep A-Z,
+    order together. Raf 11/20: activated lines stay out too (only pending
+    lines show; "Line i of n" still counts the whole order). Canceled /
+    disconnected lines stay out. Rep A-Z,
     then oldest sale first."""
     def key(r):
         return (r.get(REP, "").casefold(),
@@ -205,7 +206,11 @@ def wireless_pending(rows: List[Dict[str, str]]) -> List[Dict[str, str]]:
             continue   # every line already active: nothing to chase
         lines = sorted(lines, key=is_activated)   # stable: open lines first
         n = len(lines)
+        # Raf 11/20: "just the pending is good. We don't need to see the
+        # activated" -> activated lines hide; "Line 2 of 4" still counts them.
         for i, r in enumerate(lines, 1):
+            if is_activated(r):
+                continue
             out.append(dict(r, **{LINES: str(n), LINE_NO: str(i),
                                   ORDER_KEY: "{}|{}".format(*k)}))
     out.sort(key=lambda r: (r.get(REP, "").casefold(),

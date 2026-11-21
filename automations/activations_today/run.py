@@ -47,8 +47,7 @@ DEFAULT_OWNER = "Rafael Hidalgo"
 LABEL = "📆 Activations Scheduled Today"
 PENDING_TAG = "(fiber + pending wireless)"
 # Live switch: True = every --post-slack run also posts the Pending Orders
-# thread + one pointer line in Metrics. Eve 11/19: ON (per-line wireless,
-# activated lines kept in grey) while Raf's confirmation is pending.
+# thread. Eve 11/19: ON (per-line wireless); Raf 11/20: pending lines only.
 PENDING_LIVE = True
 # The Metrics image says "(fiber only)" only while the Pending thread is live.
 FIBER_TAG = "(fiber only)" if PENDING_LIVE else ""
@@ -63,8 +62,8 @@ COLUMNS = ("Customer", "Phone", "Sale Date", "Status", "Install", "Package")
 # Wireless (Raf 11/12, pending lines under the same rep) green.
 _YELLOW, _BLUE, _GREEN = "FFF2CC", "DDEBF7", "E2EFDA"
 WIRELESS_TAG = "Wireless"
-# Raf 11/16: a line of a pending wireless order that is already activated
-# shows (so the rep sees the whole order) but greyed out.
+# Raf 11/16 showed activated lines greyed; Raf 11/20 "just the pending" ->
+# pull.wireless_pending drops them (grey kept only as a fallback).
 _GREY = "EDEDED"
 ACTIVATED_TAG = "Activated"
 
