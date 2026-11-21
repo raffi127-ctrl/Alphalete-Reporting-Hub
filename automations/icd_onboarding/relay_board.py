@@ -40,6 +40,12 @@ import json
 from typing import Dict, Iterable, List, Optional, Sequence
 
 from automations.icd_onboarding import board as B
+# BOTH `week` and `weekTab` go on every call. `weekTab` ("OBCL 11.23") is
+# the sheet to open in an office's own workbook; `week` ("11/22/2026") is
+# the Week of value to filter by on the old stacked tab. An office part-way
+# through the move needs whichever one its book actually has, and the relay
+# picks -- sending only one would break the other shape.
+from automations.icd_onboarding import book as K
 
 
 class RelayBoardError(RuntimeError):
@@ -99,7 +105,9 @@ def week(office_key: str, week_start: dt.date) -> List[Dict]:
     The relay returns the row dicts keyed by the board's own column names, so
     everything in `board.py` that already works on rows works on these.
     """
-    out = _call(office_key, "board_read", {"week": B.week_label(week_start)})
+    out = _call(office_key, "board_read",
+                {"week": B.week_label(week_start),
+                 "weekTab": K.tab_name(week_start)})
     return list(out.get("people") or [])
 
 
@@ -125,7 +133,9 @@ def seed(office_key: str, week_start: dt.date, people: Iterable[Dict],
         log("  (dry run — would offer %d person(s) to the relay for week %s)"
             % (len(payload), week))
         return {"ok": True, "added": 0, "names": [], "dry_run": True}
-    out = _call(office_key, "board_seed", {"week": week, "people": payload})
+    out = _call(office_key, "board_seed",
+                {"week": week, "weekTab": K.tab_name(week_start),
+                 "people": payload})
     log("  seed: %d added, %d already on week %s"
         % (int(out.get("added") or 0), int(out.get("already") or 0), week))
     return out
@@ -153,7 +163,8 @@ def tick(office_key: str, week_start: dt.date, column: str,
             % (column, len(want), week))
         return {"ok": True, "changed": 0, "names": [], "dry_run": True}
     out = _call(office_key, "board_tick",
-                {"week": week, "column": column, "names": want})
+                {"week": week, "weekTab": K.tab_name(week_start),
+                 "column": column, "names": want})
     log("  %s: %d ticked, %d already written"
         % (column, int(out.get("changed") or 0), int(out.get("left_alone") or 0)))
     return out
@@ -184,7 +195,8 @@ def advance(office_key: str, week_start: dt.date, column: str,
             % (column, len(want), week))
         return {"ok": True, "changed": 0, "names": [], "dry_run": True}
     out = _call(office_key, "board_tick",
-                {"week": week, "column": column, "values": want})
+                {"week": week, "weekTab": K.tab_name(week_start),
+                 "column": column, "values": want})
     log("  %s: %d written, %d already further along"
         % (column, int(out.get("changed") or 0), int(out.get("left_alone") or 0)))
     return out
