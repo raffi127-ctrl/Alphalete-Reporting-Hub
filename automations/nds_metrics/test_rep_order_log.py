@@ -174,6 +174,12 @@ class Lines(unittest.TestCase):
         self.assertEqual([ln["Phone Number"] for ln in weeks[(dt.date(2026, 11, 16), dt.date(2026, 11, 22),
                                                               dt.date(2026, 11, 27))]], ["2145550401"])
         self.assertEqual(sorted(ln["Phone Number"] for ln in pdc), ["2145550402", "2145550404"])
+        # 11/20 cross-check: a number re-placed on a NEW order activates there only, never the old order's line
+        moved = _row(**dict(shipped, **{"spe.TN": "2145550401", "sp.SPM Number": "OLD1"}))
+        old_line = ROL.rep_lines(self.cols, [moved], TODAY, sara=sara)["Esmeralda Gonzalez"][0]
+        self.assertEqual((old_line["Status"], old_line["Activation Date"]), ("Shipped", None))
+        no_order = _row(**dict(shipped, **{"spe.TN": "2145550401", "sp.SPM Number": ""}))
+        self.assertEqual(ROL.rep_lines(self.cols, [no_order], TODAY, sara=sara)["Esmeralda Gonzalez"][0]["Status"], "Active")
         # no SaraPlus read: as before
         bare = dict((ln["Phone Number"], ln) for ln in ROL.rep_lines(self.cols, rows, TODAY)["Esmeralda Gonzalez"])
         self.assertEqual(bare["2145550401"]["Status"], "Shipped")

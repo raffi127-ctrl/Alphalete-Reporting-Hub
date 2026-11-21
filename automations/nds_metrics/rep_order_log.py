@@ -307,7 +307,11 @@ def placed(status: str, tableau_act: Optional[dt.date], sara: Optional[dict], sp
     SaraPlus's activation day); else as it was. A dead line is never revived."""
     if tableau_act is not None or status == "Posted" or status in DEAD_STATUSES or not sara:
         return status, tableau_act
-    d = sara.get(line_key(spm, tn)) or (sara.get(line_key("", tn)) if tn else None)
+    d = sara.get(line_key(spm, tn))
+    if d is None and tn and not str(spm or "").strip():
+        d = sara.get(line_key("", tn))   # by number only when the row has no order id: a number
+        #                                   re-placed on a NEW order (Sundararaghandran's 858-722-3126,
+        #                                   10/30 -> 11/12) must not activate the old order's line too
     return ("Active", d) if d is not None else (status, tableau_act)
 
 
