@@ -193,6 +193,24 @@ def seed(office_key: str, week_start: dt.date, *, dry_run: bool = True,
             for person in (mine or []):
                 key = _person_key(person)
                 if key and key in seen:
+                    # ALREADY HELD FROM ANOTHER FUNNEL -- keep the LABELLED
+                    # one. The office's own account is read first and carries
+                    # no label, so first-wins quietly threw away the only copy
+                    # that said where the person came from: Aalya Vasquez and
+                    # Zachary Murphy are on 11280 AND 23965, landed as Raf's,
+                    # and ended up on the board with a blank Funnel
+                    # (2026-11-20). A funnel that names itself beats one that
+                    # does not; two that both name themselves keep the first,
+                    # because then it is a real ambiguity and not a default.
+                    if label:
+                        for held in people:
+                            if _person_key(held) == key and not str(
+                                    held.get(B.FUNNEL) or "").strip():
+                                try:
+                                    held[B.FUNNEL] = label
+                                except TypeError:
+                                    pass
+                                break
                     continue
                 if key:
                     seen.add(key)

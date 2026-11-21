@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import datetime as dt
 
+from automations.icd_onboarding import board as B
 from automations.icd_onboarding import run as R
 
 MONDAY = dt.date(2026, 11, 2)
@@ -578,3 +579,43 @@ def test_the_hub_hook_has_a_name_for_having_nothing_to_say():
     from automations.shared import hub_autopublish as H
     assert H.nothing_to_report() is None
     assert H.already_reported() is True
+
+
+class TestTheLabelledFunnelWinsDedupe:
+    """Aalya Vasquez and Zachary Murphy are on 11280 AND 23965 (2026-11-20).
+
+    The office's own account is read first and carries no label, so
+    first-wins threw away the only copy that said where they came from and
+    they landed on the board with a blank Funnel.
+    """
+
+    def _people(self):
+        own = {"first_name": "Aalya", "last_name": "Vasquez",
+               "email": "a@x.com"}
+        theirs = {"first_name": "Aalya", "last_name": "Vasquez",
+                  "email": "a@x.com", B.FUNNEL: "Algemar Kennel El Paso"}
+        return own, theirs
+
+    def test_the_same_person_keeps_the_funnel_that_names_itself(self):
+        own, theirs = self._people()
+        people, seen = [own], {R._person_key(own)}
+        # what the loop does when the second funnel offers the same person
+        key = R._person_key(theirs)
+        assert key in seen
+        for held in people:
+            if R._person_key(held) == key and not str(
+                    held.get(B.FUNNEL) or "").strip():
+                held[B.FUNNEL] = theirs[B.FUNNEL]
+                break
+        assert people[0][B.FUNNEL] == "Algemar Kennel El Paso"
+        assert len(people) == 1, "still one row, not two"
+
+    def test_the_key_is_the_email(self):
+        own, theirs = self._people()
+        assert R._person_key(own) == R._person_key(theirs) == "a@x.com"
+
+    def test_a_different_person_is_not_merged(self):
+        own, _ = self._people()
+        other = {"first_name": "Zachary", "last_name": "Murphy",
+                 "email": "z@x.com"}
+        assert R._person_key(own) != R._person_key(other)
