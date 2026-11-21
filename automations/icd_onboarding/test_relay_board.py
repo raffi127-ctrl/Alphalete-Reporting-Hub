@@ -306,7 +306,23 @@ class TheRelayKnowsWeekTabs(unittest.TestCase):
     def test_it_still_falls_back_to_the_stacked_tab(self):
         """An office not moved over yet must keep working -- no flag day."""
         src = self._src()
-        self.assertIn("return book.getSheetByName(BOARD_TAB);", src)
+        self.assertIn("ws = book.getSheetByName(BOARD_TAB);", src)
+
+    def test_a_caller_that_sends_only_a_date_still_finds_the_tab(self):
+        """The browser extension sends `week`, a 'Week of' label, and knows
+        nothing about week tabs -- it cannot be redeployed in step with the
+        relay. Falling straight through to BOARD_TAB finds nothing in a new
+        book, which has no 'Onboarding' tab at all, and the office is told
+        they have no board (2026-11-21)."""
+        src = self._src()
+        self.assertIn("function _boardTabForLabel(", src)
+        self.assertIn("d.setDate(d.getDate() - d.getDay() + 1);", src)
+
+    def test_with_no_week_at_all_it_opens_the_newest(self):
+        src = self._src()
+        at = src.index("function _boardTab(")
+        body = src[at:at + 1800]
+        self.assertIn("BOARD_WEEK_RE.exec(sheets[i].getName())", body)
 
     def test_the_picker_falls_back_to_the_week_column(self):
         """With no week tabs it reads the stacked tab's own 'Week of', so
@@ -321,5 +337,6 @@ class TheRelayKnowsWeekTabs(unittest.TestCase):
         """A caller that cannot say which week would silently read whichever
         tab the fallback returns."""
         src = self._src()
-        self.assertEqual(src.count("_boardTab(office, a.weekTab || '')"), 5)
+        self.assertEqual(
+            src.count("_boardTab(office, a.weekTab || '', a.week || '')"), 5)
         self.assertNotIn("_boardTab(office);", src)

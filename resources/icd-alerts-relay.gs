@@ -1823,23 +1823,91 @@ function _boardWeeks(office) {
   return Object.keys(seen).sort().reverse();
 }
 
+// Every week the book holds, as 'Week of' LABELS (what the picker shows and
+// what comes back as `a.week`), newest first. Empty for an office still on
+// the stacked tab -- there the labels come from its own column.
+function _boardWeekLabels(office) {
+  var book = _boardBook(office);
+  if (!book) return [];
+  var out = [], sheets = book.getSheets();
+  for (var i = 0; i < sheets.length; i++) {
+    var m = BOARD_WEEK_RE.exec(sheets[i].getName());
+    if (!m) continue;
+    // the tab is the MONDAY; the label is the Sunday before it
+    var mon = Number(m[1]), day = Number(m[2]);
+    var year = new Date().getFullYear();
+    var d = new Date(year, mon - 1, day);
+    d.setDate(d.getDate() - 1);
+    out.push({k: d.getTime(),
+              s: ('0' + (d.getMonth() + 1)).slice(-2) + '/' +
+                 ('0' + d.getDate()).slice(-2) + '/' + d.getFullYear()});
+  }
+  out.sort(function (x, y) { return y.k - x.k; });   // newest first
+  return out.map(function (o) { return o.s; });
+}
+
+
 function _boardBook(office) {
   var set = _admSettings(office);
   if (!set.sheet) return null;
   try { return SpreadsheetApp.openById(set.sheet); } catch (err) { return null; }
 }
 
-// `week` is a tab name ('OBCL 11.23') when the office has week tabs, and is
-// ignored for one still on the stacked tab -- there the whole board is one
-// sheet and the caller filters by the 'Week of' column as it always has.
-function _boardTab(office, week) {
+// A 'Week of' LABEL ('11/22/2026') -> the tab that holds it ('OBCL 11.23').
+//
+// The two conventions are a day apart: the label is the SUNDAY the week
+// starts, the tab is named for the MONDAY, matching the D2D OBCL. Mirrors
+// book.tab_name on the Python side.
+function _boardTabForLabel(label) {
+  var m = /^\s*(\d{1,2})\/(\d{1,2})\/(\d{2,4})\s*$/.exec(String(label || ''));
+  if (!m) return '';
+  var y = Number(m[3]); if (y < 100) y += 2000;
+  var d = new Date(y, Number(m[1]) - 1, Number(m[2]));
+  // The Sunday on or before, then its Monday -- exactly what
+  // board.week_start_of + a day does. Handles a label that is NOT a Sunday
+  // too: Raf's own board carries 11/02/2026, a Monday, which must still
+  // land on OBCL 11.2 and not the day after.
+  d.setDate(d.getDate() - d.getDay() + 1);
+  return _boardWeekTab(d);
+}
+
+// WHICH SHEET A CALL MEANS, for callers that know about week tabs and for
+// callers that do not.
+//
+// The browser extension sends only `week`, a 'Week of' label -- it predates
+// the per-office workbook and cannot be redeployed in step with this file.
+// So the label is converted, and failing that the newest week tab is used.
+// Falling straight through to BOARD_TAB would find nothing in a new book,
+// which has no 'Onboarding' tab at all, and the office would be told they
+// have no board (2026-11-21).
+function _boardTab(office, week, label) {
   var book = _boardBook(office);
   if (!book) return null;
+  var ws;
   if (week) {
-    var ws = book.getSheetByName(String(week).trim());
+    ws = book.getSheetByName(String(week).trim());
     if (ws) return ws;
   }
-  return book.getSheetByName(BOARD_TAB);
+  if (label) {
+    var want = _boardTabForLabel(label);
+    if (want) {
+      ws = book.getSheetByName(want);
+      if (ws) return ws;
+    }
+  }
+  ws = book.getSheetByName(BOARD_TAB);
+  if (ws) return ws;
+  // A book with week tabs and no stacked tab: the newest week is the one
+  // anybody opening the board without saying which week means.
+  var best = null, bestKey = '';
+  var sheets = book.getSheets();
+  for (var i = 0; i < sheets.length; i++) {
+    var m = BOARD_WEEK_RE.exec(sheets[i].getName());
+    if (!m) continue;
+    var key = ('0' + m[1]).slice(-2) + ('0' + m[2]).slice(-2);
+    if (!best || key > bestKey) { best = sheets[i]; bestKey = key; }
+  }
+  return best;
 }
 
 function _boardRows(sh) {
@@ -1860,7 +1928,7 @@ function _boardRows(sh) {
 }
 
 function _boardWeek(office, a) {
-  var sh = _boardTab(office, a.weekTab || '');
+  var sh = _boardTab(office, a.weekTab || '', a.week || '');
   if (!sh) {
     return {ok: false, error: "This office has no onboarding board yet. " +
             "Ask Lucy's team to switch it on."};
@@ -1876,6 +1944,13 @@ function _boardWeek(office, a) {
   var list = Object.keys(weeks).sort(function (x, y) {
     return new Date(y) - new Date(x);        // newest first
   });
+  // THE PICKER LISTS THE TABS, not the Week of values in one sheet. Each tab
+  // holds exactly one week now, so reading a sheet can only ever offer the
+  // week you are already looking at -- which is why the picker showed one
+  // entry (2026-11-21). The stacked tab still answers from its own column,
+  // so an office not moved over sees the same list it always did.
+  var byTab = _boardWeekLabels(office);
+  if (byTab.length) list = byTab;
   return {ok: true, week: want || list[0] || '', weeks: list,
           columns: got.head, people: out};
 }
@@ -1884,7 +1959,7 @@ function _boardWeek(office, a) {
 // hidden from the board and the printout, still there to answer what happened
 // to a person months later.
 function _boardMark(office, a) {
-  var sh = _boardTab(office, a.weekTab || '');
+  var sh = _boardTab(office, a.weekTab || '', a.week || '');
   if (!sh) return {ok: false, error: 'No onboarding board for this office.'};
   var got = _boardRows(sh);
   var col = got.head.indexOf('Terminated');
@@ -1936,7 +2011,7 @@ function _boardColumn(office, a, colName) {
   // was asked about, only on the week it was given, and only when the value
   // actually differs -- so a panel save never rewrites the whole column and
   // never touches another week.
-  var sh = _boardTab(office, a.weekTab || '');
+  var sh = _boardTab(office, a.weekTab || '', a.week || '');
   if (!sh) return {ok: false, error: 'No onboarding board for this office.'};
   var got = _boardRows(sh);
   var col = got.head.indexOf(colName);
@@ -2062,7 +2137,7 @@ function _boardRank(text, column) {
 // step that earns it, and writing a blank would be this call claiming to know
 // something it does not.
 function _boardSeed(office, a) {
-  var sh = _boardTab(office, a.weekTab || '');
+  var sh = _boardTab(office, a.weekTab || '', a.week || '');
   if (!sh) return {ok: false, error: 'No onboarding board for this office.'};
   var week = String(a.week || '').trim();
   if (!week) return {ok: false, error: 'board_seed needs a week.'};
@@ -2119,7 +2194,7 @@ function _boardSeed(office, a) {
 // The two status columns ADVANCE instead, and only forwards, so a late "Sent"
 // email can never pull somebody back from Passed.
 function _boardTick(office, a) {
-  var sh = _boardTab(office, a.weekTab || '');
+  var sh = _boardTab(office, a.weekTab || '', a.week || '');
   if (!sh) return {ok: false, error: 'No onboarding board for this office.'};
   var week = String(a.week || '').trim();
   if (!week) return {ok: false, error: 'board_tick needs a week.'};

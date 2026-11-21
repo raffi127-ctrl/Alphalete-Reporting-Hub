@@ -16,7 +16,18 @@ async function relay(call, extra) {
     });
     const text = await res.text();
     try { out = JSON.parse(text); } catch (e) {
-      out = {ok: false, error: "Lucy's relay answered a web page -- is the new relay version deployed?"};
+      // SAY WHAT IT ACTUALLY ANSWERED. "a web page" on its own has sent us
+      // round the houses twice: the relay was healthy both times and the
+      // page was Google's, not ours. The status and the first line of the
+      // body tell those apart at a glance.
+      // ONE STRING, not an object: chrome://extensions' Errors page
+      // stringifies what it is given, and an object arrives there as
+      // "[object Object]" -- which is how this cost another round.
+      console.error('[lucy] relay did not answer JSON | status=' + res.status +
+                    ' | url=' + res.url + ' | body=' +
+                    text.slice(0, 300).replace(/\s+/g, ' '));
+      out = {ok: false, error: "Lucy's relay answered a web page (HTTP " +
+             res.status + ") -- open the service worker console for what it said."};
     }
   } catch (e) {
     out = {ok: false, error: "Couldn't reach Lucy (" + e.message + ')'};

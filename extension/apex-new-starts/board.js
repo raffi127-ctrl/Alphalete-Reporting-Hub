@@ -227,8 +227,13 @@
 
     let html = '<div class="bd-top">' +
       '<label class="bd-wk">Week of ' + weekPicker + '</label>' +
+      // STEPS, and it has to say so. Beside "64 on the board" a bare "348
+      // still to do" reads as people, and 348 people on a 64-person week is
+      // alarming nonsense (Megan 2026-11-21: "where is this 348 coming
+      // from?"). It is the sum of what every row still owes -- the same
+      // number the per-row 0/10 counters break down.
       '<div class="bd-sum">' + c.live + ' on the board · ' + c.outstanding +
-      ' still to do · ' + c.done + ' finished</div>' +
+      ' steps still to do · ' + c.done + ' fully done</div>' +
       (c.off ? '<label class="bd-showoff"><input type="checkbox" id="bd-off"' +
                (state.showOff ? ' checked' : '') + '> show ' + c.off +
                ' removed</label>' : '') +

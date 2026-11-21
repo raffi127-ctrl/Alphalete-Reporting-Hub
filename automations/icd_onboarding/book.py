@@ -50,6 +50,20 @@ BOOK_NAME = "LucyECO Onboarding - %s"
 SETTINGS_TAB = "Office Settings"
 ID_COLUMN = "Onboarding Sheet"
 
+# WHO THE RELAY RUNS AS. The Apps Script web app executes as this account, so
+# it can only open files this account can see -- and a book we create is owned
+# by whoever the OAuth token belongs to, which is NOT the same login.
+#
+# Raf's first book was created on 2026-11-21 and the relay could not open it.
+# Google does not answer that with an error: it serves the Drive permission
+# PAGE, HTTP 200 and HTML, so the extension reports "Lucy's relay answered a
+# web page" and nothing names the real cause. That cost most of an evening.
+#
+# Overridable by env for a workspace whose script runs as somebody else.
+import os as _os
+
+RELAY_ACCOUNT = _os.environ.get("LUCY_RELAY_ACCOUNT", "raffi127@gmail.com")
+
 
 def tab_name(week_start: dt.date) -> str:
     """The tab for a week, named for its MONDAY the way the OBCL names its.
@@ -98,12 +112,40 @@ def sheet_id(office_key: str) -> str:
     Read from the `Office Settings` tab, never cached: an office enrolled an
     hour ago has to be findable by a run that started before they were.
     """
-    from automations.office_admin import sheets as OS
     try:
-        row = OS.office_settings(OS.settings_tab(), office_key) or {}
+        row = _settings_row(office_key)
     except Exception:                                   # noqa: BLE001
         return ""
-    return str(row.get(ID_COLUMN) or "").strip()
+    return str((row or {}).get(ID_COLUMN) or "").strip()
+
+
+def _settings_tab():
+    """The RELAY's Office Settings tab -- the one that has the column.
+
+    NOT `office_admin.sheets.settings_tab()`. There are two tabs of that
+    name: that one is keyed on `Office Key` and holds State and City, and
+    `relay_admins` keeps this one on the relay workbook, keyed on `Office`,
+    with AppStream, Approved Accounts, Owner and `Onboarding Sheet`. Reading
+    the wrong one answers "" for every office, which looks exactly like
+    nobody having a book yet.
+    """
+    from automations.icd_alerts import post as P
+    from automations.office_admin import relay_admins as RA
+    from automations.recruiting_report.fill import _retry, open_by_key
+
+    ss = open_by_key(P.RELAY_SPREADSHEET_ID)
+    return _retry(ss.worksheet, RA.SETTINGS_TAB)
+
+
+def _settings_row(office_key: str):
+    """(row number, row dict) for that office, or (None, {})."""
+    from automations.office_admin import sheets as OS
+    ws = _settings_tab()
+    want = str(office_key or "").strip().lower()
+    for r in OS.records(OS._retry(ws.get_all_values)):
+        if str(r.get("Office") or "").strip().lower() == want:
+            return r
+    return {}
 
 
 def open_book(office_key: str, owner: str = "", *, create: bool = False):
@@ -134,11 +176,11 @@ def _make_book(office_key: str, owner: str = ""):
     from automations.office_admin import sheets as OS
     from automations.recruiting_report.fill import _client
 
-    ws = OS.settings_tab()
+    ws = _settings_tab()
     rows = OS.records(OS._retry(ws.get_all_values))
     at = None
     for i, r in enumerate(rows, 2):           # row 1 is the header
-        if (r.get("Office Key") or "").strip().lower() == \
+        if str(r.get("Office") or "").strip().lower() == \
                 str(office_key).strip().lower():
             at = i
             break
@@ -151,8 +193,33 @@ def _make_book(office_key: str, owner: str = ""):
 
     title = BOOK_NAME % (owner.strip() or office_key)
     book = _client().create(title)
+    _share_with_relay(book)
     OS._set_cells(ws, at, {ID_COLUMN: book.id})
     return book
+
+
+def _share_with_relay(book) -> bool:
+    """Let the account the relay runs as open this book.
+
+    BEFORE the id is recorded. A book the relay cannot read is worse than no
+    book: the extension points at it, Google answers the permission page, and
+    the office is told the relay is broken.
+
+    Never fatal. A share that fails is reported and the book still gets made
+    -- somebody can add the account by hand, and that is a smaller problem
+    than a half-created workbook nothing knows about.
+    """
+    if not RELAY_ACCOUNT:
+        return False
+    try:
+        book.share(RELAY_ACCOUNT, perm_type="user", role="writer",
+                   notify=False)
+        return True
+    except Exception as e:                                  # noqa: BLE001
+        print("  could not share %r with %s (%s) -- add it by hand or the "
+              "relay cannot open it" % (book.title, RELAY_ACCOUNT,
+                                        type(e).__name__))
+        return False
 
 
 # ------------------------------------------------------------ the week tab
