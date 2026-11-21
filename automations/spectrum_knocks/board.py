@@ -7,6 +7,16 @@ board at the top of every hour, 10 AM-9 PM CT, Mon-Sat. An hour with no doors
 yet today posts nothing (no empty boards at 10 AM). The iMessage text stays at
 three a day (2 PM, 5 PM, 9 PM) so the A-Players group chat isn't hit hourly.
 
+#alphalete-sales TOO (Raf 2026-11-21, #claudecorrections "Spectrum doors
+knocked"): "Can we also post it in the [Alphalete] Sales channel at whatever
+cadence the other Knocking report is posting." The other knocking report there
+is his own "Knocks & Dispositions" board from Lucy ECO, every 30 minutes inside
+his office's board hours (icd_alerts/offices.py "raf" + knocks_post's Saturday
+6 PM cap). So #alphalete-sales gets this board at :00 and :30, inside THOSE
+hours, read from there so the two never drift apart. No sheet link in that
+caption: it's the whole sales floor, and the tab lives in VAs' Data. The
+knocking-data channel and the text keep their own clocks, untouched.
+
 History:
 
 Raf 2026-11-18 ("can we have it send to knocking reports?") + Eve ("igual que
@@ -29,7 +39,8 @@ assigned houses but no doors yet (greyed, at the bottom — at 2 PM that's the
     python -m automations.spectrum_knocks.board --slot h14 --force
     # test post to Eve's own DM
     python -m automations.spectrum_knocks.board --slot h21 --force --send --to D087ZGE2B0F
-    # live (the LaunchAgent, every 5 min; posts each slot once, when it's due)
+    # live (the LaunchAgent, every 5 min; posts each slot once, when it's due;
+    # --tick --send also covers #alphalete-sales every 30 min)
     python -m automations.spectrum_knocks.board --tick --send --text
 """
 from __future__ import annotations
@@ -46,6 +57,10 @@ from automations.spectrum_knocks import pull
 
 CHANNEL_ID = "C0C8KBT065D"            # #alphalete-sales-knocking-data (private, Raf's)
 CHANNEL_NAME = "#alphalete-sales-knocking-data"
+SALES_CHANNEL_ID = "C068PH3RFSM"      # #alphalete-sales (Raf 2026-11-21)
+SALES_CHANNEL_NAME = "#alphalete-sales"
+SALES_EVERY_MIN = 30                  # = his Knocks & Dispositions board there
+SALES_HOURS_OFFICE = "raf"            # icd_alerts.offices key whose hours we follow
 TEXT_GROUP = "Knocking Chat A-Players"   # Raf's iMessage room
 SHEET_URL = ("https://docs.google.com/spreadsheets/d/"
              "1qUiljtWXhcy3OGhQ_81LnNPIsUXjad3MJi-VzjEIDV8/edit#gid=24854023")
@@ -91,6 +106,27 @@ def due(now: dt.datetime, done: set) -> Optional[Slot]:
             key = "%s|%s" % (now.date().isoformat(), s.key)
             return None if key in done else s
     return None
+
+
+def sales_key(day: dt.date, s: Slot) -> str:
+    return "%s|sales|%02d%02d" % (day.isoformat(), s.hour, s.minute)
+
+
+def sales_due(now: dt.datetime, done: set) -> Optional[Slot]:
+    """The #alphalete-sales post owed at `now` (naive Central), or None.
+
+    On the :00/:30 anchor at or before `now`, if that anchor is inside Raf's
+    board hours (the same check his ECO Knocks & Dispositions board uses). A
+    missed anchor is never posted late: the next one takes over."""
+    from automations.icd_alerts import knocks_post as K, offices as O
+    office = O.OFFICES[SALES_HOURS_OFFICE]
+    at = now.replace(minute=now.minute - now.minute % SALES_EVERY_MIN,
+                     second=0, microsecond=0)
+    if not K.in_field_hours(office, at):
+        return None
+    label = _NAMED.get(at.hour, "Live") if at.minute == 0 else "Live"
+    s = Slot("s%02d%02d" % (at.hour, at.minute), at.hour, at.minute, label)
+    return None if sales_key(now.date(), s) in done else s
 
 
 def _state() -> Dict:
@@ -300,17 +336,22 @@ def main(argv: Optional[List[str]] = None) -> int:
         print("[spectrum_board] %s OK on this Lucy: %s (%s people)"
               % (TEXT_GROUP, r["resolved_name"], r["participants"]))
         return 0
+    sales: Optional[Slot] = None
     if a.tick:
         slot = due(now, set())
-        if slot is None:
-            print("[spectrum_board] %s CT — nothing due" % _clock(now))
+        key = "%s|%s" % (now.date().isoformat(), slot.key) if slot else ""
+        want_slack = bool(slot) and a.send and key not in done
+        want_text = bool(slot) and a.text and slot.text and (key + "|text") not in done
+        # #alphalete-sales rides the live tick only. A test with --to never
+        # reaches the sales floor; a tick without --send previews it.
+        if a.to == CHANNEL_ID:
+            sales = sales_due(now, done if a.send else set())
+        if not (want_slack or want_text or sales):
+            print("[spectrum_board] %s CT — %s" % (
+                _clock(now), "%s already posted" % slot.label if slot else "nothing due"))
             return 0
-        key = "%s|%s" % (now.date().isoformat(), slot.key)
-        want_slack = a.send and key not in done
-        want_text = a.text and slot.text and (key + "|text") not in done
         if not (want_slack or want_text):
-            print("[spectrum_board] %s CT — %s already posted" % (_clock(now), slot.label))
-            return 0
+            slot = None                    # only #alphalete-sales is owed
     elif a.slot:
         slot = next(s for s in SLOTS if s.key == a.slot)
         if not a.force and due(now, set()) != slot:
@@ -321,47 +362,78 @@ def main(argv: Optional[List[str]] = None) -> int:
         ap.error("give --tick or --slot (or --check-text)")
     day = dt.date.fromisoformat(a.day) if a.day else now.date()
 
+    # ONE pull, then a picture per label (the 2 PM board is "First Knocks" in
+    # both channels, so that one is drawn once).
     summary = pull.run(day)
     rows = board_rows(summary)
-    asof = _clock(now) if day == now.date() else "end of day"
-    sub = "%s  ·  %s %s  ·  as of %s CT" % (slot.label, day.strftime("%a"), _md(day), asof)
-    png = render(rows, sub, OUT_DIR / day.isoformat() / ("%s.png" % slot.key))
     knocked = [r for r in rows if r["Doors"]]
+    asof = _clock(now) if day == now.date() else "end of day"
+    pngs: Dict[str, Path] = {}
+
+    def picture(s: Slot) -> Path:
+        if s.label not in pngs:
+            sub = "%s  ·  %s %s  ·  as of %s CT" % (s.label, day.strftime("%a"), _md(day), asof)
+            pngs[s.label] = render(rows, sub, OUT_DIR / day.isoformat() / ("%s.png" % s.key))
+        return pngs[s.label]
+
+    def caption(s: Slot, link: bool = True) -> str:
+        head = ("*Spectrum Knocks · %s · %s %s* — %d reps, %d doors, %d sold"
+                % (s.label, day.strftime("%a"), _md(day), len(knocked),
+                   sum(r["Doors"] for r in knocked),
+                   sum(r["Sold"] + r.get("Mobile Sold", 0) for r in knocked)))
+        return head + ("\nFull sheet: <%s|Spectrum Knocks tab>" % SHEET_URL if link else "")
+
     if a.tick and not knocked and day == now.date():
-        # Nobody's out yet: no empty board. Mark the hour so the next 5-min
-        # tick doesn't pull again; the next hour tries fresh.
+        # Nobody's out yet: no empty board. Mark the slot so the next 5-min
+        # tick doesn't pull again; the next slot tries fresh.
         print("[spectrum_board] %s CT — no doors yet, %s skipped"
-              % (_clock(now), slot.label))
+              % (_clock(now), (slot or sales).label))
         if a.send or a.text:
-            k = "%s|%s" % (day.isoformat(), slot.key)
-            state.setdefault("posted", {})[k] = "skipped"
-            state["posted"][k + "|text"] = "skipped"
+            p = state.setdefault("posted", {})
+            if slot:
+                k = "%s|%s" % (day.isoformat(), slot.key)
+                p[k] = p[k + "|text"] = "skipped"
+            if sales and a.send:
+                p[sales_key(day, sales)] = "skipped"
             _save(state, day)
         return 0
-    caption = ("*Spectrum Knocks · %s · %s %s* — %d reps, %d doors, %d sold\n"
-               "Full sheet: <%s|Spectrum Knocks tab>"
-               % (slot.label, day.strftime("%a"), _md(day), len(knocked),
-                  sum(r["Doors"] for r in knocked),
-                  sum(r["Sold"] + r.get("Mobile Sold", 0) for r in knocked), SHEET_URL))
-    print("[spectrum_board] %s -> %s" % (caption.splitlines()[0], png))
+    if slot:
+        print("[spectrum_board] %s -> %s" % (caption(slot).splitlines()[0], picture(slot)))
+    if sales:
+        print("[spectrum_board] %s: %s -> %s"
+              % (SALES_CHANNEL_NAME, caption(sales, link=False), picture(sales)))
     if not (a.send or a.text):
         print("[spectrum_board] PREVIEW — nothing posted")
         return 0
-    key = "%s|%s" % (day.isoformat(), slot.key)
+    key = "%s|%s" % (day.isoformat(), slot.key) if slot else ""
     if a.send and want_slack:
-        post(png, caption, a.to)
+        post(picture(slot), caption(slot), a.to)
         print("[spectrum_board] posted to %s" % a.to)
         if a.tick and a.to == CHANNEL_ID:
             state.setdefault("posted", {})[key] = now.isoformat()
             _save(state, day)
+    sales_err: Optional[Exception] = None
+    if a.send and sales:
+        # Own marker, own retry: a failure here re-tries only this channel on
+        # the next tick (same :00/:30 anchor), and never blocks the text.
+        try:
+            post(picture(sales), caption(sales, link=False), SALES_CHANNEL_ID)
+            print("[spectrum_board] posted to %s" % SALES_CHANNEL_NAME)
+            state.setdefault("posted", {})[sales_key(day, sales)] = now.isoformat()
+            _save(state, day)
+        except Exception as e:  # noqa: BLE001 -- re-raised below
+            sales_err = e
+            print("[spectrum_board] %s FAILED: %s" % (SALES_CHANNEL_NAME, e))
     if want_text:
         # Raises on failure (logged, ticket); Slack above is already saved, so
         # the next tick retries only the text, inside the same late limit.
-        send_text(png, text_caption(slot, day, rows), live=True)
+        send_text(picture(slot), text_caption(slot, day, rows), live=True)
         print("[spectrum_board] texted %s" % TEXT_GROUP)
         if a.tick:
             state.setdefault("posted", {})[key + "|text"] = now.isoformat()
             _save(state, day)
+    if sales_err is not None:
+        raise sales_err
     return 0
 
 

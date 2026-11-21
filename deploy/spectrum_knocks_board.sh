@@ -1,10 +1,11 @@
 #!/bin/bash
-# Spectrum Knocks board — a picture of every Spectrum rep's day in
-# #alphalete-sales-knocking-data at 2:00 PM, 5:15 PM and 9:00 PM CT, Mon-Sat
-# (Raf + Eve 2026-11-18, same moments as the OwnerVille intraday boards).
-# --text: the same picture also goes to the iMessage room "Knocking Chat A-Players".
+# Spectrum Knocks board — a picture of every Spectrum rep's day, Mon-Sat:
+# #alphalete-sales-knocking-data every hour 10 AM-9 PM CT, and #alphalete-sales
+# every 30 min inside Raf's board hours (Raf 2026-11-21). The times live in
+# board.py, not here.
+# --text: the same picture also goes to the iMessage room "Knocking Chat A-Players" (2 / 5 / 9 PM).
 # The agent ticks every 5 min; board.py posts each slot once, when it's due.
-# Manual preview (draws the PNG, posts nothing): bash deploy/spectrum_knocks_board.sh --slot eod --force
+# Manual preview (draws the PNG, posts nothing): bash deploy/spectrum_knocks_board.sh --tick
 set -u
 cd "$(dirname "$0")/.." || exit 1
 if pgrep -f "automations.spectrum_knocks.board" > /dev/null 2>&1; then

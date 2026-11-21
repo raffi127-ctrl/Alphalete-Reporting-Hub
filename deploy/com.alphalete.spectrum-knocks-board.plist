@@ -9,7 +9,7 @@
     <array><string>/bin/bash</string><string>/Users/megan/1st Claude Folder/deploy/spectrum_knocks_board.sh</string><string>--tick</string><string>--send</string><string>--text</string></array>
     <key>WorkingDirectory</key><string>/Users/megan/1st Claude Folder</string>
     <key>EnvironmentVariables</key><dict><key>PYTHONPATH</key><string>/Users/megan/1st Claude Folder</string></dict>
-    <!-- Every 5 min; board.py posts 2:00 PM / 5:15 PM / 9:00 PM CT once each, Mon-Sat. -->
+    <!-- Every 5 min; board.py decides what is due: knocking-data hourly 10 AM-9 PM CT, #alphalete-sales every 30 min on Raf's board hours, the text at 2 / 5 / 9 PM. Mon-Sat. -->
     <key>StartInterval</key><integer>300</integer>
     <key>StandardOutPath</key><string>/tmp/com.alphalete.spectrum-knocks-board.out</string>
     <key>StandardErrorPath</key><string>/tmp/com.alphalete.spectrum-knocks-board.err</string>
