@@ -21,12 +21,46 @@ LUCY = "lucy3@Lucys-Mac-mini.local"     # Lucy 3: has the Claude key + Apple chi
 REMOTE_CFG = ".config/recruiting-report"
 
 
-def _ask(label: str, prefix: str) -> str:
+# Where each key is on the app's Slack page -- shown in the Mac pop-up.
+WHERE = {
+    "xoxb-": "In the Slack tab: left menu “OAuth & Permissions” → "
+             "“Bot User OAuth Token” → Copy.",
+    "xapp-": "In the Slack tab: left menu “Basic Information” → scroll to "
+             "“App-Level Tokens” → click “socket” → Copy.",
+}
+
+
+def _dialog(label: str, prefix: str, again: bool) -> str:
+    """A Mac pop-up with a hidden box (Megan 2026-11-21: the Terminal prompt
+    was one step too many). '' when she clicks Cancel."""
+    msg = "{}{}\n\nThen click in the box below, press ⌘V, and click Save.".format(
+        "That one didn't start with {}. ".format(prefix) if again else "", WHERE[prefix])
+    script = ('display dialog {} default answer "" with hidden answer '
+              'with title {} buttons {{"Cancel", "Save"}} default button "Save"\n'
+              'text returned of result').format(
+        _as(msg), _as("Lucy Pitch Auditor — " + label))
+    r = subprocess.run(["osascript", "-e", script], capture_output=True, text=True)
+    return r.stdout.strip() if r.returncode == 0 else ""
+
+
+def _as(s: str) -> str:
+    return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def _ask(label: str, prefix: str, dialog: bool = False) -> str:
+    again = False
     while True:
-        tok = getpass.getpass("Paste the {} (starts with {}), then Enter: ".format(label, prefix)).strip()
+        if dialog:
+            tok = _dialog(label, prefix, again)
+            if not tok:
+                raise SystemExit("Cancelled -- nothing saved.")
+        else:
+            tok = getpass.getpass("Paste the {} (starts with {}), then Enter: ".format(label, prefix)).strip()
         if tok.startswith(prefix):
             return tok
-        print("  That one doesn't start with {} -- try again.".format(prefix))
+        again = True
+        if not dialog:
+            print("  That one doesn't start with {} -- try again.".format(prefix))
 
 
 def _save(path, tok: str) -> None:
@@ -53,14 +87,27 @@ def ship_to_lucy() -> bool:
 
 
 def main() -> int:
-    bot = _ask("Bot User OAuth Token", "xoxb-")
+    if "--ship-only" in sys.argv[1:]:
+        # The keys are already on this laptop: just try the copy. Exit 3 =
+        # Lucy 3 not reachable yet (off the office Wi-Fi) -- try again later.
+        if not (C.BOT_TOKEN_FILE.exists() and C.APP_TOKEN_FILE.exists()):
+            print("No keys saved on this laptop yet.")
+            return 1
+        if ship_to_lucy():
+            print("Copied to Lucy 3 and started the bot there.")
+            return 0
+        print("Lucy 3 not reachable yet.")
+        return 3
+    dialog = "--dialog" in sys.argv[1:]
+    bot = _ask("Bot token", "xoxb-", dialog)
     from automations.lucy_transcriber import bot as B
     try:
         auth = B.web(bot).auth_test()
     except Exception as e:  # noqa: BLE001
-        print("  Slack didn't accept that bot token ({}). Nothing saved.".format(e))
+        print("  Slack didn't accept that bot token ({}). Nothing saved.".format(
+            type(e).__name__))
         return 1
-    app = _ask("App-Level Token", "xapp-")
+    app = _ask("App token", "xapp-", dialog)
     _save(C.BOT_TOKEN_FILE, bot)
     _save(C.APP_TOKEN_FILE, app)
     print("Saved. The bot is '{}' in your Slack.".format(auth.get("user")))
