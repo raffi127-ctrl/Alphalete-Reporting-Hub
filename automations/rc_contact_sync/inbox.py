@@ -373,6 +373,49 @@ def _when(m: dict) -> str:
             .strftime("%Y-%m-%d %H:%M"))
 
 
+def replies_after(msgs: List[dict], names: Dict[str, str], after: str) -> List[str]:
+    """Every customer text (Inbound, sender in Taylor's book) stamped after
+    `after` ('YYYY-MM-DD HH:MM', local), oldest first, one line each:
+    'HH:MM  Name  [group]  text'. Rep / unknown senders are left out."""
+    out = []
+    for m in sorted(msgs, key=lambda x: x.get("creationTime") or ""):
+        if m.get("direction") != "Inbound":
+            continue
+        snd = _sender(m)
+        if snd not in names or _when(m) <= after:
+            continue
+        group = len([n for n in _recipients(m) if n]) > 1
+        body = " ".join(str(m.get("subject") or "").split()) or "(picture / blank)"
+        out.append("%s  %s%s  %s" % (_when(m)[11:], names[snd], "  [group]" if group else "", body))
+    return out
+
+
+def run_replies(after: str, log=print) -> int:
+    """Carlos 2026-11-21: "every hour until 9pm tonight give sebastian and i
+    summary of any responses" -- the raw replies since `after`, to the
+    'RC Inbox' tab; the summary is written from that."""
+    creds = C.rc_creds()
+    info = RC.token_info(creds)
+    token = info["access_token"]
+    RC.assert_identity(RC.identity(info), creds.get("expected_owner_id") or C.RC_OWNER_ID)
+    watch_token = RC.token(creds, jwt=creds["watch_jwt"]) if creds.get("watch_jwt") else token
+    names = name_map(RC.address_book(token, str(creds["contacts_extension_id"])))
+    day = dt.date.fromisoformat(after[:10])
+    msgs = _messages_since(watch_token, str(creds["watch_extension_id"]), day)
+    rows = replies_after(msgs, names, after)
+    head = "customer replies after %s: %d\n" % (after, len(rows))
+    log(head.strip())
+    for r in rows:
+        log("  " + r)
+    try:
+        from automations.rc_contact_sync.status_probe import _upload_bytes
+        _upload_bytes((head + "\n".join(rows)).encode(), TAB, log=log)
+    except Exception as e:  # noqa: BLE001
+        log("  (tab upload failed: %s: %s)" % (type(e).__name__, str(e)[:120]))
+    print("=== done ===", flush=True)
+    return 0
+
+
 def run(words: List[str], since: dt.date, until: dt.date, *,
         inbound_only: bool = False, log=print) -> int:
     log("RC inbox — customer %r, %s..now%s"
@@ -463,7 +506,11 @@ def main(argv=None) -> int:
     ap.add_argument("--mark-unread", action="store_true",
                     help="with --all: flip every unanswered customer text back "
                          "to Unread in RingCentral (Carlos 2026-11-09)")
+    ap.add_argument("--replies-after", default=None, metavar="YYYY-MM-DD HH:MM",
+                    help="every customer text after this local time (one line each)")
     args = ap.parse_args(argv)
+    if args.replies_after:
+        return run_replies(args.replies_after)
     since = (dt.date.fromisoformat(args.since) if args.since
              else dt.date.today() - dt.timedelta(days=30))
     if args.all:
