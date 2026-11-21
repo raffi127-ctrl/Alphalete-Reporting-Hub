@@ -410,29 +410,31 @@ class PayPeriod(unittest.TestCase):
     Pending."""
 
     def test_rules(self):
-        act = dt.date(2026, 11, 3)                       # Tue -> week 11/1-11/7, paid Fri 11/13
-        self.assertEqual(T.pay_period_for("Active", act), "11/1-11/7 • Paid 11/13")
+        act = dt.date(2026, 11, 3)                       # Tue -> deposit week Mon 11/2 - Sun 11/8, paid Fri 11/13
+        self.assertEqual(T.pay_period_for("Active", act), "11/2-11/8 • Paid 11/13")
+        # 11/20: a SUNDAY closes its Mon-Sun week (Subba Rao / Georgeatte, Sun 11/1, paid on CS 11.1)
+        self.assertEqual(T.pay_period_for("Active", dt.date(2026, 11, 1)), "10/26-11/1 • Paid 11/6")
         self.assertEqual(T.pay_period_for("Shipped", None), "Pending")
         self.assertEqual(T.pay_period_for("Active", None), "Pending")           # active on the feed, not posted yet
         self.assertEqual(T.pay_period_for("Disconnected", act), "Disconnected")
         self.assertEqual(T.pay_period_for("Cancelled", act), "Cancelled")
         self.assertEqual(T.pay_period_for("Canceled", None), "Cancelled")
-        self.assertEqual(T.pay_period_for("Active", None, prior="11/1-11/7 • Paid 11/13"),
-                         "11/1-11/7 • Paid 11/13")                              # export lag: keep the week
+        self.assertEqual(T.pay_period_for("Active", None, prior="11/2-11/8 • Paid 11/13"),
+                         "11/2-11/8 • Paid 11/13")                              # export lag: keep the week
         self.assertEqual(T.pay_period_for("Active", None, prior="Pending"), "Pending")
-        self.assertEqual(T.pay_week_label(dt.date(2026, 12, 30)), "12/27-1/2 • Paid 1/8")
+        self.assertEqual(T.pay_week_label(dt.date(2026, 12, 30)), "12/28-1/3 • Paid 1/8")
 
     def test_fresh_carried_and_relabelled_rows(self):
         active_of = lambda l: "11/3/2026"  # noqa: E731 -- Tableau placed the line
         first = T.merge([], [line(line_status="Active")], today=TODAY, active_of=active_of)
         row = first["rows"][0]
-        self.assertEqual(row[T._COL["Pay Period"]], "11/1-11/7 • Paid 11/13")
+        self.assertEqual(row[T._COL["Pay Period"]], "11/2-11/8 • Paid 11/13")
         # next day the export cannot place the line: Activation Date carries, so does the week
         second = T.merge(first["rows"], [line(line_status="Active")], today=TODAY + dt.timedelta(days=1))
-        self.assertEqual(second["rows"][0][T._COL["Pay Period"]], "11/1-11/7 • Paid 11/13")
+        self.assertEqual(second["rows"][0][T._COL["Pay Period"]], "11/2-11/8 • Paid 11/13")
         # the feed drops the line (carried row): still labelled off its own cells
         carried = T.merge(second["rows"], [], today=TODAY + dt.timedelta(days=2))
-        self.assertEqual(carried["rows"][0][T._COL["Pay Period"]], "11/1-11/7 • Paid 11/13")
+        self.assertEqual(carried["rows"][0][T._COL["Pay Period"]], "11/2-11/8 • Paid 11/13")
         # cancelled / disconnected win even though the line had a week
         third = T.merge(first["rows"], [line(line_status="Cancelled")], today=TODAY + dt.timedelta(days=1), active_of=active_of)
         self.assertEqual(third["rows"][0][T._COL["Pay Period"]], "Cancelled")
@@ -447,7 +449,7 @@ class PayPeriod(unittest.TestCase):
         old_row = [c for h, c in zip(T.HEADERS, T.line_row(line(), "10/20/2026", active_of=lambda l: "10/21/2026"))
                    if h != "Pay Period"]
         out = T.merge([old_row], [], today=TODAY, existing_header=old_hdr)
-        self.assertEqual(out["rows"][0][T._COL["Pay Period"]], "10/18-10/24 • Paid 10/30")
+        self.assertEqual(out["rows"][0][T._COL["Pay Period"]], "10/19-10/25 • Paid 10/30")
         self.assertEqual(out["rows"][0][T._COL["Customer"]], "John Doe")
 
 
