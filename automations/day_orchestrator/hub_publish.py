@@ -34,6 +34,9 @@ HUB_ACTIVITY_TAB = "Hub Activity"
 
 # orchestrator report_id -> Hub CARD id. Reports absent here have no Hub card.
 _HUB_CARD = {
+    # Published from lucy_transcriber/run.py itself, only when a transcript
+    # was delivered (its 2-min wrapper ticks mostly find nothing).
+    "lucy_transcriber": "lucy-transcriber",
     # Nico's Verizon daily metrics -> the shared office-metrics card (Megan
     # 2026-11-07: he is "added to the metrics one", no card of his own).
     "verizon_daily_nicolas": "office-metrics",

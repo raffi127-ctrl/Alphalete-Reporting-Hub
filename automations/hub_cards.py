@@ -1419,6 +1419,47 @@ AUTOMATED_REPORTS = [
         "checklist": [],
     },
     {
+        "id": "lucy-transcriber",
+        "name": "Lucy Transcriber — Pitch Recordings (24/7)",
+        "creator": "Raf & Claude",
+        "emoji": "📝",
+        # Amber = an ongoing self-running job, like the other 24/7 Ops cards.
+        "color": "#F59E0B",
+        "category": "📲 Ops",
+        "assignees": ["Lucy 1"],
+        "description": "Reps drop a recording of their door pitch in Slack → Lucy replies in the thread with who said what (🟦 Rep / 🟧 Customer) and the talk-time split. Coaches reply in the thread with feedback; Lucy saves every note to learn what closes deals.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "**•** A rep records their pitch (Voice Memos or a Slack audio clip) "
+            "and drops it in the transcriber channel.\n"
+            "**•** About **2–3 min later** Lucy replies in that thread with the "
+            "transcript — every line marked 🟦 **Rep** or 🟧 **Customer** with "
+            "the time — plus how much each side talked.\n"
+            "**•** Coaches reply in the same thread with feedback. Lucy saves "
+            "every reply next to the transcript — that's what she'll learn "
+            "from later (Phase 2: what to look out for to close more deals).\n\n"
+            "HOW GOOD IS IT\n"
+            "**•** Words: transcribed on Lucy's own machine (free). English only "
+            "for now.\n"
+            "**•** Who said what: tested on 6 real two-person calls — **95% of "
+            "talk time** on the right person. The misses are one-word replies "
+            "(\"okay\", \"yeah\").\n\n"
+            "WHEN IT RUNS\n"
+            "Checks the channel **every 2 minutes, 24/7**, in the background. "
+            "A quiet card is normal — it only lights up when a transcript goes out."
+        ),
+        "assignee_note": "Its own 2-minute LaunchAgent (deploy/com.alphalete.lucy-transcriber.plist), not the 4 AM orchestrator. Not a Hub-run report — nothing to trigger from here.",
+        "self_scheduled": True,
+        "hide_schedule": True,
+        "schedule": {
+            "frequency": "daily",
+            "time": "12:00 AM",
+            "time_label": "24/7 · every 2 min",
+            "estimated_minutes": 1,
+        },
+        "checklist": [],
+    },
+    {
         "id": "due-diligence-bot",
         "name": "Due Diligence Bot — Jiraiya (24/7)",
         "creator": "Raf & Claude",

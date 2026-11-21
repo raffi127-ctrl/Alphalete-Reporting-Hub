@@ -703,6 +703,50 @@
     "type": "not_configured"
    }
   },
+  "lucy_transcriber": {
+   "on_scheduler": false,
+   "_note": "Raf's ask (#lucy-projects 2026-11-21): reps drop a pitch recording in #lucy-transcriber (C0CKFKXDDGX), Lucy replies in the thread with a Rep/Customer transcript; coaches' thread replies are saved for Phase 2. Real schedule = com.alphalete.lucy-transcriber on LUCY 4, every 2 min (install_lucy_transcriber_agent). STAYS ON LUCY 4: that box holds the timer, the state file (which uploads were answered) and the saved feedback in output/lucy_transcriber/ -- a run anywhere else would answer the same recording twice. Least-loaded Lucy at the time (78 entries, 12 timers). Needs Apple silicon (mlx-whisper), Lucy's token with files:read, the Anthropic key. Health check, posts nothing: `lucy rerun lucy_transcriber -- --doctor --fix`. Dry tick: `lucy rerun lucy_transcriber -- --check --dry-run`.",
+   "machine": "Lucy 4",
+   "stay_home": true,
+   "display_name": "Lucy Transcriber (pitch recordings)",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.lucy_transcriber.run"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 20
+  },
+  "install_lucy_transcriber_agent": {
+   "on_scheduler": false,
+   "_off_scheduler_note": "Install/refresh com.alphalete.lucy-transcriber on LUCY 4 (Lucy Transcriber, every 2 min). install_agent only rewrites and reloads the plist; it touches no Sheet and no report data.",
+   "machine": "Lucy 4",
+   "display_name": "Install Lucy Transcriber agent (every 2 min)",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.day_orchestrator.install_agent"
+   ],
+   "base_args": [
+    "lucy-transcriber"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": {
+    "type": "not_configured"
+   }
+  },
   "sales_board_mind_map": {
    "on_scheduler": false,
    "_note": "Raf's 6am mind map -> #alphalete-lvl1-chat PNG (NOT #alphalete-sales -- Megan 2026-09-20), fired by com.alphalete.mind-map-daily on Lucy 1 at 6:00am (Raf Loom 2026-09-20; moved from 7:00 by Raf via Maud 2026-11-03). The sales board drawn as a tree by trainer, rooted on Team, colored by each rep's WEEK read off the board's own cells; new starts come from the dated 'D2D OBCL m.d' tab; terminated reps removed. STAYS ON LUCY 1 (Megan 2026-09-20): her load is the 4am batch -- the 6:15-7:30 cluster is Lucy 2's. Manual: `lucy rerun sales_board_mind_map -- --dry-run` renders only; `-- --dm Megan` DMs the PNG. Read-only: writes nothing to any sheet.",

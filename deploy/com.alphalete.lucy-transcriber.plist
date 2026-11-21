@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key><string>com.alphalete.lucy-transcriber</string>
+    <!-- PATHS ARE MEGAN'S LAPTOP and are rewritten to the machine's repo root
+         at install time. NOT INSTALLED ANYWHERE YET (2026-11-21): waiting on
+         the Slack channel. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/megan/1st Claude Folder/deploy/lucy_transcriber.sh</string>
+        <string>--check</string>
+    </array>
+    <key>WorkingDirectory</key><string>/Users/megan/1st Claude Folder</string>
+    <key>EnvironmentVariables</key><dict><key>PYTHONPATH</key><string>/Users/megan/1st Claude Folder</string></dict>
+    <!-- Every 2 min: a rep gets their transcript ~2-3 min after uploading. -->
+    <key>StartInterval</key><integer>120</integer>
+    <key>StandardOutPath</key><string>/tmp/com.alphalete.lucy-transcriber.out</string>
+    <key>StandardErrorPath</key><string>/tmp/com.alphalete.lucy-transcriber.err</string>
+    <key>RunAtLoad</key><false/>
+</dict>
+</plist>
