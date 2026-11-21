@@ -312,7 +312,7 @@ def _client() -> gspread.Client:
             f"No Sheets OAuth token at {OAUTH_TOKEN_PATH}. Run the one-time "
             "authorization on this machine (attended — opens a browser, never "
             "in a batch run):  python -m automations.recruiting_report.sheets_auth")
-    creds = Credentials.from_authorized_user_file(str(OAUTH_TOKEN_PATH), SCOPES)
+    creds = load_token_credentials()
     if not creds.valid:
         if creds.expired and creds.refresh_token:
             creds.refresh(Request())
@@ -333,6 +333,28 @@ def _client() -> gspread.Client:
     except AttributeError:  # older gspread — keep the old (no-timeout) behavior
         pass
     return gc
+
+
+def load_token_credentials(path=None):
+    """This machine's saved Sheets token, asking Google only for the scopes it
+    was CONSENTED to.
+
+    WHY (2026-11-21). 37e60f4 added `drive.file` to SCOPES and passed that list
+    here. A refresh that asks for a scope the token never consented to is
+    refused outright: RefreshError `invalid_scope` (proven against the live
+    endpoint the same evening). So every Lucy whose token predates the change
+    lost ALL Sheets access the next time its hourly access token expired:
+    Lucy 2 and Lucy 4 went silent at 17:06-17:08, their queue pollers included,
+    and Lucy 1 / Lucy 3 would have followed before the 4am batch.
+
+    Loading with no scope list makes google-auth use the token's own `scopes`
+    field: an old token keeps working with the Sheets scope it has, and one
+    re-consented through sheets_auth (which still asks for SCOPES) gets
+    drive.file too. Creating a workbook still needs that re-consent on the
+    machine doing it, which is the correct, narrow failure.
+    """
+    from google.oauth2.credentials import Credentials
+    return Credentials.from_authorized_user_file(str(path or OAUTH_TOKEN_PATH))
 
 
 # Opened workbooks, by key. Each open costs a fetch_sheet_metadata round trip,

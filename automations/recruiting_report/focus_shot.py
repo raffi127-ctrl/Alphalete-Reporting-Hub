@@ -39,7 +39,10 @@ SECTION_MARK = focus_render.SECTION_MARK       # "current week"
 
 
 def _access_token() -> str:
-    creds = Credentials.from_authorized_user_file(str(OAUTH_TOKEN_PATH), SCOPES)
+    # The token's own consented scopes, never fill.SCOPES: asking for one it
+    # lacks fails the refresh with invalid_scope. See fill.load_token_credentials.
+    from automations.recruiting_report.fill import load_token_credentials
+    creds = load_token_credentials(OAUTH_TOKEN_PATH)
     creds.refresh(_GARequest())
     return creds.token
 

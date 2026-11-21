@@ -18,3 +18,19 @@ def test_drive_access_is_the_narrow_one():
     here needs that."""
     assert "https://www.googleapis.com/auth/drive.file" in fill.SCOPES
     assert "https://www.googleapis.com/auth/drive" not in fill.SCOPES
+
+
+def test_an_old_token_is_loaded_with_its_own_scopes(tmp_path):
+    """2026-11-21: asking Google to refresh a token for a scope it never
+    consented to fails with invalid_scope, so passing fill.SCOPES (which now
+    includes drive.file) took every Lucy with a pre-change token off Sheets.
+    The token must be loaded with the scopes saved IN it."""
+    import json
+    old = tmp_path / "token.json"
+    old.write_text(json.dumps({
+        "token": "x", "refresh_token": "r", "client_id": "c",
+        "client_secret": "s", "token_uri": "https://oauth2.googleapis.com/token",
+        "scopes": ["https://www.googleapis.com/auth/spreadsheets"]}))
+    creds = fill.load_token_credentials(old)
+    assert list(creds.scopes) == ["https://www.googleapis.com/auth/spreadsheets"]
+    assert "https://www.googleapis.com/auth/drive.file" in fill.SCOPES
