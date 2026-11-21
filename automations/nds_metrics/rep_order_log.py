@@ -299,6 +299,25 @@ def sara_activations(log=print) -> Dict[tuple, dt.date]:
 
 
 DEAD_STATUSES = ("Cancelled", "Disconnected")
+REPLACED = ("__replaced__", "")       # sara[REPLACED] = numbers the export carries on 2+ orders
+
+
+def mark_replaced(cols, rows: Sequence, sara: dict) -> dict:
+    """Add the set of numbers the export carries on two or more orders, so a
+    SaraPlus activation only places the line on its own order there."""
+    import collections
+    from automations.nds_metrics.run import _c
+    if not sara:
+        return sara
+    i_tn, i_spm = cols.find("spe.tn"), cols.find("sp.spm number", "spm number")
+    by_tn = collections.defaultdict(set)
+    for r in rows:
+        k = line_key(_c(cols, r, i_spm) if i_spm is not None else "", _c(cols, r, i_tn) if i_tn is not None else "")
+        if k[1]:
+            by_tn[k[1]].add(k[0])
+    out = dict(sara)
+    out[REPLACED] = {tn for tn, orders in by_tn.items() if len(orders) > 1}
+    return out
 
 
 def placed(status: str, tableau_act: Optional[dt.date], sara: Optional[dict], spm, tn):
@@ -308,10 +327,11 @@ def placed(status: str, tableau_act: Optional[dt.date], sara: Optional[dict], sp
     if tableau_act is not None or status == "Posted" or status in DEAD_STATUSES or not sara:
         return status, tableau_act
     d = sara.get(line_key(spm, tn))
-    if d is None and tn and not str(spm or "").strip():
-        d = sara.get(line_key("", tn))   # by number only when the row has no order id: a number
-        #                                   re-placed on a NEW order (Sundararaghandran's 858-722-3126,
-        #                                   10/30 -> 11/12) must not activate the old order's line too
+    if d is None and tn and line_key("", tn)[1] not in sara.get(REPLACED, ()):
+        # by number: the export's order id is not always SaraPlus's (SPM orders), so a number
+        # alone places a line -- unless the export carries that number on two orders (re-placed:
+        # Sundararaghandran's 858-722-3126, 10/30 -> 11/12), where only the exact order counts
+        d = sara.get(line_key("", tn))
     return ("Active", d) if d is not None else (status, tableau_act)
 
 
@@ -1016,7 +1036,7 @@ def compare_sara_tableau(cols, crew: Sequence, sara: dict, log=print) -> dict:
             if len(examples) < 4:
                 examples.append("%s %s sara %d/%d tableau %d/%d" % (_c(cols, r, i_rep).split(" ")[0], tn[-4:],
                                                                    d.month, d.day, t.month, t.day))
-    waiting = sum(1 for k in (sara or {}) if k[0])
+    waiting = sum(1 for k in (sara or {}) if k[0] and k != REPLACED)
     log(f"[nds] rep order log: sara vs tableau: {both} line(s) dated by both, {moved} in a different "
         f"pay week{(' (' + '; '.join(examples) + ')') if examples else ''}; {waiting} SaraPlus-active line(s) seen")
     return {"both": both, "moved": moved}
@@ -1039,7 +1059,7 @@ def picture_lines(cols, crew: Sequence, today: dt.date, log=print) -> dict:
     except Exception as e:  # noqa: BLE001 -- the pictures still ship, under the logins
         log(f"[nds] rep order log: NOTE sold-under moves not applied ({type(e).__name__}: {str(e)[:100]})")
     tab = TabPlans.read(log=log)           # the plan / device of a line the export has none for yet
-    sara = sara_activations(log=log)       # where SaraPlus shows a line activating (Tableau not posted yet)
+    sara = mark_replaced(cols, logins, sara_activations(log=log))   # where SaraPlus shows a line activating
     compare_sara_tableau(cols, crew, sara, log=log)
     dbl = double_days(log=log)
     try:                                   # each port line's tier bonus, at its LOGIN's tier
