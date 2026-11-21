@@ -47,6 +47,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import sys
+import time
 from typing import Dict, List, Optional, Tuple
 
 from automations.local_office_1on1s import obcl as OBCL
@@ -349,9 +350,46 @@ def main(argv=None) -> int:
     log("=== SHOWED TO DAY 1 · %s · %s · %s ==="
         % (office.key, month.strftime("%B %Y"),
            "WRITE" if args.write else "DRY-RUN"))
-    n = sweep(sheet, month, args.write, office.tab)
+    n = sweep_riding_quota(sheet, month, args.write, office.tab)
     log("filled %d cell(s)" % n)
     return 0
+
+
+# Extra waits, in seconds, when Sheets says the per-minute read quota is used
+# up. They come after fill._retry's own ~3 minutes of 30s+ waits have already
+# run out.
+QUOTA_WAITS_S = (120, 240)
+
+
+def _is_quota(exc: BaseException) -> bool:
+    status = getattr(getattr(exc, "response", None), "status_code", None)
+    return status == 429 or "[429]" in str(exc) or "Quota exceeded" in str(exc)
+
+
+def sweep_riding_quota(sheet_id: str, month: dt.date, write: bool,
+                       tab: str = "", waits=QUOTA_WAITS_S, sleep=time.sleep
+                       ) -> int:
+    """sweep(), tried again after a longer pause when Sheets answers 429.
+
+    WHY (2026-11-21): the 5pm run died on "Quota exceeded for 'Read requests
+    per minute per user'" reading the Sales Board. This sweep runs straight
+    after Raf's Daily Update, on the same Lucy 2 account, so it starts inside
+    the minute that run just spent. fill._retry waited ~3 minutes and gave up,
+    and a standalone job is never retried, so the column stayed blank until
+    a person re-ran it. Running the whole sweep again is safe: it only fills a
+    cell that is still EMPTY, so a second pass can't overwrite or double
+    anything. Anything that is not a quota error still fails at once."""
+    for i, wait in enumerate((0,) + tuple(waits)):
+        if wait:
+            log("  Sheets read quota is used up for this account - waiting "
+                "%ds, then trying again (%d of %d)" % (wait, i, len(waits)))
+            sleep(wait)
+        try:
+            return sweep(sheet_id, month, write, tab)
+        except Exception as exc:                            # noqa: BLE001
+            if not _is_quota(exc) or i == len(waits):
+                raise
+    return 0  # unreachable: the last attempt returns or raises
 
 
 if __name__ == "__main__":

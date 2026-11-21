@@ -185,5 +185,51 @@ class Months(unittest.TestCase):
                          [dt.date(2025, 12, 1), dt.date(2026, 1, 1)])
 
 
+class RidesTheReadQuota(unittest.TestCase):
+    """2026-11-21: the 5pm sweep died on a Sheets 429 straight after Raf's
+    Daily Update spent the account's per-minute reads. It now waits longer
+    and runs the (fill-empty-only) sweep again."""
+
+    QUOTA = RuntimeError("APIError: [429]: Quota exceeded for quota metric "
+                         "'Read requests' and limit 'Read requests per minute "
+                         "per user'")
+
+    def _run(self, outcomes):
+        from unittest import mock
+        calls, slept = [], []
+
+        def fake_sweep(*a, **k):
+            calls.append(a)
+            out = outcomes[len(calls) - 1]
+            if isinstance(out, Exception):
+                raise out
+            return out
+
+        with mock.patch.object(D, "sweep", fake_sweep):
+            try:
+                n = D.sweep_riding_quota("sid", dt.date(2026, 11, 1), True,
+                                         waits=(120, 240), sleep=slept.append)
+            except Exception as e:  # noqa: BLE001
+                n = e
+        return n, calls, slept
+
+    def test_quota_then_clean_fills(self):
+        n, calls, slept = self._run([self.QUOTA, 7])
+        self.assertEqual(n, 7)
+        self.assertEqual(slept, [120])
+
+    def test_quota_every_time_still_fails(self):
+        n, calls, slept = self._run([self.QUOTA] * 3)
+        self.assertIsInstance(n, RuntimeError)
+        self.assertEqual(len(calls), 3)
+        self.assertEqual(slept, [120, 240])
+
+    def test_other_errors_are_not_retried(self):
+        n, calls, slept = self._run([KeyError("no tab"), 1])
+        self.assertIsInstance(n, KeyError)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(slept, [])
+
+
 if __name__ == "__main__":
     unittest.main()

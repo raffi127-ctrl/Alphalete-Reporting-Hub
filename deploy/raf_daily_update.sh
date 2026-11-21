@@ -90,7 +90,9 @@ try:
     notify.post_alert(
         ":rotating_light: *Raf Daily Update · Showed To Day 1* failed",
         ["```"] + tail + ["```",
-         "Re-run: `lucy rerun raf_daily_update_day1`"],
+         # The flags are the point: bare `rerun raf_daily_update_day1` is
+         # a DRY run (base_args is empty) and fills nothing (2026-11-21).
+         "Re-run: `lucy rerun raf_daily_update_day1 --write --test-sheet`"],
         tag="raf-daily-update-day1-failed", cfg=load_config(),
         incident="standalone-raf_daily_update_day1")
 except Exception as e:
