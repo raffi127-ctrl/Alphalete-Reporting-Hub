@@ -3,21 +3,22 @@
 <plist version="1.0">
 <dict>
     <key>Label</key><string>com.alphalete.lucy-transcriber</string>
-    <!-- PATHS ARE MEGAN'S LAPTOP and are rewritten to the machine's repo root
-         at install time. NOT INSTALLED ANYWHERE YET (2026-11-21): waiting on
-         the Slack channel. -->
+    <!-- Always-on Lucy Transcriber bot (Socket Mode). KeepAlive restarts it if
+         it dies. PATHS ARE MEGAN'S LAPTOP and are rewritten at install time
+         (`lucy rerun install_lucy_transcriber_agent`). Tokens come from
+         ~/.config/recruiting-report/transcriber-bot-token + transcriber-app-token. -->
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
         <string>/Users/megan/1st Claude Folder/deploy/lucy_transcriber.sh</string>
-        <string>--check</string>
     </array>
     <key>WorkingDirectory</key><string>/Users/megan/1st Claude Folder</string>
     <key>EnvironmentVariables</key><dict><key>PYTHONPATH</key><string>/Users/megan/1st Claude Folder</string></dict>
-    <!-- Every 2 min: a rep gets their transcript ~2-3 min after uploading. -->
-    <key>StartInterval</key><integer>120</integer>
+    <key>RunAtLoad</key><true/>
+    <key>KeepAlive</key><true/>
+    <!-- No hammer-restart when it can't start (e.g. tokens not placed yet). -->
+    <key>ThrottleInterval</key><integer>60</integer>
     <key>StandardOutPath</key><string>/tmp/com.alphalete.lucy-transcriber.out</string>
     <key>StandardErrorPath</key><string>/tmp/com.alphalete.lucy-transcriber.err</string>
-    <key>RunAtLoad</key><false/>
 </dict>
 </plist>

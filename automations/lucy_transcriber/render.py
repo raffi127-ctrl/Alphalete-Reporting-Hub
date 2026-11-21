@@ -6,7 +6,7 @@ talking. Rep is blue, Customer orange -- the same two colours everywhere.
 """
 from __future__ import annotations
 
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from automations.lucy_transcriber.transcribe import ROLES, _clock
 
@@ -16,19 +16,36 @@ CHUNK = 3500
 # Past this many messages the thread is a wall -- send a file instead.
 MAX_MESSAGES = 5
 
-FEEDBACK_ASK = ("💬 *Coaches:* reply right here with feedback 👇 "
-                "I keep every note so I can learn what closes deals.")
+# The rep's copy ends here; the coach's copy ends asking for feedback.
+REP_END = "🙌 Your coach gets a copy of this to give you feedback."
+COACH_ASK = ("💬 Reply right here with feedback for {first} 👇 "
+             "I keep every note so I can learn what closes deals.")
+
+GOT_IT = ("🎧 Got it! Transcribing now -- I'll reply right here in a minute or "
+          "two (longer recordings take a little longer).")
+HELP = ("👋 Send me a recording of your pitch -- a Voice Memo or a Slack audio "
+        "clip -- and I'll send back the whole conversation, every line marked "
+        "🟦 Rep or 🟧 Customer.")
+SAVED = "white_check_mark"     # reaction on a coach's feedback reply
+
+NO_TALK = ("🎧 I listened to the whole thing but couldn't hear anyone talking. "
+           "Hold the phone a little closer (screen up, in a top pocket) and send it again?")
+UNREADABLE = ("🎧 I couldn't open that file as audio. A Voice Memo or a Slack "
+              "audio clip works best. Send it again? ¡Gracias!")
+TOO_BIG = ("🎧 That file is too big for me ({mb} MB). Can you send it in "
+           "shorter pieces? One door per recording is perfect.")
+TOO_LONG = ("🎧 That one is {len} -- I transcribe up to 3 hours at a time. "
+            "Send it in shorter pieces? One door per recording is perfect.")
+GAVE_UP = ("🎧 Something went wrong on my side with this one -- I've flagged "
+           "it to the team. Sorry! Send it again later?")
 
 
-def _len(sec: float) -> str:
-    return _clock(sec)
-
-
-def header(t: Dict) -> str:
+def header(t: Dict, who: Optional[str] = None) -> str:
     talk = t.get("talk") or {}
     split = " · ".join("{} {} {}%".format(DOT[sp], ROLES[sp], talk[sp])
                        for sp in ("R", "C", "O") if talk.get(sp))
-    return "📝 *Transcript* · {} long\n{}".format(_len(t["seconds"]), split or "")
+    title = "*{}'s pitch*".format(who) if who else "*Transcript*"
+    return "📝 {} · {} long\n{}".format(title, _clock(t["seconds"]), split)
 
 
 def turn_lines(t: Dict, mrkdwn: bool = True) -> List[str]:
@@ -43,32 +60,32 @@ def turn_lines(t: Dict, mrkdwn: bool = True) -> List[str]:
     return out
 
 
-def slack_messages(t: Dict) -> List[str]:
-    """The thread reply, split into Slack-sized messages. [] = too long to
-    post inline (the caller uploads as_text() as a file instead)."""
-    msgs, cur = [], header(t)
+def slack_messages(t: Dict, end: str = REP_END, who: Optional[str] = None,
+                   head: bool = True) -> List[str]:
+    """The reply, split into Slack-sized messages, `end` on the last one.
+    head=False leaves the header off (the coach's copy carries it on the
+    parent message instead). [] = too long to post inline (the caller
+    uploads as_text() as a file)."""
+    msgs, cur = [], header(t, who) if head else ""
     for block in turn_lines(t):
-        if len(cur) + len(block) + 2 > CHUNK:
+        if cur and len(cur) + len(block) + 2 > CHUNK:
             msgs.append(cur)
             cur = block
         else:
-            cur += "\n\n" + block
-    if len(cur) + len(FEEDBACK_ASK) + 2 > CHUNK:
-        msgs += [cur, FEEDBACK_ASK]
+            cur = cur + "\n\n" + block if cur else block
+    if not end:
+        msgs.append(cur)
+    elif len(cur) + len(end) + 2 > CHUNK:
+        msgs += [cur, end]
     else:
-        msgs.append(cur + "\n\n" + FEEDBACK_ASK)
+        msgs.append(cur + "\n\n" + end)
     return msgs if len(msgs) <= MAX_MESSAGES else []
 
 
-def as_text(t: Dict) -> str:
+def as_text(t: Dict, who: Optional[str] = None) -> str:
     talk = t.get("talk") or {}
     split = ", ".join("{} {}%".format(ROLES[sp], talk[sp])
                       for sp in ("R", "C", "O") if talk.get(sp))
-    head = "Transcript - {} long - talk time: {}".format(_len(t["seconds"]), split)
+    head = "{} - {} long - talk time: {}".format(
+        "{}'s pitch".format(who) if who else "Transcript", _clock(t["seconds"]), split)
     return head + "\n\n" + "\n".join(turn_lines(t, mrkdwn=False)) + "\n"
-
-
-NO_TALK = ("🎧 I listened to the whole thing but couldn't hear anyone talking. "
-           "Hold the phone a little closer (screen up, in a top pocket) and send it again?")
-UNREADABLE = ("🎧 I couldn't open that file as audio. A Voice Memo or a Slack "
-              "audio clip works best. Send it again? ¡Gracias!")

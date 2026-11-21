@@ -1426,18 +1426,20 @@ AUTOMATED_REPORTS = [
         # Amber = an ongoing self-running job, like the other 24/7 Ops cards.
         "color": "#F59E0B",
         "category": "📲 Ops",
-        "assignees": ["Lucy 1"],
-        "description": "Reps drop a recording of their door pitch in Slack → Lucy replies in the thread with who said what (🟦 Rep / 🟧 Customer) and the talk-time split. Coaches reply in the thread with feedback; Lucy saves every note to learn what closes deals.",
+        "assignees": ["Lucy 4"],
+        "description": "Reps DM the Lucy Transcriber bot a recording of their door pitch → she DMs back who said what (🟦 Rep / 🟧 Customer) and the talk-time split, and sends Raf a copy. His feedback replies are saved so she can learn what closes deals.",
         "breakdown": (
             "WHAT IT DOES\n"
             "**•** A rep records their pitch (Voice Memos or a Slack audio clip) "
-            "and drops it in the transcriber channel.\n"
-            "**•** About **2–3 min later** Lucy replies in that thread with the "
-            "transcript — every line marked 🟦 **Rep** or 🟧 **Customer** with "
-            "the time — plus how much each side talked.\n"
-            "**•** Coaches reply in the same thread with feedback. Lucy saves "
-            "every reply next to the transcript — that's what she'll learn "
-            "from later (Phase 2: what to look out for to close more deals).\n\n"
+            "and **DMs it to Lucy Transcriber** — same idea as the 2nd-round "
+            "auditor bot.\n"
+            "**•** She answers \"Got it\" right away, and a minute or two later "
+            "replies with the transcript — every line marked 🟦 **Rep** or "
+            "🟧 **Customer** with the time — plus how much each side talked.\n"
+            "**•** **Raf gets a copy** in his DM with the bot. Whatever he "
+            "replies under it is saved next to the transcript — that's what "
+            "she'll learn from later (Phase 2: what to look out for to close "
+            "more deals).\n\n"
             "HOW GOOD IS IT\n"
             "**•** Words: transcribed on Lucy's own machine (free). English only "
             "for now.\n"
@@ -1445,16 +1447,16 @@ AUTOMATED_REPORTS = [
             "talk time** on the right person. The misses are one-word replies "
             "(\"okay\", \"yeah\").\n\n"
             "WHEN IT RUNS\n"
-            "Checks the channel **every 2 minutes, 24/7**, in the background. "
-            "A quiet card is normal — it only lights up when a transcript goes out."
+            "**Always on, 24/7** on Lucy 4, in the background. A quiet card is "
+            "normal — it only lights up when a transcript goes out."
         ),
-        "assignee_note": "Its own 2-minute LaunchAgent (deploy/com.alphalete.lucy-transcriber.plist), not the 4 AM orchestrator. Not a Hub-run report — nothing to trigger from here.",
+        "assignee_note": "Runs 24/7 on Lucy 4 as its own Slack bot (deploy/com.alphalete.lucy-transcriber.plist, KeepAlive), not the 4 AM orchestrator. Not a Hub-run report — nothing to trigger from here.",
         "self_scheduled": True,
         "hide_schedule": True,
         "schedule": {
             "frequency": "daily",
             "time": "12:00 AM",
-            "time_label": "24/7 · every 2 min",
+            "time_label": "24/7 · always on",
             "estimated_minutes": 1,
         },
         "checklist": [],

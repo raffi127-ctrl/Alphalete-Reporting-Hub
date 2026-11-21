@@ -11,7 +11,8 @@ import unittest
 from types import SimpleNamespace
 
 from automations.lucy_transcriber import render as R
-from automations.lucy_transcriber import run as RUN
+from automations.lucy_transcriber import bot as B
+from automations.lucy_transcriber import config as C
 from automations.lucy_transcriber import transcribe as T
 
 
@@ -106,7 +107,7 @@ class Render(unittest.TestCase):
         self.assertTrue(msgs[0].startswith("📝 *Transcript* · 0:12 long"))
         self.assertIn("🟦 Rep 82% · 🟧 Customer 18%", msgs[0])
         self.assertIn("🟧 *Customer* `0:09`\nWe have Spectrum.", msgs[0])
-        self.assertTrue(msgs[0].endswith(R.FEEDBACK_ASK))
+        self.assertTrue(msgs[0].endswith(R.REP_END))
 
     def test_long_transcript_splits_under_slack_limit(self):
         g = _got()
@@ -115,7 +116,7 @@ class Render(unittest.TestCase):
         msgs = R.slack_messages(g)
         self.assertGreater(len(msgs), 1)
         self.assertTrue(all(len(m) <= R.CHUNK for m in msgs))
-        self.assertTrue(msgs[-1].endswith(R.FEEDBACK_ASK))
+        self.assertTrue(msgs[-1].endswith(R.REP_END))
 
     def test_very_long_goes_to_a_file(self):
         g = _got()
@@ -125,29 +126,136 @@ class Render(unittest.TestCase):
         self.assertIn("[0:00] Rep: word", R.as_text(g))
 
 
-class Watcher(unittest.TestCase):
-    def test_audio_file_detection(self):
-        self.assertTrue(RUN.audio_file({"files": [{"mimetype": "audio/x-m4a"}]}))
-        self.assertTrue(RUN.audio_file({"files": [{"mimetype": "video/mp4",
-                                                   "subtype": "slack_audio"}]}))
-        self.assertTrue(RUN.audio_file({"files": [{"mimetype": "application/octet-stream",
-                                                   "filetype": "m4a"}]}))
-        self.assertIsNone(RUN.audio_file({"files": [{"mimetype": "image/png",
-                                                     "filetype": "png"}]}))
-        self.assertIsNone(RUN.audio_file({"text": "no file"}))
+class FakeWeb:
+    """Records every Slack call; sends nothing."""
 
-    def test_new_uploads_skips_lucy_done_and_non_audio(self):
-        audio = [{"mimetype": "audio/mp4"}]
-        msgs = [{"ts": "3.0", "user": "U1", "files": audio},
-                {"ts": "1.0", "user": "U2", "files": audio},
-                {"ts": "2.0", "user": RUN.LUCY, "files": audio},       # Lucy's own
-                {"ts": "4.0", "user": "U1", "files": audio},           # already posted
-                {"ts": "5.0", "user": "U1", "text": "hi"},             # no recording
-                {"ts": "6.0", "user": "U3", "files": audio}]           # failed once: retry
-        client = SimpleNamespace(conversations_history=lambda **kw: {"messages": msgs})
-        state = {"done": {"4.0": {"status": "posted"}, "6.0": {"status": "error"}}}
-        got = RUN.new_uploads(client, "C1", RUN.LUCY, state)
-        self.assertEqual([m["ts"] for m in got], ["1.0", "3.0", "6.0"])
+    def __init__(self):
+        self.posts, self.reactions = [], []
+
+    def chat_postMessage(self, **kw):
+        self.posts.append(kw)
+        return {"ts": "9{}.0".format(len(self.posts))}
+
+    def conversations_open(self, users):
+        return {"channel": {"id": "D-" + users}}
+
+    def users_info(self, user):
+        return {"user": {"profile": {"real_name": "Jordan Smith"}}}
+
+    def reactions_add(self, **kw):
+        self.reactions.append(kw)
+
+
+def _rec_ev(ts="100.0", user="UREP", **kw):
+    return dict({"type": "message", "channel_type": "im", "channel": "DREP",
+                 "ts": ts, "user": user, "subtype": "file_share",
+                 "files": [{"mimetype": "audio/x-m4a", "filetype": "m4a",
+                            "name": "door.m4a", "size": 1000}]}, **kw)
+
+
+class Bot(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+        self.tmp = Path(tempfile.mkdtemp())
+        self._saved = (C.STATE, C.RECORDS, C.AUDIO)
+        C.STATE, C.RECORDS, C.AUDIO = (self.tmp / "state.json", self.tmp / "records",
+                                       self.tmp / "audio")
+        self.state = B.load_state()
+        while not B._jobs.empty():
+            B._jobs.get()
+
+    def tearDown(self):
+        C.STATE, C.RECORDS, C.AUDIO = self._saved
+
+    def test_audio_file_detection(self):
+        self.assertTrue(B.audio_file({"files": [{"mimetype": "audio/x-m4a"}]}))
+        self.assertTrue(B.audio_file({"files": [{"mimetype": "video/mp4",
+                                                 "subtype": "slack_audio"}]}))
+        self.assertTrue(B.audio_file({"files": [{"mimetype": "application/octet-stream",
+                                                 "filetype": "m4a"}]}))
+        self.assertIsNone(B.audio_file({"files": [{"mimetype": "image/png",
+                                                   "filetype": "png"}]}))
+
+    def test_recording_dm_is_acked_once_and_queued_once(self):
+        w = FakeWeb()
+        B.on_event(w, _rec_ev(), self.state)
+        B.on_event(w, _rec_ev(), self.state)      # Socket Mode redelivery
+        self.assertEqual(B._jobs.qsize(), 1)
+        self.assertEqual([p["text"] for p in w.posts], [R.GOT_IT])
+        self.assertEqual(w.posts[0]["thread_ts"], "100.0")
+
+    def test_bot_messages_and_channels_are_ignored(self):
+        w = FakeWeb()
+        B.on_event(w, _rec_ev(bot_id="B1"), self.state)
+        B.on_event(w, _rec_ev(channel_type="channel"), self.state)
+        self.assertEqual((B._jobs.qsize(), w.posts), (0, []))
+
+    def test_plain_dm_gets_help_once_per_six_hours(self):
+        w = FakeWeb()
+        ev = {"type": "message", "channel_type": "im", "channel": "DREP",
+              "ts": "5.0", "user": "UREP", "text": "hi"}
+        B.on_event(w, ev, self.state)
+        B.on_event(w, dict(ev, ts="6.0"), self.state)
+        self.assertEqual([p["text"] for p in w.posts], [R.HELP])
+
+    def test_process_sends_rep_copy_and_coach_copy_and_saves_feedback(self):
+        w = FakeWeb()
+        got = _got()
+        real = (B._download, T.transcribe)
+        B._download = lambda f, tok, dest: dest
+        T.transcribe = lambda *a, **k: got
+        try:
+            self.assertEqual(B.process(w, "xoxb-x", _rec_ev(), self.state), "posted")
+        finally:
+            B._download, T.transcribe = real
+        coach = next(iter(C.COACHES))
+        rep_posts = [p for p in w.posts if p["channel"] == "DREP"]
+        coach_posts = [p for p in w.posts if p["channel"] == "D-" + coach]
+        self.assertTrue(rep_posts[0]["text"].startswith("📝 *Transcript*"))
+        self.assertTrue(rep_posts[-1]["text"].endswith(R.REP_END))
+        # coach: a clean parent line, the transcript in its thread
+        self.assertTrue(coach_posts[0]["text"].startswith("📝 *Jordan Smith's pitch*"))
+        self.assertNotIn("thread_ts", coach_posts[0])
+        self.assertEqual(coach_posts[1]["thread_ts"], "92.0")
+        self.assertNotIn("📝", coach_posts[1]["text"])
+        self.assertIn("feedback for Jordan", coach_posts[-1]["text"])
+        # the coach's reply under the copy is saved and ticked
+        fb = {"type": "message", "channel_type": "im", "channel": "D-" + coach,
+              "ts": "200.0", "thread_ts": "92.0", "user": coach,
+              "text": "Ask for the husband's number next time"}
+        B.on_event(w, fb, self.state)
+        B.on_event(w, fb, self.state)
+        rec = json.loads((C.RECORDS / "100.0.json").read_text(encoding="utf-8"))
+        self.assertEqual([(f["where"], f["text"]) for f in rec["feedback"]],
+                         [("Raf", "Ask for the husband's number next time")])
+        self.assertEqual(w.reactions[0]["name"], R.SAVED)
+
+    def test_a_coachs_own_recording_gets_no_copy(self):
+        w = FakeWeb()
+        coach = next(iter(C.COACHES))
+        real = (B._download, T.transcribe)
+        B._download = lambda f, tok, dest: dest
+        T.transcribe = lambda *a, **k: _got()
+        try:
+            B.process(w, "xoxb-x", _rec_ev(user=coach), self.state)
+        finally:
+            B._download, T.transcribe = real
+        self.assertEqual({p["channel"] for p in w.posts}, {"DREP"})
+        self.assertNotIn(R.REP_END, w.posts[-1]["text"])
+
+    def test_catch_up_picks_unanswered_recordings_only(self):
+        self.state["done"]["2.0"] = {"status": "posted", "tries": 1}
+        self.state["done"]["3.0"] = {"status": "error", "tries": 1}
+        msgs = [_rec_ev(ts="1.0"), _rec_ev(ts="2.0"), _rec_ev(ts="3.0"),
+                {"ts": "4.0", "user": "UREP", "text": "hi"}]
+        for m in msgs:
+            m.pop("channel", None), m.pop("channel_type", None)
+        w = SimpleNamespace(
+            users_conversations=lambda **kw: {"channels": [{"id": "DREP"}]},
+            conversations_history=lambda **kw: {"messages": msgs})
+        self.assertEqual(B.catch_up(w, self.state), 2)
+        self.assertEqual(sorted(B._jobs.get()["ts"] for _ in range(2)), ["1.0", "3.0"])
 
 
 if __name__ == "__main__":

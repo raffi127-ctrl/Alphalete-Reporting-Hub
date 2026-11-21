@@ -1,38 +1,29 @@
 #!/bin/bash
-# Lucy Transcriber — reps drop a pitch recording in the transcriber channel,
-# Lucy replies in the thread with who said what (Rep / Customer). Ticks every
-# 2 minutes (com.alphalete.lucy-transcriber.plist). An idle tick is one Slack
-# read and exits; the channel id lives in automations/lucy_transcriber/config.py
-# and an empty id means "not switched on" (exits before touching Slack).
+# Lucy Transcriber — the always-on Slack bot reps DM their pitch recordings to
+# (automations/lucy_transcriber/bot.py). Socket Mode, so nothing inbound;
+# launchd keeps it alive (com.alphalete.lucy-transcriber, KeepAlive) and
+# `exec` lets launchd track the python process directly.
 #
-# Hub pill: run.py publishes to the Hub itself, only when a transcript was
-# actually DELIVERED (or a recording failed for good) — not from this wrapper,
-# because 700 idle ticks a day would each mark the card as "ran".
+# Tokens (never in the repo): ~/.config/recruiting-report/transcriber-bot-token
+# (xoxb-) and transcriber-app-token (xapp-). Without them the bot exits 2 and
+# launchd retries every 60 s (ThrottleInterval) — harmless until they land.
 #
-# Needs: an Apple-silicon Lucy (mlx-whisper), Lucy's Slack token with
-# files:read, and the Anthropic key. Runs in the background — no window.
+# Hub pill: bot.py publishes only when a transcript is DELIVERED (or a
+# recording fails for good), never from this wrapper.
 #
-# Manual:  bash deploy/lucy_transcriber.sh --check --dry-run
+# Needs: an Apple-silicon Lucy (mlx-whisper) and the Anthropic key.
+# Check the box first:  .venv/bin/python -m automations.lucy_transcriber.run --doctor --fix
 set -u
 cd "$(dirname "$0")/.." || exit 1
 
+# Pick up pushed fixes on each (re)start.
 if [ -d .git ]; then
   perl -e 'alarm 60; exec @ARGV' git pull --ff-only --autostash --quiet origin main 2>/dev/null || true
 fi
 
-# One tick at a time (run.py also holds a lock file; this saves the startup).
-if pgrep -f "automations.lucy_transcriber.run" > /dev/null 2>&1; then
-    exit 0
-fi
-
 VENV_PY=".venv/bin/python3.14"; [ -x "$VENV_PY" ] || VENV_PY=".venv/bin/python"
+export PYTHONPATH="$(pwd)"
+export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES
+export NO_COLOR=1
 mkdir -p output/logs
-LOG="output/logs/lucy-transcriber-$(date +%Y%m%d).log"
-
-ARGS=("$@"); [ ${#ARGS[@]} -eq 0 ] && ARGS=(--check)
-"$VENV_PY" -m automations.lucy_transcriber.run "${ARGS[@]}" >> "$LOG" 2>&1
-rc=$?
-if [ $rc -ne 0 ]; then
-    echo "[$(date)] lucy-transcriber rc=$rc" >> "$LOG"
-fi
-exit $rc
+exec "$VENV_PY" -u -m automations.lucy_transcriber.bot >> "output/logs/lucy-transcriber-bot.log" 2>&1

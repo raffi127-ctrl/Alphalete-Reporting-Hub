@@ -705,7 +705,7 @@
   },
   "lucy_transcriber": {
    "on_scheduler": false,
-   "_note": "Raf's ask (#lucy-projects 2026-11-21): reps drop a pitch recording in #lucy-transcriber (C0CKFKXDDGX), Lucy replies in the thread with a Rep/Customer transcript; coaches' thread replies are saved for Phase 2. Real schedule = com.alphalete.lucy-transcriber on LUCY 4, every 2 min (install_lucy_transcriber_agent). STAYS ON LUCY 4: that box holds the timer, the state file (which uploads were answered) and the saved feedback in output/lucy_transcriber/ -- a run anywhere else would answer the same recording twice. Least-loaded Lucy at the time (78 entries, 12 timers). Needs Apple silicon (mlx-whisper), Lucy's token with files:read, the Anthropic key. Health check, posts nothing: `lucy rerun lucy_transcriber -- --doctor --fix`. Dry tick: `lucy rerun lucy_transcriber -- --check --dry-run`.",
+   "_note": "Raf's ask (#lucy-projects 2026-11-21); Megan: a BOT, not a channel, like the 2nd round auditor. Reps DM the Lucy Transcriber Slack app (its own app, automations/lucy_transcriber/slack_app_manifest.json, Socket Mode) a pitch recording; it replies in the DM with a Rep/Customer transcript and DMs Raf a copy; replies under either copy are saved as feedback for Phase 2. The bot = com.alphalete.lucy-transcriber on LUCY 4, always on (KeepAlive; install_lucy_transcriber_agent). STAYS ON LUCY 4: that box holds the bot tokens (~/.config/recruiting-report/transcriber-bot-token + transcriber-app-token), state and saved feedback in output/lucy_transcriber/ -- two copies of the bot would answer every DM twice. Needs Apple silicon (mlx-whisper) and the Anthropic key. This entry is for hand checks only, posts nothing: `lucy rerun \"lucy_transcriber --doctor --fix\"`.",
    "machine": "Lucy 4",
    "stay_home": true,
    "display_name": "Lucy Transcriber (pitch recordings)",
@@ -726,9 +726,9 @@
   },
   "install_lucy_transcriber_agent": {
    "on_scheduler": false,
-   "_off_scheduler_note": "Install/refresh com.alphalete.lucy-transcriber on LUCY 4 (Lucy Transcriber, every 2 min). install_agent only rewrites and reloads the plist; it touches no Sheet and no report data.",
+   "_off_scheduler_note": "Install/refresh com.alphalete.lucy-transcriber on LUCY 4 (the always-on Lucy Transcriber bot). install_agent only rewrites and reloads the plist; it touches no Sheet and no report data.",
    "machine": "Lucy 4",
-   "display_name": "Install Lucy Transcriber agent (every 2 min)",
+   "display_name": "Install Lucy Transcriber bot (always on)",
    "source_type": "local",
    "data_sources": [],
    "command": [
