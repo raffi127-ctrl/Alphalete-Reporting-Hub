@@ -104,8 +104,9 @@ class Lines(unittest.TestCase):
         value = _row(**{"Package": "AT&T Value 2.0"})
         self.assertEqual(ROL.rep_lines(self.cols, [value], TODAY)["Esmeralda Gonzalez"][0]["Est. Revenue"], 213.0)
         weeks, pdc = ROL.group_weeks(esm)
-        self.assertEqual(sorted(weeks), [(dt.date(2026, 10, 18), dt.date(2026, 10, 24), dt.date(2026, 10, 30)),
-                                         (dt.date(2026, 11, 1), dt.date(2026, 11, 7), dt.date(2026, 11, 13))])
+        # the deposit's Mon-Sun weeks, paid the Friday after (Carlos 11/20: the Sunday discrepancy)
+        self.assertEqual(sorted(weeks), [(dt.date(2026, 10, 19), dt.date(2026, 10, 25), dt.date(2026, 10, 30)),
+                                         (dt.date(2026, 11, 2), dt.date(2026, 11, 8), dt.date(2026, 11, 13))])
         self.assertEqual(sorted(p["Status"] for p in pdc), ["Cancelled", "Disconnected", "Shipped"])
 
     def test_a_blank_plan_and_device_come_off_the_order_log_tab(self):
@@ -169,8 +170,8 @@ class Lines(unittest.TestCase):
                          ("Posted", dt.date(2026, 11, 12)))
         self.assertEqual(lines["2145550404"]["Status"], "Cancelled")
         weeks, pdc = ROL.group_weeks(list(lines.values()))
-        self.assertEqual(sorted(k[0] for k in weeks), [dt.date(2026, 11, 8), dt.date(2026, 11, 15)])
-        self.assertEqual([ln["Phone Number"] for ln in weeks[(dt.date(2026, 11, 15), dt.date(2026, 11, 21),
+        self.assertEqual(sorted(k[0] for k in weeks), [dt.date(2026, 11, 9), dt.date(2026, 11, 16)])
+        self.assertEqual([ln["Phone Number"] for ln in weeks[(dt.date(2026, 11, 16), dt.date(2026, 11, 22),
                                                               dt.date(2026, 11, 27))]], ["2145550401"])
         self.assertEqual(sorted(ln["Phone Number"] for ln in pdc), ["2145550402", "2145550404"])
         # no SaraPlus read: as before
@@ -212,12 +213,28 @@ class Lines(unittest.TestCase):
         self.assertEqual((by["2145550503"]["Status"], by["2145550503"]["Est. Revenue"]), (ROL.ACT_DISC, 223.0))
         self.assertEqual((by["2145550506"]["Status"], by["2145550506"]["Est. Revenue"]), ("Disconnected", 0.0))
         weeks, pdc = ROL.group_weeks(esm)
-        wk = weeks[(dt.date(2026, 11, 1), dt.date(2026, 11, 7), dt.date(2026, 11, 13))]
+        wk = weeks[(dt.date(2026, 11, 2), dt.date(2026, 11, 8), dt.date(2026, 11, 13))]
         # by ORDER date, the paid disconnect last in its week
         self.assertEqual([ln["Phone Number"] for ln in wk], ["2145550502", "2145550504", "2145550501", "2145550503"])
         self.assertEqual([ln["Phone Number"] for ln in pdc], ["2145550507", "2145550506", "2145550505"])  # pending, disc, cancel
         page = ROL.html_for("Esmeralda Gonzalez", esm, TODAY)
         self.assertIn('<td style="background:#57BB8A;color:#000000">Activated (Disconnected)</td>', page)   # green
+
+    def test_sunday_activations_follow_the_deposit_week(self):
+        """Carlos 11/20: Subba Rao and Georgeatte (activated Sun 11/1) were paid on CS 11.1, not 11.8; a line
+        already paid sits under its cl.DD Date (Sundararaghandran, Sun 11/8, paid on CS 11.15)."""
+        self.assertEqual(ROL.pay_week(dt.date(2026, 11, 1)), (dt.date(2026, 10, 26), dt.date(2026, 11, 1), dt.date(2026, 11, 6)))
+        self.assertEqual(ROL.pay_week(dt.date(2026, 11, 7)), (dt.date(2026, 11, 2), dt.date(2026, 11, 8), dt.date(2026, 11, 13)))
+        rows = [_row(**{"spe.TN": "2145550701", "DTR Active Date": "11/1/2026", "sp.Order Date (copy)": "10/29/2026"}),
+                _row(**{"spe.TN": "2145550702", "DTR Active Date": "11/7/2026", "sp.Order Date (copy)": "11/6/2026"}),
+                _row(**{"spe.TN": "2145550703", "DTR Active Date": "11/8/2026", "sp.Order Date (copy)": "10/30/2026",
+                        "cl.DD Date": "11/15/2026"})]
+        esm = ROL.rep_lines(self.cols, rows, TODAY)["Esmeralda Gonzalez"]
+        weeks, _pdc = ROL.group_weeks(esm)
+        where = dict((ln["Phone Number"], k[2]) for k, lns in weeks.items() for ln in lns)
+        self.assertEqual(where, {"2145550701": dt.date(2026, 11, 6),     # Sunday 11/1 -> week ending 11/1, paid 11/6
+                                 "2145550702": dt.date(2026, 11, 13),    # Saturday 11/7 -> week ending 11/8, paid 11/13
+                                 "2145550703": dt.date(2026, 11, 20)})   # paid on the 11/15 deposit -> 11/20
 
     def test_plan_and_device_cells(self):
         self.assertEqual([ROL.short_plan(p) for p in ("AT&T Extra 2.0", "AT&T Premium 2.0", "AT&T 55+",
@@ -322,7 +339,7 @@ class Lines(unittest.TestCase):
         bare = ROL.html_for("Esmeralda Gonzalez", esm, TODAY, weekly=(wes, sales["Esmeralda Gonzalez"]), tier=tier)
         self.assertNotIn("<th>Orders</th>", bare)                          # no tier counts -> the columns are left out
         self.assertIn('colspan="7">Sales by Week Ending', bare)
-        self.assertIn("Activated Week 11.01 to 11.07", page)               # Carlos 11/20: "activated" next to "week"
+        self.assertIn("Activated Week 11.02 to 11.08", page)               # Carlos 11/20: "activated" next to "week"
         self.assertIn("Paid Friday 11.13", page)
         self.assertEqual(page.count(">Total</td>"), 2)                     # one per activated week, none under pending
         # a blank row after each grey Total: before the next blue band and before the orange band
@@ -342,9 +359,10 @@ class Lines(unittest.TestCase):
         cal = page[page.index("Activation/Pay Week"):page.index("Payout Levels")]
         import re
         self.assertEqual(len(re.findall(r'<tr><td class="[a-z]*">\d+/\d+/\d\d</td>', cal)), 5)
-        self.assertLess(cal.index('<td class="">10/18/26</td><td class="">10/24/26</td><td class="">10/30/26</td>'),
-                        cal.index('<td class="now">11/15/26</td><td class="now">11/21/26</td><td class="now">11/27/26</td>'))
-        self.assertNotIn("11/22/26", cal)                                  # nothing after the current week
+        self.assertIn("<th>Monday</th><th>Sunday</th><th>Friday</th>", cal)  # the deposit's weeks
+        self.assertLess(cal.index('<td class="">10/19/26</td><td class="">10/25/26</td><td class="">10/30/26</td>'),
+                        cal.index('<td class="now">11/16/26</td><td class="now">11/22/26</td><td class="now">11/27/26</td>'))
+        self.assertNotIn("11/23/26", cal)                                  # nothing after the current week
         # the boxes
         for text in ("Payout Levels", ">Entry-level pay</td><td class=\"b\">30%</td>",
                      ">Leadership pay</td><td class=\"b\">40%</td>",

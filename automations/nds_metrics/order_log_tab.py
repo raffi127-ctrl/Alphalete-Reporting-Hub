@@ -239,11 +239,17 @@ PENDING = "Pending"
 
 
 def pay_week_label(d: dt.date) -> str:
-    """The Sun-Sat activation week d falls in and its Friday pay date, the
-    way the order-log workbook banded its rep tabs: '11/1-11/7 • Paid 11/13'
-    (automations.shared.pay_period rule: paid the Friday after the Saturday)."""
-    from automations.shared.pay_period import week_bounds
-    a, b, c = week_bounds(d)
+    """The Mon-Sun deposit week d falls in and its Friday pay date:
+    '11/2-11/8 • Paid 11/13'. NDS deposits run MONDAY..SUNDAY (Carlos
+    2026-11-20: "switch to monday to sunday" -- every one of 130 paid lines on
+    the 11/15 export had cl.DD Date = the Sunday closing the Mon-Sun week of
+    its activation). Until then this used the shared Sun-Sat rule
+    (automations.shared.pay_period, the Fiber / B2B calendar, untouched), which
+    put a SUNDAY activation a week late. Paid the Friday after the Sunday, so
+    every pay Friday is the same as before."""
+    a = d - dt.timedelta(days=d.weekday())
+    b = a + dt.timedelta(days=6)
+    c = b + dt.timedelta(days=5)
     return f"{a.month}/{a.day}-{b.month}/{b.day} • Paid {c.month}/{c.day}"
 
 

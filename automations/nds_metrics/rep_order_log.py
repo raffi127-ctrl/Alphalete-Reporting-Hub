@@ -58,6 +58,18 @@ The Total row sums the five money columns for the ACTIVATED week above it
 total -- nothing in it is paid. Everything comes off Tableau (the NDS Order
 Log tab join went with the Wireless Order # column).
 
+PAY WEEKS ARE THE DEPOSIT'S: Monday..Sunday, paid the Friday after that
+Sunday (Carlos 11/20 night: "It shows that Jacob got paid for Georgette M. and
+Suba Rao ... The only one that actually got paid out was Anita Tyler. Where is
+the discrepancy coming from?" -- the picture used the Pay Period tab's
+Sunday..Saturday weeks, so a SUNDAY activation landed a week late: Subba Rao
+and Georgeatte activated Sun 11/1 and were paid on CS 11.1, not 11.8). On the
+11/15 export every one of 130 paid lines has cl.DD Date = the Sunday closing
+the Mon..Sun week of its activation. A line already paid goes under its
+cl.DD Date (a late Sunday post can roll a week: Sundararaghandran's 11/8
+lines paid on CS 11.15); an unpaid one under the Mon..Sun week of its
+activation day. Tier weeks stay Smart Circle's Sun..Sat (a different rule).
+
 Which week a line is paid in (Carlos 11/20 night: "Put them wherever Sara
 shows that they activated under. Once the posted date comes up, you move them
 if needed"): Tableau's DTR Active Date once Tableau has posted the line;
@@ -638,6 +650,13 @@ def _deposit_week(d: dt.date) -> dt.date:
     return d - dt.timedelta(days=d.weekday())        # the deposit's weeks run Monday..Sunday
 
 
+def pay_week(d: dt.date):
+    """(monday, sunday, friday paid) of the deposit week holding `d`."""
+    mon = _deposit_week(d)
+    sun = mon + dt.timedelta(days=6)
+    return mon, sun, sun + dt.timedelta(days=5)
+
+
 def _cols_index(cols) -> dict:
     from automations.nds_metrics import revenue_extras as RX
     return {
@@ -716,7 +735,7 @@ def line_facts(cols, r, I: dict, rates: dict, tab=None, sara=None, tier_by_line=
     tier = (tier_by_line or {}).get(line_key(g("spm"), g("tn")), 0.0) if revenue else 0.0
     revenue += tier
     return {"status": status, "act": act, "revenue": revenue, "rec": rec, "next_up": nu, "ever_active": ever,
-            "tier": tier}
+            "tier": tier, "dd": _parse_date(g("dd"))}
 
 
 def rep_lines(cols, crew: Sequence, today: dt.date, log=print, tab=None,
@@ -758,6 +777,7 @@ def rep_lines(cols, crew: Sequence, today: dt.date, log=print, tab=None,
             "Phone Number": g(r, "tn"),
             "Zip Code": g(r, "zip"),
             "Tier": tier_name_for(f["tier"]),
+            "DD Week": f["dd"],               # the deposit that paid it (cl.DD Date, a Sunday), if any
         }
         line.update(payouts(f["revenue"]))
         out.setdefault(rep, []).append(line)
@@ -776,20 +796,20 @@ def _order_key(ln: dict):
 
 
 def group_weeks(lines: List[dict]):
-    """-> (weeks, pdc): weeks = {(sun, sat, paid): [lines]} for the lines that
-    pay -- Posted / Active / Activated (Disconnected) -- by their activation-
-    else-install-else-order date; pdc = the rest. Each list by ORDER date,
+    """-> (weeks, pdc): weeks = {(monday, sunday, friday paid): [lines]} for the
+    lines that pay -- Posted / Active / Activated (Disconnected) -- by the
+    deposit that paid them (DD Week), else the Mon..Sun week of their
+    activation (else install, else order) date; pdc = the rest. Each list by ORDER date,
     disconnects at the bottom, then cancels (Carlos 11/20: "let's do it by the
     order date, and then let's move all of the cancels to the bottom and the
     disconnects to the bottom")."""
-    from automations.uploaded.order_log import _week_bounds
     last = {ACT_DISC: 1, "Disconnected": 1, "Cancelled": 2}
     weeks: dict = {}
     pdc: List[dict] = []
     for ln in lines:
-        d = _eff(ln) if ln["Status"] in PAID_STATUSES else None
+        d = (ln.get("DD Week") or _eff(ln)) if ln["Status"] in PAID_STATUSES else None
         if d is not None:
-            weeks.setdefault(_week_bounds(d), []).append(ln)
+            weeks.setdefault(pay_week(d), []).append(ln)
         else:
             pdc.append(ln)
     for k in weeks:
@@ -913,8 +933,7 @@ def html_for(rep: str, lines: List[dict], today: dt.date, weekly=None, tier=None
     (`weekly` = weekly_sales' week endings + this rep's counters, None = that
     box is left out; `orders` = {week ending: (tier order count, tier label)}
     for its Orders and Tier columns)."""
-    from automations.uploaded.order_log import (STATUS_COLORS, STATUS_TEXT_COLORS,
-                                                _md, _pay_period_weeks, _week_bounds)
+    from automations.uploaded.order_log import STATUS_COLORS, STATUS_TEXT_COLORS, _md
     weeks, pdc = group_weeks(lines)
     ncol = len(COLUMNS)
     head = "<tr>" + "".join(f"<th>{c}</th>" for c in COLUMNS) + "</tr>"
@@ -948,11 +967,12 @@ def html_for(rep: str, lines: List[dict], today: dt.date, weekly=None, tier=None
     # a blank row between one block's grey Total and the next band (Carlos 11/20)
     body += "<table>" + f'<tr class="gap"><td colspan="{ncol}"></td></tr>'.join(blocks) + "</table>"
     # the Activation/Pay Week calendar: the four weeks before this one, then this one
-    this_week = _week_bounds(today)
+    this_week = pay_week(today)
     cal = ('<div><table class="cal"><tr><td class="t" colspan="3">Activation/Pay Week</td></tr>'
            '<tr><th>Week Start</th><th>Week End</th><th>Pay Date</th></tr>'
-           '<tr><th>Sunday</th><th>Saturday</th><th>Friday</th></tr>')
-    for n, week in enumerate(_pay_period_weeks(today, back=CAL_WEEKS - 1, total=CAL_WEEKS)):
+           '<tr><th>Monday</th><th>Sunday</th><th>Friday</th></tr>')
+    cal_weeks = [pay_week(today - dt.timedelta(days=7 * k)) for k in range(CAL_WEEKS - 1, -1, -1)]
+    for n, week in enumerate(cal_weeks):
         cls = "now" if week == this_week else ("alt" if n % 2 else "")
         cal += "<tr>" + "".join(f'<td class="{cls}">{d.month}/{d.day}/{d.year % 100:02d}</td>'
                                 for d in week) + "</tr>"
@@ -975,7 +995,6 @@ def compare_sara_tableau(cols, crew: Sequence, sara: dict, log=print) -> dict:
     you've seen otherwise") -- every crew line both have dated. Logged; the
     counts come back for tests."""
     from automations.nds_metrics.run import _c, _parse_date
-    from automations.uploaded.order_log import _week_bounds
     i_act, i_tn = cols.find("dtr active date", "activation date"), cols.find("spe.tn")
     i_spm, i_rep = cols.find("sp.spm number", "spm number"), cols.need("rep", "rep")
     both = moved = 0
@@ -987,7 +1006,7 @@ def compare_sara_tableau(cols, crew: Sequence, sara: dict, log=print) -> dict:
         if t is None or d is None:
             continue
         both += 1
-        if _week_bounds(t)[0] != _week_bounds(d)[0]:
+        if pay_week(t)[0] != pay_week(d)[0]:
             moved += 1
             if len(examples) < 4:
                 examples.append("%s %s sara %d/%d tableau %d/%d" % (_c(cols, r, i_rep).split(" ")[0], tn[-4:],
