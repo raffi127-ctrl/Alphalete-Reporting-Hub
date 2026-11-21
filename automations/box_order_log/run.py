@@ -391,6 +391,46 @@ def _rep_day(sales, which: str, today, to_tab, week_start="mon",
 MANIFEST_ID = "box-order-log"
 
 
+# Set by per_office.run_all for its per-office subprocesses. When present, a
+# tier board lost to a busy ownerville session is QUEUED here for a retry
+# instead of alerting straight away.
+TIER_RETRY_ENV = "BOX_TIER_RETRY_FILE"
+
+
+def queue_tier_retry(channel_ids, owner: str, day: dt.date,
+                     note: str) -> bool:
+    """Queue a Box Tier Bonus board for a later retry into an already-live thread.
+
+    WHY (2026-11-21): Ryan McSpadden's per-office thread posted at 9:01 without
+    its tier board. The board needs its OWN ownerville session (--from-file
+    skips the pull, so there is no open one to ride), and b2b_metrics +
+    att_order_log + Carlos's box_order_log held the one session on Lucy 2 for
+    the whole 30-minute wait. The board was simply never tried again, so it sat
+    as a red incident until a person backfilled it. The thread itself was on
+    time and right, which is exactly why it should post now and the board
+    should follow when the session is free.
+
+    Only for OwnervilleBusy, a race the next attempt is likely to win. A
+    genuine capture failure (a moved filter, a clipped board) still alerts at
+    once. Returns False, so the caller alerts as before, when no retry file
+    is set (a standalone run) or nothing posted."""
+    path = os.environ.get(TIER_RETRY_ENV, "").strip()
+    if not path or not channel_ids or not owner:
+        return False
+    if not (note or "").startswith("OwnervilleBusy"):
+        return False
+    try:
+        import json
+        with open(path, "a") as fh:
+            for ch in channel_ids:
+                fh.write(json.dumps({"channel": ch, "owner": owner,
+                                     "date": day.isoformat(),
+                                     "note": note}) + "\n")
+        return True
+    except Exception:                                       # noqa: BLE001
+        return False
+
+
 def _file_manifest(posted, failed=(), note: str = "") -> None:
     """Record which channels the daily thread actually reached.
 
@@ -1258,6 +1298,7 @@ def main(argv: Optional[list] = None) -> int:
         if args.note:
             text = text + "\n" + args.note
         posted, failed_channels = [], []
+        posted_ids = []
         for name, target in posts:
             # Per-channel try/except on purpose: aborting the loop after channel
             # one posted would leave a live thread AND a non-zero exit, and the
@@ -1280,6 +1321,7 @@ def main(argv: Optional[list] = None) -> int:
                       file=sys.stderr, flush=True)
                 continue
             posted.append(name)
+            posted_ids.append(target)
             if verbose:
                 print("  posted to {}".format(name), flush=True)
         where = " + ".join(posted) if posted else "nowhere"
@@ -1335,7 +1377,16 @@ def main(argv: Optional[list] = None) -> int:
         else:
             trouble = "posted WITHOUT the Box Tier Bonus board — {}".format(tier_note)
         print("  ⚠ {}".format(trouble), file=sys.stderr, flush=True)
-        if not args.dm:
+        # Lost the OwnerVille race only (another run held the session the whole
+        # wait): the caller retries the board into this live thread once the
+        # session frees, and alerts itself if that fails too. See
+        # queue_tier_retry.
+        queued = (not tier_png and not args.dm
+                  and queue_tier_retry(posted_ids, tier_owner, today, tier_note))
+        if queued:
+            print("  ↻ board will be added to the thread once the ownerville "
+                  "session frees", flush=True)
+        elif not args.dm:
             try:
                 from automations.shared import section_drop_alert as sda
                 sda.alert(report_id=MANIFEST_ID,

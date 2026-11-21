@@ -269,21 +269,83 @@ def _try_admin_page(page, log) -> str:
     return _scan(page)
 
 
+#: An open Slack pop-up. Its overlay sits over the whole client and swallows
+#: every click underneath it.
+POPUP_OVERLAY = ".ReactModal__Overlay--after-open"
+#: Ways to close one, all of them "dismiss" answers: none accepts, enables or
+#: changes anything.
+POPUP_CLOSE = (
+    "[data-qa='sk_close_modal_button']",
+    POPUP_OVERLAY + " button[aria-label='Close']",
+    POPUP_OVERLAY + " button:has-text('Not now')",
+    POPUP_OVERLAY + " button:has-text('Maybe later')",
+    POPUP_OVERLAY + " button:has-text('Skip')",
+    POPUP_OVERLAY + " button:has-text('Got it')",
+)
+
+
+def _dismiss_popups(page, log, tries: int = 3) -> None:
+    """Close whatever Slack pop-up is covering the client.
+
+    WHY (2026-11-21): the 8am send to Monday's new starts died on
+    `couldn't open the workspace menu`. The button was right where it always is
+    (`workspace_actions_button`, "AO Actions", visible and enabled). Playwright's
+    own log said a ReactModal__Overlay "intercepts pointer events": Slack had
+    opened a pop-up (an announcement, a prompt) over the page, and 15 seconds
+    of retries all hit the pop-up instead. Close it, then click."""
+    for _ in range(tries):
+        try:
+            if not page.query_selector(POPUP_OVERLAY):
+                return
+        except Exception:                                   # noqa: BLE001
+            return
+        try:
+            title = (page.inner_text(POPUP_OVERLAY) or "").strip().split("\n")[0]
+        except Exception:                                   # noqa: BLE001
+            title = ""
+        log("  a Slack pop-up is covering the page ({}) -- closing it".format(
+            title[:60] or "untitled"))
+        for sel in POPUP_CLOSE:
+            try:
+                page.click(sel, timeout=1500)
+                break
+            except Exception:                               # noqa: BLE001
+                continue
+        else:
+            page.keyboard.press("Escape")
+        page.wait_for_timeout(1000)
+
+
 def _try_client_modal(page, log) -> str:
     """The path the Loom shows: workspace menu -> Invite people -> Copy."""
     log("trying the client invite modal")
     page.goto(CLIENT_URL, wait_until="domcontentloaded", timeout=90_000)
     page.wait_for_timeout(6000)          # the client boots slowly
+    log("  landed on {}".format(page.url))
+    # An expired session lands on a sign-in page, where the menu click below
+    # can only time out. Say which it is (2026-11-21: a bare 15s timeout left
+    # nobody able to tell a dead session from a moved button).
+    if any(s in page.url for s in ("/signin", "/workspace-signin",
+                                   "slack.com/get-started", "/ssb/")):
+        raise InviteError(
+            "Slack asked this machine to sign in again -- the saved session "
+            "has expired. A human re-seeds it at the keyboard with --login.")
 
     # The workspace menu. `workspace_actions_button` ("AO Actions") is what the
     # 2026-08-26 discovery run actually found on the page; the guessed
     # `team-menu-trigger` / `team_menu` did not exist. Keyed on data-qa rather
-    # than button text so a copy change doesn't break it.
+    # than button text so a copy change doesn't break it. The client can take
+    # longer than 6s to draw the sidebar, so wait for it once, then try the
+    # known name and the aria-label it carries ("AO Actions").
+    menu = "[data-qa='workspace_actions_button'], button[aria-label='AO Actions']"
     try:
-        page.click("[data-qa='workspace_actions_button']", timeout=15_000)
+        page.wait_for_selector(menu, state="visible", timeout=45_000)
+        _dismiss_popups(page, log)
+        page.click(menu, timeout=15_000)
         page.wait_for_timeout(1500)
     except Exception as exc:
-        raise InviteError("couldn't open the workspace menu: {}".format(exc))
+        raise InviteError("couldn't open the workspace menu (on {}): {}".format(
+            page.url, str(exc).split("\n")[0]))
 
     # What the menu offers THIS account. Whether "Invite people" is here at all
     # depends on who the session belongs to and on the workspace's invitation
@@ -371,11 +433,18 @@ def fetch(*, headless: bool = True, logfn=print, dump_always: bool = False) -> s
             for attempt in (_try_client_modal,):
                 try:
                     link = attempt(page, logfn)
-                except InviteError as exc:
-                    problems.append(str(exc))
-                    continue
                 except Exception as exc:
-                    problems.append("{}: {}".format(attempt.__name__, exc))
+                    problems.append(str(exc) if isinstance(exc, InviteError)
+                                    else "{}: {}".format(attempt.__name__, exc))
+                    # The page as it was when the click path broke. The
+                    # docstring always promised this, but only the SUCCESS
+                    # path dumped, so the 2026-11-21 failure left no evidence.
+                    try:
+                        logfn("dumped: {}".format(_dump(
+                            page, "FAILED {}".format(attempt.__name__),
+                            attempt.__name__.strip("_") + "-failed")))
+                    except Exception:                       # noqa: BLE001
+                        pass
                     continue
                 else:
                     # Evidence for THIS attempt, before the next one navigates

@@ -41,16 +41,33 @@ def _call(S, path, payload, method="post"):
     return r.json()
 
 
-def _get(S, url, params=None, tries=3):
+# One read's wait, and the pauses between tries after a timeout. Five tries
+# over ~8 minutes, where three 120s waits gave up in 6 with no pause at all.
+READ_TIMEOUT_S = 60
+TIMEOUT_BACKOFF_S = (15, 30, 60, 90)
+
+
+def _get(S, url, params=None, tries=5):
     """GET with retries. Reads are safe to repeat; on 10/5 one Sheets
     ReadTimeout on the values read killed a --write rerun after all three
     Tableau pulls had finished (~17 min of work lost).
 
     429 is retried too, with waits long enough to outlast a per-minute quota
-    (2026-11-20: a 429 on the first read crashed the stamper on Lucy 2)."""
+    (2026-11-20: a 429 on the first read crashed the stamper on Lucy 2).
+
+    TIMEOUTS (2026-11-21). The stamper failed 5 of 8 mornings (11/14, 15, 17,
+    20, 21), every time a ReadTimeout on the Campaign Log read, every time
+    ~9:00, and every hand re-run later in the morning passed. Two things sit
+    on that read: (1) the Tableau pulls just kept this session idle for 20+
+    minutes, long enough for its pooled HTTPS connection to go dead quietly,
+    and (2) the funnel board's hourly rebuild rewrites this same workbook at
+    :05. The old loop retried at once, on the same pool, three times at 120s,
+    so all three landed in the same bad minute. Now a timeout drops the pooled
+    connections (S.close(); the session reconnects on the next call), waits
+    longer each time, and tries five times, which outlasts a rebuild."""
     for i in range(tries):
         try:
-            r = S.get(url, params=params)
+            r = S.get(url, params=params, timeout=READ_TIMEOUT_S)
             busy = r.status_code == 429 or r.status_code >= 500
             if not busy or i == tries - 1:
                 return r
@@ -60,7 +77,11 @@ def _get(S, url, params=None, tries=3):
                 requests.exceptions.ConnectionError):
             if i == tries - 1:
                 raise
-        time.sleep(5 * (i + 1))
+            try:
+                S.close()
+            except Exception:                               # noqa: BLE001
+                pass
+        time.sleep(TIMEOUT_BACKOFF_S[min(i, len(TIMEOUT_BACKOFF_S) - 1)])
 
 
 def _get_json(S, url, params=None):

@@ -161,6 +161,12 @@ def main(argv=None):
                 values += v
                 goals_seed += g
 
+    if not a.skip_tableau:
+        # Fresh Sheets session after the Tableau pulls: the first one sat idle
+        # 20+ minutes and its pooled connection is the likeliest to be dead.
+        # See sheet._get (2026-11-21).
+        S = sheets_session(verbose=False)
+
     goals_seed = _derive_unit_goals(S, values, goals_seed, log)
 
     log("-- totals: %d values, %d goals (seed-only)"

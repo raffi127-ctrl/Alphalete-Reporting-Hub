@@ -32,14 +32,21 @@ class _Session:
         self.gets = list(gets)
         self.posts = []
 
-    def get(self, url, params=None):
-        return self.gets.pop(0)
+    def get(self, url, params=None, timeout=None):
+        nxt = self.gets.pop(0)
+        if isinstance(nxt, Exception):
+            raise nxt
+        return nxt
+
+    def close(self):
+        self.closed = getattr(self, "closed", 0) + 1
 
     def post(self, url, json=None):
         self.posts.append((url, json))
         return _Resp(200, {})
 
 
+SH_TRIES = 5
 QUOTA = _Resp(429, {"error": {"code": 429, "message": "Quota exceeded"}})
 META = _Resp(200, {"sheets": [{"properties": {"title": SH.TAB, "sheetId": 7}}]})
 
@@ -52,21 +59,21 @@ class FailedRead(unittest.TestCase):
         self.assertEqual(SH.ensure_tab(S, log=lambda *a: None), 7)
 
     def test_a_429_that_never_clears_raises_not_keyerror(self):
-        S = _Session([QUOTA, QUOTA, QUOTA])
+        S = _Session([QUOTA] * SH_TRIES)
         with self.assertRaises(RuntimeError) as cm:
             SH.ensure_tab(S, log=lambda *a: None)
         self.assertIn("429", str(cm.exception))
 
     def test_a_failed_values_read_writes_nothing(self):
         """THE ONE THAT WOULD HAVE WIPED THE LOG."""
-        S = _Session([META, QUOTA, QUOTA, QUOTA])
+        S = _Session([META] + [QUOTA] * SH_TRIES)
         with self.assertRaises(RuntimeError):
             SH.upsert_values(S, [("Carlos Hidalgo", "2026-11-22", 1, "288")],
                              log=lambda *a: None)
         self.assertEqual(S.posts, [])
 
     def test_a_failed_goals_read_writes_nothing(self):
-        S = _Session([META, QUOTA, QUOTA, QUOTA])
+        S = _Session([META] + [QUOTA] * SH_TRIES)
         with self.assertRaises(RuntimeError):
             SH.upsert_goals(S, [("Carlos Hidalgo", 1, "300")], seed_only=True,
                             log=lambda *a: None)
@@ -79,6 +86,29 @@ class FailedRead(unittest.TestCase):
                                    log=lambda *a: None)
         self.assertEqual(changed, 1)
         self.assertEqual(len(S.posts), 1)
+
+
+
+@mock.patch.object(SH.time, "sleep", lambda s: None)
+class ReadTimeouts(unittest.TestCase):
+    """2026-11-21: three 120s ReadTimeouts in a row on the Campaign Log read,
+    ~9:00 on 5 of 8 mornings. A timeout now drops the pooled connections and
+    tries again, up to five times."""
+
+    def test_timeouts_that_clear_are_retried_on_a_fresh_pool(self):
+        import requests
+        T = requests.exceptions.ReadTimeout("read timed out")
+        S = _Session([T, T, META])
+        self.assertEqual(SH.ensure_tab(S, log=lambda *a: None), 7)
+        self.assertEqual(S.closed, 2)
+
+    def test_timeouts_that_never_clear_still_raise(self):
+        import requests
+        T = requests.exceptions.ReadTimeout("read timed out")
+        S = _Session([T] * SH_TRIES)
+        with self.assertRaises(requests.exceptions.ReadTimeout):
+            SH.ensure_tab(S, log=lambda *a: None)
+        self.assertEqual(S.posts, [])
 
 
 if __name__ == "__main__":

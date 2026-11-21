@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -220,6 +221,11 @@ def run_all(*, post: bool = False, weeks: int = 6, from_file: str = "",
         pass
 
     rc = 0
+    # Tier boards that lost the ownerville race get queued here by run.py and
+    # retried after every office's thread is out. See boxrun.queue_tier_retry.
+    retry_file = _tier_retry_path()
+    env = dict(os.environ)
+    env[boxrun.TIER_RETRY_ENV] = str(retry_file)
     for o in offs:
         if not o["owner_office"] or not o["channel_id"]:
             print("[box per-office] SKIP {} — missing {}".format(
@@ -249,9 +255,83 @@ def run_all(*, post: bool = False, weeks: int = 6, from_file: str = "",
         if post:
             cmd.append("--post")
         print("\n[box per-office] === {} -> {} ===".format(o["key"], o["channel_name"]))
-        r = subprocess.run(cmd)
+        r = subprocess.run(cmd, env=env)
         rc = rc or r.returncode
+    if post:
+        retry_tier_boards(retry_file)
     return rc
+
+
+# How many times to try a queued tier board again. Each try waits up to its own
+# ownerville budget (30 min on a launchd run), so two tries cover a pile-up of
+# about an hour, the longest the 8:30 window has seen.
+TIER_RETRY_ATTEMPTS = 2
+
+
+def _tier_retry_path() -> Path:
+    """A fresh queue file for THIS run, so a 7:00 entry is never retried by the
+    8:30 pass (that pass posts and queues its own)."""
+    d = boxrun.OUTPUT_DIR / "state"
+    d.mkdir(parents=True, exist_ok=True)
+    p = d / "box_tier_retry_{}_{}.jsonl".format(dt.date.today().isoformat(),
+                                               os.getpid())
+    if p.exists():
+        p.unlink()
+    return p
+
+
+def retry_tier_boards(retry_file: Path, attempts: int = TIER_RETRY_ATTEMPTS,
+                      runner=subprocess.run) -> List[Dict[str, str]]:
+    """Add each queued tier board to its already-live thread. Returns the ones
+    that still failed after every attempt. Those get the drop alert run.py held
+    back, so a board that never makes it is still somebody's red circle.
+
+    backfill_tier is idempotent: it finds today's thread by its header, skips a
+    board that is already there, and only then captures. A retry can't
+    double-post."""
+    entries: List[Dict[str, str]] = []
+    try:
+        for line in Path(retry_file).read_text().splitlines():
+            if line.strip():
+                entries.append(json.loads(line))
+    except FileNotFoundError:
+        return []
+    except Exception as exc:                         # noqa: BLE001
+        print("[box per-office] tier retry queue unreadable: {}".format(exc),
+              file=sys.stderr)
+        return []
+    still: List[Dict[str, str]] = []
+    for e in entries:
+        cmd = [sys.executable, "-m", "automations.box_order_log.backfill_tier",
+               "--channel", e["channel"], "--owner", e["owner"],
+               "--date", e["date"], "--post"]
+        ok = False
+        for n in range(1, attempts + 1):
+            print("\n[box per-office] tier board retry {}/{} for {} -> {}".format(
+                n, attempts, e["owner"], e["channel"]), flush=True)
+            if runner(cmd).returncode == 0:
+                ok = True
+                break
+        if not ok:
+            still.append(e)
+    for e in still:
+        try:
+            from automations.shared import section_drop_alert as sda
+            from automations.box_order_log import tier_bonus
+            sda.alert(report_id="box-order-log-per-office",
+                      failed=["{} ({}) — still no ownerville session after {} "
+                              "retries: {}".format(tier_bonus.BOARD_NAME,
+                                                   e["owner"], attempts,
+                                                   e.get("note", ""))],
+                      kind="section",
+                      day=dt.date.fromisoformat(e["date"]))
+        except Exception:                            # noqa: BLE001
+            pass
+    try:
+        Path(retry_file).unlink()
+    except Exception:                                # noqa: BLE001
+        pass
+    return still
 
 
 def main(argv=None) -> int:
