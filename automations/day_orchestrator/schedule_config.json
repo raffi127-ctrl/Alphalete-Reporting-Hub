@@ -4186,6 +4186,28 @@
    "verify": null,
    "timeout_minutes": 30
   },
+  "program_daily_summary_announce": {
+   "hand_run_only": true,
+   "on_scheduler": true,
+   "_note": "ONE-OFF (Eve 2026-11-21): adds ':earth_americas: Country Sales by Campaign  (posts later - ~10am CT)' to TODAY's 'Tableau Country Trackers' parent in #alphalete-sales. No image, no DM. New threads already carry the line (slack_post.EXTRA_LINES). `lucy rerun program_daily_summary_announce`.",
+   "display_name": "Country Campaign Board - add line to today's trackers header (one-off)",
+   "source_type": "sheet",
+   "data_sources": [],
+   "command": [
+    "automations.program_daily_summary.post"
+   ],
+   "base_args": [
+    "--announce-only"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 10
+  },
   "program_daily_summary_dm_raf_maud": {
    "hand_run_only": true,
    "on_scheduler": true,

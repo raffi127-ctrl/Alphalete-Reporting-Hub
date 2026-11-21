@@ -76,6 +76,50 @@ def _send(client, channel, png: Path, cap: str, thread_ts=None):
     return bool(r.get("ok"))
 
 
+def _announce(client, ts: str, posted: bool, logfn=print) -> None:
+    """Keep the trackers thread's parent honest about this image: make sure it
+    lists ':earth_americas: Country Sales by Campaign' (a thread posted before that
+    line existed gets it appended), and once the image is in, react to the
+    parent like every other tracker. Best-effort: the image is what matters."""
+    from automations.tableau_screenshots import slack_post as sp
+    item = sp.EXTRA_LINES[TRACKERS_CHANNEL][0]
+    try:
+        msgs = client.conversations_history(
+            channel=TRACKERS_CHANNEL, latest=ts, inclusive=True,
+            limit=1).get("messages", [])
+        text = (msgs[0].get("text") or "") if msgs else ""
+        if text and item["title"] not in text:
+            client.chat_update(channel=TRACKERS_CHANNEL, ts=ts,
+                               text=text.rstrip() + "\n" + sp.extra_line(item))
+            logfn("  trackers thread: header line added")
+    except Exception as e:  # noqa: BLE001
+        logfn(f"  trackers thread: header line not added ({type(e).__name__})")
+    if not posted:
+        return
+    try:
+        client.reactions_add(channel=TRACKERS_CHANNEL, timestamp=ts,
+                             name=item["react"])
+    except Exception as e:  # noqa: BLE001 -- already_reacted on a rerun is fine
+        if "already_reacted" not in str(e):
+            logfn(f"  trackers thread: reaction not added ({type(e).__name__})")
+
+
+def announce_only(today: dt.date, logfn=print) -> int:
+    """Add the ':earth_americas: Country Sales by Campaign' line to today's
+    trackers parent without posting anything. For a thread that went out
+    before the line existed (Eve 2026-11-21). Has to run on a Lucy: only the
+    token that posted the parent can edit it."""
+    from automations.shared import slack_metrics_post as smp
+    from automations.tableau_screenshots.slack_post import find_thread_ts
+    client = smp._client()
+    ts, _ = find_thread_ts(client, TRACKERS_CHANNEL, today)
+    if not ts:
+        logfn("  trackers thread: no thread today")
+        return 1
+    _announce(client, ts, False, logfn)
+    return 0
+
+
 def post(today: dt.date, *, dry_run: bool = True, to_eve: bool = False,
          dm_only=(), logfn=print) -> bool:
     """Render + deliver. Returns True if every target got it (or had it)."""
@@ -113,10 +157,12 @@ def post(today: dt.date, *, dry_run: bool = True, to_eve: bool = False,
         ok = False
     elif _already(client, TRACKERS_CHANNEL, cap, today, thread_ts=ts):
         logfn("  trackers thread: already posted today")
+        _announce(client, ts, True, logfn)
     else:
         sent = _send(client, TRACKERS_CHANNEL, png, cap, thread_ts=ts)
         logfn(f"  trackers thread: {'posted' if sent else 'FAILED'}")
         ok &= sent
+        _announce(client, ts, sent, logfn)
     # 2. Raf DM
     dm = client.conversations_open(users=RAF)["channel"]["id"]
     marker = OUT / f"raf_dm_sent_{today}.txt"
@@ -143,8 +189,13 @@ def main() -> int:
     ap.add_argument("--dm-only", default="",
                     help="comma Slack user IDs: DM just them, skip the thread")
     ap.add_argument("--today", help="YYYY-MM-DD")
+    ap.add_argument("--announce-only", action="store_true",
+                    help="only add the Country Sales line to today's trackers "
+                         "thread header (no image, no DM)")
     a = ap.parse_args()
     today = dt.date.fromisoformat(a.today) if a.today else dt.date.today()
+    if a.announce_only:
+        return announce_only(today)
     return 0 if post(today, dry_run=not a.post, to_eve=a.to_eve,
                      dm_only=[u for u in a.dm_only.split(",") if u]) else 1
 

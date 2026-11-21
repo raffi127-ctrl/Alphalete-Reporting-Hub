@@ -377,9 +377,26 @@ STALE_NOTICE = ("Tableau is running behind — the boards below are waiting on i
 
 UPDATED_TAG = "*UPDATED*"
 
+# Images another report posts into this thread LATER in the day. Listed in the
+# header so the channel knows they're coming (Eve 2026-11-21: no line or emoji
+# for it). Per CHANNEL, not per org: only #alphalete-sales gets Raf's Country
+# Sales by Campaign. The poster reacts to the parent with the same emoji when
+# its image lands (program_daily_summary.post).
+EXTRA_LINES = {
+    "C068PH3RFSM": [   # #alphalete-sales
+        {"react": "earth_americas", "title": "Country Sales by Campaign",
+         "note": "_(posts later — ~10am CT)_"},
+    ],
+}
+
+
+def extra_line(item: dict) -> str:
+    """':earth_americas: Country Sales by Campaign  _(posts later — ~10am CT)_'"""
+    return f":{item['react']}: {item['title']}  {item['note']}"
+
 
 def header_text(pages: list, today: dt.date, pending_late=(), note: str = "",
-                updated: bool = False) -> str:
+                updated: bool = False, channel: str | None = None) -> str:
     """Bold dated title + one ':react: Title' line per tracker (parent message).
 
     A tracker id in `pending_late` gets a note after its name: it IS listed, in
@@ -413,6 +430,7 @@ def header_text(pages: list, today: dt.date, pending_late=(), note: str = "",
               + (f"  {STALE_LATE_NOTE if p['id'] in stale else LATE_NOTE}"
                  if p["id"] in pending else "")
               for p in pages]
+    lines += [extra_line(x) for x in EXTRA_LINES.get(channel or "", [])]
     return "\n".join(lines)
 
 
@@ -437,7 +455,7 @@ def _split_header(channel: str, pages: list, today: dt.date, pending_late=(),
     normal channel — the parent then carries everything, exactly as before.
     Splits on the blank separator header_text emits between the title block
     (title + optional note) and the tracker lines."""
-    full = header_text(pages, today, pending_late, note, updated)
+    full = header_text(pages, today, pending_late, note, updated, channel)
     if channel not in SHORT_HEADER_CHANNELS:
         return full, ""
     lines = full.split("\n")
@@ -854,7 +872,8 @@ def ensure_thread(client, channel: str, pages: list, today: dt.date,
             if is_legacy:
                 try:
                     client.chat_update(channel=channel, ts=ts,
-                                       text=header_text(pages, today, pending_late))
+                                       text=header_text(pages, today, pending_late,
+                                                        channel=channel))
                     print(f"  {channel}: retitled today's parent → {header_title(today)}",
                           flush=True)
                 except Exception as e:
@@ -1190,7 +1209,8 @@ def retitle_today(pages: list, today: dt.date | None = None,
             done = posted_ids(client, channel, ts, pages, today)
             pending_late = [i for i in _pages_mod.late_ids() if i not in done]
             client.chat_update(channel=channel, ts=ts,
-                               text=header_text(pages, today, pending_late))
+                               text=header_text(pages, today, pending_late,
+                                                channel=channel))
             out.append({"channel": channel, "status": "retitled", "ts": ts})
         except Exception as e:
             out.append({"channel": channel,
@@ -1265,7 +1285,8 @@ def annotate_today(pages: list, today: dt.date | None = None,
             updated = UPDATED_TAG in _parent_text(client, channel, ts)
             client.chat_update(
                 channel=channel, ts=ts,
-                text=header_text(pages_org, today, pending, note, updated))
+                text=header_text(pages_org, today, pending, note, updated,
+                                 channel))
             out.append({"channel": channel, "status": "annotated", "ts": ts,
                         "pending": pending})
         except Exception as e:               # noqa: BLE001 — one channel, not the run
