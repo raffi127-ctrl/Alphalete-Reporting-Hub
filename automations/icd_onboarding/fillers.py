@@ -59,11 +59,11 @@ SOURCES: Dict[str, Sequence[str]] = {
 # answer: `plan` treats a cell starting with it as still outstanding, so the
 # real date lands on top of it the moment the step actually runs. Without that
 # the alert would wedge the step shut forever (2026-11-15).
-ALERT_PREFIX = "NEEDS: "
-
-
-def is_alert(text) -> bool:
-    return str(text or "").strip().startswith(ALERT_PREFIX)
+# ONE definition, in board.py -- because `plan` here and `write_step` /
+# `tick_plan` over there all have to agree on what an ask is, and when they
+# did not the ask wedged the step shut (2026-11-22).
+ALERT_PREFIX = B.ASK_PREFIX
+is_alert = B.is_ask
 
 
 def columns_for(source: str) -> Sequence[str]:

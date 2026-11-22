@@ -507,3 +507,56 @@ class TestAppendingDoesNotLandOnAnybody:
 
     def test_an_empty_tab_still_starts_at_the_first_data_row(self):
         assert S.first_free_row([list(HEAD)]) == S.FIRST_DATA_ROW
+
+
+class TestAnAskDoesNotWedgeTheStep:
+    """A NEEDS: cell is an ask, and the real date must land on top of it.
+
+    2026-11-22: `plan` treated such a cell as outstanding and asked for the
+    date, while write_step and tick_plan both read "already done" off the cell
+    being non-empty -- so the write was planned and then refused, and anybody
+    carrying an ask could never have that step ticked at all. The prefix was
+    introduced in the first place to stop exactly that (fillers, 2026-11-15).
+    """
+
+    def _row(self, digi):
+        return _person("Ada Fournier", **{"Digi Docs": digi})
+
+    def test_board_says_an_ask_is_not_an_answer(self):
+        assert not B.answered(B.ASK_PREFIX + "an email on the chart")
+        assert B.answered("11/22/2026")
+        assert not B.answered("")
+        assert not B.answered("   ")
+
+    def test_write_step_writes_over_an_ask(self):
+        from automations.icd_onboarding import fillers as F
+        ws = FakeWS([self._row(F.ALERT_PREFIX + "an email on the chart")])
+        n = S.write_step(None, MONDAY, "Digi Docs",
+                         {"Ada Fournier": "11/22/2026"}, ws=ws,
+                         log=lambda *a: None)
+        assert n == 1, "the ask wedged the step shut"
+        assert ws.updates and ws.updates[0][1] == [["11/22/2026"]]
+
+    def test_write_step_still_leaves_a_real_answer_alone(self):
+        ws = FakeWS([self._row("11/01/2026")])
+        n = S.write_step(None, MONDAY, "Digi Docs",
+                         {"Ada Fournier": "11/22/2026"}, ws=ws,
+                         log=lambda *a: None)
+        assert n == 0, "a tick is written once"
+
+    def test_tick_plan_counts_an_ask_as_outstanding(self):
+        from automations.icd_onboarding import fillers as F
+        rows = S.rows_of(FakeWS([
+            self._row(F.ALERT_PREFIX + "an email on the chart")
+        ]).get_all_values())
+        assert B.tick_plan(rows, "Digi Docs", ["Ada Fournier"]) == [0]
+
+    def test_tick_plan_still_skips_a_real_answer(self):
+        rows = S.rows_of(FakeWS([self._row("11/01/2026")]).get_all_values())
+        assert B.tick_plan(rows, "Digi Docs", ["Ada Fournier"]) == []
+
+    def test_fillers_and_board_share_one_definition(self):
+        """Two copies of the prefix is how the two sides drifted apart."""
+        from automations.icd_onboarding import fillers as F
+        assert F.ALERT_PREFIX is B.ASK_PREFIX
+        assert F.is_alert is B.is_ask

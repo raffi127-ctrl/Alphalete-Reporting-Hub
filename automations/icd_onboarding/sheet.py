@@ -575,6 +575,13 @@ def write_step(workbook, week_start: dt.date, column: str,
         if key not in want:
             continue
         have = str(r.get(column) or "").strip()
+        # AN ASK IS NOT AN ANSWER. `plan` already treats a NEEDS: cell as
+        # outstanding and asks for the real date; this refused to write it
+        # because the cell was not empty, so the two disagreed and the ask
+        # wedged the step shut for good -- the exact outcome the prefix was
+        # introduced to avoid. See board.answered.
+        if B.is_ask(have):
+            have = ""
         if have:
             # A tick is written once. A STATUS may advance -- and only advance,
             # so a late "Sent" email can never pull somebody back from Passed.

@@ -439,12 +439,43 @@ def visible(rows: List[Dict], *, show_terminated: bool = False) -> List[Dict]:
     return [r for r in rows if not str(r.get(TERMINATED_AT) or "").strip()]
 
 
+ASK_PREFIX = "NEEDS: "
+
+
+def is_ask(text) -> bool:
+    """Is this cell an ASK rather than an answer?
+
+    A step that cannot be done until a person decides something writes what it
+    is waiting for into its own column, because that column is the only
+    surface the leader reads. `fillers.ALERT_PREFIX` is this prefix, and
+    `fillers.is_alert` is this function -- defined here because both the
+    planning side and the WRITING side have to agree, and board.py is the one
+    module fillers and sheet can both import.
+    """
+    return str(text or "").strip().startswith(ASK_PREFIX)
+
+
+def answered(text) -> bool:
+    """Does this cell hold a real answer? An ask does not count.
+
+    THIS IS WHAT STOPS AN ASK WEDGING A STEP SHUT. The ask was always meant to
+    be written over by the real date "the moment the step actually runs"
+    (fillers, 2026-11-15), and `plan` honoured that -- but `tick_plan` and
+    `write_step` both decided "already done" on the cell being non-empty, so
+    they planned the write and then refused it. Measured 2026-11-22: plan
+    asked for the date, write_step wrote 0. Anybody carrying a NEEDS: cell
+    could never have that step ticked at all.
+    """
+    return bool(str(text or "").strip()) and not is_ask(text)
+
+
 def tick_plan(rows: List[Dict], column: str, names: Iterable[str]) -> List[int]:
     """Which row numbers to tick for `column`, 0-based into `rows`.
 
     ON ONLY. A row already ticked is left alone rather than rewritten, and a
     row NOT in `names` is never cleared -- a tick is evidence that something
-    happened, and nothing here is entitled to say it did not.
+    happened, and nothing here is entitled to say it did not. A cell holding
+    only an ASK is still outstanding -- see `answered`.
     """
     if column not in TICKS:
         raise ValueError(
@@ -454,7 +485,7 @@ def tick_plan(rows: List[Dict], column: str, names: Iterable[str]) -> List[int]:
     out = []
     for i, r in enumerate(rows):
         who = _fold("%s%s" % (r.get("Name", ""), r.get("Last Name", "")))
-        if who in want and not str(r.get(column) or "").strip():
+        if who in want and not answered(r.get(column)):
             out.append(i)
     return out
 
