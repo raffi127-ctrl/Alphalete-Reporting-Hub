@@ -248,9 +248,10 @@ def match_sender(audio, files, who_posted=None):
         return same[0]["uid"], "name"
     if who_posted is not None:
         tried = set()
-        # the reps who sent a file with this name first, then every other DM the
-        # bot knows: the 11/18 Tennyson memo's sender was none of those 3 reps
-        for f in same + [x for x in files if x not in same]:
+        # Only the reps who sent a file with this name. Checking every DM Lucy
+        # knows (607 calls, 11/22) found nothing and shares the bot's Slack
+        # rate limit - not worth it every morning.
+        for f in same:
             for ch in f.get("chans") or []:
                 if ch in tried:
                     continue
