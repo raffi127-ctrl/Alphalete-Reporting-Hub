@@ -316,3 +316,28 @@ class TestUidRequestAdvances:
         got = F.plan(self._rows(uid="RQ"), "ownerville",
                      {"Jaime Molina": {"UID Request": "RQ"}})
         assert got == {}
+
+
+# ------------------------------ apply_anywhere reaches the office's OWN board
+
+def test_apply_anywhere_tells_apply_which_office_it_is(monkeypatch):
+    """Otherwise `apply` falls to its own office_key="" and opens the old
+    stacked tab instead of the office's week tab.
+
+    2026-11-22: a live ownerville pass said "ticked 12" and Jaime Molina's six
+    columns were still blank on the board, because all twelve cells went to
+    the tab nobody reads any more. The count was of writes that happened --
+    just not where anybody was looking.
+    """
+    seen = {}
+
+    def fake_apply(workbook, week_start, source, verdicts, **kw):
+        seen.update(kw)
+        return 0
+
+    monkeypatch.setattr(F, "apply", fake_apply)
+    monkeypatch.setattr(F, "workbook_for", lambda k: object())
+    monkeypatch.setattr(F, "on_office_machine", lambda k: False)
+    F.apply_anywhere("raf", MONDAY, "ownerville", {}, dry_run=False)
+    assert seen.get("office_key") == "raf", (
+        "apply was not told the office, so it writes to the stacked tab")

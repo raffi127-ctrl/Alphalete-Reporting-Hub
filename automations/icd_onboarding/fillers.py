@@ -290,8 +290,14 @@ def apply_anywhere(office_key: str, week_start, source: str,
     from automations.icd_onboarding import relay_board as RB
 
     if not on_office_machine(office_key):
+        # PASS THE OFFICE ON. Without it `apply` falls to its own default of
+        # "" and opens the old stacked tab instead of the office's own week
+        # tab -- so a run reported "ticked 12" while the twelve cells landed
+        # on the board nobody reads any more (2026-11-22: a new start's six
+        # OwnerVille columns, counted and lost). Same shape as by_hand.write
+        # on 2026-11-21: a green run and an unchanged board.
         return apply(workbook_for(office_key), week_start, source, verdicts,
-                     dry_run=dry_run, log=log)
+                     dry_run=dry_run, log=log, office_key=office_key)
 
     rows = B.for_week(RB.week(office_key, week_start), week_start)
     got = plan(rows, source, verdicts)
