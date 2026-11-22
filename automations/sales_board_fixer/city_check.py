@@ -129,10 +129,12 @@ def plan(rows: List[tuple], cities: Dict[str, str]):
     return changes, missing
 
 
+from automations.apex_new_starts import blueink_data as BID  # noqa: E402
+
+
 def blueink_cities(names: List[str]) -> Dict[str, Dict[str, str]]:
     """{name as written: {'city', 'why'}} -- 'why' says why a city is missing.
     '(Wk 3)' / '(NC)' come off before matching; Blue Ink has the bare name."""
-    from automations.apex_new_starts import blueink_data as BID
     bare = {n: base_name(n).strip() for n in names}
     # near: 'Ortencia' on the board signed as 'Ortensia' (WE 11.1)
     found = BID.for_people(sorted(set(bare.values())), near=True)
@@ -141,11 +143,69 @@ def blueink_cities(names: List[str]) -> Dict[str, Dict[str, str]]:
         hire = found.get(b)
         if hire is None or hire.missing_packet:
             out[n] = {"city": "", "why": "no signed Blue Ink packet"}
-        elif not hire.values.get("city"):
+            continue
+        email = (hire.values.get("email") or "").strip()
+        if not hire.values.get("city"):
             out[n] = {"city": "", "why": "packet has no city"}
         else:
             out[n] = {"city": hire.values["city"], "why": ""}
+        # Eve 2026-11-22: Email + Direct Deposit too. The packet IS I-9 + W-4 +
+        # the direct-deposit form, so a signed one means DD was submitted.
+        out[n]["email"] = email if BID.SHAPE["email"].match(email) else ""
+        out[n]["signed"] = True
     return out
+
+
+# --- Email (+ Direct Deposit, OFF) (Eve 2026-11-22) ------------------------
+# Same packet, same weekly run. BLANK cells only: a typed email or a DD status
+# a person set ('Completed', "Can't get DD") is never touched -- 'Completed'
+# is payroll's word and only payroll knows it; the packet only proves
+# 'Submitted'.
+EXTRA = {"email": "Email", "dd": "Direct Deposit"}
+DD_SUBMITTED = "Submitted"
+FILL_DD = False   # OFF until the team says what the DD words mean (Eve 11/22)
+
+
+def extra_cols(grid) -> Dict[str, int]:
+    out = {}
+    for c, v in enumerate(grid[0] if grid else [], 1):
+        label = " ".join(str(v).split())
+        for k, want in EXTRA.items():
+            if label == want and k not in out:
+                out[k] = c
+    return out
+
+
+def plan_extra(grid, rows: List[tuple], info: Dict[str, dict]) -> List[tuple]:
+    """[(row, name, col, value, what)] for blank Email / DD cells Blue Ink fills."""
+    cols = extra_cols(grid)
+    out = []
+    for r, name, _city in rows:
+        i = info.get(name) or {}
+        if not i.get("signed"):
+            continue
+        if "email" in cols and i.get("email") and not B.cell(grid, r, cols["email"]).strip():
+            out.append((r, name, cols["email"], i["email"], "Email"))
+        # Direct Deposit: deliberately NOT filled (Eve 2026-11-22: nobody knows
+        # yet whether 'Submitted' vs 'Completed' is the packet or payroll, and
+        # the team may not want it automated). Switch on with FILL_DD = True.
+        if FILL_DD and "dd" in cols and not B.cell(grid, r, cols["dd"]).strip():
+            out.append((r, name, cols["dd"], DD_SUBMITTED, "Direct Deposit"))
+    return out
+
+
+def apply_extra(ws, todo: List[tuple]) -> int:
+    from gspread.utils import rowcol_to_a1
+    names_now = ws.col_values(B.NAME_COL)
+    ok = [x for x in todo
+          if x[0] - 1 < len(names_now) and names_now[x[0] - 1].strip() == x[1]]
+    for x in todo:
+        if x not in ok:
+            print("  SALTEADA (la fila %d ya no es %s)" % (x[0], x[1]))
+    if ok:
+        ws.batch_update([{"range": rowcol_to_a1(r, c), "values": [[v]]}
+                         for r, _n, c, v, _w in ok], value_input_option="USER_ENTERED")
+    return len(ok)
 
 
 def dm_text(title: str, blanks: List[tuple], why: Dict[str, str]) -> str:
@@ -248,12 +308,15 @@ def main(argv=None) -> int:
     rows = reps(grid, col)
     info = blueink_cities([n for _, n, _ in rows])
     changes, missing = plan(rows, {n: v["city"] for n, v in info.items()})
+    extra = plan_extra(grid, rows, info)
 
     print("%s: %d reps, %d blank, %d to write, %d not in Blue Ink"
           % (title, len(rows), sum(1 for _, _, v in rows if not v),
              len(changes), len(missing)))
     for c in changes:
         print("  %-32s %s -> %s" % (c.name, c.before or "(blank)", c.after))
+    for r, n, _c, v, what in extra:
+        print("  %-32s %s (blank) -> %s" % (n, what, "(email)" if what == "Email" else v))
     for _, n, now in missing:
         print("  SIN CIUDAD EN BLUE INK: %-32s (%s) board: %s"
               % (n, info[n]["why"], now or "(blank)"))
@@ -265,6 +328,9 @@ def main(argv=None) -> int:
                "changes": [c._asdict() for c in changes],
                "missing": [{"row": r, "name": n, "board": v, "why": info[n]["why"]}
                            for r, n, v in missing],
+               "extra": [{"row": r, "name": n, "what": w,
+                          "value": ("(email)" if w == "Email" else v)}
+                         for r, n, _c, v, w in extra],
                "backup": {str(r): v for r, _, v in rows}}
     out.write_text(json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8")
     print("reporte + backup:", out)
@@ -272,6 +338,8 @@ def main(argv=None) -> int:
     if a.apply and changes:
         done = apply(sh, ws, col, changes)
         print("  escritas: %d" % len(done))
+    if a.apply and extra:
+        print("  Email/DD escritas: %d" % apply_extra(ws, extra))
     blanks = [m for m in missing if not m[2]]
     text = dm_text(title, blanks, {n: v["why"] for n, v in info.items()})
     if text and a.apply and not a.no_dm and a.sheet_id == R.SHEET_ID and not a.date:

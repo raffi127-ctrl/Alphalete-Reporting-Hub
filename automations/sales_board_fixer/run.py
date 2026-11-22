@@ -53,6 +53,7 @@ from automations.sales_board_fixer import spaced_tabs as ST
 from automations.sales_board_fixer import week_dates as WD
 from automations.sales_board_fixer import last_week as LW
 from automations.sales_board_fixer import tenure as T
+from automations.sales_board_fixer import details as DT
 
 SHEET_ID = "1MC9pfKryQrRtcMthUBL2hOciDCaa83U059pz0N2CmHc"   # Alphalete SALES BOARD 2025
 STATIONS_TAB = "Stations"         # one tab, not per week
@@ -316,6 +317,9 @@ def audit(t: dict, tenure=None, owner: bool = False) -> list:
             found += K.check_borders(title, t["sheet_id"], v, t.get("borders") or [],
                                      fill_blank=True)
             found += K.check_campaign(title, v)
+            # Trainer / Team / Field Status / Leadership never blank (Eve 2026-11-22)
+            prev = (t.get("older") or [None])[0]
+            found += DT.check(title, v, prev[2] if prev else None)
         first, last = K.block_rows(v)
         fixed_cells = {x.where for x in found if x.value is not None}
         found += [e for e in K.check_errors(title, v, f) if e.where not in fixed_cells]
