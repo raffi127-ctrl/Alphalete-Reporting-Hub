@@ -710,9 +710,32 @@ def _selling_end(now: dt.datetime):
     return end
 
 
+# ONE-OFF SELLING DAYS, per office key -> ISO dates. That date gets the alert
+# hours on the weekday clock (DAY_START to DAY_END, or the office's own
+# overrides above), so the sweep may sign SaraPlus back in and the tablet /
+# credit-check alerts run. Read off this machine's enrollments like the
+# overrides above: only the office that asked is affected. Safe to leave old
+# dates here.
+#   carlos-b2batt -- Carlos 2026-11-22 (a Sunday, his crew selling): credit
+#                    checks on Slack today. His Mac's SaraPlus session had
+#                    lapsed overnight, and on a normal Sunday the sweep only
+#                    resumes a session (never signs in), so nothing relayed.
+EXTRA_SELLING_DATES = {"carlos-b2batt": {"2026-11-22"}}
+
+
+def _extra_selling_day(now: dt.datetime) -> bool:
+    day = now.date().isoformat()
+    try:
+        return any(day in (EXTRA_SELLING_DATES.get(
+                       str(r.get("office_key") or "").strip().lower()) or ())
+                   for r in enrollments())
+    except Exception:  # noqa: BLE001 -- an unreadable install.json keeps the default
+        return False
+
+
 def in_selling_window(now: Optional[dt.datetime] = None) -> bool:
     now = now or dt.datetime.now()
-    if now.weekday() not in SELLING_DAYS:
+    if now.weekday() not in SELLING_DAYS and not _extra_selling_day(now):
         return False
     start = now.replace(hour=DAY_START_HHMM[0], minute=DAY_START_HHMM[1],
                         second=0, microsecond=0)
