@@ -353,6 +353,28 @@ def run_audit(owners: List[R.Owner], *, write: bool, ownerville: bool = True,
                  "office and day read, so a missing mark cannot be told apart "
                  "from a missing read" % (o.owner, C.EVENING_KEEPER))
             failed += 1
+        # AND THE SAME RULE FOR THE DAYTIME PASS (2026-11-22). The guard
+        # above was written for the evening keeper and never covered the
+        # read as a whole, so a pass that found NOBODY on ANY list -- not
+        # one BOB, not one offer, not one scheduled start, across every
+        # office and 35 days back -- still ran the 7-day "not hired / left
+        # as a message" rule against facts that were empty because nothing
+        # was read, and deleted every tracked person older than a week.
+        #
+        # Measured that day on Raf's own office, which certainly marks BOB:
+        # "lists with anybody on them: NONE". His list carried 155 removals
+        # and Cyrus's 91, almost all of them that rule, bunched on a few
+        # days -- 57 on 11/19, 53 on 11/20. That is the shape of a blank
+        # read, not of a fortnight of candidates saying no.
+        #
+        # A blank is only an answer when the data proves it is one.
+        if not seen_all.get(account):
+            _log("  %s: NOT AUDITING -- the read came back with nobody on "
+                 "ANY list, for any office or day. A missing mark and a "
+                 "missing read look identical from here, and acting on it "
+                 "empties the owner's phone." % o.owner)
+            failed += 1
+            continue
         deleted = hired = waiting = restored = 0
         for k, f in facts.items():
             e = st[account][k]
