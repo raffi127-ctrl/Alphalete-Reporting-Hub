@@ -568,12 +568,15 @@ def test_an_office_with_no_rate_holds_the_person_back(monkeypatch):
 
 
 def test_a_rate_that_is_there_lets_them_through(monkeypatch):
+    """The two state answers are in here because they hold too (2026-11-22):
+    what lets somebody through is a COMPLETE set, not a rate on its own."""
     from automations.apex_new_starts import values as V
     monkeypatch.setattr(V, "apex_values",
                         lambda c, hire, office_key="": {
                             "dob": "10/25/2002", "address1": "x",
                             "city": "Dallas", "zip": "75262",
-                            "rate": "12.00", "gender": "Female"})
+                            "rate": "12.00", "gender": "Female",
+                            "pay_state": "Texas", "tax_state": "Texas"})
     person = eco_run.Starter(name="Ada Fournier", email="a@b.c")
     got = eco_run.plan([person], {"Ada Fournier": _hire("Ada Fournier")},
                        log=lambda *a: None, office_key="jacob")
@@ -629,6 +632,23 @@ def test_the_gender_board_is_read_once_not_twice():
     assert src.count("_genders_from_board(") == 1, src.count("_genders_from_board(")
 
 
+def _answered(monkeypatch):
+    """An office that HAS given its two state answers.
+
+    The real `apex_values` drops pay_state and tax_state for an office that
+    has not, and since 2026-11-22 that holds the person back -- correctly, but
+    it would make every test below fail for a reason that is not what it is
+    testing. 0 of 41 offices have answered them, so without this the name
+    tests would only ever be testing the state hold.
+    """
+    from automations.icd_onboarding import office_steps as OS
+    monkeypatch.setattr(OS, "apex_unanswered", lambda *a, **k: [])
+    monkeypatch.setattr(OS, "apex_settings",
+                        lambda *a, **k: {"pay_state": "Texas",
+                                         "tax_state": "Texas"})
+    monkeypatch.setattr(OS, "rate_of_pay", lambda *a, **k: "10.00")
+
+
 def _chrisjen():
     """The packet and AppStream disagree about his surname."""
     import datetime as dt
@@ -643,7 +663,7 @@ def _chrisjen():
     return who, hire
 
 
-def test_a_disagreeing_name_travels_as_a_dispute_not_a_block():
+def test_a_disagreeing_name_travels_as_a_dispute_not_a_block(monkeypatch):
     """Chrisjen Davis wrote "Dav" in the Last Name box of his own I-9, so the
     packet said Chrisjen Dav while AppStream -- which seeds the board -- said
     Chrisjen Davis.
@@ -655,6 +675,7 @@ def test_a_disagreeing_name_travels_as_a_dispute_not_a_block():
     along to be settled there.
     """
     from automations.apex_new_starts import eco_run as E
+    _answered(monkeypatch)
     who, hire = _chrisjen()
     got = E.plan([who], {"Chrisjen Davis": hire}, log=lambda *a: None,
                  office_key="raf")
@@ -727,13 +748,14 @@ def test_creating_somebody_on_a_disputed_name_is_refused():
     assert "return 1" in after, "it refuses, it does not create them"
 
 
-def test_the_same_name_spelled_differently_is_not_a_disagreement():
+def test_the_same_name_spelled_differently_is_not_a_disagreement(monkeypatch):
     """"McCrobie" and "Mccrobie" are one name written two ways. Holding on
     that would stop everybody."""
     import datetime as dt
     from automations.apex_new_starts import blueink_data as BID
     from automations.apex_new_starts import eco_run as E
 
+    _answered(monkeypatch)
     who = E.Starter(name="Alexandria Mccrobie", gender="Female",
                     hire_date=dt.date(2026, 11, 9))
     hire = BID.NewHire(name="Alexandria Mccrobie", values={
@@ -826,3 +848,49 @@ def test_no_office_key_does_not_report_a_blank_gender_column(monkeypatch):
     told = " ".join(said)
     assert "no office key" in told
     assert "no gender on the board" not in told
+
+
+# ------------------------------------- the two answers that land on a tax record
+
+def test_an_office_with_no_state_answers_holds_the_person_back(monkeypatch):
+    """`values.apex_values` DROPS pay_state and tax_state for an office that
+    has not answered them, so Texas cannot reach a Florida office's tax
+    record. For a month the drop worked and the hold did not: this list never
+    named the two fields, so on 2026-11-22 all 26 of Raf's week came back
+    "ready" with no State Working In and no State to be taxed in -- which a
+    live run either gets refused for mid-save, leaving a part-filled payroll
+    record, or lands as a blank state on a tax record.
+
+    A dropped value and a held person are one decision. This is the half that
+    went missing."""
+    from automations.apex_new_starts import values as V
+    monkeypatch.setattr(V, "apex_values",
+                        lambda c, hire, office_key="": {
+                            "dob": "10/25/2002", "address1": "x",
+                            "city": "Dallas", "zip": "75262",
+                            "rate": "12.00", "gender": "Female"})
+    person = eco_run.Starter(name="Ada Fournier", email="a@b.c")
+    got = eco_run.plan([person], {"Ada Fournier": _hire("Ada Fournier")},
+                       log=lambda *a: None, office_key="someone")
+    assert got["ready"] == []
+    why = got["blocked"][0]["why"]
+    assert "State Working In" in why and "State to be taxed in" in why, why
+
+
+def test_each_gap_says_where_its_answer_lives(monkeypatch):
+    """The packet, the enrolment form and the board are three different
+    places and three different people. One message saying "missing
+    pay_state" sends somebody to read a packet that was never going to have
+    it."""
+    from automations.apex_new_starts import values as V
+    monkeypatch.setattr(V, "apex_values",
+                        lambda c, hire, office_key="": {"city": "Dallas"})
+    person = eco_run.Starter(name="Ada Fournier", email="a@b.c")
+    got = eco_run.plan([person], {"Ada Fournier": _hire("Ada Fournier")},
+                       log=lambda *a: None, office_key="someone")
+    why = got["blocked"][0]["why"]
+    assert "their packet is missing" in why, why
+    assert "this office's enrolment has no" in why, why
+    assert "no gender on the board" in why, why
+    # and the packet gaps are named as packet gaps, not lumped in with ours
+    assert "dob" in why.split("this office")[0], why

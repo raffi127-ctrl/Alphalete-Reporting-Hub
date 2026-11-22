@@ -159,18 +159,44 @@ def plan(people: List[Starter], hires: Dict[str, BID.NewHire],
         # part-filled record and a person who looks half done. Nothing
         # guesses a gender, so a blank one holds them here, before anything
         # is typed.
-        gaps = [lbl for lbl in ("dob", "address1", "city", "zip", "rate",
-                                "gender")
+        # THE TWO STATE FIELDS HOLD TOO (2026-11-22). `values.apex_values`
+        # already DROPS pay_state and tax_state for an office that has not
+        # answered them, and says why: "so the person is held back and named
+        # rather than filed under another company's state". The drop worked;
+        # the hold did not, because this list never named them. Measured that
+        # day: 0 of 41 offices have answered either, so all 26 of Raf's week
+        # came back "ready" with no State Working In and no State to be taxed
+        # in -- which a live run either gets refused for mid-save, leaving the
+        # part-filled record described just above, or lands as a blank state
+        # on a tax record.
+        #
+        # Raf's own Apex work does not come through here: the Hub card's
+        # button calls apex_values with NO office_key, so nothing is dropped
+        # and his records keep Texas and his rate. This path is the ECO build.
+        PACKET = ("dob", "address1", "city", "zip")
+        FROM_THE_OFFICE = ("rate", "pay_state", "tax_state")
+        gaps = [lbl for lbl in PACKET + FROM_THE_OFFICE + ("gender",)
                 if not values.get(lbl)]
         if gaps:
-            if gaps == ["rate"]:
-                why = ("this office has no Rate of Pay on its enrolment — "
-                       "ask the ICD and add it")
-            elif gaps == ["gender"]:
-                why = ("no gender on the board — Apex will not take them "
-                       "without one, and nothing guesses it")
-            else:
-                why = "their packet is missing " + ", ".join(gaps)
+            # Named by WHERE THE ANSWER LIVES, because each sends somebody
+            # somewhere different: the packet means Blue Ink, the enrolment
+            # means ask the ICD, the gender means the board. One message that
+            # says "missing pay_state" sends them to read a packet that was
+            # never going to have it.
+            ours = [g for g in gaps if g in FROM_THE_OFFICE]
+            theirs = [g for g in gaps if g in PACKET]
+            says = []
+            if theirs:
+                says.append("their packet is missing " + ", ".join(theirs))
+            if ours:
+                nice = {"rate": "Rate of Pay", "pay_state": "State Working In",
+                        "tax_state": "State to be taxed in"}
+                says.append("this office's enrolment has no %s — ask the ICD "
+                            "and add it" % ", ".join(nice[g] for g in ours))
+            if "gender" in gaps:
+                says.append("no gender on the board — Apex will not take them "
+                            "without one, and nothing guesses it")
+            why = "; ".join(says)
             blocked.append({"name": p.name, "why": why})
             continue
         ready.append((p, values))
