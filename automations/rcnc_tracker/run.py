@@ -438,7 +438,7 @@ def _token() -> str:
     from google.auth.transport.requests import Request as _GARequest
     from google.oauth2.credentials import Credentials
     from automations.recruiting_report.fill import OAUTH_TOKEN_PATH, SCOPES
-    creds = Credentials.from_authorized_user_file(str(OAUTH_TOKEN_PATH), SCOPES)
+    creds = Credentials.from_authorized_user_file(str(OAUTH_TOKEN_PATH))  # the token's OWN consented scopes, never fill.SCOPES (invalid_scope; see fill.load_token_credentials)
     if not creds.valid:
         creds.refresh(_GARequest())
     return creds.token

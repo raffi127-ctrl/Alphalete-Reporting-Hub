@@ -36,7 +36,7 @@ FIRST_COL = "A"
 
 
 def _access_token() -> str:
-    creds = Credentials.from_authorized_user_file(str(OAUTH_TOKEN_PATH), SCOPES)
+    creds = Credentials.from_authorized_user_file(str(OAUTH_TOKEN_PATH))  # the token's OWN consented scopes, never fill.SCOPES (invalid_scope; see fill.load_token_credentials)
     creds.refresh(_GARequest())
     return creds.token
 

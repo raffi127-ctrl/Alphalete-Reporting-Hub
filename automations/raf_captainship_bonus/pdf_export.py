@@ -24,7 +24,7 @@ def _access_token() -> str:
     from google.oauth2.credentials import Credentials
     from google.auth.transport.requests import Request
     creds = Credentials.from_authorized_user_file(
-        str(rfill.OAUTH_TOKEN_PATH), rfill.SCOPES)
+        str(rfill.OAUTH_TOKEN_PATH))  # the token's OWN consented scopes, never fill.SCOPES (invalid_scope; see fill.load_token_credentials)
     if not creds.valid:
         if creds.expired and creds.refresh_token:
             creds.refresh(Request())

@@ -34,3 +34,20 @@ def test_an_old_token_is_loaded_with_its_own_scopes(tmp_path):
     creds = fill.load_token_credentials(old)
     assert list(creds.scopes) == ["https://www.googleapis.com/auth/spreadsheets"]
     assert "https://www.googleapis.com/auth/drive.file" in fill.SCOPES
+
+
+def test_nothing_loads_the_saved_token_with_fill_scopes():
+    """2026-11-22: eight more modules (churn screenshots, alphalete production,
+    country board email, captainship bonus/headcount, P&L, RC/NC) loaded the
+    token with fill.SCOPES and refreshed, so activation_by_rep / customer_churn
+    dropped for every B2B office on a Lucy without drive.file consent. Only
+    sheets_auth (the consent step) may ask for SCOPES."""
+    import pathlib
+    import re
+    root = pathlib.Path(__file__).resolve().parents[1]
+    bad = re.compile(r"from_authorized_user_file\([^)]*OAUTH_TOKEN_PATH\)\s*,\s*"
+                     r"(?:rfill\.|fill\.)?SCOPES\)", re.S)
+    hits = [str(p.relative_to(root)) for p in root.rglob("*.py")
+            if p.name != "sheets_auth.py" and not p.name.startswith("test_")
+            and bad.search(p.read_text(encoding="utf-8", errors="ignore"))]
+    assert hits == [], hits
