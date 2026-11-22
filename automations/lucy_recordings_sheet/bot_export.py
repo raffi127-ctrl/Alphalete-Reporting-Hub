@@ -198,16 +198,18 @@ def _slack_poster():
             return ""
         if (channel, ts) not in cache:
             uid = ""
-            try:
-                res = web.conversations_history(channel=channel, oldest=ts, latest=ts,
-                                                inclusive=True, limit=1)
-                for msg in res.get("messages", []) or []:
-                    if str(msg.get("ts")) == ts:
-                        uid = msg.get("user") or ""
-            except Exception as e:  # noqa: BLE001
-                uid = ""
-                if len(stats["errors"]) < 3:
-                    stats["errors"].append("%s: %s" % (channel, e))
+            for attempt in (1, 2):  # one retry: a blip must not hide the sender
+                try:
+                    res = web.conversations_history(channel=channel, oldest=ts, latest=ts,
+                                                    inclusive=True, limit=1)
+                    for msg in res.get("messages", []) or []:
+                        if str(msg.get("ts")) == ts:
+                            uid = msg.get("user") or ""
+                    break
+                except Exception as e:  # noqa: BLE001
+                    if attempt == 2 and len(stats["errors"]) < 3:
+                        stats["errors"].append("%s: %s" % (channel, e))
+                    time.sleep(2)
             stats["calls"] += 1
             if uid:
                 stats["found"] += 1
