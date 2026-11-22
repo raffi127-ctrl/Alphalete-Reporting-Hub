@@ -686,11 +686,20 @@ def check_marks(owners: List[R.Owner], limit: int = 0) -> int:
                 continue
             keys = set(list(removed)[:limit] if limit else removed)
             try:
-                facts, _seen = gather_facts(app, o.offices, keys, today)
+                facts, seen = gather_facts(app, o.offices, keys, today)
             except Exception as e:                          # noqa: BLE001
                 _log("  %s: ApplicantStream read failed (%s)"
                      % (o.owner, type(e).__name__))
                 continue
+            # WHICH LISTS CAME BACK WITH ANYBODY ON THEM -- the difference
+            # between "nobody was marked" and "we did not read who was".
+            # Without it this report cannot tell an office that does not
+            # mark from a read of ours that finds nothing, and those two
+            # want opposite actions (2026-11-22: Raf's 40 came back as
+            # blank as Cyrus's 91, and Raf's office certainly marks).
+            _log("      lists with anybody on them: %s"
+                 % (", ".join(sorted(seen)) if seen else "NONE — the read "
+                    "found nobody at all, on any list, for any day"))
             bob = [k for k in keys if (facts.get(k) or {}).get("bob")]
             offered = [k for k in keys
                        if (facts.get(k) or {}).get("offered") and k not in bob]
