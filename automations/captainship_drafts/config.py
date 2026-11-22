@@ -131,7 +131,7 @@ _INTRO = {
     ]),
     # B2B churn switched to WIRELESS 2026-08-19 (Eve) — the four B2B tabs are
     # filled from the wireless slice of CHURNRATES now, so the section title and
-    # the churn blocks below say Wireless. NDS still reports New Internet.
+    # the churn blocks below say Wireless. NDS has ONE churn (no NI/Wireless split).
     "b2b": ("Hi, team! Below you'll find:", [
         "Product Summary Of Sales",
         "⚠️Captain Team Stats Breakout ⚠️",
@@ -148,7 +148,10 @@ _INTRO = {
     "nds": ("Hi, team! Below you'll find:", [
         "Product Summary Of Sales",
         "⚠️Captain Team Stats Breakout ⚠️",
-        "💰New Internet Ongoing Churn Metrics 💰",
+        # Sin "New Internet" (Eve 2026-11-22): NDS tiene UN solo churn (lineas
+        # wireless NEW/PORT de CHURNRATES); el de dos churns es Fiber. Con ese
+        # titulo el revisor vio que coincidia con Wireless y freno los 3 mails.
+        "💰Ongoing Churn Metrics 💰",
         # Los dos bloques de knocks entran a NDS el 2026-09-15 (Eve: "megan
         # dice que creo el knocks report (daily y weekly) para las capitanias
         # de NDS ... podemos agregarlas a sus daily captainship emails?"). Mismo
@@ -1071,13 +1074,16 @@ CAPTAINS: List[Captain] = [
     ]),
     # ----- NDS -----
     Captain("khalil", "Khalil", "nds", title_bg="#EA4335", to=_to("khalil"), churn=[
-        ChurnSource(_own.open_ws_nds_khalil, _ni_render, "New Internet Churn"),
+        ChurnSource(_own.open_ws_nds_khalil, _ni_render, "Churn",
+                    title_prefix="CHURN"),
     ]),
     Captain("colten", "Colten", "nds", title_bg="#46BDC6", to=_to("colten"), churn=[
-        ChurnSource(_own.open_ws_nds_colten, _ni_render, "New Internet Churn"),
+        ChurnSource(_own.open_ws_nds_colten, _ni_render, "Churn",
+                    title_prefix="CHURN"),
     ]),
     Captain("jairo", "Jairo", "nds", title_bg="#FBBC04", to=_to("jairo"), churn=[
-        ChurnSource(_own.open_ws_nds_jairo, _ni_render, "New Internet Churn"),
+        ChurnSource(_own.open_ws_nds_jairo, _ni_render, "Churn",
+                    title_prefix="CHURN"),
     ]),
     # Atef RETIRADO 2026-10-27: Carlos respondió al mail del 10/26 "Atef is
     # no longer a captain we can end this report". (Había vuelto como NDS el
