@@ -1155,8 +1155,10 @@ def _main(argv=None) -> int:
             rc = 0          # nothing read, nothing wrong: not a failed tick
         rb = cmd_box(headless, args.dry_run, day)
         # Knocks keep the selling window; the knocks close-out above delivers
-        # the finished day either way.
-        if sales_only:
+        # the finished day either way. EXCEPT a config.EXTRA_KNOCKS_DATES day
+        # (Carlos 2026-11-22: Raf's Sunday rows for the NDS board) -- the read
+        # only relays; the boards keep their own hours.
+        if sales_only and not C.extra_knocks_day():
             rk = 0
         elif args.if_due and not args.dry_run:
             # the next tick's SaraPlus read waits for nobody

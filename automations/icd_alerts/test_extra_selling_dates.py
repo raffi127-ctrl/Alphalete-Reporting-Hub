@@ -48,5 +48,32 @@ class ExtraSellingDates(unittest.TestCase):
             self.assertFalse(C.in_selling_window(sat.replace(hour=23, minute=1)))
 
 
+
+class ExtraKnocksDates(unittest.TestCase):
+    """EXTRA_KNOCKS_DATES: Raf's machine relays its knocks that Sunday (for the
+    NDS board's '... GP' reps) WITHOUT getting the alert hours."""
+
+    def setUp(self):
+        p = mock.patch.object(C, "EXTRA_KNOCKS_DATES", {"raf": {"2026-11-22"}})
+        p.start()
+        self.addCleanup(p.stop)
+
+    def test_rafs_machine_relays_knocks_that_day_only(self):
+        with mock.patch.object(C, "enrollments", return_value=[{"office_key": "raf"}]):
+            self.assertTrue(C.extra_knocks_day(SUN))
+            self.assertFalse(C.extra_knocks_day(dt.datetime(2026, 11, 29, 14, 0)))
+            # knocks only: his alert hours stay off that Sunday
+            self.assertFalse(C.in_selling_window(SUN))
+
+    def test_no_other_machine(self):
+        for key in ("carlos-b2batt", "cyrus", "rafael"):
+            with mock.patch.object(C, "enrollments", return_value=[{"office_key": key}]):
+                self.assertFalse(C.extra_knocks_day(SUN), key)
+
+    def test_unreadable_enrollments_mean_no(self):
+        with mock.patch.object(C, "enrollments", side_effect=OSError("boom")):
+            self.assertFalse(C.extra_knocks_day(SUN))
+
+
 if __name__ == "__main__":
     unittest.main()

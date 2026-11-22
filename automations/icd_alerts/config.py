@@ -724,13 +724,32 @@ EXTRA_SELLING_DATES = {"carlos-b2batt": {"2026-11-22"}}
 
 
 def _extra_selling_day(now: dt.datetime) -> bool:
+    return _enrolled_for(EXTRA_SELLING_DATES, now)
+
+
+def _enrolled_for(table: dict, now: dt.datetime) -> bool:
+    """Is any office enrolled on THIS machine listed in `table` for now's date?"""
     day = now.date().isoformat()
     try:
-        return any(day in (EXTRA_SELLING_DATES.get(
+        return any(day in (table.get(
                        str(r.get("office_key") or "").strip().lower()) or ())
                    for r in enrollments())
     except Exception:  # noqa: BLE001 -- an unreadable install.json keeps the default
         return False
+
+
+# ONE-OFF KNOCKS DAYS, per office key -> ISO dates: the knocks read + relay
+# runs that date even outside the alert hours (a Sunday). Nothing POSTS from
+# it -- every knocks board and call-out keeps its own field hours, and those
+# are off on Sunday -- it only puts the day's rows on the 'ICD Knocks' relay.
+#   raf -- Carlos 2026-11-22: his reps knocking on Raf's Ownerville today
+#          (the '... GP' names) belong on the NDS knocks board, which reads
+#          them off Raf's relay row. Raf's rooms get nothing new.
+EXTRA_KNOCKS_DATES = {"raf": {"2026-11-22"}}
+
+
+def extra_knocks_day(now: Optional[dt.datetime] = None) -> bool:
+    return _enrolled_for(EXTRA_KNOCKS_DATES, now or dt.datetime.now())
 
 
 def in_selling_window(now: Optional[dt.datetime] = None) -> bool:
