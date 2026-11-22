@@ -242,8 +242,11 @@ def read_calendar(weeks: List[dt.date], accounts: Sequence[str],
                         "names stay blank" % (acct, wk, type(e).__name__))
                     continue
                 for r in got:
-                    name = ("%s %s" % (r.get("first", ""),
-                                       r.get("last", ""))).strip()
+                    # `first_name`/`last_name` -- what fdot.showed_up RETURNS.
+                    # Its input rows carry first/last, and reading those gave
+                    # a log saying "26 showed up" beside an empty answer.
+                    name = ("%s %s" % (r.get("first_name", ""),
+                                       r.get("last_name", ""))).strip()
                     if name:
                         out[_fold(name)] = YES
                 log("  calendar %s, week of %s: %d showed up to day one"
