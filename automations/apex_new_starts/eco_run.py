@@ -303,6 +303,12 @@ def _genders_from_board(office_key: str, monday: dt.date, log=print) -> Dict:
     with no gender on the board simply is not in here, and the engine leaves
     that box alone and says it missed it.
     """
+    if not office_key:
+        # Not "the board has no gender for them" -- no board was opened. Said
+        # plainly, because the alternative reads as 26 people with a blank
+        # column and sends somebody to fill one that is already filled.
+        log("  (no office key, so no gender column was read)")
+        return {}
     try:
         from automations.icd_onboarding import board as B
         from automations.icd_onboarding import fillers as F
@@ -333,12 +339,19 @@ def _removed_on_the_board(office_key: str, monday: dt.date,
     not a missing one, so it returns empty rather than raising. Anything that
     goes WRONG while reading a board that does exist raises, because "I could
     not look" must never be mistaken for "nobody was removed".
+
+    NO OFFICE KEY IS NOT AN OFFICE WITH NO BOARD. This used to return empty
+    for a blank key, which is the exact mistake the paragraph above refuses:
+    the caller is told nobody was removed when nothing was read. The CLI had
+    no way to pass a key at all until 2026-11-22, so every run of it had this
+    gate quietly off -- harmless on a dry run, and on a live one it is how
+    somebody the ICD removed gets a payroll record.
     """
     from automations.icd_onboarding import board as B
     from automations.icd_onboarding import fillers as F
     from automations.icd_onboarding import sheet as S
     if not office_key:
-        return set()
+        raise RuntimeError("no office key, so no board to read removals from")
     ws = S.open_board(F.workbook_for(office_key), create=False)
     if ws is None:
         log("  (no onboarding board for %s yet -- nobody removed)" % office_key)
@@ -785,9 +798,12 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="New starts -> Apex, on this office's computer.")
     ap.add_argument("--office", required=True, help="ApplicantStream office id")
     ap.add_argument("--week", default=None, help="YYYY-MM-DD in the week to run")
+    ap.add_argument("--office-key", default="raf",
+                    help="whose onboarding board to read and tick (default raf)")
     args = ap.parse_args(argv)
     start = dt.date.fromisoformat(args.week) if args.week else dt.date.today()
-    res = run_week(start, office_appstream=args.office, live=False)
+    res = run_week(start, office_appstream=args.office,
+                   office_key=args.office_key, live=False)
     print(json.dumps(res, indent=2))
     return 0 if res.get("status") in ("dry_run", "none") else 1
 

@@ -792,3 +792,37 @@ def test_a_disputed_name_not_on_pending_goes_back_as_an_ask():
     # nobody has typed in is not an admin decision about a name.
     at = code.index("_ask_the_board(")
     assert 'b.get("ask")' in code[at:at + 320], code[at:at + 320]
+
+
+# ------------------------------------------ a missing office key is not an answer
+
+def test_no_office_key_is_not_an_office_with_nobody_removed():
+    """The OBCL's removals are the gate between the training calendar and a
+    payroll record. A blank key used to return an empty removal set, which the
+    caller cannot tell apart from "I looked and nobody was removed" -- so a
+    person the ICD took off the board would go to Apex. It raises instead, and
+    run_week already turns a removal read it could not do into an error."""
+    with pytest.raises(RuntimeError) as e:
+        eco_run._removed_on_the_board("", MONDAY, log=lambda *a: None)
+    assert "no office key" in str(e.value)
+
+
+def test_a_removal_read_that_fails_stops_the_run(monkeypatch):
+    _patch(monkeypatch, rows=_rows("Ada Fournier"),
+           hires={"Ada Fournier": _hire("Ada Fournier")})
+    monkeypatch.setattr(eco_run, "_removed_on_the_board",
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("no key")))
+    res = eco_run.run_week(MONDAY, office_appstream="11280", office_key="",
+                           log=lambda *a: None)
+    assert res["status"] == "error" and "removed is unknown" in res["error"]
+
+
+def test_no_office_key_does_not_report_a_blank_gender_column(monkeypatch):
+    """Nothing was read, so nothing is claimed about the column. Saying "no
+    gender on the board" for everybody sends somebody to fill a column that is
+    already filled (26 people, 2026-11-22)."""
+    said = []
+    assert eco_run._genders_from_board("", MONDAY, log=said.append) == {}
+    told = " ".join(said)
+    assert "no office key" in told
+    assert "no gender on the board" not in told
