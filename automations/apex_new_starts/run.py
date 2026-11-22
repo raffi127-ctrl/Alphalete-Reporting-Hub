@@ -742,7 +742,8 @@ def _from_clipboard() -> str:
         return ""
 
 
-def mark_obcl(dry_run: bool = False, names: str = None) -> int:
+def mark_obcl(dry_run: bool = False, names: str = None,
+              office: str = "raf") -> int:
     """Tick 'Added to APEX' from the result the run left on the clipboard.
 
     `names` is the escape hatch. The clipboard is the only channel a browser
@@ -760,7 +761,8 @@ def mark_obcl(dry_run: bool = False, names: str = None) -> int:
             _log("Nothing in --names.")
             return 1
         _log(f"Ticking by name: {', '.join(want)}")
-        OB.mark(_this_monday(), want, dry_run=dry_run, log=_log)
+        OB.mark(_this_monday(), want, dry_run=dry_run, log=_log,
+                office_key=office)
         _log("=== done ===")
         return 0
 
@@ -780,7 +782,7 @@ def mark_obcl(dry_run: bool = False, names: str = None) -> int:
 
     added = data.get("added") or []
     _log(f"{data.get('week', '')}: {len(added)} added")
-    OB.mark(start, added, dry_run=dry_run, log=_log)
+    OB.mark(start, added, dry_run=dry_run, log=_log, office_key=office)
     _log("=== done ===")
     return 0
 
@@ -961,6 +963,11 @@ def main(argv=None) -> int:
                     help="with --mark-obcl: tick these names instead of "
                          "reading the run's result off the clipboard, comma "
                          "separated")
+    ap.add_argument("--office", default="raf",
+                    help="with --mark-obcl: whose board to tick. An office "
+                         "with a book of its own is ticked there; one without "
+                         "falls back to the stacked tab, so this is safe to "
+                         "leave alone")
     ap.add_argument("--no-write", action="store_true",
                     help="with --mark-obcl: say what it would tick, write "
                          "nothing")
@@ -986,7 +993,8 @@ def main(argv=None) -> int:
         return make_button(today, tab=args.tab, include_ona=include_ona,
                            watch=not args.no_watch)
     if args.mark_obcl:
-        return mark_obcl(dry_run=args.no_write, names=args.names)
+        return mark_obcl(dry_run=args.no_write, names=args.names,
+                         office=getattr(args, 'office', 'raf'))
     if args.explore:
         return explore(today)
     if not check_day(today, args.any_day):

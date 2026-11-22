@@ -195,3 +195,66 @@ def test_names_is_the_fallback_when_the_clipboard_lost_it():
 
     assert seen["added"] == ["Paris Carroll", "Bailey Soda"]
     assert seen["start"].weekday() == 0, "the Monday of the board week"
+
+
+# ------------------------- the tick goes to the board the office reads
+
+class TestItTicksTheOfficesOwnBoard:
+    """2026-11-22: the tick always went to Raf's All in One, whatever the
+    office read -- 0 of 66 and 0 of 31 on his own book while the column was
+    being ticked on the stacked tab next door. Third writer this month
+    pointed at the board nobody reads any more."""
+
+    def test_an_office_with_a_book_is_ticked_there(self, monkeypatch):
+        import datetime as dt
+        from automations.apex_new_starts import obcl as OB
+        from automations.icd_onboarding import sheet as S
+        own = object()
+        monkeypatch.setattr(S, "board_for", lambda *a, **k: own)
+        monkeypatch.setattr(OB, "open_by_key", lambda k: (_ for _ in ()).throw(
+            AssertionError("the stacked workbook must not be opened")))
+        assert OB._week_tab(dt.date(2026, 11, 16), "raf", lambda *a: None) is own
+
+    def test_no_office_still_uses_the_stacked_tab(self, monkeypatch):
+        import datetime as dt
+        from automations.apex_new_starts import obcl as OB
+
+        class _Tab:
+            title = "D2D OBCL 11.16"
+
+        class _Book:
+            def worksheets(self):
+                return [_Tab()]
+
+            def worksheet(self, title):
+                return _Tab()
+
+        monkeypatch.setattr(OB, "open_by_key", lambda k: _Book())
+        monkeypatch.setattr(OB, "tab_for", lambda w, t: "D2D OBCL 11.16")
+        got = OB._week_tab(dt.date(2026, 11, 16), "", lambda *a: None)
+        assert getattr(got, "title", "") == "D2D OBCL 11.16"
+
+    def test_a_board_lookup_that_throws_does_not_lose_the_tick(self, monkeypatch):
+        """Falling back is right; failing silently is not."""
+        import datetime as dt
+        from automations.apex_new_starts import obcl as OB
+        from automations.icd_onboarding import sheet as S
+
+        class _Tab:
+            title = "D2D OBCL 11.16"
+
+        class _Book:
+            def worksheets(self):
+                return [_Tab()]
+
+            def worksheet(self, title):
+                return _Tab()
+
+        monkeypatch.setattr(S, "board_for", lambda *a, **k: (
+            _ for _ in ()).throw(RuntimeError("no settings tab")))
+        monkeypatch.setattr(OB, "open_by_key", lambda k: _Book())
+        monkeypatch.setattr(OB, "tab_for", lambda w, t: "D2D OBCL 11.16")
+        said = []
+        got = OB._week_tab(dt.date(2026, 11, 16), "raf", said.append)
+        assert getattr(got, "title", "") == "D2D OBCL 11.16"
+        assert any("own board" in s for s in said), said

@@ -119,15 +119,41 @@ def plan(grid: List[List[str]], added: Iterable[str]):
     return sorted(ticks), unmatched
 
 
-def mark(week_start: dt.date, added: Iterable[str],
-         *, dry_run: bool = False, log=print) -> int:
-    """Tick 'Added to APEX'. Returns how many rows were ticked."""
+def _week_tab(week_start: dt.date, office_key: str, log):
+    """The tab to tick, on the board that office actually reads.
+
+    NO FLAG DAY, the same rule as icd_onboarding.sheet.board_for: an office
+    with a book of its own is written there, one without is left exactly as
+    it was. Without this the tick went to Raf's All in One whatever the
+    office read -- measured 2026-11-22, 0 of 66 and 0 of 31 on his own book
+    while the column was being ticked on the stacked tab next door. That is
+    the third writer this month pointed at the board nobody reads any more.
+    """
+    if office_key:
+        try:
+            from automations.icd_onboarding import sheet as S
+            own = S.board_for(office_key, week_start, create=False)
+            if own is not None:
+                return own
+        except Exception as e:                 # noqa: BLE001
+            # Never lose the tick over the lookup: say so and fall back.
+            log(f"  (could not open {office_key}'s own board: "
+                f"{type(e).__name__}; using the stacked tab)")
     sh = open_by_key(C.SHEET_ID)
     title = tab_for(week_start, [ws.title for ws in sh.worksheets()])
     if not title:
         log(f"  ❌ No dated OBCL tab for the week of {week_start:%m/%d/%Y}.")
+        return None
+    return sh.worksheet(title)
+
+
+def mark(week_start: dt.date, added: Iterable[str],
+         *, dry_run: bool = False, log=print, office_key: str = "") -> int:
+    """Tick 'Added to APEX'. Returns how many rows were ticked."""
+    ws = _week_tab(week_start, office_key, log)
+    if ws is None:
         return 0
-    ws = sh.worksheet(title)
+    title = getattr(ws, "title", "the OBCL tab")
     grid = ws.get_all_values()
     hdr, cols = _layout(grid)
     ticks, unmatched = plan(grid, added)
