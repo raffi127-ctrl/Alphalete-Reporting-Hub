@@ -41,6 +41,20 @@ def _person(name, classroom="", off="", **steps):
     return row
 
 
+def _sep_texts(pg):
+    """The group headings, WITHOUT the disclosure caret.
+
+    These groups collapse (73086d6, 2026-11-19: "removed groups start shut"),
+    so each heading carries a ▸/▾ caret that flips when it is clicked. These
+    tests are about the GROUPING -- which reasons get their own heading and
+    how many people are under each -- so the caret is noise, and asserting on
+    it made two grouping tests fail for a glyph that was working as intended.
+    """
+    return [t.strip() for t in pg.eval_on_selector_all(
+        "tr.sep",
+        "els => els.map(e => e.textContent.replace(/[\\u25b8\\u25be]/g, ''))")]
+
+
 def _show(pg, people, show_off=False):
     pg.evaluate("""([people, showOff]) => {
         LucyBoard.state.people = people;
@@ -200,7 +214,7 @@ def test_removed_people_are_grouped_by_reason(page):
               _removed("Cara Dunne", "No Show"),
               _removed("Dane Ellis", "Failed BG")]
     _show(page, people, show_off=True)
-    heads = page.eval_on_selector_all("tr.sep", "els => els.map(e => e.textContent)")
+    heads = _sep_texts(page)
     assert heads == ["Removed \u00b7 Failed BG (1)", "Removed \u00b7 No Show (2)"], heads
     # the reason is on the row itself too, not only in the heading above it
     assert "Failed BG" in page.inner_text("tr.b-gone td.gonewhy")
@@ -212,7 +226,7 @@ def test_a_removal_with_no_reason_is_not_hidden(page):
     _show(page, [_person("Ada Fournier", "A"),
                  _person("Bruno Castell", "A", off="11/10/2026")],
           show_off=True)
-    heads = page.eval_on_selector_all("tr.sep", "els => els.map(e => e.textContent)")
+    heads = _sep_texts(page)
     assert heads == ["Removed \u00b7 No reason recorded (1)"], heads
 
 
