@@ -79,7 +79,7 @@
   .bd-grid thead th { position: sticky; top: 0; z-index: 3; background: #0f5c4d;
                       color: #fff; font-weight: 600; vertical-align: bottom;
                       border-right-color: #2b7366; }
-  .bd-grid th.h-no, .bd-grid th.h-nm, .bd-grid th.h-cls,
+  .bd-grid th.h-pick, .bd-grid th.h-no, .bd-grid th.h-nm, .bd-grid th.h-cls,
   .bd-grid th.h-loc, .bd-grid th.h-gen {
       padding: 8px 8px; text-align: left; font-size: 11px;
       text-transform: uppercase; letter-spacing: .04em; white-space: nowrap; }
@@ -95,6 +95,31 @@
                           font-size: 10.5px; letter-spacing: .02em;
                           white-space: nowrap; display: inline-block; }
   .bd-grid th.h-off { width: 28px; }
+  /* Pick who to send digi docs to. Narrow, and first, so the boxes line up
+     down the left edge where a column of ticks is read in one glance. */
+  .bd-grid th.h-pick { width: 24px; padding: 8px 4px; }
+  .bd-grid td.pick { width: 24px; text-align: center; padding: 4px; }
+  .bd-grid td.pick input { width: auto; margin: 0; cursor: pointer; }
+  /* The send bar. Hidden until somebody is picked (the `hidden` attribute), so
+     it is never a dead button sitting on the board. */
+  .bd-send { display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+             margin: 0 0 8px; padding: 7px 9px; border-radius: 8px;
+             background: #fff6e0; border: 1px solid #f0d79a; }
+  .bd-send[hidden] { display: none; }
+  .bd-sendn { font-size: 12px; font-weight: 700; color: #6b4e00; }
+  .bd-send .bd-go { width: auto; padding: 5px 11px; font-size: 12px;
+                    font-weight: 700; border: 0; border-radius: 6px;
+                    background: #0f5c4d; color: #fff; cursor: pointer; }
+  .bd-send .bd-go:disabled { background: #9bb3ad; cursor: default; }
+  .bd-send .bd-nvm2 { width: auto; padding: 4px 8px; font-size: 11px;
+                      border: 1px solid #d7c79a; border-radius: 6px;
+                      background: #fff; color: #6b4e00; cursor: pointer; }
+  .bd-sendsaid { font-size: 11px; color: #4a4a4a; }
+  /* An ask in a step cell: asked for, or waiting on somebody. Amber, never
+     the green of a finished step -- the documents have NOT gone. */
+  .bd-grid td.ask { background: #fff2d6; color: #8a6a00; font-weight: 700;
+                    font-size: 12px; text-align: center; }
+  .bd-grid td.ask-n { background: #ffe3e3; color: #a33; }
   /* The tick columns are centred; the name is not -- it reads as a list. Both
      the alignment and the colour have to be said again here, because the
      tbody rule that greys an empty tick would otherwise grey the names too. */

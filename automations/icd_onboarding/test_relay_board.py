@@ -335,8 +335,19 @@ class TheRelayKnowsWeekTabs(unittest.TestCase):
 
     def test_every_board_call_can_name_a_week_tab(self):
         """A caller that cannot say which week would silently read whichever
-        tab the fallback returns."""
+        tab the fallback returns.
+
+        EVERY call is checked rather than counted. This used to assert the
+        count was exactly 5, so adding a sixth board call failed it even when
+        that call named its week correctly -- the number said nothing about
+        the thing the test is for, and the fix for a failure would have been
+        to bump it.
+        """
+        import re
         src = self._src()
-        self.assertEqual(
-            src.count("_boardTab(office, a.weekTab || '', a.week || '')"), 5)
-        self.assertNotIn("_boardTab(office);", src)
+        # Every use except the definition line itself.
+        calls = re.findall(r"(?<!function )_boardTab\([^)]*\)", src)
+        self.assertTrue(calls, "no _boardTab calls found at all")
+        for c in calls:
+            self.assertEqual(c, "_boardTab(office, a.weekTab || '', a.week || '')",
+                             "this call cannot say which week it means")

@@ -55,6 +55,9 @@ ACTION = "rerun"
 # The column the board keeps the answer in. A request is refused when it is
 # already filled, so this is the one name that must match the board.
 COLUMN = "Digi Docs"
+# What the cell says while the job waits. Carries the date, so a marker left
+# behind by a job that never ran is obvious rather than ageless.
+QUEUED_TEXT = B.QUEUED_PREFIX + "digi docs asked for %s"
 # Rows the mini has not finished with yet. Matches mini_control's own words.
 OPEN_STATUSES = ("queued", "running", "offered")
 
@@ -191,6 +194,83 @@ def request(office_key: str, name: str, week_start: dt.date, *,
             "action": ACTION, "args": args}
 
 
+def mark_queued(office_key: str, week_start: dt.date, names: List[str], *,
+                dry_run: bool = True, log=print) -> int:
+    """Write QUEUED: into each person's Digi Docs cell, and tint it.
+
+    WHY THE BOARD AND NOT JUST THE QUEUE. The panel is the only surface an
+    admin reads, and a request that leaves no mark there looks exactly like
+    one that was never made -- so the same person gets asked for twice by the
+    next person to open the board. It is an ASK, not an answer: `plan` and
+    `write_step` both treat it as outstanding (board.answered), so the real
+    date lands on top of it the moment the send actually reports.
+
+    The tint is the suggested-amber, never the green a finished step gets:
+    green here would say the documents had gone.
+    """
+    ws = S.board_for(office_key, week_start, create=False)
+    if ws is None:
+        raise RuntimeError("office %r has no board for the week of %s"
+                           % (office_key, B.week_label(week_start)))
+    grid = S._values(ws)
+    cols = S.layout(grid)
+    if COLUMN not in cols:
+        raise RuntimeError("that board has no %r column" % COLUMN)
+    want = {B._fold(n) for n in names}
+    stamp = QUEUED_TEXT % dt.date.today().strftime("%m/%d/%Y")
+    a1 = S._a1(cols[COLUMN] + 1)
+    writes, cells = [], []
+    for r in S.rows_of(grid):
+        key = B._fold("%s %s" % (r.get("Name", ""), r.get("Last Name", "")))
+        if key not in want:
+            continue
+        if str(r.get(COLUMN) or "").strip():
+            continue              # already answered, or already marked
+        at = "%s%d" % (a1, S.row_number(r))
+        writes.append({"range": at, "values": [[stamp]]})
+        cells.append(at)
+    log("  %d cell(s) to mark queued" % len(writes))
+    if dry_run or not writes:
+        return 0
+    ws.batch_update(writes)
+    ws.format(cells, {"backgroundColor": B.SUGGESTED})
+    return len(writes)
+
+
+def request_many(office_key: str, names: List[str], week_start: dt.date, *,
+                 by: str = "board", dry_run: bool = True, log=print) -> Dict:
+    """Ask for several people at once -- one JOB EACH, never one wide run.
+
+    Megan, 2026-11-22: the panel checks people off and sends to all of them.
+
+    ONE PERSON PER JOB IS THE POINT, not a limitation to work around. The run
+    refuses `--only` unless it matches exactly one person -- "a scoped run
+    that silently widens is the whole thing --only exists to prevent" -- and
+    that guarantee is worth more than saving a browser launch: each job is
+    gated on its own, reports its own result, and one person's failure can
+    never send somebody else a second set of documents.
+
+    Every refusal is per person and none of them stops the rest: a board where
+    half the selection was already sent should still send the other half, and
+    say which was which.
+    """
+    out = {"queued": [], "refused": [], "machine": None}
+    for name in names:
+        got = request(office_key, name, week_start, by=by, dry_run=dry_run,
+                      log=log)
+        out["machine"] = got.get("machine") or out["machine"]
+        if got.get("ok"):
+            out["queued"].append(name)
+        else:
+            out["refused"].append({"name": name, "why": got.get("why"),
+                                   "cell": got.get("cell")})
+    if out["queued"]:
+        mark_queued(office_key, week_start, out["queued"], dry_run=dry_run,
+                    log=log)
+    log("  %d queued, %d refused" % (len(out["queued"]), len(out["refused"])))
+    return out
+
+
 def main(argv=None) -> int:
     import argparse
 
@@ -198,8 +278,9 @@ def main(argv=None) -> int:
         description="Ask for one person's Digi Docs (and so their AT&T "
                     "courses). DRY by default.")
     p.add_argument("--office", default="raf", help="the office key")
-    p.add_argument("--name", required=True, help="'First Last', as the board "
-                                                "spells them")
+    p.add_argument("--name", action="append", default=[], required=True,
+                   help="'First Last', as the board spells them. Repeat it "
+                        "for several people -- each becomes its own job.")
     p.add_argument("--week", default="", help="the week's Sunday, YYYY-MM-DD. "
                                              "Default: this week.")
     p.add_argument("--by", default="cli", help="who asked")
@@ -209,13 +290,16 @@ def main(argv=None) -> int:
 
     week = (dt.date.fromisoformat(a.week) if a.week
             else B.week_start_of(dt.date.today()))
-    got = request(a.office, a.name, week, by=a.by, dry_run=not a.send)
-    if not got.get("ok"):
-        print("refused: %s" % got.get("why"))
-        return 1
-    if not got.get("queued"):
+    got = request_many(a.office, a.name, week, by=a.by, dry_run=not a.send)
+    for r in got["refused"]:
+        print("refused %-24s %s%s" % (r["name"], r["why"],
+                                      " (%s)" % r["cell"] if r.get("cell")
+                                      else ""))
+    if not a.send:
         print("\n(dry run -- nothing queued. --send to ask for real.)")
-    return 0
+    # Nobody queued is a failure worth an exit code: a request that quietly
+    # did nothing is the shape this package keeps re-learning.
+    return 0 if got["queued"] else 1
 
 
 if __name__ == "__main__":

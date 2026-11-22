@@ -440,6 +440,12 @@ def visible(rows: List[Dict], *, show_terminated: bool = False) -> List[Dict]:
 
 
 ASK_PREFIX = "NEEDS: "
+# ASKED FOR, NOT YET DONE. The panel writes this the moment somebody requests
+# a step, so the request survives a refresh and a second person looking at the
+# same board sees it is already in hand. It is an ASK, not an answer: the real
+# date lands on top of it when the step actually runs.
+QUEUED_PREFIX = "QUEUED: "
+NOT_ANSWERS = (ASK_PREFIX, QUEUED_PREFIX)
 
 
 def is_ask(text) -> bool:
@@ -447,12 +453,12 @@ def is_ask(text) -> bool:
 
     A step that cannot be done until a person decides something writes what it
     is waiting for into its own column, because that column is the only
-    surface the leader reads. `fillers.ALERT_PREFIX` is this prefix, and
+    surface the leader reads. `fillers.ALERT_PREFIX` is ASK_PREFIX, and
     `fillers.is_alert` is this function -- defined here because both the
     planning side and the WRITING side have to agree, and board.py is the one
     module fillers and sheet can both import.
     """
-    return str(text or "").strip().startswith(ASK_PREFIX)
+    return str(text or "").strip().startswith(NOT_ANSWERS)
 
 
 def answered(text) -> bool:

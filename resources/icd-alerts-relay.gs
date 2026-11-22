@@ -1538,6 +1538,7 @@ function _officeAdminCall(a) {
   if (what === 'board_classroom') return _boardClassroom(office, a);
   if (what === 'board_gender') return _boardGender(office, a);
   if (what === 'board_location') return _boardLocation(office, a);
+  if (what === 'board_digi_docs') return _boardDigiDocs(office, a);
   if (what === 'status') return _officeJobStatus(office, String(a.job_id || ''));
   if (what === 'already') return _admAlready(office);
   if (what === 'bg_status') return _admBgStatus(office);
@@ -1985,6 +1986,143 @@ function _boardMark(office, a) {
     n++;
   });
   return {ok: true, changed: n};
+}
+
+// ---------------------------------------------- send the digi docs on request
+//
+// Megan, 2026-11-22: "let's build out the ATT courses and Digi Docs on
+// request", and it "should live on the OBCL extension and we need to be able
+// to check off multiple people on it to send it to".
+//
+// THE QUIZZES COME WITH THE DOCUMENTS. OwnerVille has no control that creates
+// or requests an AT&T course -- the six course rows are status only, each
+// offering nothing but the rep's own "Access Client Training" link -- so there
+// is one action here, and the quizzes follow it ("the quizes are created/sent
+// once they are added to ownerville / sent the digi docs").
+//
+// ONE JOB PER PERSON, never one wide run: digi_docs refuses `--only` unless it
+// matches exactly one person, which is the guarantee that a scoped run cannot
+// silently widen. Each row is gated on its own and reports its own result.
+//
+// GENERATING IS SENDING AND THERE IS NO UNSEND, so a person whose Digi Docs
+// cell already holds an ANSWER is refused here as well as on the far side. A
+// cell holding only an ask (NEEDS: / QUEUED:) is still outstanding.
+var MINI_SHEET_ID = '1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw';
+var MINI_HEAD = ['Queued At', 'Action', 'Args', 'By', 'Status', 'Result',
+                 'Finished At'];
+var DD_COLUMN = 'Digi Docs';
+var DD_QUEUED_PREFIX = 'QUEUED: ';
+var DD_ASK_PREFIXES = ['NEEDS: ', 'QUEUED: '];
+
+function _ddIsAsk(text) {
+  var s = String(text == null ? '' : text).trim();
+  for (var i = 0; i < DD_ASK_PREFIXES.length; i++) {
+    if (s.indexOf(DD_ASK_PREFIXES[i]) === 0) return true;
+  }
+  return false;
+}
+
+function _ddAnswered(text) {
+  var s = String(text == null ? '' : text).trim();
+  return !!s && !_ddIsAsk(s);
+}
+
+// The machine's control tab, the same names mini_control uses.
+function _ddControlTab(machine) {
+  var m = String(machine || 'Lucy 1').trim();
+  return m === 'Lucy 1' ? 'Mini Control' : 'Mini Control - ' + m;
+}
+
+// shlex-safe single quoting: the poller splits Args with shlex, so a surname
+// with a space has to arrive as ONE argument.
+function _ddQuote(s) {
+  return "'" + String(s == null ? '' : s).replace(/'/g, "'\\''") + "'";
+}
+
+function _ddPending(ws) {
+  var out = {};
+  if (!ws) return out;
+  var vals = ws.getDataRange().getValues();
+  if (!vals.length) return out;
+  var head = vals[0].map(function (h) { return String(h).trim(); });
+  var ai = head.indexOf('Action'), gi = head.indexOf('Args'),
+      si = head.indexOf('Status');
+  if (ai < 0 || gi < 0 || si < 0) return out;
+  for (var i = 1; i < vals.length; i++) {
+    var st = String(vals[i][si] || '').trim().toLowerCase();
+    if (st !== 'queued' && st !== 'running' && st !== 'offered') continue;
+    if (String(vals[i][ai] || '').trim().toLowerCase() !== 'rerun') continue;
+    out[String(vals[i][gi] || '').trim().toLowerCase()] = st;
+  }
+  return out;
+}
+
+function _boardDigiDocs(office, a) {
+  var sh = _boardTab(office, a.weekTab || '', a.week || '');
+  if (!sh) return {ok: false, error: 'No onboarding board for this office.'};
+  var got = _boardRows(sh);
+  var col = got.head.indexOf(DD_COLUMN);
+  if (col < 0) return {ok: false, error: "The board has no 'Digi Docs' column."};
+  var machine = String(a.machine || 'Lucy 3').trim();
+
+  var want = {};
+  (a.names || []).forEach(function (n) { want[_boardKey(n)] = true; });
+  if (!Object.keys(want).length) return {ok: false, error: 'Nobody was picked.'};
+
+  // The queue first, so a person already waiting is refused before anything
+  // is written to the board.
+  var ws = null;
+  try {
+    var book = SpreadsheetApp.openById(MINI_SHEET_ID);
+    var tab = _ddControlTab(machine);
+    ws = book.getSheetByName(tab);
+    if (!ws) {
+      ws = book.insertSheet(tab);
+      ws.appendRow(MINI_HEAD);
+    }
+  } catch (err) {
+    return {ok: false, error: 'Cannot reach the job queue: ' + err};
+  }
+  var pending = _ddPending(ws);
+
+  var queued = [], refused = [], rows = [];
+  var today = Utilities.formatDate(new Date(), Session.getScriptTimeZone(),
+                                   'MM/dd/yyyy');
+  got.rows.forEach(function (r) {
+    if (a.week && r['Week of'] !== a.week) return;
+    var who = ((r['Name'] || '') + ' ' + (r['Last Name'] || '')).trim();
+    if (!want[_boardKey(who)]) return;
+    if (String(r['Terminated'] || '').trim()) {
+      refused.push({name: who, why: 'marked off the board'});
+      return;
+    }
+    if (_ddAnswered(r[DD_COLUMN])) {
+      refused.push({name: who, why: 'already sent',
+                    cell: String(r[DD_COLUMN]).trim()});
+      return;
+    }
+    var args = 'digi_docs --only ' + _ddQuote(who);
+    if (pending[args.toLowerCase()]) {
+      refused.push({name: who, why: 'already ' + pending[args.toLowerCase()]});
+      return;
+    }
+    rows.push([Utilities.formatDate(new Date(), Session.getScriptTimeZone(),
+                                    "yyyy-MM-dd'T'HH:mm:ssXXX"),
+               'rerun', args, 'OBCL board', 'queued', '', '']);
+    // The ask goes in the cell the admin is already reading, so the request
+    // survives a refresh and nobody asks twice. NOT the green a finished step
+    // gets: green would say the documents had gone.
+    sh.getRange(r.__row, col + 1)
+      .setValue(DD_QUEUED_PREFIX + 'digi docs asked for ' + today)
+      .setBackground('#ffe6b3');
+    queued.push(who);
+  });
+
+  if (rows.length) {
+    ws.getRange(ws.getLastRow() + 1, 1, rows.length, MINI_HEAD.length)
+      .setValues(rows);
+  }
+  return {ok: true, queued: queued, refused: refused, machine: machine};
 }
 
 // The one column the ICD owns: who goes on which printed sheet.

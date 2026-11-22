@@ -145,7 +145,25 @@
 
   const who = p => ((p['Name'] || '') + ' ' + (p['Last Name'] || '')).trim();
   const isOff = p => !!String(p['Terminated'] || '').trim();
-  const remaining = p => STEPS.filter(s => !String(p[s] || '').trim());
+  // AN ASK IS NOT AN ANSWER. A step waiting on somebody carries NEEDS: and a
+  // step that has been asked for carries QUEUED:, and both mean "still
+  // outstanding" -- the real date lands on top when the step runs. Without
+  // this the panel reads a request as a finished step, turns the line green
+  // and drops the person off the outstanding list, which is the one thing a
+  // request must not do. Same rule as board.answered in Python; the prefixes
+  // are held in step by test_panel.
+  // The columns beside the steps: pick, #, Name, Classroom, Location, Gender,
+  // Remove from onboarding. Named because two rows span the whole grid and a
+  // miscount there silently shears the table.
+  const SIDE_COLS = 7;
+  const ASK_PREFIXES = ['NEEDS: ', 'QUEUED: '];
+  const isAsk = v => ASK_PREFIXES.some(
+    p => String(v == null ? '' : v).trim().indexOf(p) === 0);
+  const answered = v => {
+    const s = String(v == null ? '' : v).trim();
+    return !!s && !isAsk(s);
+  };
+  const remaining = p => STEPS.filter(s => !answered(p[s]));
 
   // done / close / behind — the same bands the printout uses, and the word is
   // always there as well as the colour.
@@ -237,6 +255,15 @@
       (c.off ? '<label class="bd-showoff"><input type="checkbox" id="bd-off"' +
                (state.showOff ? ' checked' : '') + '> show ' + c.off +
                ' removed</label>' : '') +
+      '</div>' +
+      // THE SEND BAR. Hidden until somebody is picked, so the board does not
+      // carry a dead button, and it says the COUNT because the thing being
+      // confirmed is "how many people am I sending to".
+      '<div class="bd-send" id="bd-sendbar" hidden>' +
+      '<span class="bd-sendn"></span>' +
+      '<button id="bd-senddd" class="bd-go">Send digi docs</button>' +
+      '<button id="bd-sendclear" class="bd-nvm2">clear</button>' +
+      '<span class="bd-sendsaid"></span>' +
       '</div>';
 
     if (!shown.length) {
@@ -249,6 +276,9 @@
         // Numbered down the left, like Raf's OBCL. The number is the
         // POSITION on this chart, not anything stored -- it is there so two
         // people on the phone can say "number 7" and mean the same row.
+        // Tick people off to send their digi docs. Only the rows that can be
+        // sent get a box, so an empty one is never a question.
+        '<th class="h-pick" data-tip="Pick who to send digi docs to"></th>' +
         '<th class="h-no">#</th>' +
         '<th class="h-nm">Name</th>' +
         '<th class="h-cls">Classroom</th>' +
@@ -298,7 +328,7 @@
             const g = BG[String(p[st] || '').trim().toLowerCase()];
             return !!g && g.stop;
           });
-          const sub = !stopped && !!String(p['Owner Submit'] || '').trim();
+          const sub = !stopped && answered(p['Owner Submit']);
           out += '<tr class="b-' + b + (sub ? ' b-sub' : '') +
             (stopped ? ' b-stop' : '') + (isOff(p) ? ' b-gone' : '') + G +
             '" data-who="' + esc(name) + '">' +
@@ -307,6 +337,21 @@
             // they should also be numbered"). Restarting per group is what
             // makes the heading's own count readable -- "No Show (2)" with a
             // 1 and a 2 under it, rather than a 18 and a 19 that mean nothing.
+            // A box only where sending is possible: on the board for this
+            // week, not removed, and the documents not already gone or
+            // already asked for. Everyone else gets an empty cell, because a
+            // box that refuses when you click it is worse than no box.
+            '<td class="pick">' +
+            // `answered`, not "non-empty": somebody already QUEUED: keeps
+            // their box, because the job can still fail and then a person has
+            // to be able to ask again. A second ask for somebody genuinely
+            // waiting is refused on the far side, not here -- a refusal is
+            // cheap, a lost retry is not.
+            (!isOff(p) && !answered(p['Digi Docs'])
+              ? '<input type="checkbox" class="bd-pick" data-who="' +
+                esc(name) + '" title="Send digi docs to ' + esc(name) + '">'
+              : '') +
+            '</td>' +
             '<td class="no">' + (no == null ? '' : no) + '</td>' +
             '<td class="nm" title="' + esc(name) + '">' + esc(name) +
             // Scheduled, and not in yet. Only once their start day has
@@ -342,6 +387,17 @@
               const raw = String(p[st] == null ? '' : p[st]).trim();
               let txt = cell(raw);
               let k = txt === '✓' ? 'on' : (txt ? 'on val' : '');
+              // AN ASK IS A MARK, NOT A PARAGRAPH. These columns are one
+              // cell wide -- the BG codes are single letters for exactly
+              // that reason -- so a NEEDS:/QUEUED: sentence dropped in raw
+              // triples the row height and shoves the grid about. It gets a
+              // glyph and keeps its words on hover, like every other code
+              // here, and an amber that cannot be mistaken for a tick.
+              if (isAsk(raw)) {
+                const queued = raw.indexOf('QUEUED: ') === 0;
+                txt = queued ? '⧖' : '!';
+                k = 'ask' + (queued ? ' ask-q' : ' ask-n');
+              }
               // HOVERING A CODE SAYS WHAT IT MEANS (Megan, 2026-11-11: "when I
               // hover over a BG status it should say what it means"). Two
               // letters are only readable to somebody who already knows the
@@ -397,7 +453,7 @@
         // the wrong person from a row of near-identical buttons.
         if (!isOff(p)) {
           out += '<tr class="whyrow' + G + '" data-for="' + esc(name) + '" hidden>' +
-            '<td colspan="' + (STEPS.length + 6) + '">' +
+            '<td colspan="' + (STEPS.length + SIDE_COLS) + '">' +
             '<span class="whyq">Remove <b>' + esc(name) +
             '</b> from onboarding \u2014 why?</span>' +
             '<span class="whypick">' +
@@ -450,7 +506,7 @@
         order.forEach((w, i) => {
           const gc = 'og' + i;
           html += '<tr class="sep sep-off off-head" data-grp="' + gc + '">' +
-            '<td colspan="' + (STEPS.length + 6) + '">' +
+            '<td colspan="' + (STEPS.length + SIDE_COLS) + '">' +
             '<span class="off-caret">\u25b8</span> Removed \u00b7 ' + esc(w) +
             ' (' + byWhy[w].length + ')</td></tr>';
           let m = 0;
@@ -509,6 +565,67 @@
       render(root);
     };
     root.querySelectorAll('.bd-nvm').forEach(b => { b.onclick = shut; });
+
+    // ---- send digi docs to the people ticked off
+    const picked = () => [...root.querySelectorAll('.bd-pick:checked')]
+      .map(b => b.dataset.who);
+    const bar = root.querySelector('#bd-sendbar');
+    const said = root.querySelector('.bd-sendsaid');
+    const refresh = () => {
+      const n = picked().length;
+      if (!bar) return;
+      bar.hidden = !n;
+      const lbl = root.querySelector('.bd-sendn');
+      if (lbl) lbl.textContent = n === 1 ? '1 person picked'
+                                         : n + ' people picked';
+    };
+    root.querySelectorAll('.bd-pick').forEach(b => { b.onchange = refresh; });
+    const clear = root.querySelector('#bd-sendclear');
+    if (clear) clear.onclick = () => {
+      root.querySelectorAll('.bd-pick').forEach(b => { b.checked = false; });
+      if (said) said.textContent = '';
+      refresh();
+    };
+    const go = root.querySelector('#bd-senddd');
+    if (go) go.onclick = async () => {
+      const names = picked();
+      if (!names.length) return;
+      // SENDING CANNOT BE UNDONE. Generating the bundle IS the send, so the
+      // names are read back before it happens -- this is the last point at
+      // which somebody can notice they ticked the wrong line.
+      const who = names.length <= 6 ? names.join(', ')
+                                    : names.slice(0, 6).join(', ') +
+                                      ' and ' + (names.length - 6) + ' more';
+      if (!confirm('Send digi docs to ' + names.length +
+                   (names.length === 1 ? ' person' : ' people') + '?\n\n' +
+                   who + '\n\nThis also creates their AT&T courses. ' +
+                   'It cannot be undone.')) return;
+      go.disabled = true;
+      if (said) said.textContent = 'asking Lucy…';
+      const got = await ask('board_digi_docs',
+                            {office: state.office, week: state.week,
+                             names: names});
+      if (!got || !got.ok) {
+        if (said) said.textContent = (got && got.error) || 'No answer from Lucy.';
+        go.disabled = false;
+        return;
+      }
+      // Say what happened to WHOM. A bare "done" after a send that refused
+      // half the selection is how somebody comes back tomorrow and asks
+      // again for the people who never went.
+      const bits = [];
+      if ((got.queued || []).length) {
+        bits.push((got.queued.length) + ' queued on ' +
+                  (got.machine || 'Lucy'));
+      }
+      (got.refused || []).forEach(r => {
+        bits.push(r.name + ': ' + r.why);
+      });
+      if (said) said.textContent = bits.join(' · ') || 'nothing to send';
+      await load(state.office, state.week);
+      render(root);
+    };
+    refresh();
 
     // Open or shut one removed group. Toggling a CSS class rather than the
     // `hidden` attribute on purpose: the reason-editor row carries its own
@@ -650,5 +767,11 @@
 
   window.LucyBoard = {load, render, state, remaining, band, grouped, counts,
                       BG, REASONS,
+                      // Exported so a test can hold these in step with
+                      // board.NOT_ANSWERS: two lists of the same prefixes,
+                      // and if they drift the panel and the sheet disagree
+                      // about who still owes a step.
+                      askPrefixes: () => ASK_PREFIXES.slice(),
+                      answered, isAsk,
                       printSheets};
 })();

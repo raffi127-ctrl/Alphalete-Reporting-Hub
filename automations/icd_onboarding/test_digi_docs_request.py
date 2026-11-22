@@ -229,3 +229,106 @@ class TestWhatItNeverDoes:
         for forbidden in ("ownerville_session", "generate_bundle",
                           "open_set_status", "patchright"):
             assert forbidden not in src, forbidden
+
+
+class TestSeveralAtOnce:
+    """Megan, 2026-11-22: the panel checks people off and sends to all of them."""
+
+    def test_each_person_is_their_own_job(self, monkeypatch):
+        """One wide run is not an option: digi_docs refuses --only unless it
+        matches exactly one person, and that guarantee is the point."""
+        ws = _wire(monkeypatch)
+        monkeypatch.setattr(R, "mark_queued", lambda *a, **k: 0)
+        got = R.request_many("raf", ["Ada Fournier", "Bruno Castell"], WEEK,
+                             dry_run=False, log=lambda *a: None)
+        assert got["queued"] == ["Ada Fournier", "Bruno Castell"]
+        assert len(ws.appended) == 2
+        args = [r[HEAD.index("Args")] for r in ws.appended]
+        assert args == ["digi_docs --only 'Ada Fournier'",
+                        "digi_docs --only 'Bruno Castell'"]
+
+    def test_one_refusal_does_not_stop_the_others(self, monkeypatch):
+        """Half a selection already sent should still send the other half."""
+        ws = _wire(monkeypatch)
+        monkeypatch.setattr(R, "mark_queued", lambda *a, **k: 0)
+        monkeypatch.setattr(R, "board_state",
+                            lambda o, w, n: "11/22/2026"
+                            if n == "Ada Fournier" else "")
+        got = R.request_many("raf", ["Ada Fournier", "Bruno Castell"], WEEK,
+                             dry_run=False, log=lambda *a: None)
+        assert got["queued"] == ["Bruno Castell"]
+        assert [r["name"] for r in got["refused"]] == ["Ada Fournier"]
+        assert got["refused"][0]["why"] == "already sent"
+        assert len(ws.appended) == 1
+
+    def test_the_refusal_says_which_and_why(self, monkeypatch):
+        _wire(monkeypatch, cell="11/22/2026")
+        monkeypatch.setattr(R, "mark_queued", lambda *a, **k: 0)
+        got = R.request_many("raf", ["Ada Fournier"], WEEK, dry_run=False,
+                             log=lambda *a: None)
+        assert got["refused"][0]["cell"] == "11/22/2026"
+
+    def test_nothing_is_marked_when_nothing_was_queued(self, monkeypatch):
+        _wire(monkeypatch, cell="11/22/2026")
+        calls = []
+        monkeypatch.setattr(R, "mark_queued",
+                            lambda *a, **k: calls.append(a) or 0)
+        R.request_many("raf", ["Ada Fournier"], WEEK, dry_run=False,
+                       log=lambda *a: None)
+        assert calls == [], "a marker for a job nobody queued"
+
+    def test_a_dry_run_queues_nobody_and_marks_nobody(self, monkeypatch):
+        ws = _wire(monkeypatch)
+        marked = []
+        monkeypatch.setattr(R, "mark_queued",
+                            lambda *a, **k: marked.append(k.get("dry_run")) or 0)
+        R.request_many("raf", ["Ada Fournier"], WEEK, log=lambda *a: None)
+        assert ws.appended == []
+        assert marked == [True], "the marker has to be dry too"
+
+
+class TestTheQueuedMarker:
+    def test_it_is_an_ask_not_an_answer(self):
+        """So the real date lands on top of it when the send reports, and no
+        step is wedged shut by a request."""
+        text = R.QUEUED_TEXT % "11/22/2026"
+        assert B.is_ask(text)
+        assert not B.answered(text)
+
+    def test_it_carries_the_date_it_was_asked(self):
+        assert "11/22/2026" in (R.QUEUED_TEXT % "11/22/2026")
+
+    def test_it_is_never_the_green_a_finished_step_gets(self):
+        import inspect
+        src = inspect.getsource(R.mark_queued)
+        assert "SUGGESTED" in src
+        assert "B.GREEN" not in src, "green says the documents went"
+
+    def test_an_answered_cell_is_not_overwritten_by_a_marker(self, monkeypatch):
+        from automations.icd_onboarding import sheet as S
+        head = list(B.COLUMNS) + list(S.PAST_THE_CHART)
+        row = [""] * len(head)
+        row[head.index(B.WEEK)] = B.week_label(WEEK)
+        row[head.index("Name")], row[head.index("Last Name")] = "Ada", "Fournier"
+        row[head.index("Digi Docs")] = "11/01/2026"
+
+        class _Tab:
+            title = "OBCL 11.16"
+
+            def __init__(self):
+                self.updates = []
+
+            def get_all_values(self):
+                return [head, row]
+
+            def batch_update(self, items):
+                self.updates.extend(items)
+
+            def format(self, *a):
+                pass
+
+        tab = _Tab()
+        monkeypatch.setattr(S, "board_for", lambda *a, **k: tab)
+        n = R.mark_queued("raf", WEEK, ["Ada Fournier"], dry_run=False,
+                          log=lambda *a: None)
+        assert n == 0 and tab.updates == []

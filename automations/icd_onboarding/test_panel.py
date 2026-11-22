@@ -267,3 +267,88 @@ def test_other_lets_somebody_type_a_reason_and_refuses_a_blank_one(page):
     assert sent["call"] == "board_mark"
     assert sent["extra"]["action"] == "terminate"
     assert sent["extra"]["reason"] == "Moved out of state"
+
+
+# ------------------------------- send digi docs to the people ticked off
+
+def _dd(name, **steps):
+    return _person(name, "A", **steps)
+
+
+def test_an_ask_is_not_a_finished_step(page):
+    """The panel must read NEEDS:/QUEUED: as outstanding, like Python does.
+
+    A request writes QUEUED: into the Digi Docs cell. If the panel counted
+    that as done it would turn the line green and drop the person off the
+    outstanding list -- the one thing a request must not do.
+    """
+    got = page.evaluate("""() => ({
+        ask: LucyBoard.remaining({'Digi Docs': 'QUEUED: digi docs asked for 11/22/2026'}),
+        needs: LucyBoard.remaining({'Digi Docs': 'NEEDS: an email on the chart'}),
+        real: LucyBoard.remaining({'Digi Docs': '11/22/2026'}),
+    })""")
+    assert "Digi Docs" in got["ask"], "a queued request read as done"
+    assert "Digi Docs" in got["needs"], "an ask read as done"
+    assert "Digi Docs" not in got["real"], "a real date must still count"
+
+
+def test_the_panel_and_python_agree_on_the_ask_prefixes(page):
+    """Two lists of the same prefixes. If they drift, the panel and the board
+    disagree about who still owes a step."""
+    from automations.icd_onboarding import board as B
+    js = page.evaluate("() => LucyBoard.askPrefixes()")
+    assert js == list(B.NOT_ANSWERS)
+
+
+def test_only_sendable_rows_get_a_box(page):
+    """A box that refuses when you click it is worse than no box."""
+    _show(page, [_dd("Ada Fournier"),
+                 _dd("Bruno Castell", Digi_Docs="11/20/2026"),
+                 _person("Cara Dunne", "A", off="11/10/2026")],
+          show_off=True)
+    boxes = page.eval_on_selector_all(
+        ".bd-pick", "els => els.map(e => e.dataset.who)")
+    assert boxes == ["Ada Fournier"], boxes
+
+
+def test_a_queued_person_keeps_their_box(page):
+    """Their documents have NOT gone yet -- the job may still fail, and then
+    somebody has to be able to ask again."""
+    _show(page, [_dd("Ada Fournier",
+                     Digi_Docs="QUEUED: digi docs asked for 11/22/2026")])
+    boxes = page.eval_on_selector_all(
+        ".bd-pick", "els => els.map(e => e.dataset.who)")
+    assert boxes == ["Ada Fournier"]
+
+
+def test_the_send_bar_is_hidden_until_somebody_is_picked(page):
+    _show(page, [_dd("Ada Fournier"), _dd("Bruno Castell")])
+    assert page.eval_on_selector("#bd-sendbar", "e => e.hidden") is True
+    page.check(".bd-pick[data-who='Ada Fournier']")
+    assert page.eval_on_selector("#bd-sendbar", "e => e.hidden") is False
+    assert "1 person picked" in page.inner_text(".bd-sendn")
+    page.check(".bd-pick[data-who='Bruno Castell']")
+    assert "2 people picked" in page.inner_text(".bd-sendn")
+
+
+def test_clear_unticks_everybody(page):
+    _show(page, [_dd("Ada Fournier"), _dd("Bruno Castell")])
+    page.check(".bd-pick[data-who='Ada Fournier']")
+    page.click("#bd-sendclear")
+    assert page.eval_on_selector_all(".bd-pick:checked", "e => e.length") == 0
+    assert page.eval_on_selector("#bd-sendbar", "e => e.hidden") is True
+
+
+def test_the_grid_rows_span_every_column(page):
+    """Two rows span the whole grid; a miscount shears the table."""
+    _show(page, [_dd("Ada Fournier")])
+    widths = page.evaluate("""() => {
+        const head = document.querySelectorAll('.bd-grid thead th').length;
+        const body = [...document.querySelectorAll('.bd-grid tbody tr')]
+            .map(tr => [...tr.children].reduce(
+                (n, td) => n + (td.colSpan || 1), 0));
+        return {head, body};
+    }""")
+    assert widths["body"], "no rows rendered"
+    for w in widths["body"]:
+        assert w == widths["head"], (w, widths["head"])
