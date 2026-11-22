@@ -371,6 +371,21 @@ def read_table(page, *, verbose: bool = True, campaign: str = None) -> tuple:
     _largest_page_length(page) or dov._show_all_entries(page)
     _settle(page)
 
+    # THE WHOLE ROSTER, FROM THE REQUEST THAT FILLS THE TABLE. The rendered
+    # table hands back one page -- 24 rows where it says 139 -- and sometimes
+    # 0; the endpoint behind it carries every row. ov_json has the evidence.
+    # The scrape stays as the fallback: if OwnerVille changes that endpoint,
+    # a short read is still better than no read.
+    try:
+        from automations.obcl_ov_sweep import ov_json
+        return ov_json.read(page, bid=ov_json.bid_for(page, want),
+                            page_html=page.content(), verbose=verbose)
+    except Exception as e:                                  # noqa: BLE001
+        if verbose:
+            print("  getStatus unusable (%s: %s) -- falling back to reading "
+                  "the rendered table, which only ever shows page one"
+                  % (type(e).__name__, str(e)[:120]), flush=True)
+
     got = page.evaluate(_READ_JS)
     heads = got.get("heads") or []
     reps: Dict[str, list] = {}

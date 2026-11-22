@@ -256,7 +256,15 @@ def main(argv=None) -> int:
                             profile_dir=PROFILE_DIR) as page:
         heads, reps, complete = ov_table.read_table(page)
         matched, missing = match(todo, reps)
-        if missing:
+        if missing and not complete:
+            # ONLY WHEN THE READ FELL SHORT. The search box fires the same
+            # getStatus request as the page load and filters the answer in the
+            # browser, so it can only ever return somebody who is already in
+            # what we read. Against a complete roster it is 20s per person to
+            # be told again that they are not there -- measured 2026-11-21:
+            # 11 people, 370s, 0 found, all 11 genuinely not enrolled in the
+            # programme. It earns its keep only when the read was partial,
+            # which is what the rendered table used to give us.
             # Page 1 is all the browser ever gets (server-side table); ask the
             # search about each person still missing, one at a time — within
             # config.SEARCH_BUDGET_S, least recently searched first (see there).
@@ -281,9 +289,20 @@ def main(argv=None) -> int:
                   f"found" + (f" ({left} not searched this run: time budget "
                               f"{config.SEARCH_BUDGET_S}s, next run picks them "
                               f"up first)" if left else ""), flush=True)
-        # Everyone not on page 1 was searched for directly, so the page-1
-        # shortfall no longer leaves anyone unread.
-        complete = True
+            # Only then is the shortfall covered. A run that ran out of budget
+            # left people genuinely unread, and `complete` gates the untick --
+            # the one write here that destroys somebody's work. Claiming a
+            # complete read because we MEANT to search everybody is how a
+            # half-read table comes to look like an office that has done
+            # nothing. (Since 2026-11-21 read_table returns the whole roster
+            # in one request, so this path is the fallback, not the norm.)
+            if not left:
+                complete = True
+        elif missing:
+            # A complete roster that simply does not hold these people. They
+            # are not unread -- they are not enrolled in this programme -- so
+            # the read stays complete and they are reported, not searched.
+            pass
     writes, log, ready, bg_wait, unticks = [], [], [], [], []
     for p in todo:
         ov_name = matched.get(p.row)
