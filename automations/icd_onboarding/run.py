@@ -152,7 +152,7 @@ def _ov_program(office_key: str) -> str:
 
 
 def seed(office_key: str, week_start: dt.date, *, dry_run: bool = True,
-         log=print) -> int:
+         log=print, names_only: bool = False) -> int:
     """Everybody SCHEDULED to start in the office that week, onto the board.
 
     Megan, 2026-11-15: *"we would want this extension to live off of the
@@ -169,6 +169,19 @@ def seed(office_key: str, week_start: dt.date, *, dry_run: bool = True,
     TWO READS, ONE SESSION. The scheduled row makes the rows; the showed-up row
     then ticks `Showed Up` on them. Opening the session is the slow part, so the
     second read is two more page loads rather than another job.
+
+    names_only=True IS THE 15-MINUTE PASS (`seed_names`, step 7). It does the
+    first read and nothing else. Measured on Raf's two funnels 2026-11-22: the
+    whole step took 7m01s, and the Showed Up half is where it goes -- the
+    scheduled row is 2 page loads per account, the showed-up row 2 more, and
+    the training calendar walk SEVEN, which this function's own comment below
+    already prices. 22 page loads for two funnels, 18 of them about a column
+    that changes when somebody ticks a radio once a day.
+
+    So the two halves get the clocks they deserve. A NAME is urgent: until the
+    row is there the office cannot see the person at all, which is why Megan
+    asked for 15 minutes on 2026-11-22. Showed Up is not, and it stays on the
+    hourly run, where nothing about it got slower.
     """
     from automations.applicant_tracker.applicantstream import session
     from automations.icd_onboarding import sheet as S
@@ -260,6 +273,11 @@ def seed(office_key: str, week_start: dt.date, *, dry_run: bool = True,
 
             # AND WHO TURNED UP, of those. Read in the same session; the walk
             # IS the fallback for this one, because it answers exactly this.
+            #
+            # Not on the 15-minute pass: see names_only in the docstring. The
+            # rows still land; nothing here adds a row, it only ticks one.
+            if names_only:
+                continue
             try:
                 got = retention.read_week(app, account, week_start, log=log)
             except Exception as e:  # noqa: BLE001 — fall back, never give up
@@ -280,6 +298,16 @@ def seed(office_key: str, week_start: dt.date, *, dry_run: bool = True,
             # AND THE TRAINING CALENDAR, as well as the Retention row rather
             # than instead of it (Megan 2026-11-21: "we can mark this yes if
             # they show up to day one on the applicant stream calendar").
+            #
+            # IT ALSO CARRIES THE ONE THING THE SCHEDULED ROW CANNOT: which
+            # DAY each person starts. The Retention Report's date column is
+            # the apply timestamp, so every seeded row fell back to the
+            # week's Sunday -- all 31 on Raf's OBCL 11.23 read Start = 11/22
+            # (2026-11-22). Blue Ink goes two days before each person's own
+            # start and the welcome email names their day in words, so that
+            # placeholder mails a real person the wrong date. `week_rows`
+            # returns both answers off this same walk rather than a second
+            # one.
             # The two disagree: on the week of 11/16 the calendar had Jaime
             # Molina and Carmen Lopez showing up and the board had their
             # Showed Up empty, so the extension said "not in yet" about two
@@ -290,14 +318,34 @@ def seed(office_key: str, week_start: dt.date, *, dry_run: bool = True,
             # row's two. Worth it for the one column somebody reads to decide
             # whether a person is actually here.
             try:
-                showed = list(showed or []) + list(
-                    fdot.read_week(app, account, week_start, log=log))
+                turned_up, first_day = fdot.week_rows(app, account,
+                                                      week_start, log=log)
+                showed = list(showed or []) + list(turned_up)
+                # The calendar's day beats the week's Sunday, and ONLY the
+                # Sunday: a day the scheduled row did read is a real answer
+                # off the page we asked, so it is left alone.
+                fixed = 0
+                for person in people:
+                    if person.get("started"):
+                        continue
+                    name = ("%s %s" % (person.get("first_name", ""),
+                                       person.get("last_name", ""))).strip()
+                    day = first_day.get(" ".join(name.lower().split()))
+                    if day:
+                        person["started"] = day
+                        fixed += 1
+                if fixed:
+                    log("    %d start day(s) off the training calendar"
+                        % fixed)
             except Exception as e:                          # noqa: BLE001
                 log("  calendar for %s unreadable (%s) -- the Retention row "
-                    "stands alone for this funnel" % (account, type(e).__name__))
+                    "stands alone for this funnel, so its people keep the "
+                    "week's Sunday as their Start" % (account,
+                                                      type(e).__name__))
     got = F.seed_anywhere(office_key, week_start, people,
                           dry_run=dry_run, log=log)
-    _tick_showed_up(office_key, week_start, showed, dry_run=dry_run, log=log)
+    if not names_only:
+        _tick_showed_up(office_key, week_start, showed, dry_run=dry_run, log=log)
     # A step this office does not do is not an outstanding step. Marked at
     # seed time so the office never reads as behind on work that does not
     # exist (Megan, 2026-11-09: "if they don't then they can't enroll in apex
@@ -319,6 +367,33 @@ def seed(office_key: str, week_start: dt.date, *, dry_run: bool = True,
         log("  (no gender suggestions this time: %s: %s)"
             % (type(exc).__name__, str(exc)[:120]))
     return len(got.get("add") or [])
+
+
+def seed_names(office_key: str, week_start: dt.date, *, dry_run: bool = True,
+               log=print) -> int:
+    """STEP 7, on its own 15-minute clock: the names, and nothing else.
+
+    "Their name appears on the OBCL extension" is the step the office actually
+    waits on -- until the row is there the person does not exist to them --
+    and Megan asked for it every 15 minutes rather than hourly (2026-11-22):
+    somebody brought on board at 2:05 should be on the extension at 2:15.
+
+    It is the same seed with the Showed Up half left off, NOT a second reader
+    of the same thing. One function, one set of de-duplication rules, one
+    place where a funnel label is decided; a copy of this that drifted would
+    put a second row on the board for one person, which is the mistake the
+    rules in `seed` exist to prevent.
+
+    What it still does, because both are Sheets-only and belong with a row the
+    moment it appears: marks the steps this office does not do, and suggests a
+    gender on the new rows. What it does not do is read whether anybody turned
+    up -- 18 of the 22 page loads, and an answer that changes when a recruiter
+    ticks a radio, so it stays on the hourly run.
+
+    Its LaunchAgent is com.alphalete.icd-onboarding-seed (:00, :15, :45).
+    """
+    return seed(office_key, week_start, dry_run=dry_run, log=log,
+                names_only=True)
 
 
 def from_no_shows(office_key: str, week_start: dt.date, *,
@@ -762,7 +837,8 @@ def from_contacts(office_key: str, week_start: dt.date, *,
 from automations.icd_onboarding.presses import (press_owner_submit,
                                                 uid_reasons)
 
-STEPS = (("seed", seed), ("ownerville", from_ownerville),
+STEPS = (("seed", seed), ("seed_names", seed_names),
+         ("ownerville", from_ownerville),
          ("blueink", from_blueink), ("sterling", from_sterling),
          ("contacts", from_contacts),
          ("owner_submit", press_owner_submit),
@@ -802,7 +878,14 @@ HAND_RUN_ONLY = ("uid_reasons",)
 #                training day has to have happened, and it lands before the
 #                next morning's 7:30am Blue Ink send, which is what this
 #                column stops for somebody who did not come.
-OWN_CLOCK = ("no_shows",)
+#   seed_names   com.alphalete.icd-onboarding-seed, :00/:15/:45 from 6am to
+#                8:45pm on the box holding this office's ApplicantStream
+#                session. It is `seed` with the Showed Up half left off, so
+#                the names land within 15 minutes of a BOB (Megan,
+#                2026-11-22). NOT at :30: the hourly board run fires at half
+#                past and seeds as its first step, so a :30 pass would be the
+#                same work twice, racing itself for the one AppStream session.
+OWN_CLOCK = ("no_shows", "seed_names")
 
 # Every step must be accounted for: routed to a machine, hand-run, or on its
 # own clock. The coverage test reads this, so a new step fails until it is

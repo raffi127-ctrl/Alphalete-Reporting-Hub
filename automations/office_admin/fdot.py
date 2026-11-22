@@ -240,6 +240,93 @@ def showed_up(rows: List[Dict]) -> List[Dict]:
     return out
 
 
+def on_the_day(rows: List[Dict]) -> List[Dict]:
+    """EVERY first-day-of-training row for a person, whatever Show Up says.
+
+    `showed_up` answers "did they turn up", so it needs a Yes. This answers
+    "which day is their first day", which the row states before the day has
+    even happened -- so a blank Show Up, or a No, still tells you when they
+    were due. Keeping the Yes filter here would leave the whole of a future
+    week without a day, which is exactly the week the board is seeded for.
+    """
+    out, seen = [], set()
+    for r in rows:
+        if not _in_section(r):
+            continue
+        first = str(r.get("first") or "").strip()
+        last = str(r.get("last") or "").strip()
+        email = str(r.get("email") or "").strip()
+        phone = re.sub(r"\D", "", str(r.get("phone") or ""))[-10:]
+        if not first:
+            continue
+        key = email.lower() or (first.lower(), last.lower(), phone)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append({"first_name": first, "last_name": last, "email": email,
+                    "phone": phone})
+    return out
+
+
+def starts_for(day) -> List[Dict]:
+    """Everyone the last `read` of that day saw with a first-day-of-training
+    row, whatever Show Up says. Same hand-off as `no_shows_for`: asked right
+    after the read of that day, never later."""
+    return on_the_day(_LAST_RAW.get(day) or [])
+
+
+def week_rows(app, office_id: str, week_start: dt.date, log=print,
+              days: int = 7):
+    """ONE walk of the week, BOTH answers it already holds.
+
+    Returns (showed_up_pooled, {folded name: their first day}).
+
+    THE DAY EXISTS NOWHERE ELSE. The Retention Report's scheduled row says
+    which WEEK somebody starts and nothing finer: its "Date and Time" column
+    is the APPLICATION timestamp -- blank on 29 of the 31 rows read on
+    2026-11-22 and, on the two that had one, 11/03 and 09/10, months before
+    the week asked for. So `retention.read_scheduled_week` could only fall
+    back to the week's Sunday, and every row on Raf's OBCL 11.23 carried
+    Start = 11/22 for 31 different people.
+
+    That is not cosmetic. Blue Ink goes two days before each person's OWN
+    start, and the welcome email names their day in words ("at orientation on
+    Monday, November 23"), so a Sunday placeholder mails a real person the
+    wrong date.
+
+    Both answers off one walk and not two: the walk is seven page loads, it
+    already stores its raw rows for `no_shows_for`, and a second walk for the
+    days would have doubled the slowest step on the board.
+
+    EARLIEST ROW WINS. "First day of training" is the first one; somebody
+    appearing again later in the week is being read twice, not starting twice.
+
+    Raises for the same reason `read` does: a day that cannot be read is not a
+    day with nobody in it.
+    """
+    from automations.shared.onboarding_week import week_start_of
+
+    pooled_raw: List[Dict] = []
+    first_day: Dict[str, dt.date] = {}
+    sunday = week_start_of(week_start)
+    for i in range(days):
+        day = sunday + dt.timedelta(days=i)
+        pooled_raw.extend(read(app, office_id, day, log=log))
+        for person in starts_for(day):
+            name = ("%s %s" % (person.get("first_name", ""),
+                               person.get("last_name", ""))).strip()
+            key = " ".join(name.lower().split())
+            if key and (key not in first_day or day < first_day[key]):
+                first_day[key] = day
+    pooled = showed_up([{"first": p["first_name"], "last": p["last_name"],
+                         "phone": p["phone"], "email": p["email"],
+                         "show": "Yes", "section": SECTION} for p in pooled_raw])
+    log("  week of %s: %d showed up (%d rows before de-duplicating), "
+        "%d with a first day on the calendar"
+        % (sunday, len(pooled), len(pooled_raw), len(first_day)))
+    return pooled, first_day
+
+
 def read(app, office_id: str, day: dt.date, log=print) -> List[Dict]:
     """One day's showed-up training rows for one office.
 

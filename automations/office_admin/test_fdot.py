@@ -242,3 +242,60 @@ def test_a_page_that_says_nothing_at_all_still_fails(page):
     got = _read(page, "<!doctype html><html><body><div>Loading…</div></body></html>")
     assert got["ok"] is False
     assert not got.get("emptyDay")
+
+
+# ---------------------------------- the start DAY, which only the calendar has
+
+def _train(first, last="Rowe", email="", phone="5550100001", show=""):
+    return {"section": fdot.SECTION, "first": first, "last": last,
+            "email": email, "phone": phone, "show": show}
+
+
+def test_a_blank_or_no_show_up_still_states_their_first_day():
+    """`showed_up` needs a Yes because it answers "did they turn up".
+    `on_the_day` answers "which day is their first day", which the row states
+    before the day has happened -- so filtering on Yes would leave the whole
+    of a FUTURE week without a day, and a future week is the one the board is
+    seeded for."""
+    rows = [_train("Ada", show=""), _train("Bo", show="No"),
+            _train("Cy", show="Yes")]
+    assert sorted(p["first_name"] for p in fdot.on_the_day(rows)) == [
+        "Ada", "Bo", "Cy"]
+    assert [p["first_name"] for p in fdot.showed_up(rows)] == ["Cy"]
+
+
+def test_the_earliest_training_row_is_their_first_day(monkeypatch):
+    """Somebody on Monday AND Thursday is being read twice, not starting
+    twice, so the Monday is the answer. Read in day order the later row would
+    otherwise overwrite the earlier one."""
+    byday = {dt.date(2026, 11, 23): [_train("Ada", show="Yes")],
+             dt.date(2026, 11, 26): [_train("Ada", show="Yes"),
+                                     _train("Bo", show="")]}
+
+    def fake_read(app, office, day, log=print):
+        fdot._LAST_RAW[day] = byday.get(day, [])
+        return fdot.showed_up(fdot._LAST_RAW[day])
+
+    monkeypatch.setattr(fdot, "read", fake_read)
+    pooled, first_day = fdot.week_rows(None, "11280", dt.date(2026, 11, 22),
+                                       log=lambda *a: None)
+    assert first_day["ada rowe"] == dt.date(2026, 11, 23), "the earlier one"
+    assert first_day["bo rowe"] == dt.date(2026, 11, 26)
+    # And one walk answers BOTH: Ada showed up, Bo's Show Up is blank.
+    assert [p["first_name"] for p in pooled] == ["Ada"]
+
+
+def test_a_week_with_no_training_rows_names_nobodys_day(monkeypatch):
+    """Not an error and not a guess: no calendar row means the Retention
+    row's week stands, which is what the seed already falls back to."""
+    def fake_read(app, office, day, log=print):
+        # What the real `read` does for a day the calendar calls empty: it
+        # returns before storing anything, so _LAST_RAW has no entry for that
+        # day and `starts_for` answers [] rather than another day's rows.
+        fdot._LAST_RAW.pop(day, None)
+        return []
+
+    monkeypatch.setattr(fdot, "read", fake_read)
+    pooled, first_day = fdot.week_rows(None, "11280", dt.date(2026, 11, 22),
+                                       log=lambda *a: None)
+    assert pooled == [] and first_day == {}

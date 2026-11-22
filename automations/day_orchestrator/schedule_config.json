@@ -16653,6 +16653,28 @@
    "timeout_minutes": 5,
    "verify": null
   },
+  "install_icd_onboarding_seed_names_agent": {
+   "on_scheduler": false,
+   "machine": "Lucy 3",
+   "_off_scheduler_note": "Installs com.alphalete.icd-onboarding-seed-names: STEP 7 ONLY, every 15 minutes (:00, :15, :45) from 6am to 8:45pm machine-local, every day. Megan 2026-11-22: somebody BOB'd at 2:05 should be on the OBCL extension at 2:15, not at 2:30. Runs icd_onboarding.run --only seed_names --write and NOTHING else, so it is an AppStream calendar read plus an append; the other eight columns stay on the hourly com.alphalete.icd-onboarding agent, which is a browser walk through OwnerVille, Blue Ink and the Sterling inbox that four fires an hour would buy nothing. NOT AT :30 ON PURPOSE: the hourly board run fires at half past and seeds as its first step, so a :30 seed would be the same work twice, racing itself for the same AppStream session -- the hourly run IS the :30 pass, which is why this is three fires an hour and not four. LUCY 3 is the box that can run it (holds the warm AppStream session and raf's OwnerVille; `seed` is in STEPS_BY_MACHINE for Lucy 3 alone), and an ICD's own ECO machine installs the same plist for its own office -- it takes no office argument, the machine's enrollment names it. The wrapper skips while ANY onboarding run is going, its own or the hourly board's, because the second to arrive finds the AppStream session held and reads nothing, which looks exactly like a week with nobody in it. NO HUB ROW: the hourly run publishes the 'ICD Onboarding Board' card and sixty fires a day from here would drown it; this one beats its own heartbeat (`icd_onboarding_seed_names`) so going quiet is still noticed, the same rule as icd_onboarding_no_shows. Sends nothing.",
+   "display_name": "Install ICD onboarding SEED agent (every 15 min, 6am-8:45pm)",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.day_orchestrator.install_agent"
+   ],
+   "base_args": [
+    "icd-onboarding-seed-names"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 5,
+   "verify": null
+  },
   "colten_metrics": {
    "order": 26.5,
    "machine": "Lucy 4",

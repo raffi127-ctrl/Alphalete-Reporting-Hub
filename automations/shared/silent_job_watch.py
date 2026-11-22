@@ -138,6 +138,66 @@ JOBS: Dict[str, dict] = {
         "fix": "lucy rerun install_blueink_sweep_agent --machine \"Lucy 2\"",
     },
     # (the per-machine icd_onboarding rows are built after this table)
+    # WHO WAS MARKED NO IN APPLICANTSTREAM, the signal that somebody is not
+    # starting. Its wrapper has beaten under this id since 2026-11-16 and this
+    # dict did not know the name, so every beat printed "unknown job" and was
+    # thrown away -- the heartbeat was a no-op for the whole of its life
+    # (found 2026-11-22 while wiring the seed's).
+    #
+    # Which is the second time this job was invisible for the same reason. On
+    # 2026-11-19 it fired at 19:30, met the hourly board run that owns :30,
+    # skipped on its own overlap guard, and left one line in a skip log and no
+    # heartbeat: "installed, scheduled, correct in every part, and never once
+    # doing its job" (ff1f506). An absent heartbeat reads exactly like a job
+    # nobody installed. A heartbeat nothing listens to reads the same way.
+    #
+    # 21:15, NOT the 19:30 that ff1f506 moved it off: 45 minutes past the last
+    # board run of the day, still ahead of the 7:30am Blue Ink send, which is
+    # the send this column stops. watch_from is the day of that move, not the
+    # day it was installed -- before it, the job provably never completed a
+    # pass, and watching those days would alert about a bug already fixed.
+    "icd_onboarding_no_shows": {
+        "name": "OBCL no-show walk (daily 21:15)",
+        "machine": "Lucy 3",
+        "first_by": "22:15",       # the one pass 21:15 + 60 min grace
+        "max_gap_min": None,       # one opportunity a day; first_by covers it
+        "active_until": None,
+        "weekdays": None,
+        "watch_from": "2026-11-20",
+        "means": ("nobody marked No in ApplicantStream is carried onto the "
+                  "board, so a person who is NOT starting keeps their row "
+                  "green, keeps getting paperwork, and counts in the week's "
+                  "numbers as a start. It runs the evening before the 7:30am "
+                  "Blue Ink send, which is the send this column stops -- so a "
+                  "missed pass costs somebody a bundle they should not get."),
+        "fix": ("lucy rerun install_icd_onboarding_no_shows_agent "
+                "--machine \"Lucy 3\""),
+    },
+    # STEP 7 ON ITS OWN CLOCK (2026-11-22). `seed_names` is the seed with the
+    # Showed Up half left off -- 49s against the full step's 7m01s -- so the
+    # names land within 15 minutes of a BOB instead of within the hour. It
+    # publishes NO Hub row (45 fires a day would drown the card and two
+    # publishers for one card hide which half stopped), so this heartbeat is
+    # the ONLY thing that can see it stop. What a stopped pass costs is time,
+    # not data: the hourly board run still seeds at :30, so the names arrive
+    # late rather than never -- which is why it is worth watching and not
+    # worth paging about.
+    "icd_onboarding_seed_names": {
+        "name": "OBCL seed (names, every 15 min)",
+        "machine": "Lucy 3",
+        "first_by": "07:00",       # first pass 06:00 + an hour of grace
+        "max_gap_min": 75,         # 3 fires an hour -> one skipped hour is fine
+        "active_until": "21:00",   # last pass 20:45 + grace
+        "weekdays": None,
+        "watch_from": "2026-11-22",
+        "means": ("a new start brought on board today does not appear on the "
+                  "OBCL extension until the hourly board run seeds at half "
+                  "past. Nothing is lost and nothing is sent -- the office "
+                  "just waits up to an hour to see the person instead of up "
+                  "to fifteen minutes."),
+        "fix": ("lucy rerun install_icd_onboarding_seed_names_agent "
+                "--machine \"Lucy 3\""),
+    },
     "obcl_ov_sweep": {
         "name": "OBCL <- OwnerVille sweep",
         "machine": "Lucy 3",

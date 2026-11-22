@@ -57,9 +57,20 @@ ROW_ID = "Hired_Showed_Up"
 SCHEDULED_ROW_LABEL = "Total New Starts Scheduled"
 SCHEDULED_STAGE = "Scheduled to start"
 
-# The detail table's own date column. For the scheduled row it is the day they
-# are due in, which is the board's Start -- and the reason a scheduled read
-# asks for it by name rather than taking the week's Sunday for everybody.
+# The detail table's own date column: the APPLICATION timestamp.
+#
+# It was read here as "the day they are due in, which is the board's Start".
+# It is not. Probed on 2026-11-22 against both of Raf's funnels for the week
+# of 11/22: 29 of 31 rows had the cell EMPTY, and the two with a value read
+# '11/03/2026 7:40 AM' and '09/10/2026 2:01 PM' -- when somebody applied,
+# months before the week on the banner. Asked for a start day it can only
+# ever answer None, which is why all 31 rows on OBCL 11.23 carried
+# Start = 11/22.
+#
+# Still asked for by name, and still kept: where a value DOES fall inside the
+# week it is the best thing on the page, and `_day` already refuses anything
+# outside it. The day proper comes off the training calendar
+# (fdot.week_rows). THE SCHEDULED ROW'S REAL ANSWER IS THE WEEK.
 DATE_COLUMN = "Date and Time"
 
 # The detail table's columns, as the page prints them (2026-11-09):
@@ -258,8 +269,19 @@ def read_week(app, office_id: str, week_start: dt.date, log=print, *,
         if vague:
             # SAID, never swallowed: those rows take the week's Sunday as their
             # Start, which is a vaguer answer than the page was asked for.
-            log("    %d of them had no readable date — their Start falls back "
-                "to %s" % (len(vague), want.strftime("%m/%d/%Y")))
+            #
+            # NOT "no readable date", which is what this said until 2026-11-22
+            # and which blamed the page for a column it never carried. Read
+            # that day: 29 of 31 rows had this cell EMPTY, and the two that
+            # had one read 11/03 and 09/10 -- the APPLICATION timestamp,
+            # months before the week asked for. It is not a start date and
+            # never was, so a run where every row is "vague" is the ordinary
+            # case, not a fault to go chasing. The day comes off the training
+            # calendar (fdot.week_rows); this row gives the week.
+            log("    %d of %d carry no start day here (this column is the "
+                "apply date) — the week's %s stands in until the training "
+                "calendar names their day"
+                % (len(vague), len(people), want.strftime("%m/%d/%Y")))
     return people
 
 
