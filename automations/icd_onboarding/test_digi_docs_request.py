@@ -332,3 +332,105 @@ class TestTheQueuedMarker:
         n = R.mark_queued("raf", WEEK, ["Ada Fournier"], dry_run=False,
                           log=lambda *a: None)
         assert n == 0 and tab.updates == []
+
+
+class TestStaleAsks:
+    """A request that died leaves QUEUED: sitting there for ever.
+
+    Nothing clears an ask -- the sweep will not, because an ask is not an
+    answer -- so the only clue was the date going stale, and nobody watches
+    that. Dead is read off the QUEUE, never off a clock.
+    """
+
+    def _board(self, monkeypatch, cell, rows, *, terminated=""):
+        from automations.icd_onboarding import sheet as S
+        head = list(B.COLUMNS) + list(S.PAST_THE_CHART)
+        row = [""] * len(head)
+        row[head.index(B.WEEK)] = B.week_label(WEEK)
+        row[head.index("Name")], row[head.index("Last Name")] = "Ada", "Fournier"
+        row[head.index("Digi Docs")] = cell
+        row[head.index(B.TERMINATED_AT)] = terminated
+
+        class _Tab:
+            title = "OBCL 11.16"
+
+            def __init__(self):
+                self.updates, self.formats = [], []
+
+            def get_all_values(self):
+                return [list(head), list(row)]
+
+            def batch_update(self, items):
+                self.updates.extend(items)
+
+            def format(self, rng, fmt):
+                self.formats.append((rng, fmt))
+
+        tab = _Tab()
+        monkeypatch.setattr(S, "board_for", lambda *a, **k: tab)
+        monkeypatch.setattr(R, "_report_machine", lambda: "Lucy 3")
+        monkeypatch.setattr(R, "_client", lambda: object())
+        monkeypatch.setattr(R, "rows_for", lambda gc, who, m: rows)
+        return tab
+
+    def _mark(self, when):
+        return R.QUEUED_TEXT % when.strftime("%m/%d/%Y")
+
+    def test_a_job_still_queued_is_not_stale(self, monkeypatch):
+        self._board(monkeypatch, self._mark(dt.date(2026, 1, 1)),
+                    [{"status": "queued", "finished": "", "result": ""}])
+        assert R.stale_asks("raf", WEEK) == []
+
+    def test_a_job_still_running_is_not_stale(self, monkeypatch):
+        self._board(monkeypatch, self._mark(dt.date(2026, 1, 1)),
+                    [{"status": "running", "finished": "", "result": ""}])
+        assert R.stale_asks("raf", WEEK) == []
+
+    def test_a_finished_job_that_left_no_date_is_stale(self, monkeypatch):
+        self._board(monkeypatch, self._mark(dt.date(2026, 1, 1)),
+                    [{"status": "error", "finished": "2026-01-01T09:00:00",
+                      "result": "session died"}])
+        got = R.stale_asks("raf", WEEK)
+        assert len(got) == 1 and got[0]["name"] == "Ada Fournier"
+        assert "session died" in got[0]["why"]
+
+    def test_a_marker_from_today_with_no_row_is_too_early_to_judge(self, monkeypatch):
+        """The relay writes the row and the marker together, but a read in
+        between must not call that a failure."""
+        self._board(monkeypatch, self._mark(dt.date.today()), [])
+        assert R.stale_asks("raf", WEEK) == []
+
+    def test_a_marker_from_a_past_day_with_no_row_is_stale(self, monkeypatch):
+        self._board(monkeypatch, self._mark(dt.date(2026, 1, 1)), [])
+        got = R.stale_asks("raf", WEEK)
+        assert len(got) == 1
+        assert "no job was ever queued" in got[0]["why"]
+
+    def test_a_real_answer_is_not_a_marker(self, monkeypatch):
+        self._board(monkeypatch, "11/22/2026", [])
+        assert R.stale_asks("raf", WEEK) == []
+
+    def test_somebody_marked_off_is_left_alone(self, monkeypatch):
+        self._board(monkeypatch, self._mark(dt.date(2026, 1, 1)), [],
+                    terminated="11/20/2026")
+        assert R.stale_asks("raf", WEEK) == []
+
+    def test_an_undated_marker_is_never_called_stale(self, monkeypatch):
+        """A marker nobody can date is not evidence that anything failed."""
+        self._board(monkeypatch, B.QUEUED_PREFIX + "digi docs asked for", [])
+        assert R.stale_asks("raf", WEEK) == []
+
+    def test_it_becomes_an_ask_not_a_blank(self, monkeypatch):
+        """Blank means nobody asked. This person was asked for and missed."""
+        tab = self._board(monkeypatch, self._mark(dt.date(2026, 1, 1)), [])
+        n = R.clear_stale("raf", WEEK, dry_run=False, log=lambda *a: None)
+        assert n == 1
+        wrote = tab.updates[0]["values"][0][0]
+        assert wrote.startswith(B.ASK_PREFIX)
+        assert "ask again" in wrote
+        assert B.is_ask(wrote) and not B.answered(wrote)
+
+    def test_a_dry_sweep_writes_nothing(self, monkeypatch):
+        tab = self._board(monkeypatch, self._mark(dt.date(2026, 1, 1)), [])
+        assert R.clear_stale("raf", WEEK, log=lambda *a: None) == 0
+        assert tab.updates == []

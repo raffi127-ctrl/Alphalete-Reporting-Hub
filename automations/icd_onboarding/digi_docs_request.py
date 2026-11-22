@@ -117,6 +117,43 @@ def pending(gc, machine: Optional[str]) -> List[Dict]:
     return out
 
 
+def rows_for(gc, name: str, machine: Optional[str]) -> List[Dict]:
+    """Every queue row for this person, newest last, open or finished.
+
+    `pending` answers "may I ask again"; this answers "what became of the ask
+    I already made", which needs the rows that are DONE as much as the ones
+    that are not.
+    """
+    from automations.day_orchestrator import queue_enqueue as Q
+    tab = Q.control_tab_for(machine)
+    ss = gc.open_by_key(Q.CONTROL_SHEET_ID)
+    try:
+        ws = ss.worksheet(tab)
+    except Exception:                       # noqa: BLE001 -- no tab, no rows
+        return []
+    raw = ws.get_all_values()
+    if not raw:
+        return []
+    head = [str(h).strip() for h in raw[0]]
+    try:
+        ai, gi, si = (head.index("Action"), head.index("Args"),
+                      head.index("Status"))
+    except ValueError:
+        return []
+    fi = head.index("Finished At") if "Finished At" in head else None
+    ri = head.index("Result") if "Result" in head else None
+    want = args_for(name).lower()
+    out = []
+    for r in raw[1:]:
+        def at(i):
+            return str(r[i] if i is not None and i < len(r) else "").strip()
+        if at(ai).lower() != ACTION or at(gi).lower() != want:
+            continue
+        out.append({"status": at(si).lower(), "finished": at(fi),
+                    "result": at(ri)})
+    return out
+
+
 def already_asked(gc, name: str, machine: Optional[str]) -> Optional[Dict]:
     """An open row that would already send this person's documents."""
     want = args_for(name).lower()
@@ -237,6 +274,111 @@ def mark_queued(office_key: str, week_start: dt.date, names: List[str], *,
     return len(writes)
 
 
+def stale_asks(office_key: str, week_start: dt.date, *, gc=None,
+               machine: Optional[str] = None) -> List[Dict]:
+    """People whose QUEUED: never became anything. Reads only.
+
+    A marker says "asked for, not yet done" and is deliberately an ASK, so
+    the real date lands on top of it when the send reports. That is also why
+    a request that DIES leaves the marker sitting there for ever: nothing
+    clears an ask, and the sweep will not, because an ask is not an answer.
+    The only clue was the date going stale, which nobody watches.
+
+    DEAD IS READ OFF THE QUEUE, NOT OFF A CLOCK. A job still queued or
+    running is simply not finished, however old it looks. One that FINISHED
+    and left the cell still an ask either failed, or succeeded and the
+    hourly OwnerVille scan has not written the date yet -- so a finished row
+    only counts once the scan has had its hour. A marker with no row at all
+    (the tab gets trimmed) counts once its date is in the past.
+    """
+    ws = S.board_for(office_key, week_start, create=False)
+    if ws is None:
+        return []
+    grid = S._values(ws)
+    if COLUMN not in S.layout(grid):
+        return []
+    gc = gc or _client()
+    machine = machine or _report_machine()
+    today = dt.date.today()
+
+    out = []
+    for r in S.rows_of(grid):
+        said = str(r.get(COLUMN) or "").strip()
+        if not said.startswith(B.QUEUED_PREFIX):
+            continue
+        if str(r.get(B.TERMINATED_AT) or "").strip():
+            continue              # off the board; the marker goes with them
+        who = ("%s %s" % (r.get("Name", ""), r.get("Last Name", ""))).strip()
+        rows = rows_for(gc, who, machine)
+        open_rows = [x for x in rows if x["status"] in OPEN_STATUSES]
+        if open_rows:
+            continue              # still waiting its turn, or running now
+        if rows:
+            why = ("the job finished and no date came back"
+                   + (" (%s)" % rows[-1]["result"] if rows[-1]["result"]
+                      else ""))
+            when = _marker_date(said)
+            # Give the hourly scan its chance before calling it a failure.
+            if when is not None and when >= today and not rows[-1]["finished"]:
+                continue
+        else:
+            when = _marker_date(said)
+            if when is None or when >= today:
+                continue          # asked today, no row yet -- too early to say
+            why = "no job was ever queued for them"
+        out.append({"name": who, "row": S.row_number(r), "cell": said,
+                    "why": why})
+    return out
+
+
+def _marker_date(text: str) -> Optional[dt.date]:
+    """The date inside a QUEUED: cell, or None when it cannot be read.
+
+    None is never treated as stale: a marker nobody can date is not evidence
+    that anything failed.
+    """
+    import re
+    m = re.search(r"(\d{1,2})/(\d{1,2})/(\d{4})", str(text or ""))
+    if not m:
+        return None
+    try:
+        return dt.date(int(m.group(3)), int(m.group(1)), int(m.group(2)))
+    except ValueError:
+        return None
+
+
+def clear_stale(office_key: str, week_start: dt.date, *, dry_run: bool = True,
+                log=print, gc=None, machine: Optional[str] = None) -> int:
+    """Turn a dead QUEUED: into a NEEDS: that says what happened.
+
+    NOT back to blank. Blank is what "nobody has asked yet" looks like, and
+    a request that died is a different thing: somebody asked, it did not
+    happen, and the next person to look should be told rather than left to
+    ask again and wonder. It stays an ASK either way, so the real date still
+    lands on top of it if the documents do go.
+    """
+    stale = stale_asks(office_key, week_start, gc=gc, machine=machine)
+    if not stale:
+        log("  no stale requests on the week of %s" % B.week_label(week_start))
+        return 0
+    for s in stale:
+        log("  %-24s %s" % (s["name"], s["why"]))
+    if dry_run:
+        log("  (dry run -- %d marker(s) left as they are)" % len(stale))
+        return 0
+    ws = S.board_for(office_key, week_start, create=False)
+    grid = S._values(ws)
+    a1 = S._a1(S.layout(grid)[COLUMN] + 1)
+    writes = [{"range": "%s%d" % (a1, s["row"]),
+               "values": [[B.ASK_PREFIX + "digi docs were asked for and did "
+                           "not go -- ask again"]]} for s in stale]
+    ws.batch_update(writes)
+    ws.format(["%s%d" % (a1, s["row"]) for s in stale],
+              {"backgroundColor": B.UNSURE})
+    log("  marked %d request(s) as needing another ask" % len(writes))
+    return len(writes)
+
+
 def request_many(office_key: str, names: List[str], week_start: dt.date, *,
                  by: str = "board", dry_run: bool = True, log=print) -> Dict:
     """Ask for several people at once -- one JOB EACH, never one wide run.
@@ -278,7 +420,7 @@ def main(argv=None) -> int:
         description="Ask for one person's Digi Docs (and so their AT&T "
                     "courses). DRY by default.")
     p.add_argument("--office", default="raf", help="the office key")
-    p.add_argument("--name", action="append", default=[], required=True,
+    p.add_argument("--name", action="append", default=[],
                    help="'First Last', as the board spells them. Repeat it "
                         "for several people -- each becomes its own job.")
     p.add_argument("--week", default="", help="the week's Sunday, YYYY-MM-DD. "
@@ -286,10 +428,18 @@ def main(argv=None) -> int:
     p.add_argument("--by", default="cli", help="who asked")
     p.add_argument("--send", action="store_true",
                    help="actually queue it. Without this, nothing is queued.")
+    p.add_argument("--sweep", action="store_true",
+                   help="instead of asking: find requests that died and mark "
+                        "them as needing another ask.")
     a = p.parse_args(argv)
 
     week = (dt.date.fromisoformat(a.week) if a.week
             else B.week_start_of(dt.date.today()))
+    if a.sweep:
+        clear_stale(a.office, week, dry_run=not a.send)
+        return 0
+    if not a.name:
+        p.error("--name, or --sweep")
     got = request_many(a.office, a.name, week, by=a.by, dry_run=not a.send)
     for r in got["refused"]:
         print("refused %-24s %s%s" % (r["name"], r["why"],
