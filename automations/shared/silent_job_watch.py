@@ -189,7 +189,16 @@ JOBS: Dict[str, dict] = {
         "max_gap_min": 75,         # 3 fires an hour -> one skipped hour is fine
         "active_until": "21:00",   # last pass 20:45 + grace
         "weekdays": None,
-        "watch_from": "2026-11-22",
+        # NOT ARMED, BECAUSE THE AGENT IS NOT INSTALLED ANYWHERE YET. Nothing
+        # in onboarding goes live until the build is signed off, and a
+        # "didn't run today" about a job nobody installed is the noise that
+        # teaches people to ignore this whole report -- the same mistake as
+        # reading a deploy/ plist as a running job. A date in the future means
+        # `today < watch_from`, so the check skips it entirely.
+        #
+        # MOVE THIS TO THE DAY IT IS INSTALLED. The date below is a placeholder
+        # far enough out to be obviously one, not a guess at a schedule.
+        "watch_from": "2026-12-31",
         "means": ("a new start brought on board today does not appear on the "
                   "OBCL extension until the hourly board run seeds at half "
                   "past. Nothing is lost and nothing is sent -- the office "
