@@ -151,5 +151,27 @@ class Post(unittest.TestCase):
         self.assertEqual(self._post(FakeClient()), 1)
 
 
+class PostFix(unittest.TestCase):
+    """Eve 11/22: corrected day PDF goes as a reply in today's thread, never a new one."""
+
+    def test_replies_in_todays_thread(self):
+        calls = []
+
+        class C:
+            def files_upload_v2(self, **kw):
+                calls.append(kw)
+        today = dt.date(2026, 11, 22)
+        with tempfile.TemporaryDirectory() as d, mock.patch.object(ot, "LEDGER_DIR", Path(d)):
+            (Path(d) / "2026-11-22.json").write_text(
+                '{"Rafael Hidalgo": {"channel": "C1", "ts": "111.222"}}', encoding="utf-8")
+            self.assertTrue(ot.post_fix(C(), "Rafael Hidalgo", "2026-11-18", Path(d) / "x.pdf", 5,
+                                        today, log=lambda *_: None))
+            self.assertFalse(ot.post_fix(C(), "Other Owner", "2026-11-18", Path(d) / "x.pdf", 5,
+                                         today, log=lambda *_: None))
+        self.assertEqual(len(calls), 1)
+        self.assertEqual((calls[0]["channel"], calls[0]["thread_ts"]), ("C1", "111.222"))
+        self.assertIn("Wednesday, Nov 18", calls[0]["initial_comment"])
+
+
 if __name__ == "__main__":
     unittest.main()

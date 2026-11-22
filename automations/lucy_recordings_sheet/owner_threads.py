@@ -264,3 +264,22 @@ def post(client, owner_plan: dict, pdfs: dict, list_text, month_png: Path | None
             ledger_path.write_text(json.dumps(ledger, indent=1), encoding="utf-8")
         time.sleep(PAUSE_S)
     return posted
+
+
+def post_fix(client, owner: str, day: str, pdf, n: int, today: dt.date, log=print) -> bool:
+    """Eve 11/22: a day's PDF was wrong in today's thread (a recording had no
+    sender, so it was left out). Reply in THAT thread with the corrected PDF -
+    never a new thread, so the owner has one place to look."""
+    _path, ledger = _ledger(today)
+    hit = ledger.get(owner)
+    if not hit:
+        log("[owner threads] %s: no thread posted %s - nothing to fix" % (owner, today))
+        return False
+    p = Path(pdf)
+    client.files_upload_v2(channel=hit["channel"], thread_ts=hit["ts"], filename=p.name,
+                           file=str(p), title="%s · 2nd Round Scorecards (%d)" % (_day_label(day), n),
+                           initial_comment="Updated %s: one recording was missing the rep's name "
+                                           "and is now included." % _day_label(day, long=True))
+    log("[owner threads] %s: corrected %s posted in thread ts=%s" % (owner, day, hit["ts"]))
+    return True
+

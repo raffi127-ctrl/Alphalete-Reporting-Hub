@@ -1391,6 +1391,9 @@ def main(argv=None) -> int:
                          "user id U... to send every thread to Lucy's DM with them instead (test)")
     ap.add_argument("--owner-threads-only", metavar="OWNER",
                     help="with --owner-threads: only this owner (e.g. 'Rafael Hidalgo')")
+    ap.add_argument("--owner-threads-fix-day", metavar="YYYY-MM-DD",
+                    help="with --owner-threads --owner-threads-only OWNER: rebuild that one "
+                         "day's PDF and reply with it in today's thread (no new thread)")
     a = ap.parse_args(argv)
 
     export = load_bot_export(a.from_json)
@@ -1536,6 +1539,13 @@ def _owner_threads(a, kept_all, export, guesses, day, y_all, month_html, dry_run
     if a.owner_threads_only:
         want = set(norm(a.owner_threads_only).split())
         owner_plan = {o: v for o, v in owner_plan.items() if want <= set(norm(o).split())}
+    fix_day = getattr(a, "owner_threads_fix_day", None)
+    if fix_day:
+        if not a.owner_threads_only:
+            raise SystemExit("--owner-threads-fix-day needs --owner-threads-only OWNER")
+        owner_plan = {o: {d: rs for d, rs in v.items() if d == fix_day}
+                      for o, v in owner_plan.items()}
+        owner_plan = {o: v for o, v in owner_plan.items() if v}
     log("owner threads: week %s..%s, %d owner(s) with counted recordings" % (
         ot.week_days(yday)[0], yday, len(owner_plan)))
     for owner in sorted(owner_plan):
@@ -1545,6 +1555,11 @@ def _owner_threads(a, kept_all, export, guesses, day, y_all, month_html, dry_run
     pdfs = ot.build_pdfs(owner_plan, export.get("names") or {}, today, run_bot)
     log("owner threads: %d day PDF(s) built under %s" % (len(pdfs), ot.PDF_DIR / today.isoformat()))
     if dry_run:
+        return
+    if fix_day:
+        from automations.shared.slack_metrics_post import _client
+        for (owner, d), (pdf, n) in sorted(pdfs.items()):
+            ot.post_fix(_client(), owner, d, pdf, n, today, log=log)
         return
     png = None
     if month_html:

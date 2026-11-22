@@ -138,6 +138,8 @@ def _pdf(rec):
 # among the files with that name, take the one uploaded at that moment.
 
 SENT_WINDOW_SECONDS = 10 * 60
+LOOKUP_DAYS = 14
+LOOKUP_BUDGET_SECONDS = 120
 
 
 def _slack_files():
@@ -182,9 +184,16 @@ def _slack_poster():
         from slack_watcher import web
     except Exception:  # noqa: BLE001
         return None
+    import time
     cache = {}
+    # 11/22: unbounded lookups over every old tie blew the 15-min export limit.
+    # Only recent recordings (this week's thread + list) and a hard time budget.
+    oldest_ok = time.time() - LOOKUP_DAYS * 86400
+    deadline = time.time() + LOOKUP_BUDGET_SECONDS
 
     def who_posted(channel, ts):
+        if float(ts) < oldest_ok or time.time() > deadline:
+            return ""
         if (channel, ts) not in cache:
             uid = ""
             try:
@@ -229,17 +238,15 @@ def match_sender(audio, files, who_posted=None):
     if len({f["uid"] for f in same}) == 1:
         return same[0]["uid"], "name"
     if who_posted is not None:
-        tried = []
-        for f in same + [f for f in files if f not in same]:
+        tried = set()
+        for f in same:  # only the reps who sent a file with this name
             for ch in f.get("chans") or []:
                 if ch in tried:
                     continue
-                tried.append(ch)
+                tried.add(ch)
                 uid = who_posted(ch, msg_ts)
                 if uid:
                     return uid, "message lookup"
-            if len(tried) >= 20:
-                break
     return "", ("%d senders share that name" % len({f["uid"] for f in same})) if same else "not in slack's list"
 
 
