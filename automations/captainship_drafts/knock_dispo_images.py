@@ -442,6 +442,15 @@ DROP_NOTE = ("board excluded on purpose — its disposition grid does not "
              "render, so there is nothing to read; being fixed separately")
 
 
+# How much of an owner's error reaches the log + the Slack note. Was 200,
+# which cut the weekly refusal exactly at "Refusing to publish them." -- so the
+# day ("reading 11/xx", 9718027) and the "Headers seen" list (eb00ed5) that
+# say WHICH grid refused never reached anyone. Carlos Hidalgo's weekly board
+# refused on 11/15, 11/16 and 11/22 and nobody could tell why (2026-11-22).
+# Same ceiling as knocks_audit.NOTE_MAX.
+ERR_NOTE_MAX = 700
+
+
 def _owner_error_note(exc) -> str:
     """The errors[] note for a failed owner pull — an ACCESS GAP reads as
     one, anything else keeps its exception text for debugging.
@@ -461,7 +470,7 @@ def _owner_error_note(exc) -> str:
     office we cannot see must be VISIBLE, never silently dropped — and the
     summary board's "(N of M ICDs)" label says how many are missing from the
     totals."""
-    text = f"{type(exc).__name__}: {str(exc)[:200]}"
+    text = f"{type(exc).__name__}: {str(exc)[:ERR_NOTE_MAX]}"
     if "disposition by rep is not open" in str(exc).lower():
         return (NO_DATA_MARK + "ownerville no longer opens this office's "
                 "Disposition by Rep page for the reporting account (it "
@@ -1784,7 +1793,7 @@ def capture_sections(captain, today: dt.date, render_dir, *,
                         pass          # reused above; the weekly half follows
                     except Exception as e:  # noqa: BLE001 — one owner ≠ section
                         logfn(f"    ✗ daily {display}: {type(e).__name__}: "
-                              f"{str(e)[:200]}")
+                              f"{str(e)[:ERR_NOTE_MAX]}")
                         errors[f"daily_knocks:{display}"] = _owner_error_note(e)
                         if is_access_gap(e):
                             gapped_daily.append(display)
@@ -1938,7 +1947,7 @@ def capture_sections(captain, today: dt.date, render_dir, *,
                               f"rep(s) → {png.name}")
                     except Exception as e:  # noqa: BLE001 — one owner ≠ section
                         logfn(f"    ✗ weekly {display}: {type(e).__name__}: "
-                              f"{str(e)[:200]}")
+                              f"{str(e)[:ERR_NOTE_MAX]}")
                         errors[f"knock_dispo:{display}"] = _owner_error_note(e)
                         if is_access_gap(e):
                             gapped_weekly.append(display)
@@ -1947,9 +1956,9 @@ def capture_sections(captain, today: dt.date, render_dir, *,
                     done_weekly.add(display)
     except Exception as e:  # noqa: BLE001 — the session itself never opened
         logfn(f"  ⚠ ownerville session failed: {type(e).__name__}: "
-              f"{str(e)[:200]}")
+              f"{str(e)[:ERR_NOTE_MAX]}")
         reason = (f"ownerville session failed: {type(e).__name__}: "
-                  f"{str(e)[:200]}")
+                  f"{str(e)[:ERR_NOTE_MAX]}")
         for kind, done, out_list in (
                 ("daily_knocks", done_daily, out_daily),
                 ("knock_dispo", done_weekly, out_weekly)):
@@ -2051,7 +2060,7 @@ def capture_sections(captain, today: dt.date, render_dir, *,
                   "owner row(s)")
         except Exception as e:  # noqa: BLE001 — summary ≠ the section
             errors["knock_dispo:Captainship Summary"] = (
-                f"{type(e).__name__}: {str(e)[:200]}")
+                f"{type(e).__name__}: {str(e)[:ERR_NOTE_MAX]}")
             out_weekly.insert(0, ("Captainship Summary", None))
             logfn(f"    ✗ captainship summary: {type(e).__name__}: "
                   f"{str(e)[:160]}")
@@ -2085,7 +2094,7 @@ def capture_sections(captain, today: dt.date, render_dir, *,
             logfn(f"    ✓ daily summary: {len(captured_daily)} ICD row(s)")
         except Exception as e:  # noqa: BLE001 — summary ≠ the section
             errors[f"daily_knocks:{summary_label}"] = (
-                f"{type(e).__name__}: {str(e)[:200]}")
+                f"{type(e).__name__}: {str(e)[:ERR_NOTE_MAX]}")
             out_daily.insert(0, (summary_label, None))
             logfn(f"    ✗ daily summary: {type(e).__name__}: {str(e)[:160]}")
     # A captainship where EVERY office is still waiting on Office Access ends

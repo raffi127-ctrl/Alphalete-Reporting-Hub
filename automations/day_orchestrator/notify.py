@@ -1050,6 +1050,17 @@ def _diagnose(rs, cfg, date):
                 "failing, check the login: `login_check` for both sessions, "
                 "`appstream_whoami` for which account it lands on. Then re-run.",
                 True, rerun)
+    # invalid_scope BEFORE the generic RefreshError line: it is a CODE bug, not
+    # an expired token (2026-11-22: eight loaders asked for drive.file, which
+    # the Lucys' tokens never consented to; every alert said "token expired —
+    # re-auth", and re-authing a Lucy needs someone at the machine for a fix
+    # that was one line of code). See fill.load_token_credentials.
+    if "invalid_scope" in low:
+        return ("Google refused the sign-in scope (invalid_scope) — the code "
+                "asked for a permission this machine's saved token never "
+                "consented to. Not an expired token; re-authing is not the "
+                "fix. Load the token with its own scopes "
+                "(fill.load_token_credentials), then re-run.", False, rerun)
     if ("invalid_grant" in low or "token has been expired" in low
             or "refresherror" in low):
         return ("Google auth token expired — re-auth, then re-run.", False, rerun)

@@ -60,6 +60,7 @@ When you confirm a new ID, add it here in the same commit.
 | Natalia Gwarda | Zora Industries, Inc. (AT&T Fiber, 23431; Starr's captainship; ECO key `natalia`) | U08CPA4JZD0 | nataliagwarda@gmail.com (Megan's screenshot 2026-11-10). Only Slack account under that name |
 | Samuel Acay | Dynasty Growth Group (NDS, 23751; ECO `samuel`) | U0BV4FKFZ25 | samuelacay0628@gmail.com — the profile Megan showed 2026-11-10. ⚠ look-alike U0BV4GGQ83T "Samuel Acay" (samuel.david.acay@gmail.com) is a second account |
 | Hasani Lynch | Covenant (ECO `hasani`) | U07FLTR1FR9 | hasanilynch17@gmail.com. Only Slack account under that name (2026-11-10) |
+| Sabrina Alicea | Alisei Inc (B2B, OV 21291; `sabrina_metrics`) | U0BSJQKHRK9 | sabrinaalicea6@gmail.com. Only "Sabrina Alicea" in Slack search (2026-11-22). ⚠ not Sabrina Puentes U0792TNELHX |
 | Steve McElwee | Luxe (ECO `steve`) | U07UML6M3EY | mcelwee.steve95@gmail.com. Only Slack account under that name (2026-11-10) |
 | Jose Velasquez | Legacy Shore (NDS; ECO `jose`) | U07K1FNKRLY | joseavm20198@gmail.com. Only "Jose Velasquez" (the other Velasquez accounts are different people) (2026-11-10) |
 | Haytham Nagi | ECO `haytham` | U0740MXJFFC | nagihaytham81@gmail.com — the profile Megan showed 2026-11-10. ⚠ look-alike U0CCYN487U6 "Haytham Nagi" (haythamnagi1@gmail.com) is a second account |
