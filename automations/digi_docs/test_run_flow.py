@@ -18,6 +18,17 @@ imports it. On 2026-08-26 that let this suite make a real chat.postMessage
 call; it only failed because the stub's thread_ts was invalid. So the package
 attribute is patched too, and `_no_slack` asserts the real sender is never
 reached.
+
+EVERY stub site needs BOTH patches -- 2026-11-21 found three that had only the
+sys.modules half, which is a stub that quietly stops applying the moment any
+other test imports the module first. One of them failed in a full suite and
+passed alone; the other two never failed at all, which is worse.
+
+AND THE GUARD'S MESSAGE MUST NEVER PRINT ON A CLEAN RUN. One test used to let
+the guard BE its injected failure, so "a test reached the REAL Slack sender"
+appeared on every green run -- which is how a line that means "something is
+unstubbed" becomes something people scroll past. A test that wants a failing
+send injects its own.
 """
 from __future__ import annotations
 
@@ -482,11 +493,28 @@ class FaultsGoToTheFaultChannel(_NoNetwork):
             def chat_postMessage(self, channel, text):
                 raise RuntimeError("slack down")
 
+        def _boom_reply(body, thread_ts=None, channel_id=None):
+            raise RuntimeError("slack down")
+
+        # THE FAILURE HAS TO COME FROM THIS TEST, NOT FROM THE GUARD. Without
+        # `fault`, alert_failure takes the per-person branch -- a threaded
+        # post_reply_text_only -- so the _Boom client below was never called
+        # and the thing actually raising was _NoNetwork's "a test reached the
+        # REAL Slack sender" assertion. The test passed on that, which made it
+        # print that line on every clean run: the one message that must never
+        # appear unless something is genuinely unstubbed. _thread_ts is pinned
+        # too, because resolving it for real reaches the sender as well.
         with mock.patch.object(slack_post, "_already_alerted",
                                return_value=False), \
+             mock.patch.object(slack_post, "_thread_ts", lambda _smp: "1.23"), \
+             mock.patch("automations.shared.slack_metrics_post"
+                        ".post_reply_text_only", _boom_reply), \
              mock.patch("automations.shared.slack_metrics_post._client",
                         return_value=_Boom()):
             self.assertFalse(slack_post.alert_failure("boom", dry_run=False))
+            # And the fault branch, which is the one _Boom speaks for.
+            self.assertFalse(slack_post.alert_failure("boom", fault=True,
+                                                      dry_run=False))
 
 
 class AddPhaseNeverPosts(_NoNetwork):
@@ -635,18 +663,29 @@ class FailuresAlertImmediately(_NoNetwork):
     an end-of-run summary eats the window somebody has to fix it in."""
 
     def test_a_refusal_alerts_before_the_run_ends(self):
+        import automations.digi_docs as _pkg
         from automations.digi_docs import run as R
         posted = []
         slack = types.ModuleType("automations.digi_docs.slack_post")
         slack.alert_failure = lambda line, dry_run=True: posted.append(line)
         refused = []
+        # THE PACKAGE ATTRIBUTE, NOT JUST sys.modules -- see the module
+        # docstring. Alone, the sys.modules patch held only while this test ran
+        # by itself: it is alphabetically first in the class, so nothing had
+        # imported slack_post yet and the import fell back to sys.modules. In
+        # a full suite a neighbour imports it first, the attribute is bound to
+        # the real module, and _refuse's `from automations.digi_docs import
+        # slack_post` got the REAL alert_failure -- which reached the sender
+        # that _NoNetwork guards, and the guard is the only reason we saw it.
         with mock.patch.dict(sys.modules,
-                             {"automations.digi_docs.slack_post": slack}):
+                             {"automations.digi_docs.slack_post": slack}), \
+             mock.patch.object(_pkg, "slack_post", slack, create=True):
             R._refuse(refused, "Jose Laureano: not found", dry=False)
         self.assertEqual(posted, ["Jose Laureano: not found"])
         self.assertEqual(refused, ["Jose Laureano: not found"])
 
     def test_an_alert_that_fails_does_not_take_the_run_down(self):
+        import automations.digi_docs as _pkg
         from automations.digi_docs import run as R
 
         def boom(*a, **k):
@@ -655,8 +694,14 @@ class FailuresAlertImmediately(_NoNetwork):
         slack = types.ModuleType("automations.digi_docs.slack_post")
         slack.alert_failure = boom
         refused = []
+        # Same two patches as above, and here the missing one hid the test
+        # rather than failing it: with the real alert_failure in place nothing
+        # raised "slack is down", so _refuse's except never ran and this
+        # asserted only that a refusal gets recorded -- which it does either
+        # way. A test that cannot fail is worse than one that does.
         with mock.patch.dict(sys.modules,
-                             {"automations.digi_docs.slack_post": slack}):
+                             {"automations.digi_docs.slack_post": slack}), \
+             mock.patch.object(_pkg, "slack_post", slack, create=True):
             R._refuse(refused, "Dana Reyes: no readable Start Time", dry=False)
         self.assertEqual(len(refused), 1, "the failure must still be recorded")
 
@@ -2178,6 +2223,7 @@ class CleanPassClosesTheTicket(_NoNetwork):
     writes a clean one (which is what resolves the thread)."""
 
     def _write_back(self, *, send, refused, dry=False, do_send=True):
+        import automations.digi_docs as _pkg
         from automations.digi_docs import run as R
         from automations.shared import run_manifest as _rm
         mark = types.ModuleType("automations.digi_docs.mark")
@@ -2193,7 +2239,17 @@ class CleanPassClosesTheTicket(_NoNetwork):
             mock.patch.object(R, "_mark_did_work", lambda *a: None), \
             mock.patch.dict(sys.modules, {
                 "automations.digi_docs.mark": mark,
-                "automations.digi_docs.slack_post": slack}):
+                "automations.digi_docs.slack_post": slack}), \
+            mock.patch.object(_pkg, "mark", mark, create=True), \
+            mock.patch.object(_pkg, "slack_post", slack, create=True):
+            # BOTH attributes, for the reason in the module docstring.
+            # _write_back does `from automations.digi_docs import mark,
+            # slack_post`, so the sys.modules patch alone stopped applying the
+            # moment any earlier test imported either one, and the REAL
+            # slack_post.post ran here with dry_run=False. These fixtures
+            # happen to post nothing (done=[] and no refusals is the "nobody
+            # due says nothing" path), which is why it never failed -- it was
+            # the fixtures, not the stub, keeping this off the channel.
             R._write_back(_Args(), ws, send, [], [], refused,
                           tinted_dry=dry, do_send=do_send, fatal="")
         return calls
