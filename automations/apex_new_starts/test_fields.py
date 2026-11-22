@@ -484,6 +484,13 @@ def test_nobody_marked_cr_is_said_once(monkeypatch, tmp_path):
     monkeypatch.setattr(RUN.BID, "signed_pdf_url", lambda *a, **k: "")
     monkeypatch.setattr(RUN, "OUTPUT_DIR", tmp_path)
     monkeypatch.setattr(RUN, "_to_clipboard", lambda text: True)
+    # THE COHORT DATE IS STUBBED, because obcl_start READS GOOGLE SHEETS for a
+    # tab named after the week. Unstubbed, this asked the live workbook for
+    # `D2D OBCL 9.14` -- true in September, gone by November -- so it fell to
+    # the "NO START DATE FOR ANYBODY" branch and failed on the calendar rather
+    # than on anything in the code. Which of the four messages is printed is
+    # the whole subject here; whether a two-month-old tab still exists is not.
+    monkeypatch.setattr(RUN, "obcl_start", lambda week: dt.date(2026, 9, 14))
 
     out = io.StringIO()
     with contextlib.redirect_stdout(out):
