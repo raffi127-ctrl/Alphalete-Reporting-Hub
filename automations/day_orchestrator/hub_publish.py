@@ -447,6 +447,9 @@ _HUB_CARD = {
     "tableau_screenshots_settle_12": "tableau_screenshots_settle_am",
     "tableau_screenshots_settle_13": "tableau_screenshots_settle_am",
     "tableau_screenshots_settle_14": "tableau_screenshots_settle_am",
+    # Country Campaign Board afternoon catch-ups ride the main card.
+    "program_daily_summary_catchup_13": "program_daily_summary",
+    "program_daily_summary_catchup_15": "program_daily_summary",
 }
 
 

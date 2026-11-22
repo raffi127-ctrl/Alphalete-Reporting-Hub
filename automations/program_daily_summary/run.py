@@ -170,6 +170,35 @@ def _last_week_att(page, today: dt.date, logfn=print) -> dict:
     return out
 
 
+def catch_up(today: dt.date, logfn=print) -> int:
+    """Eve 2026-11-21: when the 11am image went out with 'Pending update: X',
+    send the complete one as soon as X's mail lands. Runs a few times in the
+    afternoon (schedule: program_daily_summary_catchup_*). Exit 0 in every
+    'nothing to do yet' case, so a late mail never paints the card red."""
+    from automations.program_daily_summary import post
+    pending = post.pending_in_thread(today)
+    if not pending:
+        logfn("catch-up: nothing pending today (image was complete, or the "
+              "UPDATED one is already in the thread)")
+        return 0
+    logfn(f"catch-up: today's image went out without {pending} — re-checking")
+    data = {}
+    with tempfile.TemporaryDirectory() as tmp:
+        for prog, days in credico_pdf.country_days(tmp).items():
+            if days:
+                data[prog] = days
+    if any(c not in data for c in pending):     # an AT&T row is the one missing
+        OUT.mkdir(parents=True, exist_ok=True)
+        data.update(tableau_days(today))
+    monday = board.run(data, today=today, dry_run=False, enable_rollover=False)
+    still = [c for c in board.verify(board._tab(), monday, today) if c in pending]
+    if still:
+        logfn(f"catch-up: still waiting on {still} — next pass tries again")
+        return 0
+    logfn(f"catch-up: {pending} in now — posting the complete image")
+    return 0 if post.post(today, dry_run=False, filled=pending) else 1
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true")
@@ -184,8 +213,14 @@ def main() -> int:
     ap.add_argument("--post", action="store_true",
                     help="after a clean verify, send the top table to the "
                          "trackers thread + Raf DM (post.py)")
+    ap.add_argument("--catch-up", action="store_true",
+                    help="afternoon pass: if today's image went out with a "
+                         "'Pending update', refill and post the complete one "
+                         "once the missing mail is in; otherwise do nothing")
     args = ap.parse_args()
     today = dt.date.fromisoformat(args.today) if args.today else dt.date.today()
+    if args.catch_up:
+        return catch_up(today)
 
     data = {}
     with tempfile.TemporaryDirectory() as tmp:

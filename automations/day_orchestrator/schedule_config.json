@@ -4254,6 +4254,52 @@
    },
    "timeout_minutes": 30
   },
+  "program_daily_summary_catchup_13": {
+   "order": 41,
+   "on_scheduler": true,
+   "_note": "Country Campaign Board CATCH-UP (13:00 CT, Eve 2026-11-21). If today's image went out at the 11am cap with 'Pending update: X' (a Credico mail hadn't come in), refill the board and post the complete image to the trackers thread + Raf DM, captioned 'UPDATED: X is in now'. State is read from the Slack thread, so any Lucy can run it. Nothing pending / mail still missing = exit 0, does nothing.",
+   "display_name": "Country Campaign Board - catch-up (13:00)",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.program_daily_summary.run"
+   ],
+   "base_args": [
+    "--catch-up"
+   ],
+   "cadence": {
+    "weekdays": [0, 1, 2, 3, 4, 5, 6],
+    "not_before": "13:00"
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 30
+  },
+  "program_daily_summary_catchup_15": {
+   "order": 41,
+   "on_scheduler": true,
+   "_note": "Country Campaign Board CATCH-UP (15:00 CT, Eve 2026-11-21). If today's image went out at the 11am cap with 'Pending update: X' (a Credico mail hadn't come in), refill the board and post the complete image to the trackers thread + Raf DM, captioned 'UPDATED: X is in now'. State is read from the Slack thread, so any Lucy can run it. Nothing pending / mail still missing = exit 0, does nothing.",
+   "display_name": "Country Campaign Board - catch-up (15:00)",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.program_daily_summary.run"
+   ],
+   "base_args": [
+    "--catch-up"
+   ],
+   "cadence": {
+    "weekdays": [0, 1, 2, 3, 4, 5, 6],
+    "not_before": "15:00"
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 30
+  },
   "program_daily_summary_probe": {
    "hand_run_only": true,
    "on_scheduler": true,

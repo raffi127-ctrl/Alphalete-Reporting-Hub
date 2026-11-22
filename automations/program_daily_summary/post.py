@@ -19,6 +19,7 @@ thread today -> the DM still goes, the thread is skipped and said so.
 from __future__ import annotations
 
 import argparse
+import re
 import datetime as dt
 import sys
 from pathlib import Path
@@ -163,12 +164,51 @@ def announce_only(today: dt.date, logfn=print) -> int:
     return 0
 
 
+UPDATED_MARK = "_(UPDATED"
+
+
+def updated_note(filled) -> str:
+    """'UPDATED: Frontier is in now' — caption of the complete re-post."""
+    return f"UPDATED: {', '.join(filled)} {'is' if len(filled) == 1 else 'are'} in now"
+
+
+def pending_in_thread(today: dt.date, client=None) -> list:
+    """Campaigns today's image went out WITHOUT (its 'Pending update: X'
+    caption in the trackers thread), or [] when there is nothing to catch up:
+    no thread, no image yet, the image was complete, or the UPDATED re-post is
+    already there. Read from Slack, so it works on whichever Lucy runs it."""
+    from automations.tableau_screenshots.slack_post import find_thread_ts
+    if client is None:
+        from automations.shared import slack_metrics_post as smp
+        client = smp._client()
+    ts, _ = find_thread_ts(client, TRACKERS_CHANNEL, today)
+    if not ts:
+        return []
+    want = caption(today).strip("*")
+    msgs = client.conversations_replies(channel=TRACKERS_CHANNEL, ts=ts,
+                                        limit=200).get("messages", [])
+    mine = [m.get("text") or "" for m in msgs if want in (m.get("text") or "")]
+    if any(UPDATED_MARK in t for t in mine):
+        return []
+    for t in mine:
+        m = re.search(r"Pending update: ([^)_]+)", t)
+        if m:
+            return [c.strip() for c in m.group(1).split(",") if c.strip()]
+    return []
+
+
 def post(today: dt.date, *, dry_run: bool = True, to_eve: bool = False,
-         dm_only=(), missing=(), logfn=print) -> bool:
-    """Render + deliver. Returns True if every target got it (or had it)."""
+         dm_only=(), missing=(), filled=(), logfn=print) -> bool:
+    """Render + deliver. Returns True if every target got it (or had it).
+    `missing` = campaigns still empty (image + caption say so).
+    `filled`  = the catch-up re-post: same image, now complete, captioned
+    UPDATED and deduped separately from the morning one."""
     png = stamp_pending(render(today), missing)
     cap = caption(today)            # base caption: what the dedup looks for
     msg = cap + (f"  _({pending_note(missing)})_" if missing else "")
+    if filled:
+        msg = cap + f"  _({updated_note(filled)})_"
+        cap = cap + "  " + UPDATED_MARK       # dedup key for the re-post
     logfn(f"  image: {png}")
     if dry_run:
         logfn(f"  DRY RUN — would post {msg!r} to the trackers thread + Raf DM")
@@ -201,15 +241,17 @@ def post(today: dt.date, *, dry_run: bool = True, to_eve: bool = False,
         ok = False
     elif _already(client, TRACKERS_CHANNEL, cap, today, thread_ts=ts):
         logfn("  trackers thread: already posted today")
-        _announce(client, ts, True, logfn)
+        if not filled:
+            _announce(client, ts, True, logfn)
     else:
         sent = _send(client, TRACKERS_CHANNEL, png, msg, thread_ts=ts)
         logfn(f"  trackers thread: {'posted' if sent else 'FAILED'}")
         ok &= sent
-        _announce(client, ts, sent, logfn)
+        if not filled:
+            _announce(client, ts, sent, logfn)
     # 2. Raf DM
     dm = client.conversations_open(users=RAF)["channel"]["id"]
-    marker = OUT / f"raf_dm_sent_{today}.txt"
+    marker = OUT / f"raf_dm_sent_{today}{'_updated' if filled else ''}.txt"
     try:
         done = _already(client, dm, cap, today)
     except Exception:  # noqa: BLE001 — token without im:history: this
