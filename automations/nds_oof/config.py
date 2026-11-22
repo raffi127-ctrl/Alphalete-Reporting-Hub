@@ -116,6 +116,14 @@ BORROWED_ROWS = {"rafael": ["Cinthya Reyes", "Anette Climaco",       # Raf's row
 # that owner's rows. Safe every day: a name already on our own rows is never
 # doubled, and a car member with no row on Raf's side is just a log line.
 BORROWED_RIDE_LEADERS = {"rafael": ["Cinthya Reyes"]}
+# Carlos 2026-11-22: "there's a couple of us knocking on Raf's ownerville ...
+# check on there for anyone that has GP next to their name? They belong to our
+# Knock board." Every row on that owner's relayed rows whose name ENDS in one
+# of Carlos's name tags ('... GP', '... GP RT', '... GP Road Trip', '... Carlos
+# Road Trip' -- total_knocks.guests GUEST_TAGS, the same tags that take them
+# OFF Raf's board) rides our board too, with no name list. On top of the
+# names above; board only, like them. Key -> (host, guest) as GUEST_TAGS has it.
+BORROWED_TAGGED = {"rafael": ("Rafael Hidalgo", "Carlos Hidalgo")}
 # Raf's rows are re-shared only when HIS board draws (~:04 and ~:34), so a
 # board drawn at :00/:30 carried numbers 26 minutes old (Carlos 2026-11-03
 # 2:30pm: "the numbers dont seem accurate"). Before pulling, a board tick

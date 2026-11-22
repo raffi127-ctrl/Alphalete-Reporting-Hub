@@ -394,7 +394,9 @@ def _borrow_sources(today: dt.date) -> Dict[str, Tuple[List[Dict], Optional[dt.d
     shares (how Raf's rows arrived until 2026-11-03) and the 'ICD Knocks'
     relay his own office Mac writes now (C.BORROWED_ICD_OFFICES), read the
     way the owners' hourly board reads every office. Never raises."""
-    want = getattr(C, "BORROWED_ROWS", None) or {}
+    want = dict(getattr(C, "BORROWED_ROWS", None) or {})
+    for k in (getattr(C, "BORROWED_TAGGED", None) or {}):
+        want.setdefault(k, [])
     out: Dict[str, Tuple[List[Dict], Optional[dt.datetime], str]] = {}
     if not want:
         return out
@@ -573,7 +575,19 @@ def borrowed_wanted() -> Dict[str, List[str]]:
             if extra:
                 _log("borrowed: %s's car(s) today -> %s" % (", ".join(leads), ", ".join(extra)))
             want[key] = _dedupe_people(want.get(key, []) + extra)
+    for key in (getattr(C, "BORROWED_TAGGED", None) or {}):
+        want.setdefault(key, [])        # tag-only owner: no names, still read
     return want
+
+
+def _untagged(name: str, host: str, guest: str) -> str:
+    """'Anette Climaco GP' -> 'anette climaco' (plain, the longest tag off)."""
+    from automations.total_knocks import guests as G
+    n = G._plain(name)
+    for t in sorted(G.tags(host, guest), key=len, reverse=True):
+        if n.endswith(" " + t):
+            return n[: -len(t) - 1].strip()
+    return n
 
 
 # What the last borrowed_rows() call put on the board: {rep name as the row
@@ -625,7 +639,7 @@ def borrowed_rows(today: dt.date, own: List[Dict]) -> List[Dict]:
     for key, (src, at, where) in sources.items():
         seen.add(key)
         at_text = at.isoformat(timespec="seconds") if at else "?"
-        claimed, missing = G.match_rows(src, want[key])
+        claimed, missing = G.match_rows(src, want.get(key, []))
         for i, name in sorted(claimed.items()):
             row = src[i]
             if G._norm(G._rep(row)) in have:
@@ -672,6 +686,26 @@ def borrowed_rows(today: dt.date, own: List[Dict]) -> List[Dict]:
             _log("borrowed: %s not on %s's rows today%s"
                  % (name, key, (" (close: %s)" % ", ".join(close_names)) if close_names else
                     " (%d rows: %s)" % (len(src), ", ".join(G._rep(x) for x in src)[:400])))
+        # NAME TAGS (config.BORROWED_TAGGED, Carlos 2026-11-22): anyone left on
+        # that owner's rows whose name ends in '... GP' (or another of Carlos's
+        # tags) is ours too. A tagged rep who also has a row on our own
+        # Ownerville today is not doubled.
+        tag = (getattr(C, "BORROWED_TAGGED", None) or {}).get(key)
+        if tag:
+            host, guest = tag
+            for i, row in enumerate(src):
+                rep = str(G._rep(row) or "").strip()
+                if i in claimed or not rep or not G.tagged(host, guest, rep):
+                    continue
+                if G._norm(rep) in have or (own and G.match_rows(own, [_untagged(rep, host, guest)])[0]):
+                    _log("borrowed: %s is already on our own rows -- not doubled" % rep)
+                    continue
+                claimed[i] = rep
+                if keep:
+                    row = {k: v for k, v in row.items() if k in keep}
+                out.append(row)
+                LAST_BORROW[rep] = at
+                _log("borrowed: %s off %s by name tag (shared %s, %s)" % (rep, key, at_text, where))
     for key in want:
         if key not in seen:
             _log("borrowed: no 'Lucy Knocks' row and no 'ICD Knocks' relay for %s today" % key)
