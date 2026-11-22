@@ -38,6 +38,40 @@ def existing_index(svc) -> Tuple[Dict[str, str], Dict[str, str]]:
     return K.existing_index(svc)
 
 
+#: What `note_for` writes at the end of every card this job creates. It is
+#: the signature that makes a card ours rather than one the owner typed.
+SIGNATURE = "second_round_contacts"
+
+
+def ours(svc) -> list:
+    """Every card in this account that THIS JOB created.
+
+    Read off the account rather than off a file, because the file lives on
+    whichever machine happened to run the job, and the cards live with the
+    owner. Matched on the note's signature, not on the group: an owner who
+    renames or deletes a contact group has not un-created the contacts, and
+    a card dragged out of "2nd Rounds" is still one of ours to audit.
+
+    Returns the raw people, with the fields `state.rebuild` reads.
+    """
+    from automations.fiber_owners_distro import contacts_write as cw
+    out, token = [], None
+    while True:
+        resp = cw._retry(lambda: svc.people().connections().list(
+            resourceName="people/me", pageSize=1000,
+            personFields="names,phoneNumbers,emailAddresses,biographies,"
+                         "memberships",
+            pageToken=token).execute())
+        for p in resp.get("connections", []) or []:
+            for b in p.get("biographies") or []:
+                if SIGNATURE in (b.get("value") or ""):
+                    out.append(p)
+                    break
+        token = resp.get("nextPageToken")
+        if not token:
+            return out
+
+
 def display_name(a: dict, day: dt.date) -> str:
     from automations.applicant_contacts.contacts import full_name
     return "%s (%s %d/%d)" % (full_name(a), C.NAME_TAG, day.month, day.day)

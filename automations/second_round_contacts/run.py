@@ -137,6 +137,30 @@ def run_pass(owners: List[R.Owner], days: List[dt.date], *, write: bool,
                 continue
             rows = plan_adds(found, phones, emails)
             added = exists = skipped = removed = 0
+            # THE MEMORY, FROM THE ACCOUNT IF THIS MACHINE HAS NONE. The
+            # state file is local, so a box that has never run this job
+            # starts blank -- and blank means the REMOVED check below sees
+            # nobody, so everyone the audit has ever taken out goes straight
+            # back on the owner's phone. The cards carry their own note, so
+            # the slice is read back off the account rather than off whoever
+            # happened to run it last (2026-11-22, moving this step onto the
+            # office's own machine).
+            if o.account not in st:
+                try:
+                    got = S.rebuild(svc)
+                except Exception as e:                      # noqa: BLE001
+                    # Better to add a duplicate than to drop the pass: say so
+                    # loudly, because this is the one path that can double a
+                    # contact list.
+                    _log("  %s: could not read this account's own cards (%s) "
+                         "-- running with no memory, duplicates possible"
+                         % (o.owner, type(e).__name__))
+                else:
+                    if got:
+                        _log("  %s: no local record -- rebuilt %d card(s) off "
+                             "the account itself" % (o.owner, len(got)))
+                        st[o.account] = got
+                        S.save(st)
             acct = st.setdefault(o.account, {})
             for r in rows:
                 a = r["applicant"]
@@ -239,12 +263,36 @@ def run_audit(owners: List[R.Owner], *, write: bool, ownerville: bool = True,
     today = today or dt.date.today()
     st = S.load()
     by_account = {o.account: o for o in owners}
+    # THE AUDIT ONLY SEES WHAT THE STATE HOLDS, so on a machine that has
+    # never run this job it sees nothing and audits nobody -- every card
+    # already on the owner's phone would sit there for ever. The cards carry
+    # their own note, so an account with no slice is read back off the
+    # account before the loop below, not instead of it (2026-11-22, moving
+    # this step onto the office's own machine).
+    filled = False
+    for o in owners:
+        if o.account in st or not K.has_token(o.account):
+            continue
+        try:
+            got = S.rebuild(K.service(o.account))
+        except Exception as e:                              # noqa: BLE001
+            _log("  %s: could not read this account's own cards (%s) -- "
+                 "nothing of theirs is audited this pass"
+                 % (o.owner, type(e).__name__))
+            continue
+        if got:
+            _log("  %s: no local record -- rebuilt %d card(s) off the "
+                 "account itself" % (o.owner, len(got)))
+            st[o.account] = got
+            filled = True
+    if filled and write:
+        S.save(st)
     failed = 0
     # 1. ApplicantStream facts, one session for every office
     facts_all: Dict[str, Dict[str, dict]] = {}
     seen_all: Dict[str, set] = {}
     with session() as app:
-        for account, entries in st.items():
+        for account, entries in list(st.items()):
             o = by_account.get(account)
             if not o:
                 continue
@@ -384,6 +432,65 @@ def run_audit(owners: List[R.Owner], *, write: bool, ownerville: bool = True,
     return failed
 
 
+def check_rebuild(owners: List[R.Owner]) -> int:
+    """READ-ONLY: does the account's own cards say what the file says?
+
+    The whole case for moving this job onto the office's own computer is
+    that the memory can be read back off the account, so a machine without
+    the file is not a machine without the memory. That is a CLAIM until it
+    is run where both exist -- Lucy 1, which has the file and the tokens --
+    and the only answer that settles it is a diff.
+
+    Writes nothing: no contact, no file, no sheet. It reads Contacts and
+    prints.
+    """
+    st = S.load()
+    worst = 0
+    for o in owners:
+        if not K.has_token(o.account):
+            _log("  %s: no Contacts token on this machine -- cannot check"
+                 % o.owner)
+            continue
+        have = st.get(o.account) or {}
+        try:
+            got = S.rebuild(K.service(o.account))
+        except Exception as e:                              # noqa: BLE001
+            _log("  %s: Contacts read failed: %s: %s"
+                 % (o.owner, type(e).__name__, str(e)[:160]))
+            worst = max(worst, 1)
+            continue
+        # Only TRACKED entries can be compared. A removed card is gone from
+        # the account, so the rebuild cannot see it and SHOULD not -- that
+        # is the one thing the file knows that the cards cannot, and why a
+        # rebuild never runs over a slice that already exists.
+        live = {k for k, e in have.items() if e.get("status") == S.TRACKED}
+        found = set(got)
+        missed = sorted(live - found)
+        extra = sorted(found - live)
+        _log("  %s (%s): file has %d tracked, the account gives back %d"
+             % (o.owner, o.account, len(live), len(found)))
+        for k in missed:
+            e = have[k]
+            _log("    NOT REBUILT  %s — on file, not readable off the card"
+                 % e.get("display", k))
+        for k in extra:
+            e = have.get(k) or {}
+            _log("    EXTRA        %s — on the account, %s on file"
+                 % (got[k].get("display", k),
+                    e.get("status", "absent")))
+        for k in sorted(live & found):
+            was, now = have[k], got[k]
+            for field in ("second_round", "office", "owner"):
+                if str(was.get(field, "")) != str(now.get(field, "")):
+                    _log("    DISAGREES    %s %s: file %r, card %r"
+                         % (was.get("display", k), field,
+                            was.get(field), now.get(field)))
+                    worst = max(worst, 1)
+        if missed:
+            worst = max(worst, 1)
+    return worst
+
+
 # ----------------------------------------------------------------- main --
 
 def main(argv=None) -> int:
@@ -399,6 +506,12 @@ def main(argv=None) -> int:
     ap.add_argument("--owner", default=None, help="only this roster row (name as on the tab)")
     ap.add_argument("--date", default=None, help="adds: read only this day (YYYY-MM-DD)")
     ap.add_argument("--no-ownerville", action="store_true", help="audit without the View Progress check")
+    ap.add_argument("--check-rebuild", action="store_true",
+                    help="READ-ONLY: diff each account's own cards against "
+                         "the local state file, and print. Writes nothing. "
+                         "Run it where the file is (Lucy 1) to prove a "
+                         "machine without the file can still know what was "
+                         "created.")
     args = ap.parse_args(argv)
     # The evening rule is a REMOVAL rule, and removals only happen on the audit
     # side. Passing --evening on an adds run used to be silently ignored, which
@@ -420,6 +533,27 @@ def main(argv=None) -> int:
             print("no roster row named %r" % args.owner, file=sys.stderr)
             return 2
     active = [o for o in owners if o.active]
+    if args.check_rebuild:
+        # --write IS TURNED OFF HERE, OUT LOUD. The only way to queue this on
+        # Lucy 1 is `lucy rerun second_round_contacts --check-rebuild`, and
+        # that handle's base_args are ['--write'], so the probe always
+        # arrives as `--write --check-rebuild`. It returns before any write
+        # either way; saying it rather than relying on the order of two
+        # statements is the difference between safe and safe-by-accident on
+        # a job that edits real people's phones.
+        if args.write:
+            args.write = False
+            _log("--check-rebuild is read-only: --write ignored")
+        # A QUESTION IS NOT A DELIVERY. A read-only probe that marks the card
+        # green says the job ran when it did not -- the same class as a dry
+        # run turning a card red (hub_autopublish, 2026-11-15).
+        try:
+            from automations.shared import hub_autopublish as HA
+            HA.nothing_to_report()
+        except Exception:                                   # noqa: BLE001
+            pass
+        _log("=== rebuild check (READ-ONLY, writes nothing)")
+        return check_rebuild(active)
     _log("=== 2nd rounds -> reception contacts%s: %d active owner(s) on '%s' ===" % (
         " [AUDIT]" if args.audit else "", len(active), C.ROSTER_TAB))
     for o in owners:
