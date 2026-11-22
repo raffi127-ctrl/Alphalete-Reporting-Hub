@@ -144,6 +144,11 @@ st.caption("Sterling puts this on every background check invite.")
 for q in S.STERLING:
     answers[q.field] = _ask(q, current.get(q.column, ""))
 
+st.subheader("One setting on your screen")
+st.caption("We cannot set this one for you.")
+for q in S.CALENDAR:
+    answers[q.field] = _ask(q, current.get(q.column, ""))
+
 st.subheader("Your onboarding")
 for q in S.BOARD:
     answers[q.field] = _ask(q, current.get(q.column, ""))

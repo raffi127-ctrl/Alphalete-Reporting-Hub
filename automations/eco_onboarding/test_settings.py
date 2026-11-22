@@ -53,6 +53,7 @@ class WhatCountsAsAnswered(unittest.TestCase):
     # alphalete's" -- Megan).
     GOOD = {"state": "Florida", "city": "Tampa", "blue_ink": "Yes",
             "bundle": "TAMPA ONBOARDING PACKET",
+            "calendar_view": "Yes",
             "rate": "12.50", "pay_state": "Florida", "tax_state": "Florida"}
 
     def test_a_complete_answer_has_no_problems(self):

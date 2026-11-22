@@ -472,9 +472,19 @@ def after_pass(ws, values, *, live: bool, text: bool, failures=(),
     return f"pictures: {names} — CHANGED, queued text_obcl to {GROUP!r}"
 
 
-def send(png_names, *, dry_run: bool = True) -> dict:
+def send(png_names, *, dry_run: bool = True, office_key: str = "") -> dict:
     """Called BY THE POLLER: one message, the caption then every picture.
-    Idempotent via a .sent marker next to the FIRST picture."""
+    Idempotent via a .sent marker next to the FIRST picture.
+
+    WHERE IT GOES IS THE OFFICE'S ANSWER (Megan, 2026-11-22). Raf's
+    outstanding ask is this post in a Slack thread rather than iMessage, and
+    an office may want either -- so the enrolment form asks, and this reads
+    it. Passing no key is Alphalete, which keeps the iMessage group it has
+    always used.
+
+    AN OFFICE THAT HAS NOT ANSWERED GETS NOTHING SENT. Falling back to the
+    group would put one office's board in another office's iMessage.
+    """
     from automations.b2b_dispositions import text_post as tp
     # Accept one space-joined string OR a list whose items may themselves be
     # space-joined (2026-09-22: a quoted queue arg arrived as ONE name).
@@ -490,7 +500,41 @@ def send(png_names, *, dry_run: bool = True) -> dict:
         return {"skipped": marker.read_text().strip(), "ok": True}
     cap = pngs[0].with_suffix(".txt")
     text = cap.read_text().strip() if cap.exists() else "OBCL update"
-    res = tp.send_to_group(GROUP, text, pngs, dry_run=dry_run)
+    kind, where = destination(office_key)
+    if not kind:
+        return {"ok": False, "not_sent": "no OBCL update destination for %r "
+                                         "— it is asked on the enrolment form"
+                                         % (office_key or "(no office)")}
+    if kind == "slack":
+        res = _to_slack(where, text, pngs, dry_run=dry_run)
+    else:
+        res = tp.send_to_group(where, text, pngs, dry_run=dry_run)
     if res.get("ok") and not dry_run:
         marker.write_text(dt.datetime.now().isoformat(timespec="seconds"))
     return res
+
+
+def _to_slack(channel_id: str, text: str, pngs, *, dry_run: bool) -> dict:
+    """The same post, in a Slack channel. Raf's ask: a thread people can
+    reply in, rather than a text nobody can search.
+
+    ONE PARENT, THE PICTURES UNDER IT -- the house shape for a board post
+    (parent = title/image only, detail in the thread). The caption rides the
+    first image so the post is never a bare picture with no date on it.
+    """
+    from automations.shared import slack_metrics_post as SP
+
+    if dry_run:
+        return {"ok": True, "dry_run": True, "resolved_name": channel_id,
+                "participants": "slack",
+                "would_post": [p.name for p in pngs]}
+    first = SP.post_reply_with_image(
+        pngs[0], comment=text, channel_id=channel_id, top_level=True,
+        file_name=pngs[0].name, wait_visible=True)
+    thread_ts = first.get("ts") or first.get("thread_ts")
+    for extra in pngs[1:]:
+        SP.post_reply_with_image(
+            extra, comment="", channel_id=channel_id, thread_ts=thread_ts,
+            file_name=extra.name, wait_visible=True)
+    return {"ok": bool(first.get("ok", True)), "resolved_name": channel_id,
+            "participants": "slack", "ts": thread_ts}

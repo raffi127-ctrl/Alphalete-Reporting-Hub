@@ -94,6 +94,30 @@ PAY_STATES: List[Question] = [
              "record, so it is asked rather than assumed.", US_STATES, "", True),
 ]
 
+# THE ONE THING ON THEIR MACHINE WE CANNOT SET FOR THEM (Megan, 2026-11-22:
+# "the enrollment is also where we would add this").
+#
+# Raf's ask: the office's ApplicantStream calendar has to be on the LIST view
+# with Show Notes ticked, not the card view -- the card view does not carry
+# what the training-calendar reads need. It is a setting in their own
+# ApplicantStream, on their own screen, so nothing here can set it; the only
+# way a new office starts right is to be asked while they are setting up.
+#
+# ApplicantStream were asked on 2026-11-18 to make it the default for
+# everyone. Until they do, this is the backstop -- and it stays useful after,
+# because it confirms rather than assumes.
+COL_CALENDAR_VIEW = "Calendar List View"
+
+CALENDAR: List[Question] = [
+    Question("calendar_view", COL_CALENDAR_VIEW,
+             "Is your ApplicantStream calendar set to List view with Show "
+             "Notes ticked?",
+             "Open the calendar in ApplicantStream, switch it from Card to "
+             "List, and tick Show Notes. The card view leaves out what Lucy "
+             "reads, so new starts go missing from the board.",
+             ("Yes", "Not yet"), "", True),
+]
+
 # WHAT THEIR ONBOARDING BUNDLE IS CALLED IN BLUE INK (Megan, 2026-11-22:
 # "every ICD will have their own blueink account login. that isn't something
 # we have to build. we just have to make sure they have their document bundle
@@ -228,8 +252,8 @@ JOB: List[Question] = [
              (), STANDARD["security_role"]),
 ]
 
-ALL: List[Question] = (STERLING + BOARD + BLUE_INK_BUNDLE + PAY_STATES
-                       + OBCL_UPDATE + DAILY_UPDATE + JOB)
+ALL: List[Question] = (STERLING + CALENDAR + BOARD + BLUE_INK_BUNDLE
+                       + PAY_STATES + OBCL_UPDATE + DAILY_UPDATE + JOB)
 
 
 def columns_needed() -> List[str]:
@@ -267,6 +291,14 @@ def problems(answers: Dict[str, str]) -> List[str]:
         clean, trouble = normalize_channel_id(said)
         if trouble:
             out.append("%s (that is the channel's name, not its ID)" % q.label)
+    # "NOT YET" IS NOT AN ANSWER TO KEEP. It is a setting on their own
+    # screen that takes ten seconds, and left wrong the training calendar
+    # reads short -- new starts simply do not appear, which looks like a
+    # quiet week rather than a fault.
+    if str(answers.get("calendar_view", "") or "").strip() == "Not yet":
+        out.append("Set your ApplicantStream calendar to List view with Show "
+                   "Notes ticked, then answer Yes — Lucy cannot read the "
+                   "card view")
     # NEEDED ONLY BY AN OFFICE THAT HAS BLUE INK. They answer that two
     # questions up, and an office that said No skips Blue Ink entirely --
     # asking them to name a bundle they do not have is how a form stops

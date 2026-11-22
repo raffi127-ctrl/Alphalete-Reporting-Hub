@@ -133,3 +133,30 @@ def test_every_new_answer_is_a_column_the_form_creates():
     for col in (ES.COL_BUNDLE, ES.COL_OBCL_TO, ES.COL_OBCL_CHANNEL,
                 ES.COL_OBCL_GROUP):
         assert col in need, col
+
+
+# ------------------------- the setting we cannot set from here
+
+def test_the_calendar_view_is_confirmed_on_the_form():
+    """Raf's ask: the office's ApplicantStream calendar must be List view
+    with Show Notes ticked. It is a setting on their own screen, so the
+    only way a new office starts right is to be asked while setting up
+    (Megan, 2026-11-22: "the enrollment is also where we would add this")."""
+    q = [q for q in ES.ALL if q.field == "calendar_view"]
+    assert len(q) == 1 and q[0].required
+    assert q[0].choices == ("Yes", "Not yet")
+    assert "Show Notes" in q[0].help and "List" in q[0].help
+
+
+def test_not_yet_is_refused_rather_than_recorded():
+    """Ten seconds on their own screen, and left wrong the training
+    calendar reads short -- new starts do not appear at all, which looks
+    like a quiet week rather than a fault."""
+    said = ES.problems({"calendar_view": "Not yet"})
+    assert any("List view" in p for p in said)
+    assert not any("List view" in p
+                   for p in ES.problems({"calendar_view": "Yes"}))
+
+
+def test_it_is_a_column_the_form_creates():
+    assert ES.COL_CALENDAR_VIEW in ES.columns_needed()
