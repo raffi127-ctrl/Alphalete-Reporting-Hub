@@ -1489,7 +1489,7 @@ def main(argv=None) -> int:
             print("  %-32s grab=%-4s hechas=%-5s pct=%-7s nota=%s" % tuple(r[1:]))
         log("--- new starts, last %d weeks ---" % len(ns_seen))
         for r in ns_table:
-            print("  %-32s sched=%-4s started=%-4s pct=%-7s avg=%s" % tuple(r))
+            print("  " + "  ".join(str(x) for x in r))  # row grew Training cols (11/12)
         if a.owner_threads:
             _owner_threads(a, kept_all, export, guesses, day, y_all, "", dry_run=True)
         return 0
