@@ -50,6 +50,11 @@ class Question(NamedTuple):
     choices: tuple = ()  # empty = free text
     default: str = ""
     required: bool = False
+    # "text" | "channel". A channel is not free text: a NAME typed where an id
+    # belongs is accepted by every box and then fails hours later when Lucy
+    # tries to post (Joseph Logan, 2026-09-11), so it gets the Channel ID box
+    # that refuses one on the spot.
+    kind: str = "text"
 
 
 # WHAT STERLING NEEDS. Where the job is, in Sterling's own words.
@@ -89,6 +94,32 @@ PAY_STATES: List[Question] = [
              "record, so it is asked rather than assumed.", US_STATES, "", True),
 ]
 
+# WHERE THEIR DAILY UPDATE GOES (Megan, 2026-11-22: "the channel they want
+# their daily update posted in should also be asked on their enrollment
+# form"). It was a line of Python per office in
+# raf_daily_update/offices.py -- fine for five, and the reason the other
+# three have posted into a holding room since 2026-11-19: nobody had asked
+# them where their own room is.
+#
+# NOT REQUIRED, and blank is a real answer. An office with no room yet, or
+# one that has not decided, keeps posting where it posts today, which is the
+# holding channel -- the form should not be unanswerable for them.
+#
+# ANSWERING IT DOES NOT TURN POSTING ON. `posts_in_own_channel` is still what
+# decides whether the Daily Update leaves the holding channel, and Megan
+# gives each office its go one at a time. This answers WHERE, never WHETHER.
+COL_DAILY_CHANNEL = "Daily Update Channel"
+
+DAILY_UPDATE: List[Question] = [
+    Question("daily_channel", COL_DAILY_CHANNEL,
+             "Which Slack channel should your Daily Update be posted in?",
+             "The channel's ID, not its name -- in Slack, click the channel "
+             "name at the top, scroll to the bottom of the pop-up and copy "
+             "the Channel ID. Leave it blank if you are not ready; it keeps "
+             "going to the holding channel until you are.",
+             (), "", False, "channel"),
+]
+
 # THE SIX THAT USUALLY MATCH. Behind one tick on the form: asking every office
 # to retype six answers that are the same for almost all of them is how a form
 # stops being filled in honestly ([[feedback_simple_ux]]).
@@ -122,7 +153,7 @@ JOB: List[Question] = [
              (), STANDARD["security_role"]),
 ]
 
-ALL: List[Question] = STERLING + BOARD + PAY_STATES + JOB
+ALL: List[Question] = STERLING + BOARD + PAY_STATES + DAILY_UPDATE + JOB
 
 
 def columns_needed() -> List[str]:
@@ -147,6 +178,19 @@ def problems(answers: Dict[str, str]) -> List[str]:
     for q in ALL:
         if q.required and not str(answers.get(q.field, "") or "").strip():
             out.append(q.label)
+    # A CHANNEL ID, OR NOTHING. The box in the browser refuses a name as it is
+    # typed, but `problems` is what the save actually goes through, and a
+    # name stored here is a post that fails hours later in front of an owner.
+    from automations.shared.onboarding_ui import normalize_channel_id
+    for q in ALL:
+        if q.kind != "channel":
+            continue
+        said = str(answers.get(q.field, "") or "").strip()
+        if not said:
+            continue                      # blank is a real answer here
+        clean, trouble = normalize_channel_id(said)
+        if trouble:
+            out.append("%s (that is the channel's name, not its ID)" % q.label)
     rate = str(answers.get("rate", "") or "").strip().lstrip("$").strip()
     if rate:
         try:
@@ -164,9 +208,15 @@ def row_for(answers: Dict[str, str], who: str, when: str) -> Dict[str, str]:
     "nobody said", and writing "" over an answer somebody already gave would
     turn a real answer back into a question.
     """
+    from automations.shared.onboarding_ui import normalize_channel_id
+
     row: Dict[str, str] = {}
     for q in ALL:
         said = str(answers.get(q.field, "") or "").strip()
+        if said and q.kind == "channel":
+            # People paste the whole Slack link as often as the bare id.
+            # Store the id, so every reader gets one shape.
+            said = normalize_channel_id(said)[0] or said
         if said:
             row[q.column] = said
     row[COL_UPDATED_BY] = who

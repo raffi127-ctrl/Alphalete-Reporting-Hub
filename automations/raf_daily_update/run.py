@@ -794,7 +794,7 @@ def post(rows: List[dict], day: dt.date, image: Path, channel: str,
     # another office's 'Daily Update M/D' would match (10/26: Raf's rerun
     # would have put his tags in Omar's thread). Other offices also name the
     # owner in the parent; Raf's parent wording is unchanged.
-    away = channel != office.channel
+    away = channel != OFF.channel_for(office, log=lambda *a: None)
     parent = L.parent_text(day) + (
         f" \u2014 {office.owner}" if away and office.key != "raf" else "")
     # Posted-today marker per channel for other offices, so a test post never
@@ -874,7 +874,11 @@ def main(argv=None) -> int:
     if args.seed_from_real and (args.write or args.post):
         ap.error("--seed-from-real is for testing; it can't write or post")
     sheet = office.test_sheet if args.test_sheet else office.sheet
-    channel = args.channel or office.channel
+    # The office's OWN answer first (eco_onboarding enrolment), then the
+    # table, and --channel still beats both. Resolved ONCE here so the
+    # `away` test below compares against the same value it posts to.
+    theirs = OFF.channel_for(office, log=log)
+    channel = args.channel or theirs
     if args.write and not sheet:
         ap.error(f"office {office.key} has no {'test ' if args.test_sheet else ''}"
                  "sheet in offices.py — it is Slack post only (or add its link)")

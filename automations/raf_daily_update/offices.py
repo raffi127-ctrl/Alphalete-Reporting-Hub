@@ -105,6 +105,55 @@ OFFICES: Dict[str, Office] = {
 }
 
 
+def channel_for(office: Office, log=print) -> str:
+    """Where this office's Daily Update goes: their own answer, else ours.
+
+    THE OFFICE ANSWERS THIS NOW (Megan, 2026-11-22: "the channel they want
+    their daily update posted in should also be asked on their enrollment
+    form"). It used to be a line of Python per office in the table above --
+    fine for five, and exactly why algemar, cyrus and vincent have posted
+    into the holding room since 2026-11-19: nobody had asked them where
+    their own room is, so nobody could fill the line in.
+
+    WHERE IS NOT WHETHER. This never looks at `posts_in_own_channel` and
+    never changes it. An office that answers the form has said where its
+    Daily Update belongs; Megan still gives each office its go one at a
+    time, and until she does the caller sends to the test channel regardless
+    of what this returns.
+
+    The answer in the sheet WINS over the hardcoded one, because it is the
+    office's own and the table's value is our guess at it. A blank answer,
+    an unreadable sheet or a value that is not a channel id all fall back to
+    the table and SAY so -- losing an office's Daily Update over a sheet
+    read would be worse than using a slightly stale room.
+    """
+    said = ""
+    try:
+        from automations.eco_onboarding import settings as ES
+        from automations.icd_onboarding import office_steps as OS
+        for row in OS._rows():
+            if str(row.get(OS.COL_OFFICE, "")).strip().lower() == office.key:
+                said = str(row.get(ES.COL_DAILY_CHANNEL, "") or "").strip()
+                break
+    except Exception as e:                                  # noqa: BLE001
+        log("  (could not read the enrolment's Daily Update channel: %s — "
+            "using the one in offices.py)" % type(e).__name__)
+        return office.channel
+    if not said:
+        return office.channel
+    from automations.shared.onboarding_ui import normalize_channel_id
+    clean, trouble = normalize_channel_id(said)
+    if not clean:
+        log("  (the enrolment's Daily Update channel for %s is %r, which is "
+            "not a channel id — using the one in offices.py)"
+            % (office.key, said))
+        return office.channel
+    if clean != office.channel:
+        log("  Daily Update channel %s, off this office's own enrolment"
+            % clean)
+    return clean
+
+
 def get(key_or_id: str) -> Office:
     """An office by key ('raf') or ApplicantStream id ('11280'). An id that is
     not listed yet gives a bare office — enough for a dry-run preview of any

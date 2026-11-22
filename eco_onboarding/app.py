@@ -46,9 +46,40 @@ def _current(office_key: str):
     return store.read(office_key)
 
 
+def _ask_channel(q: S.Question, current: str) -> str:
+    """The Channel ID box, plus the one check worth doing while they are here.
+
+    A channel NAME typed where an id belongs is accepted by every plain text
+    box and then fails hours later when Lucy tries to post (Joseph Logan,
+    2026-09-11). This box refuses one as it is typed, and then asks Slack
+    whether Lucy is actually in the room -- because "right id, Lucy not
+    invited" looks exactly the same until the first post does not appear.
+    """
+    from automations.shared import onboarding_ui as UI
+    if current:
+        st.caption("Currently: `%s`" % current)
+    got = UI.channel_id_input(q.label, key="eco_" + q.field, help=q.help)
+    if not got:
+        # Keep what they already answered rather than blanking it by leaving
+        # the box alone: row_for drops empty fields, so this is only about
+        # what the page shows back.
+        return current
+    try:
+        res = UI.check_channel(channel_id=got)
+        st.caption(UI.lucy_line(res))
+    except Exception as exc:                                # noqa: BLE001
+        # Never block the save on it. The answer is still the answer, and an
+        # unreachable Slack is our problem, not the owner's.
+        st.caption("Could not check whether Lucy is in that channel (%s). "
+                   "The ID is saved either way." % type(exc).__name__)
+    return got
+
+
 def _ask(q: S.Question, current: str):
     """One question, one input. No syntax, no multi-answer boxes."""
     key = "eco_" + q.field
+    if q.kind == "channel":
+        return _ask_channel(q, current)
     if q.choices:
         options = list(q.choices)
         start = current or q.default
@@ -120,6 +151,13 @@ for q in S.BOARD:
 st.subheader("Payroll")
 st.caption("These go on a real payroll record, so we ask rather than assume.")
 for q in S.PAY_STATES:
+    answers[q.field] = _ask(q, current.get(q.column, ""))
+
+st.subheader("Your Daily Update")
+st.caption("Where Lucy posts the write-up of each day's second rounds. "
+           "Until you give us a channel it goes to a holding room, and it "
+           "stays there until Megan switches your office on.")
+for q in S.DAILY_UPDATE:
     answers[q.field] = _ask(q, current.get(q.column, ""))
 
 # THE SIX THAT USUALLY MATCH, behind one tick. Asking every office to retype
