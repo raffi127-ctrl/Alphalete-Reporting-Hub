@@ -693,6 +693,12 @@ class OrgOverrideSummaryIsAPeriodScan(unittest.TestCase):
         self.assertTrue(tf.is_period_scan_source(
             "ResATTSpecialDealOverride-Raf/RafOverrideBonus → Payout- Raf wow"))
 
+    def test_carlos_my_override_summary_is_a_period_scan(self):
+        # 2026-11-22 false "IDENTICAL data 3 days running": the security
+        # ledger pulls it once per retail period in a loop.
+        self.assertTrue(tf.is_period_scan_source(
+            "OverridesICDView/MYOVERRIDESUMMARY → My Override Summary"))
+
 
 class OneFrozenWorkbookIsOneThread(unittest.TestCase):
     """2026-10-25: Box's extract sat at Thu 10/22 and the channel held NINE

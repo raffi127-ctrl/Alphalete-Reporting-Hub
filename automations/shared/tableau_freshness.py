@@ -1127,9 +1127,17 @@ ONE_OWNER_MARKERS = (
 # special is matched by its Processed Week header, so a feed that stops
 # rolling leaves the cell BLANK ("not sourced yet" in the review), never a
 # repeat of last week's number.
+#
+# MyOverrideSummary ("My Override Summary") is the third (2026-11-22):
+# carlos_security_ledger.write_override_by_icd pulls it once per retail period
+# (?Period=Period YYYY-N) in one loop, every label sharing one history key, so
+# the day's fingerprint is whichever period the loop ended on. Thread
+# `drop-tableau-stale-overridesicdview-workbook`, 2026-11-22 ("IDENTICAL data 3
+# days running"). Only Carlos's P&L Sheet is built off it; nothing posts.
 PERIOD_SCAN_MARKERS = (
     "orgoverridesummary",
     "rafoverridebonus",
+    "myoverridesummary",
 )
 
 
