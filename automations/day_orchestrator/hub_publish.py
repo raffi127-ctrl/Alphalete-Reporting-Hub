@@ -450,6 +450,7 @@ _HUB_CARD = {
     # Country Campaign Board afternoon catch-ups ride the main card.
     "program_daily_summary_catchup_13": "program_daily_summary",
     "program_daily_summary_catchup_15": "program_daily_summary",
+    "program_daily_summary_catchup_17": "program_daily_summary",
 }
 
 
