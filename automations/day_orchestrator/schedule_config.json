@@ -5524,6 +5524,34 @@
    "verify": null,
    "close_on": "exit_zero"
   },
+  "alphalete_sales_board_first_weeks": {
+   "on_scheduler": true,
+   "order": 6.2,
+   "_note": "SATURDAYS in the 4am batch = the end of Friday, before Saturday's selling starts (Eve 2026-11-22: 'el viernes al final del dia agrega todos los 1st weeks'). Replaces Eve's Friday hand copy, which on 11/20 lost the Trainer on 6 reps (Raf, #admin-staff-local-office). Reads this week's 'Sales Board WE' tab: everyone in the 'New Starts/Raf' box NOT marked Terminated (same rule as apex_new_starts) who is not on the roster yet gets the first blank roster row + Trainer (full name), 1st Wk, Campaign (trainer's, else ATT), Team (box's, else trainer's), In Training, Start Date (CR day), Location/Email from the box. Already on the board (the team adds sellers mid-week) = only EMPTY detail cells are filled, never a typed value. A near-spelling of a board name is NOT added, it is DM'd. Not on Friday night: a 21:45 not_before would stretch this Lucy's 4am loop over the whole Friday. Sheets API only. Preview: python -m automations.alphalete_sales_board.first_weeks. Code: automations/alphalete_sales_board/first_weeks.py.",
+   "display_name": "Alphalete Sales Board 1st weeks to the board",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.alphalete_sales_board.first_weeks"
+   ],
+   "base_args": [
+    "--apply"
+   ],
+   "cadence": {
+    "weekdays": [
+     5
+    ]
+   },
+   "priority": "P2",
+   "freshness_target": null,
+   "depends_on": [],
+   "after": [
+    "alphalete_production"
+   ],
+   "timeout_minutes": 15,
+   "verify": null,
+   "close_on": "exit_zero"
+  },
   "energy_crossref": {
    "_retired_note": "RETIRADO 2026-09-01 - se acabo el programa. Rafael Hidalgo en #alphalete-sales, sobre el chequeo del 8.31 (que salio limpio: Slack 1 / Board 0 / Webform 1, all accounted for): \"we can end the base energy cross referencing FYI we're done with that program!\". Sin ventas de Energy no hay nada que auditar ni a quien etiquetar, y este post ademas TAGUEA REPS REALES cada manana, asi que dejarlo prendido era mandar un nudge diario por un programa cerrado. Tres candados, no uno: (1) automations/energy_crossref/DISABLED - run.py sale 0 sin leer Slack, la Sales Board ni el webform, asi que un `lucy rerun energy_crossref` a mano tampoco postea; (2) on_scheduler:false + cadence.weekdays [] - el batch de las 4am no lo corre Y hub_coverage deja de rearmarle la card de la Report Library (weekdays [] solo no alcanza: on_scheduler:true lo mantiene en _scheduler_reports() y la card vuelve diciendo DUE TODAY todos los dias, igual que knocks_access_watch el 2026-08-26); (3) standalone_watch:false - sin eso machine_digest lo pierde de vista al pasar a on_scheduler:false, cae al baseline historico y postea \"didn't run today\" una vez por dia por ~una semana (lo que paso con indeed-source-report el 2026-08-28). NO hay LaunchAgent que descargar: esto vivia dentro del batch de las 4am (order 7, depends_on alphalete_production), no en un agente propio, asi que no hay `uninstall_...` que encolar. Nadie depende de el: ningun otro entry lo lista en depends_on/after. El codigo NO se toca y `lucy rerun energy_crossref` sigue resolviendo (registry.resolve_report cae al config crudo). SIGUEN VIVOS Y NO SE TOCARON: energy_slack_fill (llena la columna EN de la Sales Board desde Slack) y la seccion Energy Sales Board del post de alphalete_production - si Energy tambien deja de aparecer en el board de la noche, esos dos se bajan aparte. Para volver atras: borrar el archivo DISABLED, on_scheduler:true, weekdays [0..6], sacar standalone_watch y sacarlo de PAUSED_REPORTS en automations/dashboard.py.",
    "order": 7,
