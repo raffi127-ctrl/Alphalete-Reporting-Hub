@@ -348,6 +348,24 @@ class Bot(unittest.TestCase):
         self.assertEqual([[f["text"] for f in e["feedback"]] for e in ex],
                          [["Ask for the close sooner"]])
 
+    def test_stats_counts_only_rafs_grading(self):
+        import io
+        from contextlib import redirect_stdout
+        from automations.lucy_transcriber import run as RUN
+        w = FakeWeb()
+        B.process(w, "xoxb-x", _rec_ev(), self.state)
+        B.process(w, "xoxb-x", _rec_ev(ts="200.0"), self.state)
+        rec = json.loads((C.RECORDS / "100.0.json").read_text(encoding="utf-8"))
+        rec["feedback"] = [{"ts": "1", "user": RAF, "text": "good"},
+                           {"ts": "2", "user": "UUP", "text": "meh"}]
+        (C.RECORDS / "100.0.json").write_text(json.dumps(rec), encoding="utf-8")
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            RUN.stats()
+        line = buf.getvalue()
+        self.assertIn("recordings 2 from 1 reps | graded by Raf 1 (1 reps) | Raf notes 1", line)
+        self.assertIn("NOT YET (29 more graded needed)", line)
+
     def test_rafs_own_recording_gets_no_ask_and_no_copy(self):
         w = FakeWeb()
         B.on_event(w, _rec_ev(user=RAF), self.state)

@@ -4,6 +4,8 @@
         # one local file -> prints exactly what the rep would get. No Slack.
     python -m automations.lucy_transcriber.run --doctor [--fix]
         # can THIS machine run the bot? Posts nothing.
+    python -m automations.lucy_transcriber.run --stats
+        # is there enough of Raf's grading to start teaching Lucy? Read-only.
 
 Neither one colours the Hub card: they are questions, not deliveries.
 """
@@ -102,6 +104,30 @@ def doctor(fix: bool = False) -> int:
     return 0 if ok else 1
 
 
+# How many transcripts Raf has to have graded before Lucy is taught from
+# them (the "30-50" in the note to Raf; the low end starts the evaluation).
+ENOUGH = 30
+
+
+def stats() -> int:
+    """One line the queue can show: recordings, how many Raf graded, his
+    notes, and whether that is ENOUGH to start Lucy's own feedback."""
+    import json
+    from automations.lucy_transcriber import bot as B
+    recs = [json.loads(p.read_text(encoding="utf-8")) for p in sorted(C.RECORDS.glob("*.json"))]
+    graded = B.training_examples()
+    notes = sum(len(r["feedback"]) for r in graded)
+    days = sorted(r.get("received", "")[:10] for r in recs if r.get("received"))
+    print("recordings {} from {} reps | graded by Raf {} ({} reps) | Raf notes {} | "
+          "{} to {} | {}".format(
+              len(recs), len({r.get("user") for r in recs}), len(graded),
+              len({r.get("user") for r in graded}), notes,
+              days[0] if days else "-", days[-1] if days else "-",
+              "ENOUGH to start Lucy feedback" if len(graded) >= ENOUGH
+              else "NOT YET ({} more graded needed)".format(ENOUGH - len(graded))))
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--file", help="transcribe one local file and print it (no Slack)")
@@ -109,6 +135,8 @@ def main(argv=None) -> int:
                     help="can this machine run the bot? (posts nothing)")
     ap.add_argument("--fix", action="store_true",
                     help="with --doctor: pip-install a missing package")
+    ap.add_argument("--stats", action="store_true",
+                    help="how much of Raf's grading there is (read-only)")
     a = ap.parse_args(argv)
     try:
         from automations.shared import hub_autopublish
@@ -117,6 +145,8 @@ def main(argv=None) -> int:
         pass
     if a.doctor:
         return doctor(fix=a.fix)
+    if a.stats:
+        return stats()
     if a.file:
         got = T.transcribe(Path(a.file).expanduser(), max_seconds=C.MAX_SECONDS)
         print(("\n\n----- next message -----\n\n").join(
