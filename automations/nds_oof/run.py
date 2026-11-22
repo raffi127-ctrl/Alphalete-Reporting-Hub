@@ -1469,11 +1469,17 @@ def _share_dump() -> int:
         rws = S._book().worksheet(RR.RELAY_TAB)
         grid = rws.get_all_values()
         header = [str(h).strip() for h in grid[0]] if grid else []
-        want_off = {"carlos-b2batt", "carlos-nds", "carlos"}
+        # 'raf' too (2026-11-22): his machine's applied release and last
+        # check-in, read off the machine blob -- is a pushed release on it yet?
+        want_off = {"carlos-b2batt", "carlos-nds", "carlos", "raf"}
+        from automations.icd_alerts import post as _P
         for raw_row in grid[1:]:
             rec = dict(zip(header, raw_row))
             if (rec.get(RR.COL_OFFICE) or "").strip().lower() not in want_off:
                 continue
+            _log("share-dump: machines office=%r day=%r %s"
+                 % (rec.get(RR.COL_OFFICE), rec.get(RR.COL_DAY),
+                    json.dumps(_P.machines_for(raw_row, _P.COL_MACHINES))[:600]))
             _log("share-dump: ICD Relay office=%r day=%r local=%r agent=%r sales=%s last_posted=%s"
                  % (rec.get(RR.COL_OFFICE), rec.get(RR.COL_DAY), rec.get(RR.COL_LOCAL),
                     (rec.get(RR.COL_AGENT) or "")[:20],
