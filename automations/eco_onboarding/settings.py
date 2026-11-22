@@ -94,6 +94,81 @@ PAY_STATES: List[Question] = [
              "record, so it is asked rather than assumed.", US_STATES, "", True),
 ]
 
+# WHAT THEIR ONBOARDING BUNDLE IS CALLED IN BLUE INK (Megan, 2026-11-22:
+# "every ICD will have their own blueink account login. that isn't something
+# we have to build. we just have to make sure they have their document bundle
+# labeled correctly so lucy knows which to send out").
+#
+# The account and the key are the office's own setup on their own machine.
+# The live send finds the template BY NAME on their Envelope Templates page,
+# so the name is the only thing that has to be agreed -- and it was a
+# constant in our code, Alphalete's.
+#
+# THE STANDARD LABEL IS THE DEFAULT and the answer for almost everyone:
+# telling every ICD to call theirs the same thing is less to get wrong than
+# asking each what theirs is called. This exists for the office whose bundle
+# already has another name, so they are not made to rename a template their
+# documents already hang off.
+COL_BUNDLE = "Blue Ink Bundle"
+
+# GO AND LOOK, rather than accept a name we filled in for you (Megan,
+# 2026-11-22: "we need to say to go into their blueink and look at the name
+# of their doc bundle to map it out").
+#
+# NO DEFAULT, deliberately. Pre-filling Alphalete's "UNIVERSAL I9 MASTER
+# FORM" is the worst option available: it is a real name, so the box looks
+# answered, and it does not exist in anybody else's account -- so the first
+# send of a new office's first week finds no such template and goes nowhere.
+# A blank box is a question somebody answers; a plausible wrong answer is
+# one nobody checks.
+BLUE_INK_BUNDLE: List[Question] = [
+    Question("bundle", COL_BUNDLE,
+             "What is your onboarding document bundle called in Blue Ink?",
+             "Open Blue Ink, go to Templates, and copy the name of the "
+             "bundle your new starts sign — exactly as it reads there, "
+             "including capitals. Lucy finds it by that name on your own "
+             "account, and sends nothing at all if she cannot find it.",
+             (), "", False),
+]
+
+# WHERE THEIR OBCL UPDATE GOES, and whether it is Slack or a text group
+# (Megan, 2026-11-22: "the channel that these are to go in will need to be
+# asked on the enrollment form" and "they also need an option here to send
+# to a text group").
+#
+# BOTH DESTINATIONS WERE ALPHALETE'S, hardcoded: the picture goes to the
+# iMessage group "ORIENTATION CREW - Real" (obcl_ov_sweep.snapshot.GROUP),
+# and Raf's outstanding ask is to put it in a Slack thread instead. Neither
+# was ever a per-office answer, so there was nothing an office could say.
+#
+# A CHOICE, NOT TWO BOXES TO FILL IN. An office answers where it wants the
+# update and then the one detail that goes with it; asking for a channel AND
+# a group leaves two answers where only one is used, and the unused one rots.
+COL_OBCL_TO = "OBCL Update To"
+COL_OBCL_CHANNEL = "OBCL Update Channel"
+COL_OBCL_GROUP = "OBCL Update Text Group"
+
+OBCL_SLACK = "Slack channel"
+OBCL_TEXT = "Text group"
+OBCL_NEITHER = "Not yet"
+
+OBCL_UPDATE: List[Question] = [
+    Question("obcl_to", COL_OBCL_TO,
+             "Where should your OBCL update go?",
+             "The picture of where every new start has got to, posted again "
+             "each time it changes.",
+             (OBCL_NEITHER, OBCL_SLACK, OBCL_TEXT), OBCL_NEITHER, False),
+    Question("obcl_channel", COL_OBCL_CHANNEL,
+             "Which Slack channel?",
+             "Only if you chose Slack. The channel's ID, not its name.",
+             (), "", False, "channel"),
+    Question("obcl_group", COL_OBCL_GROUP,
+             "Which text group?",
+             "Only if you chose a text group. The group's name exactly as it "
+             "appears in Messages, so Lucy opens the right conversation.",
+             (), "", False),
+]
+
 # WHERE THEIR DAILY UPDATE GOES (Megan, 2026-11-22: "the channel they want
 # their daily update posted in should also be asked on their enrollment
 # form"). It was a line of Python per office in
@@ -153,7 +228,8 @@ JOB: List[Question] = [
              (), STANDARD["security_role"]),
 ]
 
-ALL: List[Question] = STERLING + BOARD + PAY_STATES + DAILY_UPDATE + JOB
+ALL: List[Question] = (STERLING + BOARD + BLUE_INK_BUNDLE + PAY_STATES
+                       + OBCL_UPDATE + DAILY_UPDATE + JOB)
 
 
 def columns_needed() -> List[str]:
@@ -191,6 +267,24 @@ def problems(answers: Dict[str, str]) -> List[str]:
         clean, trouble = normalize_channel_id(said)
         if trouble:
             out.append("%s (that is the channel's name, not its ID)" % q.label)
+    # NEEDED ONLY BY AN OFFICE THAT HAS BLUE INK. They answer that two
+    # questions up, and an office that said No skips Blue Ink entirely --
+    # asking them to name a bundle they do not have is how a form stops
+    # being answered honestly.
+    if (str(answers.get("blue_ink", "") or "").strip().lower() == "yes"
+            and not str(answers.get("bundle", "") or "").strip()):
+        out.append("What is your onboarding document bundle called in Blue "
+                   "Ink? (open Blue Ink -> Templates and copy the name)")
+    # A DESTINATION WITH NOWHERE TO GO. Choosing Slack and leaving the
+    # channel blank is not "not yet" -- it is an answer that reads as
+    # configured and sends nothing, which is the worst of the three states
+    # because nobody goes looking for it.
+    to = str(answers.get("obcl_to", "") or "").strip()
+    if to == OBCL_SLACK and not str(answers.get("obcl_channel", "")).strip():
+        out.append("Which Slack channel? (you chose Slack for your OBCL update)")
+    if to == OBCL_TEXT and not str(answers.get("obcl_group", "")).strip():
+        out.append("Which text group? (you chose a text group for your OBCL "
+                   "update)")
     rate = str(answers.get("rate", "") or "").strip().lstrip("$").strip()
     if rate:
         try:

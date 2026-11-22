@@ -27,6 +27,51 @@ from automations.obcl_ov_sweep import config, sweep
 from automations.shared import obcl_charts as oc
 
 GROUP = "ORIENTATION CREW - Real"
+
+
+def destination(office_key: str = "") -> tuple:
+    """(kind, where) for this office's OBCL update: the office's own answer.
+
+    Megan, 2026-11-22: the channel "will need to be asked on the enrollment
+    form", and "they also need an option here to send to a text group".
+
+    Both destinations were Alphalete's and hardcoded -- this module's GROUP
+    is an iMessage group name, and Raf's outstanding ask is a Slack thread
+    instead. Neither was ever a per-office answer, so there was nothing an
+    office could say.
+
+    kind is "slack", "text" or "" -- and "" means NOT YET, which is a real
+    answer and the default. An office that has not chosen gets nothing sent
+    anywhere rather than landing in somebody else's group, which is what a
+    fallback to GROUP would do.
+
+    Alphalete itself keeps GROUP: it answered this before the form existed,
+    by being the office the group was made for. Passing no key returns it,
+    so every caller that has not been taught about offices behaves exactly
+    as it did.
+    """
+    key = str(office_key or "").strip().lower()
+    if not key:
+        return ("text", GROUP)
+    try:
+        from automations.eco_onboarding import settings as ES
+        from automations.icd_onboarding import office_steps as OS
+        row = {}
+        for r in OS._rows():
+            if str(r.get(OS.COL_OFFICE, "")).strip().lower() == key:
+                row = r
+                break
+        to = str(row.get(ES.COL_OBCL_TO, "") or "").strip()
+        if to == ES.OBCL_SLACK:
+            said = str(row.get(ES.COL_OBCL_CHANNEL, "") or "").strip()
+            from automations.shared.onboarding_ui import normalize_channel_id
+            return ("slack", normalize_channel_id(said)[0]) if said else ("", "")
+        if to == ES.OBCL_TEXT:
+            said = str(row.get(ES.COL_OBCL_GROUP, "") or "").strip()
+            return ("text", said) if said else ("", "")
+    except Exception:      # noqa: BLE001 -- unreadable is not somebody else's group
+        return ("", "")
+    return ("", "")
 ROOT = Path(__file__).resolve().parents[2]
 SHOT_DIR = ROOT / "output" / "obcl_ov_sweep" / "shots"
 STATE = ROOT / "output" / "obcl_ov_sweep" / "last_shot_state.json"

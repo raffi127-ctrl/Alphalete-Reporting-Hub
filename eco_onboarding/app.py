@@ -148,10 +148,29 @@ st.subheader("Your onboarding")
 for q in S.BOARD:
     answers[q.field] = _ask(q, current.get(q.column, ""))
 
+st.subheader("Your documents")
+for q in S.BLUE_INK_BUNDLE:
+    answers[q.field] = _ask(q, current.get(q.column, ""))
+
 st.subheader("Payroll")
 st.caption("These go on a real payroll record, so we ask rather than assume.")
 for q in S.PAY_STATES:
     answers[q.field] = _ask(q, current.get(q.column, ""))
+
+st.subheader("Your OBCL update")
+st.caption("The picture of where every new start has got to, posted again "
+           "each time it changes.")
+_obcl_to = _ask(S.OBCL_UPDATE[0], current.get(S.COL_OBCL_TO, ""))
+answers["obcl_to"] = _obcl_to
+# ONLY THE ONE THAT GOES WITH THE ANSWER. Showing both leaves an unused box
+# filled in, and a stale channel somebody once typed is indistinguishable
+# from a chosen one the next time anybody reads the row.
+if _obcl_to == S.OBCL_SLACK:
+    answers["obcl_channel"] = _ask(S.OBCL_UPDATE[1],
+                                   current.get(S.COL_OBCL_CHANNEL, ""))
+elif _obcl_to == S.OBCL_TEXT:
+    answers["obcl_group"] = _ask(S.OBCL_UPDATE[2],
+                                 current.get(S.COL_OBCL_GROUP, ""))
 
 st.subheader("Your Daily Update")
 st.caption("Where Lucy posts the write-up of each day's second rounds. "

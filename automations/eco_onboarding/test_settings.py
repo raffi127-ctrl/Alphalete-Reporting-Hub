@@ -47,7 +47,12 @@ class WhatItAsks(unittest.TestCase):
 
 class WhatCountsAsAnswered(unittest.TestCase):
 
+    # `bundle` joined this on 2026-11-22: an office that says it HAS Blue
+    # Ink has to name the bundle Lucy sends, because every ICD's is
+    # different and there is no name to fall back to ("no one will be like
+    # alphalete's" -- Megan).
     GOOD = {"state": "Florida", "city": "Tampa", "blue_ink": "Yes",
+            "bundle": "TAMPA ONBOARDING PACKET",
             "rate": "12.50", "pay_state": "Florida", "tax_state": "Florida"}
 
     def test_a_complete_answer_has_no_problems(self):
@@ -113,3 +118,21 @@ class TheSpreadsheetColumnLetters(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TheBundleIsOnlyAskedOfOfficesThatHaveBlueInk(unittest.TestCase):
+    """An office that answered No to Blue Ink skips it entirely, so asking
+    them to name a bundle they do not have is how a form stops being
+    answered honestly."""
+
+    def test_no_blue_ink_no_bundle_question(self):
+        a = dict(WhatCountsAsAnswered.GOOD)
+        a["blue_ink"], a["bundle"] = "No", ""
+        self.assertEqual([p for p in S.problems(a) if "bundle" in p], [])
+
+    def test_blue_ink_without_a_bundle_is_named(self):
+        a = dict(WhatCountsAsAnswered.GOOD)
+        a["bundle"] = ""
+        said = [p for p in S.problems(a) if "bundle" in p]
+        self.assertEqual(len(said), 1)
+        self.assertIn("Templates", said[0], "say where to go and look")

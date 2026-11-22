@@ -163,6 +163,49 @@ SIGNER_KEY = "employee-1"
 # blueink-creds.json (that id is only used by the now-capped API path).
 TEMPLATE_NAME = "UNIVERSAL I9 MASTER FORM"
 
+
+def template_name_for(office_key: str = "") -> str:
+    """What this office's onboarding bundle is called in THEIR Blue Ink.
+
+    Megan, 2026-11-22: "every ICD will have their own blueink account login.
+    that isn't something we have to build. we just have to make sure they
+    have their document bundle labeled correctly so lucy knows which to send
+    out."
+
+    Which is the whole of it. The account and the key are the office's own
+    setup on their own machine, and the live send already finds the template
+    BY NAME on the Envelope Templates page -- the id in the creds file is
+    only used by the capped API path. So the one thing that has to travel
+    between offices is the NAME, and it was this constant: Alphalete's.
+
+    THE OFFICE LOOKS IT UP, and nothing is filled in for them (Megan,
+    2026-11-22: "we need to say to go into their blueink and look at the
+    name of their doc bundle to map it out"). Alphalete's name would be the
+    worst possible default here: it is real, so the box reads as answered,
+    and it exists in no other account -- so the first send of a new office's
+    first week finds no such template and goes nowhere.
+
+    AN OFFICE THAT HAS NOT ANSWERED GETS "", not ours. Handing back
+    Alphalete's name would have the office's own run hunt for a template
+    that cannot be there; "" lets the caller say which office has not
+    answered, before a browser is even opened.
+
+    Passing no key is Alphalete itself and keeps the constant, so every
+    caller that has not been taught about offices behaves as it did.
+    """
+    key = str(office_key or "").strip().lower()
+    if not key:
+        return TEMPLATE_NAME
+    try:
+        from automations.icd_onboarding import office_steps as OS
+        from automations.eco_onboarding import settings as ES
+        for row in OS._rows():
+            if str(row.get(OS.COL_OFFICE, "")).strip().lower() == key:
+                return str(row.get(ES.COL_BUNDLE, "") or "").strip()
+    except Exception:      # noqa: BLE001 -- unreadable is not "use ours"
+        return ""
+    return ""
+
 # --- WHAT THE NEW START ACTUALLY RECEIVES ----------------------------------
 # PER OFFICE SINCE 2026-11-15 (Megan: "we need to make sure that it's set up
 # correctly for that ICD when we launch"). An ICD's new start opening an email

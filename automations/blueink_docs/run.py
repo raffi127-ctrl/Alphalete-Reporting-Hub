@@ -260,7 +260,8 @@ def _send_one_with_retry(page, person, template, really_send):
 
 
 def _send_via_ui(workbook, worksheet, people: List[NewStart],
-                 really_send: bool, headless: bool = True) -> int:
+                 really_send: bool, headless: bool = True,
+                 office_key: str = "") -> int:
     """The live path. One browser for the whole batch -- relaunching per person
     would roughly double a run that already takes ~a minute each."""
     failures, sent = 0, []
@@ -269,7 +270,20 @@ def _send_via_ui(workbook, worksheet, people: List[NewStart],
     sent_failed: List[str] = []        # send failures ONLY -- `problems` later
                                        # collects skips and held-backs too, and
                                        # neither of those is a failed delivery
-    template = config.TEMPLATE_NAME
+    # THE OFFICE'S OWN BUNDLE NAME. Megan, 2026-11-22: "no one will be like
+    # alphalete's" -- every ICD's template has its own name on its own
+    # account, so the constant is Alphalete's and nobody else's. An office
+    # that has not mapped its name yet is REFUSED here, by name, before a
+    # browser is opened: carrying on with ours would hunt their account for
+    # a template that cannot be in it, and the failure would arrive one
+    # person at a time, mid-batch, looking like a Blue Ink fault.
+    template = config.template_name_for(office_key) if office_key else config.TEMPLATE_NAME
+    if not template:
+        raise RuntimeError(
+            "%s has not mapped its Blue Ink bundle yet. Open Blue Ink -> "
+            "Templates on that office's account, copy the name of the bundle "
+            "their new starts sign, and put it on the LucyECO Onboarding "
+            "enrolment form. Nothing was sent." % office_key)
     with bi_session._sync_api()() as p:
         browser, ctx = ui_send.open_browser(p, headless=headless)
         page = ctx.new_page()
@@ -937,6 +951,7 @@ def _main(argv=None) -> int:
             print("\nWalking the real wizard for the first person, stopping at "
                   "the Send button (leaves a harmless draft):")
             _send_via_ui(workbook, ws, to_send[:1], really_send=False,
+                         office_key=(args.office or "").strip().lower(),
                          headless=not args.headed)
         return 0
     if not to_send:
@@ -973,6 +988,7 @@ def _main(argv=None) -> int:
               f"(~1 min each, so roughly {max(1, len(to_send))} minutes)...")
         (failures, sent_count, problems, sent_names, failed_names,
          unlogged) = _send_via_ui(workbook, ws, to_send, really_send=True,
+                                  office_key=(args.office or "").strip().lower(),
                                   headless=not args.headed)
 
         # Anyone who SHOULD have docs and doesn't. Deliberate exclusions (quit,
