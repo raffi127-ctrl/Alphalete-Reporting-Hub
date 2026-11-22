@@ -74,17 +74,59 @@ def layout(grid: List[List[str]]) -> Dict[str, int]:
             if str(name).strip()}
 
 
+ROW_KEY = "_row"
+
+
 def rows_of(grid: List[List[str]]) -> List[Dict]:
-    """The week's people as dicts, keyed by column name."""
+    """The week's people as dicts, keyed by column name.
+
+    EACH ROW CARRIES THE SHEET ROW IT CAME FROM, under ROW_KEY. A nameless row
+    is skipped, so this list is SHORTER than the block it was read from, and
+    `FIRST_DATA_ROW + <index into this list>` is therefore not that row's
+    number -- it is short by one for every row skipped above it.
+
+    That arithmetic was how every writer here addressed a cell, and on
+    2026-11-22 it wrote two people's OwnerVille columns two rows up, onto two
+    others: Raf's stacked tab has 97 rows and gives back 93. It writes only
+    into empty cells, which is the sole reason it defaced nothing. Use
+    `row_number(row)` and the question does not arise.
+    """
     cols = layout(grid)
     if not cols:
         return []
     out = []
-    for raw in grid[FIRST_DATA_ROW - 1:]:
+    for n, raw in enumerate(grid[FIRST_DATA_ROW - 1:], start=FIRST_DATA_ROW):
         row = {name: (raw[i] if i < len(raw) else "") for name, i in cols.items()}
         if str(row.get("Name") or "").strip() or str(row.get("Last Name") or "").strip():
+            row[ROW_KEY] = n
             out.append(row)
     return out
+
+
+def row_number(row: Dict) -> int:
+    """The sheet row this dict was read from.
+
+    Raises rather than guessing. A writer that cannot say which row it is
+    about must not pick one: that is the bug this replaced, and it was silent
+    because the guess always produced *a* number.
+    """
+    n = (row or {}).get(ROW_KEY)
+    if not n:
+        raise RuntimeError(
+            "this row does not know which sheet row it came from -- it did not "
+            "come from rows_of(). A caller building rows by hand must set %r."
+            % ROW_KEY)
+    return int(n)
+
+
+def first_free_row(grid: List[List[str]]) -> int:
+    """Where a new block may be appended without landing on anybody.
+
+    The physical height of the grid, NOT FIRST_DATA_ROW + len(rows_of(grid)):
+    that was short by every skipped row, so on Raf's tab it pointed at row 95
+    -- three rows that already held people.
+    """
+    return max(len(grid) + 1, FIRST_DATA_ROW)
 
 
 # The columns past the chart: row state, not steps. ONE list, because having
@@ -314,9 +356,10 @@ def seed(workbook, week_start: dt.date, people: List[Dict],
     ws = ws or open_board(workbook, create=not dry_run)
     if ws is None:
         log("  (dry run — no %s tab on this workbook yet)" % B.TAB)
-        all_rows, existing = [], []
+        grid, all_rows, existing = [], [], []
     else:
-        all_rows = rows_of(_values(ws))
+        grid = _values(ws)
+        all_rows = rows_of(grid)
         existing = B.for_week(all_rows, week_start)
     fresh = B.seed_rows(people, started=week_start)
     plan = B.merge(existing, fresh)
@@ -369,8 +412,11 @@ def seed(workbook, week_start: dt.date, people: List[Dict],
         block.append(_line(B.divider_row(week_text, label)))
         for r in by_funnel[label]:
             block.append(_line(r))
-    # Appended to the END of the tab, after every week already on it.
-    start = FIRST_DATA_ROW + len(all_rows)
+    # Appended to the END of the tab, after every week already on it -- by the
+    # grid's real height, not FIRST_DATA_ROW + len(all_rows), which is short
+    # by every nameless row above and on Raf's tab pointed at row 95, three
+    # rows that already held people.
+    start = first_free_row(grid)
     ws.update(values=block,
               range_name="A%d:%s%d" % (start, _a1(width), start + len(block) - 1))
     return plan
@@ -395,15 +441,15 @@ def tick(workbook, week_start: dt.date, column: str, names: Sequence[str],
             "— this never guesses at a position." % column)
     all_rows = rows_of(grid)
     mine = B.for_week(all_rows, week_start)
-    want = [all_rows.index(mine[i]) for i in B.tick_plan(mine, column, names)]
+    want = [row_number(mine[i]) for i in B.tick_plan(mine, column, names)]
     log("  %s: %d to tick" % (column, len(want)))
     if dry_run or not want:
         return 0
     a1 = _a1(cols[column] + 1)
     stamp = dt.date.today().strftime("%m/%d/%Y")
-    ws.batch_update([{"range": "%s%d" % (a1, FIRST_DATA_ROW + i),
-                      "values": [[stamp]]} for i in want])
-    ws.format(["%s%d" % (a1, FIRST_DATA_ROW + i) for i in want],
+    ws.batch_update([{"range": "%s%d" % (a1, n),
+                      "values": [[stamp]]} for n in want])
+    ws.format(["%s%d" % (a1, n) for n in want],
               {"backgroundColor": B.GREEN})
     return len(want)
 
@@ -431,7 +477,7 @@ def terminate(workbook, week_start: dt.date, names: Sequence[str],
     all_rows = rows_of(grid)
     mine = B.for_week(all_rows, week_start)
     want = {B._fold(n) for n in names}
-    hit = [all_rows.index(r) for r in mine
+    hit = [row_number(r) for r in mine
            if B._fold("%s%s" % (r.get("Name", ""), r.get("Last Name", ""))) in want
            and not str(r.get(B.TERMINATED_AT) or "").strip()]
     log("  marking off %d" % len(hit))
@@ -447,15 +493,15 @@ def terminate(workbook, week_start: dt.date, names: Sequence[str],
             % (len(B.REMOVAL_REASONS), why))
     a1 = _a1(cols[B.TERMINATED_AT] + 1)
     stamp = dt.date.today().strftime("%m/%d/%Y")
-    writes = [{"range": "%s%d" % (a1, FIRST_DATA_ROW + i),
-               "values": [[stamp]]} for i in hit]
+    writes = [{"range": "%s%d" % (a1, n),
+               "values": [[stamp]]} for n in hit]
     # The reason goes in only if the column is there. An older tab that has not
     # had ensure_columns run on it still records the removal; it just cannot
     # say why yet, and that is better than refusing to remove anybody.
     if why and B.REMOVED_WHY in cols:
         w1 = _a1(cols[B.REMOVED_WHY] + 1)
-        writes += [{"range": "%s%d" % (w1, FIRST_DATA_ROW + i),
-                    "values": [[why]]} for i in hit]
+        writes += [{"range": "%s%d" % (w1, n),
+                    "values": [[why]]} for n in hit]
     elif why:
         log("  (no %r column on this tab yet -- reason not written)"
             % B.REMOVED_WHY)
@@ -480,10 +526,9 @@ def set_classroom(workbook, week_start: dt.date, assignments: Dict[str, str],
     writes = []
     a1 = _a1(cols[B.CLASSROOM] + 1)
     for r in mine:
-        i = all_rows.index(r)
         key = B._fold("%s%s" % (r.get("Name", ""), r.get("Last Name", "")))
         if key in want and str(r.get(B.CLASSROOM) or "").strip() != want[key]:
-            writes.append({"range": "%s%d" % (a1, FIRST_DATA_ROW + i),
+            writes.append({"range": "%s%d" % (a1, row_number(r)),
                            "values": [[want[key]]]})
     log("  %d classroom change(s)" % len(writes))
     if dry_run or not writes:
@@ -538,7 +583,7 @@ def write_step(workbook, week_start: dt.date, column: str,
             if (B.status_rank(want[key], column)
                     <= B.status_rank(have, column)):
                 continue
-        row_no = FIRST_DATA_ROW + all_rows.index(r)
+        row_no = row_number(r)
         writes.append({"range": "%s%d" % (a1, row_no), "values": [[want[key]]]})
         greens.append("%s%d" % (a1, row_no))
     log("  %s: %d to write" % (column, len(writes)))

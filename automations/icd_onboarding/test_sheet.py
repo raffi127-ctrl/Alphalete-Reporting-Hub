@@ -429,3 +429,81 @@ class TestDividersOnAnyWeek:
         ws = _DividerWS([_funnel_row("A", "Algemar", week="11/08/2026")])
         assert S.ensure_dividers(ws, dt.date(2026, 11, 16),
                                  log=lambda *a: None) == 0
+
+
+# ------------------------- addressing the row a person is actually on
+
+class TestRowNumbersSurviveAGap:
+    """A nameless row makes rows_of SHORTER than the block it read.
+
+    2026-11-22: every writer here addressed cells as
+    `FIRST_DATA_ROW + <index into rows_of>`, which is short by one for each
+    row skipped above. On Raf's stacked tab -- 97 rows, 93 returned -- it put
+    two people's OwnerVille columns two rows up, onto two others. Only
+    write_step's refusal to touch a non-empty cell kept it from defacing
+    anything.
+    """
+
+    def _gap_grid(self):
+        # Ada, a nameless spacer, then Bruno and Cara: physical rows 2, 3,
+        # 4, 5 with the header on 1.
+        return FakeWS([_person("Ada Fournier"),
+                       [""] * len(HEAD),
+                       _person("Bruno Castell"),
+                       _person("Cara Dunne")])
+
+    def test_rows_of_reports_the_row_each_person_is_on(self):
+        ws = self._gap_grid()
+        rows = S.rows_of(ws.get_all_values())
+        assert [S.row_number(r) for r in rows] == [2, 4, 5]
+
+    def test_the_index_would_have_said_otherwise(self):
+        """The old arithmetic, kept here as the thing being prevented."""
+        ws = self._gap_grid()
+        rows = S.rows_of(ws.get_all_values())
+        old = [S.FIRST_DATA_ROW + i for i, _ in enumerate(rows)]
+        assert old == [2, 3, 4]
+        assert old != [S.row_number(r) for r in rows]
+
+    def test_write_step_writes_to_the_row_past_the_gap(self):
+        ws = self._gap_grid()
+        n = S.write_step(None, MONDAY, "Owner Submit",
+                         {"Cara Dunne": "11/22/2026"}, ws=ws,
+                         log=lambda *a: None)
+        assert n == 1
+        cell = ws.updates[0][0]
+        assert cell.endswith("5"), "Cara is on row 5, not %s" % cell
+
+    def test_tick_lands_past_the_gap(self):
+        ws = self._gap_grid()
+        S.tick(FakeBook(ws), MONDAY, "Contact Added", ["Bruno Castell"],
+               log=lambda *a: None)
+        assert ws.updates, "nothing was written"
+        assert ws.updates[0][0].endswith("4"), ws.updates[0][0]
+
+    def test_terminate_marks_the_right_row(self):
+        ws = self._gap_grid()
+        S.terminate(FakeBook(ws), MONDAY, ["Cara Dunne"], reason="No Show",
+                    log=lambda *a: None)
+        assert ws.updates, "nothing was written"
+        assert all(r.endswith("5") for r, _ in ws.updates), ws.updates
+
+    def test_a_hand_built_row_is_refused_not_guessed(self):
+        """The failure mode being replaced always produced *a* number."""
+        with pytest.raises(RuntimeError, match="which sheet row"):
+            S.row_number({"Name": "Ada", "Last Name": "Fournier"})
+
+
+class TestAppendingDoesNotLandOnAnybody:
+    def test_the_first_free_row_is_past_every_physical_row(self):
+        ws = FakeWS([_person("Ada Fournier"),
+                     [""] * len(HEAD),
+                     _person("Bruno Castell")])
+        grid = ws.get_all_values()
+        # 4 physical rows -> the next free one is 5. The old sum
+        # (FIRST_DATA_ROW + 2 people) said 4, which is Bruno's own row.
+        assert S.first_free_row(grid) == 5
+        assert S.FIRST_DATA_ROW + len(S.rows_of(grid)) == 4
+
+    def test_an_empty_tab_still_starts_at_the_first_data_row(self):
+        assert S.first_free_row([list(HEAD)]) == S.FIRST_DATA_ROW

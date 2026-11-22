@@ -106,7 +106,7 @@ def write(office_key: str, column: str, want: Dict[str, str],
 
     a1 = S._a1(cols[column] + 1)
     ws.batch_update([
-        {"range": "%s%d" % (a1, S.FIRST_DATA_ROW + all_rows.index(t["row"])),
+        {"range": "%s%d" % (a1, S.row_number(t["row"])),
          "values": [[t["to"]]]} for t in todo])
     log("  wrote %d." % len(todo))
     return len(todo)

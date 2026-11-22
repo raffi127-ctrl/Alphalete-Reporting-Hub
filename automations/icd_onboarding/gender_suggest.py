@@ -548,8 +548,8 @@ def fill(office_key: str, week_start=None, *, dry_run: bool = False,
 
     def _cells(group):
         names = {p_["name"] for p_ in group}
-        return ["%s%d" % (a1, S.FIRST_DATA_ROW + i)
-                for i, r in enumerate(all_rows)
+        return ["%s%d" % (a1, S.row_number(r))
+                for r in all_rows
                 if ("%s %s" % (r.get("Name", ""), r.get("Last Name", ""))).strip()
                 in names]
 
