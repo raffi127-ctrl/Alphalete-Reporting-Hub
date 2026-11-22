@@ -145,3 +145,136 @@ def test_check_rebuild_turns_write_off(monkeypatch, capsys):
     assert seen.get("ran") is True
     assert "wrote" not in seen, "a read-only probe reached a writing pass"
     assert "--write ignored" in capsys.readouterr().out
+
+
+# --------------------------- "I could not tell" is not "they are gone"
+
+class _Resp:
+    """Enough of an httplib2 response for HttpError to render itself."""
+    def __init__(self, status):
+        self.status = status
+        self.reason = "test"
+
+
+def _http(status):
+    from googleapiclient.errors import HttpError
+    return HttpError(_Resp(status), b"{}")
+
+
+def _svc(err=None):
+    class _Get:
+        def execute(self_):
+            if err:
+                raise err
+            return {"resourceName": "people/c1"}
+
+    class _People:
+        def get(self_, **kw):
+            return _Get()
+
+    class _Svc:
+        def people(self_):
+            return _People()
+    return _Svc()
+
+
+def test_a_404_means_the_card_is_gone():
+    assert K.still_exists(_svc(_http(404)), "people/c1") is False
+
+
+def test_a_rate_limit_raises_rather_than_saying_gone():
+    """THE BUG. `_retry` gives up and raises after six 429s -- the read
+    quota is 90/min/user -- and this used to answer False, which the audit
+    reads as "already deleted by hand". It then marks the person REMOVED
+    without deleting anything, and nothing ever looks at them again.
+
+    Measured 2026-11-22: 22 on Raf's 143-card account, none on Cyrus's 20
+    or Hasan's 24."""
+    import pytest
+    with pytest.raises(Exception):
+        K.still_exists(_svc(_http(429)), "people/c1")
+
+
+def test_a_server_error_raises_too():
+    import pytest
+    with pytest.raises(Exception):
+        K.still_exists(_svc(_http(500)), "people/c1")
+
+
+def test_a_card_that_is_there_says_so():
+    assert K.still_exists(_svc(), "people/c1") is True
+
+
+def test_a_card_re_created_under_a_new_id_is_found_by_key(monkeypatch):
+    """A 404 on the stored id does not prove they are off the phone."""
+    note = K.note_for("Raf", "11280", dt.date(2026, 10, 31))
+    monkeypatch.setattr(K, "ours", lambda svc: [_card(note, rn="people/NEW")])
+    assert K.find_ours(object(), "p:5550100001") == "people/NEW"
+
+
+def test_somebody_really_gone_is_not_found(monkeypatch):
+    monkeypatch.setattr(K, "ours", lambda svc: [])
+    assert K.find_ours(object(), "p:5550100001") == ""
+
+
+# ------------------------------------------ putting the stuck ones back
+
+def _owner(account="a@x.com", name="Raf"):
+    from automations.second_round_contacts import roster as RO
+    o = RO.Owner.__new__(RO.Owner)
+    object.__setattr__(o, "owner", name)
+    object.__setattr__(o, "account", account)
+    return o
+
+
+def _stuck_state(tmp_path, monkeypatch, status):
+    from automations.second_round_contacts import run as RUN
+    monkeypatch.setattr(S.C, "STATE_PATH", tmp_path / "state.json")
+    S.save({"a@x.com": {"p:5550100001": {"display": "Ada (2R 11/11)",
+                                         "status": status,
+                                         "removed": "2026-11-12",
+                                         "reason": "not hired",
+                                         "removed_rule": "week"}}})
+    monkeypatch.setattr(RUN.K, "has_token", lambda a: True)
+    monkeypatch.setattr(RUN.K, "service", lambda a: object())
+    monkeypatch.setattr(RUN.S, "rebuild",
+                        lambda svc: {"p:5550100001": {"display": "Ada"}})
+    return RUN
+
+
+def test_a_dry_run_changes_nothing(tmp_path, monkeypatch):
+    RUN = _stuck_state(tmp_path, monkeypatch, S.REMOVED)
+    RUN.unstick_removals([_owner()], write=False)
+    assert S.load()["a@x.com"]["p:5550100001"]["status"] == S.REMOVED
+
+
+def test_a_stuck_removal_goes_back_to_tracked(tmp_path, monkeypatch):
+    """Back to tracked, NOT deleted from here. The audit's rules decide who
+    comes off a phone and they have had a fortnight of new facts since;
+    deleting from here would overrule them on 22 real people."""
+    RUN = _stuck_state(tmp_path, monkeypatch, S.REMOVED)
+    RUN.unstick_removals([_owner()], write=True)
+    e = S.load()["a@x.com"]["p:5550100001"]
+    assert e["status"] == S.TRACKED
+    assert "removed" not in e and "removed_rule" not in e and "reason" not in e
+    assert e["unstuck"]
+
+
+def test_a_removal_that_really_happened_is_left_alone(tmp_path, monkeypatch):
+    """Only a card still ON the account is stuck. Somebody genuinely
+    deleted stays removed, or the audit would put them back on the phone."""
+    from automations.second_round_contacts import run as RUN
+    monkeypatch.setattr(S.C, "STATE_PATH", tmp_path / "state.json")
+    S.save({"a@x.com": {"p:5550100001": {"display": "Ada", "status": S.REMOVED}}})
+    monkeypatch.setattr(RUN.K, "has_token", lambda a: True)
+    monkeypatch.setattr(RUN.K, "service", lambda a: object())
+    monkeypatch.setattr(RUN.S, "rebuild", lambda svc: {})   # not on the account
+    RUN.unstick_removals([_owner()], write=True)
+    assert S.load()["a@x.com"]["p:5550100001"]["status"] == S.REMOVED
+
+
+def test_a_kept_card_is_not_stuck(tmp_path, monkeypatch):
+    """KEPT cards are supposed to still be there."""
+    RUN = _stuck_state(tmp_path, monkeypatch, S.KEPT)
+    RUN.unstick_removals([_owner()], write=True)
+    assert S.load()["a@x.com"]["p:5550100001"]["status"] == S.KEPT

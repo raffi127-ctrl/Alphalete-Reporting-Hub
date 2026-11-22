@@ -396,8 +396,23 @@ def run_audit(owners: List[R.Owner], *, write: bool, ownerville: bool = True,
                 _log("    %s %s: %s" % ("remove" if write else "would remove", e.get("display", name), why))
                 if write:
                     try:
-                        if K.still_exists(svc, e["resourceName"]):
-                            K.delete(svc, e["resourceName"])
+                        # A 404 ON THE STORED ID IS NOT PROOF THEY ARE OFF
+                        # THE PHONE. A card re-created since carries a new
+                        # resourceName, and the old one is all the file has
+                        # -- so "gone" gets written while the live card
+                        # stays, and nothing looks at them again. Ask the
+                        # account by the key everything else dedupes on
+                        # before concluding anything (2026-11-22).
+                        rn = e["resourceName"]
+                        if K.still_exists(svc, rn):
+                            K.delete(svc, rn)
+                        else:
+                            again = K.find_ours(svc, k)
+                            if again:
+                                _log("      (its card came back under a new "
+                                     "id — removing that one)")
+                                K.delete(svc, again)
+                                e["resourceName"] = again
                         e["status"] = S.REMOVED
                         e["removed"] = today.isoformat()
                         e["reason"] = why
@@ -507,6 +522,66 @@ def check_rebuild(owners: List[R.Owner]) -> int:
     return worst
 
 
+def unstick_removals(owners: List[R.Owner], *, write: bool) -> int:
+    """People the file calls removed whose card is still on the account.
+
+    THE ONES ALREADY STUCK. `still_exists` used to answer False for every
+    error, not just a 404, so a rate-limited pass marked people REMOVED
+    without deleting anything -- 22 of them on Raf's account on
+    2026-11-22, every one a second round between 11/9 and 11/12, which is
+    what one bad pass on the biggest account looks like. The fix stops new
+    ones; it cannot clear these, because nothing looks at a removed person
+    again.
+
+    IT PUTS THEM BACK TO TRACKED RATHER THAN DELETING THEM. The audit's
+    rules decide who comes off a phone, and they have had a fortnight of
+    new facts since: somebody here may have been rehired, or shown up
+    late. Deleting them from here would be this function overruling the
+    rules on 22 real people. Tracked is the state they were in before the
+    bad pass, so the next audit simply decides them again -- and now the
+    delete either happens or says it failed.
+    """
+    st = S.load()
+    found = 0
+    for o in owners:
+        if not K.has_token(o.account):
+            _log("  %s: no Contacts token on this machine -- cannot check"
+                 % o.owner)
+            continue
+        entries = st.get(o.account) or {}
+        gone = {k: e for k, e in entries.items()
+                if e.get("status") == S.REMOVED}
+        if not gone:
+            continue
+        try:
+            on_account = set(S.rebuild(K.service(o.account)))
+        except Exception as e:                              # noqa: BLE001
+            _log("  %s: Contacts read failed (%s) -- skipped"
+                 % (o.owner, type(e).__name__))
+            continue
+        stuck = sorted(set(gone) & on_account)
+        _log("  %s: %d marked removed, %d of them still on the account"
+             % (o.owner, len(gone), len(stuck)))
+        for k in stuck:
+            e = entries[k]
+            _log("    %s %s — removed %s (%s)"
+                 % ("putting back" if write else "would put back",
+                    e.get("display", k), e.get("removed", "?"),
+                    e.get("reason", "")))
+            if write:
+                e["status"] = S.TRACKED
+                for f in ("removed", "removed_by", "removed_rule", "reason"):
+                    e.pop(f, None)
+                e["unstuck"] = dt.date.today().isoformat()
+        found += len(stuck)
+        if stuck and write:
+            S.save(st)
+    if not write:
+        _log("  [DRY RUN] nothing changed. --write puts them back to tracked, "
+             "and the next audit decides them again.")
+    return 0 if found == 0 else 0
+
+
 # ----------------------------------------------------------------- main --
 
 def main(argv=None) -> int:
@@ -522,6 +597,11 @@ def main(argv=None) -> int:
     ap.add_argument("--owner", default=None, help="only this roster row (name as on the tab)")
     ap.add_argument("--date", default=None, help="adds: read only this day (YYYY-MM-DD)")
     ap.add_argument("--no-ownerville", action="store_true", help="audit without the View Progress check")
+    ap.add_argument("--unstick-removals", action="store_true",
+                    help="people the file calls removed whose card is still "
+                         "on the account. Dry by default; --write puts them "
+                         "back to tracked so the next audit decides them "
+                         "again. It never deletes a contact itself.")
     ap.add_argument("--check-rebuild", action="store_true",
                     help="READ-ONLY: diff each account's own cards against "
                          "the local state file, and print. Writes nothing. "
@@ -549,6 +629,14 @@ def main(argv=None) -> int:
             print("no roster row named %r" % args.owner, file=sys.stderr)
             return 2
     active = [o for o in owners if o.active]
+    if args.unstick_removals:
+        try:
+            from automations.shared import hub_autopublish as HA
+            HA.nothing_to_report()
+        except Exception:                                   # noqa: BLE001
+            pass
+        _log("=== stuck removals%s" % ("" if args.write else " (DRY RUN)"))
+        return unstick_removals(active, write=args.write)
     if args.check_rebuild:
         # --write IS TURNED OFF HERE, OUT LOUD. The only way to queue this on
         # Lucy 1 is `lucy rerun second_round_contacts --check-rebuild`, and

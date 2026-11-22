@@ -109,10 +109,53 @@ def delete(svc, resource_name: str) -> None:
 
 
 def still_exists(svc, resource_name: str) -> bool:
+    """Is that card still on the account? True / False -- or it RAISES.
+
+    "I COULD NOT TELL" IS NOT "IT IS GONE". This swallowed every exception
+    and answered False, and the caller reads False as "already deleted by
+    hand" and marks the person REMOVED without deleting anything. A 404 is
+    the only error that means gone. A 429 does not, and `_retry` gives up
+    and raises after six of them -- the read quota is 90/min/user, so a big
+    account is exactly where that happens.
+
+    Measured 2026-11-22: 22 people on Raf's reception account are marked
+    `removed` on file and are still on the phone. None on Cyrus's 20 or
+    Hasan's 24; all of them on the 143-card account. Once the file says
+    removed, nothing looks at that person again -- the audit only gathers
+    facts for the tracked -- so they stay on the owner's phone for ever.
+    That is the complaint this audit exists to prevent.
+
+    Raising is what the caller already wants: its `except` logs FAILED,
+    leaves the status alone, and the next pass tries again.
+    """
+    from googleapiclient.errors import HttpError
+
     from automations.fiber_owners_distro import contacts_write as cw
     try:
         cw._retry(lambda: svc.people().get(resourceName=resource_name,
                                            personFields="names").execute())
         return True
-    except Exception:  # noqa: BLE001 -- 404 = deleted by hand; that is an answer
-        return False
+    except HttpError as e:
+        if getattr(getattr(e, "resp", None), "status", None) == 404:
+            return False          # deleted by hand; that IS an answer
+        raise
+
+
+def find_ours(svc, key: str):
+    """The resourceName of the card for `key`, looked up on the account.
+
+    A stored resourceName that 404s does not prove the person is off the
+    phone: a card re-created since is a different id, and the old one is
+    all the file has. Looking them up among the cards this job created
+    answers the question the stored id cannot.
+
+    `key` is `state.key_for`'s -- phone first, then email -- so this matches
+    the identity everything else dedupes on.
+    """
+    from automations.second_round_contacts import state as S
+
+    for person in ours(svc):
+        e = S.from_card(person)
+        if e and S.key_for(e) == key:
+            return e.get("resourceName") or ""
+    return ""
