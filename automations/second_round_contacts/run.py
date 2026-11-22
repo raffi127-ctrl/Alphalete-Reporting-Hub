@@ -488,8 +488,9 @@ def check_rebuild(owners: List[R.Owner]) -> int:
         missed = sorted((live | kept) - found)
         extra = sorted(found - live - kept - gone)
         undead = sorted(found & gone)
-        _log("  %s (%s): file has %d tracked + %d kept, the account gives "
-             "back %d" % (o.owner, o.account, len(live), len(kept), len(found)))
+        _log("  %s's reception list (%s): file has %d tracked + %d kept "
+             "applicants, the account gives back %d"
+             % (o.owner, o.account, len(live), len(kept), len(found)))
         for k in missed:
             e = have[k]
             _log("    NOT REBUILT  %s (%s) — on file, not readable off the "
@@ -560,8 +561,14 @@ def unstick_removals(owners: List[R.Owner], *, write: bool) -> int:
                  % (o.owner, type(e).__name__))
             continue
         stuck = sorted(set(gone) & on_account)
-        _log("  %s: %d marked removed, %d of them still on the account"
-             % (o.owner, len(gone), len(stuck)))
+        # NAMED AS THE ACCOUNT, NOT THE PERSON. "Cyrus Wade: 91 marked
+        # removed" reads as Cyrus being removed -- Megan, 2026-11-22: "cy
+        # shouldn't be removed. he started years ago and is now an ICD".
+        # These are the APPLICANTS in that owner's reception account, and
+        # the owner is whose phone the list is on.
+        _log("  %s's reception list (%s): %d applicants marked removed, "
+             "%d of them still on the account"
+             % (o.owner, o.account, len(gone), len(stuck)))
         for k in stuck:
             e = entries[k]
             _log("    %s %s — removed %s (%s)"
@@ -614,9 +621,10 @@ def why_removed(owners: List[R.Owner]) -> int:
             r = str(e.get("reason", "") or "?").split(":")[0].strip()
             why[r or "?"] += 1
             when[str(e.get("removed", "?"))[:10]] += 1
-        _log("  %s (%s): %s" % (o.owner, o.account,
-                                ", ".join("%s %d" % (k, v)
-                                          for k, v in sorted(by_status.items()))))
+        _log("  %s's reception list (%s): %s applicants"
+             % (o.owner, o.account,
+                ", ".join("%s %d" % (k, v)
+                          for k, v in sorted(by_status.items()))))
         for r, n in why.most_common():
             _log("      %-56s %d" % (r, n))
         busiest = when.most_common(3)

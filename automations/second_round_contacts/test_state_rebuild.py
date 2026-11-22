@@ -278,3 +278,17 @@ def test_a_kept_card_is_not_stuck(tmp_path, monkeypatch):
     RUN = _stuck_state(tmp_path, monkeypatch, S.KEPT)
     RUN.unstick_removals([_owner()], write=True)
     assert S.load()["a@x.com"]["p:5550100001"]["status"] == S.KEPT
+
+
+def test_a_per_owner_line_says_whose_LIST_not_who_was_removed(tmp_path,
+                                                              monkeypatch,
+                                                              capsys):
+    """Megan read "Cyrus Wade: 91 marked removed" as Cyrus being removed --
+    he started years ago and is an ICD. The owner names the reception
+    account the applicants sit in, never a person in the list: this job only
+    ever adds second-round applicants read off ApplicantStream."""
+    RUN = _stuck_state(tmp_path, monkeypatch, S.REMOVED)
+    RUN.unstick_removals([_owner(name="Cyrus Wade")], write=False)
+    said = capsys.readouterr().out
+    assert "Cyrus Wade's reception list" in said
+    assert "applicants marked removed" in said
