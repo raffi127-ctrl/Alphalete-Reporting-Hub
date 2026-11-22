@@ -31,7 +31,7 @@
         <string>/Users/megan/1st Claude Folder</string>
     </dict>
 
-    <!-- 7:30pm EVERY DAY, machine LOCAL time. No Weekday key: a training day
+    <!-- 9:15pm EVERY DAY, machine LOCAL time. No Weekday key: a training day
          can fall on any day of the week, and the board is seeded from whoever
          is scheduled to start, not from a Monday.
 

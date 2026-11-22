@@ -867,8 +867,13 @@ HAND_RUN_ONLY = ("uid_reasons",)
 # still fails for a NEW step nobody runs -- but these are scheduled, just not
 # hourly, and each one's LaunchAgent is named beside it.
 #
-#   no_shows     com.alphalete.icd-onboarding-no-shows, daily 19:30 on the box
-#                holding this office's ApplicantStream session. It is the
+#   no_shows     com.alphalete.icd-onboarding-no-shows, daily 21:15 on the box
+#                holding this office's ApplicantStream session. 21:15 and not
+#                the 19:30 it shipped with: :30 is the hourly board run's
+#                minute, the walk's wrapper skips itself when it sees that
+#                module running, so it met the board run on its first fire and
+#                every fire after -- correct in every part and never once
+#                doing its job (ff1f506, 2026-11-20). It is the
 #                SEVEN-page calendar walk; the hourly run stopped walking the
 #                calendar when the two-page Retention Report turned out to
 #                answer the seed's question (Megan, 2026-11-09), and putting

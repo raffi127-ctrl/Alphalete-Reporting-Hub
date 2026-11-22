@@ -249,3 +249,80 @@ class RetiredPlistsAreNotRunningJobs(unittest.TestCase):
         self.assertIn((6, 16, 0), fires,
                       "Saturday's B2B close moved off 16:00 -- Carlos asked "
                       "for 4pm by name; put it back")
+
+
+class WhatWeSayTheClockIs(unittest.TestCase):
+    """The no-show walk's documented time must be the time it fires.
+
+    THE DRIFT THIS CATCHES IS NOT COSMETIC. ff1f506 moved this walk off 19:30
+    because that minute belongs to the hourly board run, and the walk had
+    never once completed a pass. The plist moved; six strings about it did not
+    -- its own header, its wrapper's header, its schedule_config note, its
+    install handle's note, and BOTH display_names, which is the name on the
+    Hub. For two days every written description of the job said 19:30 while it
+    ran at 21:15, so anybody reading the repo to find out why it was quiet was
+    sent to the wrong hour (found 2026-11-22).
+
+    PINNED BY NAME, not swept for. A general version of this check was written
+    first and produced eleven findings, all but one a false alarm: one wrapper
+    serves several plists at different times (digi_docs.sh, new_start_followup
+    .sh), and a wrapper legitimately names times that are not its own -- this
+    walk's own comment cites Blue Ink's 7:30am, which is the whole reason the
+    evening matters. Telling "the schedule" from "a time this job cares about"
+    needs a convention the repo does not have, and a check that cries wolf
+    eleven times is one somebody turns off. Same judgement as the clash
+    exceptions above: pin the thing that actually broke.
+    """
+
+    # 19:30 -> "19:30" and "7:30pm". Both spellings are used in this repo.
+    def _spellings(self, hour: int, minute: int):
+        ampm = "am" if hour < 12 else "pm"
+        h12 = hour % 12 or 12
+        return {"%d:%02d" % (hour, minute), "%d:%02d%s" % (h12, minute, ampm)}
+
+    def _written_times(self, text: str):
+        """Every clock time the text states, in the two spellings above."""
+        found = set()
+        for h, m in re.findall(r"\b(\d{1,2}):(\d{2})\b(?!\s*[ap]m)", text):
+            found.add("%d:%02d" % (int(h), int(m)))
+        for h, m, ap in re.findall(r"\b(\d{1,2}):(\d{2})\s*([ap])m\b", text,
+                                   re.I):
+            found.add("%d:%02d%sm" % (int(h), int(m), ap.lower()))
+        return found
+
+    def test_every_place_the_walk_is_described_says_21_15(self):
+        """All six strings that drifted, plus the plist they drifted from.
+
+        Each is asked to STATE the right time, not merely to avoid the wrong
+        one: these texts cite other jobs' clocks on purpose, so "mentions no
+        other time" would be false, while "never says its own" is exactly the
+        hole that let 19:30 stand for two days.
+        """
+        plist = DEPLOY / "com.alphalete.icd-onboarding-no-shows.plist"
+        fire = _fire_minutes(plist)
+        self.assertEqual(len(fire or []), 1, "this walk fires once a day")
+        _wd, hour, minute = next(iter(fire))
+        self.assertEqual((hour, minute), (21, 15),
+                         "moved again? then move these strings with it")
+        right = self._spellings(hour, minute)
+
+        import json
+        cfg = json.loads((Path(__file__).resolve().parent
+                          / "schedule_config.json").read_text())["reports"]
+        walk = cfg["icd_onboarding_no_shows"]
+        inst = cfg["install_icd_onboarding_no_shows_agent"]
+        wrapper = _wrapper_of(plist)
+        where = {
+            "the plist's own header": plist.read_text(errors="replace"),
+            "the wrapper's header": wrapper.read_text(errors="replace"),
+            "the walk's display_name": walk["display_name"],
+            "the walk's _note": walk["_note"],
+            "the walk's weekdays note": walk["_standalone_weekdays_note"],
+            "the install handle's display_name": inst["display_name"],
+            "the install handle's note": inst["_off_scheduler_note"],
+        }
+        missing = [name for name, text in where.items()
+                   if not (self._written_times(text) & right)]
+        self.assertEqual(
+            missing, [],
+            "fires at 21:15 but never says so in: %s" % ", ".join(missing))

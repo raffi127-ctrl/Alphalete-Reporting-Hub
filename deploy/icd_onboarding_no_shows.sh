@@ -1,5 +1,5 @@
 #!/bin/bash
-# Daily 7:30pm (machine-local) — write WHO WAS MARKED NO SHOW in
+# Daily 9:15pm (machine-local) — write WHO WAS MARKED NO SHOW in
 # ApplicantStream onto this office's onboarding board.
 # launchd: com.alphalete.icd-onboarding-no-shows.
 #
@@ -11,7 +11,7 @@
 # enough (Megan, 2026-11-16: "run it daily").
 #
 # WHY THE EVENING. The training day has to have happened and somebody has to
-# have marked it. 7:30pm is after the office has closed and before the next
+# have marked it. The evening is after the office has closed and before the next
 # morning's sends -- Blue Ink goes out at 7:30am, and this is the column that
 # stops it mailing documents to somebody who did not come.
 #
