@@ -338,6 +338,12 @@ class Bot(unittest.TestCase):
         rec = json.loads((C.RECORDS / "100.0.json").read_text(encoding="utf-8"))
         self.assertEqual([f["grader"] for f in rec["feedback"]], [False, False, True])
         self.assertEqual([r["timestamp"] for r in w.reactions], ["303.0"])   # ✅ only on Raf's
+        to_rep = [x for x in w.posts if x["channel"] == "DREP"]
+        self.assertEqual([(x["thread_ts"], x["text"]) for x in to_rep],
+                         [("100.0", "💬 *Feedback from Raf:*\nAsk for the close sooner")])
+        B.on_event(w, dict(base, channel="D-" + RAF, ts="303.0", thread_ts=raf_parent["_ts"],
+                           user=RAF, text="Ask for the close sooner"), self.state)   # redelivered
+        self.assertEqual(len([x for x in w.posts if x["channel"] == "DREP"]), 1)
         ex = B.training_examples()
         self.assertEqual([[f["text"] for f in e["feedback"]] for e in ex],
                          [["Ask for the close sooner"]])

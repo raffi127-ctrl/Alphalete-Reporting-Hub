@@ -423,8 +423,28 @@ def save_feedback(webc, ev: Dict, key: str) -> None:
             webc.reactions_add(channel=ev["channel"], timestamp=ev["ts"], name=R.SAVED)
         except Exception:  # noqa: BLE001
             pass
+        if where != "rep":
+            forward_to_rep(webc, path, ev)
     _log("feedback saved on {} from {} ({}{})".format(
         key, ev.get("user"), where, ", GRADER" if grader else ", not training"))
+
+
+def forward_to_rep(webc, path: Path, ev: Dict) -> None:
+    """Raf's reply goes to the rep, under the rep's own transcript. Only the
+    grader's: uplines' notes stay with them."""
+    with _lock:
+        rec = json.loads(path.read_text(encoding="utf-8"))
+        rep = next((t for t in rec.get("threads") or [] if t.get("who") == "rep"), None)
+        note = next((f for f in rec.get("feedback") or [] if f.get("ts") == ev["ts"]), None)
+        if not rep or not note or note.get("forwarded"):
+            return
+        note["forwarded"] = True    # claimed first: a redelivered event never sends twice
+        _save_json(path, rec)
+    try:
+        _say(webc, rep["channel"], rep["ts"], R.FROM_RAF.format(text=ev.get("text") or ""))
+        _log("  passed Raf's feedback on {} to the rep".format(path.stem))
+    except Exception:  # noqa: BLE001
+        traceback.print_exc()
 
 
 def training_examples() -> List[Dict]:

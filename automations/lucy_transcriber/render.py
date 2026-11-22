@@ -18,10 +18,14 @@ MAX_MESSAGES = 5
 
 # Text fallback only (the PDF couldn't be made).
 REP_END = ""
+# Raf's reply, passed on to the rep under their own transcript (Megan
+# 2026-11-21: "Yes, send it to the rep").
+FROM_RAF = "💬 *Feedback from Raf:*\n{text}"
+
 # Uplines get the PDF with this line -- no feedback ask: only Raf grades.
 UPLINE_FYI = "📎 A copy of {first}'s pitch for you."
 COACH_ASK = ("💬 Reply right here with feedback for {first} 👇 "
-             "I keep every note so I can learn what closes deals.")
+             "I'll pass it on to them, and it's how I learn what closes deals.")
 
 GOT_IT = "🎧 Got it! Your transcript will be here in a minute or two."
 HELP = ("👋 Send me a recording of your pitch -- a Voice Memo or a Slack audio "
