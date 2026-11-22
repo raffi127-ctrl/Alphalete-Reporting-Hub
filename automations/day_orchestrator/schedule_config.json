@@ -12185,8 +12185,8 @@
     "nds_metrics"
    ],
    "_after_nds_note": "nds_metrics added 2026-11-21 (Carlos: 'Yes move it ahead'). This 35-80 min run kept starting while the NDS Metrics thread sat PENDING (clock 06:30 / after nds_wireless_pull), so the thread posted 7:07-8:25 instead of ~6:45-7:00. Soft `after`: a failed NDS run never strands this one.",
-   "timeout_minutes": 45,
-   "_timeout_note": "20 -> 45 on 2026-10-10. One run fills EVERY B2B office (onboarded_offices.json merges in), and each office costs ~3-4 min of Sheet write+format across 3 products. 4 offices = ~15 min (10/1-10/6); 6 offices = 19 min (10/8, barely); 8 offices killed at 20m twice a day 10/9 and 10/10 while still on New INT, AIR never reached. Nothing was hung (log kept advancing; no orphan Chrome). RAISE THIS WHEN AN OFFICE IS ADDED - budget ~4 min per office plus ~5 for the pull.",
+   "timeout_minutes": 75,
+   "_timeout_note": "20 -> 45 on 2026-10-10. One run fills EVERY B2B office (onboarded_offices.json merges in), and each office costs ~3-4 min of Sheet write+format across 3 products. 4 offices = ~15 min (10/1-10/6); 6 offices = 19 min (10/8, barely); 8 offices killed at 20m twice a day 10/9 and 10/10 while still on New INT, AIR never reached. Nothing was hung (log kept advancing; no orphan Chrome). RAISE THIS WHEN AN OFFICE IS ADDED - budget ~4 min per office plus ~5 for the pull. 45 -> 75 on 2026-11-22: 7 offices x 3 products = 21 fills at ~2 min each, and the clock also counts the wait for the shared CDP Chrome (cdp_pull lock, port 9246) behind vantura/nds. Killed at 45m on 11/20, 11/21 and 11/22 (11/22: 15 min lock wait, then cut off on fill 20 of 21, luke_air). Not hung, not the Sheets token.",
    "verify": {
     "type": "manifest",
     "report_id": "att_churn"
