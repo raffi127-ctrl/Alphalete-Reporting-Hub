@@ -459,25 +459,37 @@ def check_rebuild(owners: List[R.Owner]) -> int:
                  % (o.owner, type(e).__name__, str(e)[:160]))
             worst = max(worst, 1)
             continue
-        # Only TRACKED entries can be compared. A removed card is gone from
-        # the account, so the rebuild cannot see it and SHOULD not -- that
-        # is the one thing the file knows that the cards cannot, and why a
-        # rebuild never runs over a slice that already exists.
+        # WHAT SHOULD BE ON THE ACCOUNT, by status. Comparing against
+        # TRACKED alone called every KEPT card "extra", and a KEPT card is
+        # one we deliberately leave on the owner's phone -- somebody who
+        # left, who Raf may rehire months down the road. Fifteen lines of
+        # correct behaviour reported as findings is how a check stops being
+        # read.
         live = {k for k, e in have.items() if e.get("status") == S.TRACKED}
+        kept = {k for k, e in have.items() if e.get("status") == S.KEPT}
+        gone = {k for k, e in have.items()
+                if e.get("status") in (S.REMOVED, S.HIRED)}
         found = set(got)
-        missed = sorted(live - found)
-        extra = sorted(found - live)
-        _log("  %s (%s): file has %d tracked, the account gives back %d"
-             % (o.owner, o.account, len(live), len(found)))
+        missed = sorted((live | kept) - found)
+        extra = sorted(found - live - kept - gone)
+        undead = sorted(found & gone)
+        _log("  %s (%s): file has %d tracked + %d kept, the account gives "
+             "back %d" % (o.owner, o.account, len(live), len(kept), len(found)))
         for k in missed:
             e = have[k]
-            _log("    NOT REBUILT  %s — on file, not readable off the card"
-                 % e.get("display", k))
+            _log("    NOT REBUILT  %s (%s) — on file, not readable off the "
+                 "card" % (e.get("display", k), e.get("status", "?")))
         for k in extra:
-            e = have.get(k) or {}
-            _log("    EXTRA        %s — on the account, %s on file"
-                 % (got[k].get("display", k),
-                    e.get("status", "absent")))
+            _log("    EXTRA        %s — on the account, nothing on file"
+                 % got[k].get("display", k))
+        for k in undead:
+            e = have[k]
+            # Not a rebuild fault: the file says this card was deleted and
+            # it is still there, which is a removal that did not happen.
+            _log("    STILL THERE  %s — file says %s on %s, card is still "
+                 "on the account"
+                 % (got[k].get("display", k), e.get("status"),
+                    e.get("removed") or e.get("hired") or "?"))
         for k in sorted(live & found):
             was, now = have[k], got[k]
             for field in ("second_round", "office", "owner"):
@@ -486,6 +498,10 @@ def check_rebuild(owners: List[R.Owner]) -> int:
                          % (was.get("display", k), field,
                             was.get(field), now.get(field)))
                     worst = max(worst, 1)
+        # EXTRA and STILL THERE are worth reading and are not rebuild
+        # failures: one is a card nobody recorded, the other a removal that
+        # did not happen. Only a card the file has and the rebuild cannot
+        # give back says the memory does not survive the move.
         if missed:
             worst = max(worst, 1)
     return worst
