@@ -46,7 +46,15 @@ def _log(msg: str = "") -> None:
 
 
 # --- clock -------------------------------------------------------------------
+def text_only(day: dt.date) -> bool:
+    """A config.TEXT_ONLY_DAYS date: board + gaps go by text, nothing else."""
+    return day.isoformat() in getattr(C, "TEXT_ONLY_DAYS", {})
+
+
 def _window(now: dt.datetime):
+    extra = getattr(C, "TEXT_ONLY_DAYS", {}).get(now.date().isoformat())
+    if extra:                        # its own hours, Sunday included
+        return extra
     wd = _wd(now)
     if wd == 6:
         return None
@@ -1023,7 +1031,12 @@ def tick(*, send: bool, force: bool, board: bool, headless: bool = True,
     now = now or dt.datetime.now()
     today = now.date()
     state = _state()
-    if _week_due(state, now):
+    # config.TEXT_ONLY_DAYS (Carlos 2026-11-22): the board + gaps TEXTS only --
+    # no Slack, call-out, no-dispo, GPS alerts or weekly boards that day.
+    txt_only = text_only(today)
+    if txt_only:
+        _log("text-only day (config.TEXT_ONLY_DAYS): board + gaps by text, no Slack")
+    if not txt_only and _week_due(state, now):
         # After the 5:30 board on a Saturday: the Mon–Sat combined board. Done
         # here, before the window check, so a missed 5:30 tick still gets it
         # on the next one. Marked only on a real send.
@@ -1031,7 +1044,7 @@ def tick(*, send: bool, force: bool, board: bool, headless: bool = True,
         if send and rc == 0:
             state["week_at"] = today.isoformat()
             _save(state)
-    if _week_monday_due(state, now):
+    if not txt_only and _week_monday_due(state, now):
         # Monday morning, into today's NDS Metrics thread (Slack only): the
         # week BEFORE last's Mon–Sat board, then last week's Mon–Sat board
         # (Carlos 2026-11-02; 2026-11-09: "last Monday through Saturday knocks,
@@ -1060,7 +1073,7 @@ def tick(*, send: bool, force: bool, board: bool, headless: bool = True,
     # A "No dispositions from" slot is a reason to pull on its own: the 3:15
     # tick on 2026-11-06 found neither board nor gaps due (the 3:00 tick had
     # run late, after its wait for Raf's share) and skipped the check.
-    nd_slot = no_dispo_slot(now)
+    nd_slot = None if txt_only else no_dispo_slot(now)
     want_nodispo = bool(nd_slot) and state.get("no_dispo_slot") != "%s %s" % (today.isoformat(), nd_slot)
     if not want_board and not want_gaps and not want_nodispo:
         _log("nothing due at %s" % _clock(now))
@@ -1122,8 +1135,8 @@ def tick(*, send: bool, force: bool, board: bool, headless: bool = True,
         _log("board: the grid failed -- not drawn; no-dispo skipped; gaps go on")
     elif want_board and not board_rows:
         _log("board: no rows on the grid -- not drawn (never post blank)")
-    callout = "" if no_gaps else _callout(over, today, now, send=send)
-    no_dispo = "" if grid_failed else _no_dispo_message(
+    callout = "" if (no_gaps or txt_only) else _callout(over, today, now, send=send)
+    no_dispo = "" if (grid_failed or txt_only) else _no_dispo_message(
         today, now, rows, state, send=send and C.NO_DISPO_SEND)
 
     _log("timing: board drawn %.0fs into the tick" % (_time.time() - t0))
@@ -1133,7 +1146,7 @@ def tick(*, send: bool, force: bool, board: bool, headless: bool = True,
         # row. AFTER the board and the gaps are out (2026-11-19): the 3:30
         # tick had its board drawn 83s in and then sat behind this check until
         # 296s -- three and a half minutes of a finished board not posted.
-        if want_board and C.GPS_ALERTS:
+        if want_board and C.GPS_ALERTS and not txt_only:
             try:
                 gps_check(today, now, state, send=send, headless=headless)
             except Exception as e:  # noqa: BLE001 -- the board is already out
@@ -1152,7 +1165,10 @@ def tick(*, send: bool, force: bool, board: bool, headless: bool = True,
 
     from automations.icd_alerts import post as P
     if pngs:
-        _post_board(pngs, today, now)
+        if txt_only:
+            _log("slack: board NOT posted (text-only day)")
+        else:
+            _post_board(pngs, today, now)
         _queue_text(C.KIND_BOARD, "%s Knocks Board — %s" % (C.TEAM, _clock(now)), today, now, paths=pngs)
         if pngs30:
             _queue_text(C.KIND_BOARD_30, "%s Knocks Board — %s" % (C.TEAM, _clock(now)),
@@ -1160,7 +1176,10 @@ def tick(*, send: bool, force: bool, board: bool, headless: bool = True,
         remember_board_knocks(board_rows, state, today)
         state["board_at"] = now.isoformat(timespec="seconds")
     if body:
-        _post_gaps(body, today)
+        if txt_only:
+            _log("slack: gaps NOT posted (text-only day)")
+        else:
+            _post_gaps(body, today)
         _queue_text(C.KIND_GAPS, body.splitlines()[0], today, now, text=body)
     else:
         _log("gaps: nobody over 15 min -- nothing posted")

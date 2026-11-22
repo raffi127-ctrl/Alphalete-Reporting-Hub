@@ -39,6 +39,14 @@ SATURDAY_START, SATURDAY_STOP = (11, 45), (18, 0)    # 11:45-6:00 since 2026-11-
 # the NDS 15-minute gaps start 30 minutes early today"). Only the START moves;
 # stop and slots are unchanged. Safe to leave old dates here.
 START_OVERRIDES = {"2026-10-30": (13, 30)}
+# One-off TEXT-ONLY days, by date -> (start, stop). Opens the window on a day
+# that is normally off (Sunday) and sends ONLY the two texts: the knocks board
+# (plain one to ATT B2B Leaders, the last-30 test board to NEW A Players) and
+# the 15-min gaps (both chats). No Slack posts, no call-out, no no-dispo, no
+# GPS alerts, no weekly board. Carlos 2026-11-22 (a Sunday): "Can you have the
+# knocks board and 15 min gaps be sent via text today until 530pm". Safe to
+# leave old dates here.
+TEXT_ONLY_DAYS = {"2026-11-22": ((12, 0), (17, 30))}
 
 # First Knock colours on the board (Sebastian 2026-10-21, OK'd by Eve): this
 # crew starts at 2:00, not Raf's 1:30 -- green up to 2:00, gray 2:01-2:29, red
