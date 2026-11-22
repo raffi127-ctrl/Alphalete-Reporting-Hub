@@ -582,6 +582,50 @@ def unstick_removals(owners: List[R.Owner], *, write: bool) -> int:
     return 0 if found == 0 else 0
 
 
+def why_removed(owners: List[R.Owner]) -> int:
+    """READ-ONLY: which rule took each account's people off the phone.
+
+    Reads the local state file and nothing else -- no Contacts, no
+    ApplicantStream. Asked because a count on its own cannot be judged:
+    Cyrus's account showed 91 removed against 20 still tracked on
+    2026-11-22, where Raf's was 177 against 143 and Hasan's 13 against 24.
+    A ratio that far out is either a lot of second rounds that went nowhere
+    or a rule firing on missing data, and those two want opposite actions.
+
+    "not hired / left as a message" is the one to watch: it fires seven days
+    after a second round when ApplicantStream shows no BOB, no offer and no
+    scheduled start. An office that does not mark its outcomes looks exactly
+    like an office whose candidates all said no.
+    """
+    import collections
+    st = S.load()
+    for o in owners:
+        entries = st.get(o.account) or {}
+        if not entries:
+            _log("  %s: nothing on file on this machine" % o.owner)
+            continue
+        by_status = collections.Counter(e.get("status", "?")
+                                        for e in entries.values())
+        why = collections.Counter()
+        when = collections.Counter()
+        for e in entries.values():
+            if e.get("status") != S.REMOVED:
+                continue
+            r = str(e.get("reason", "") or "?").split(":")[0].strip()
+            why[r or "?"] += 1
+            when[str(e.get("removed", "?"))[:10]] += 1
+        _log("  %s (%s): %s" % (o.owner, o.account,
+                                ", ".join("%s %d" % (k, v)
+                                          for k, v in sorted(by_status.items()))))
+        for r, n in why.most_common():
+            _log("      %-56s %d" % (r, n))
+        busiest = when.most_common(3)
+        if busiest:
+            _log("      busiest removal days: %s"
+                 % ", ".join("%s (%d)" % (d, n) for d, n in busiest))
+    return 0
+
+
 # ----------------------------------------------------------------- main --
 
 def main(argv=None) -> int:
@@ -597,6 +641,10 @@ def main(argv=None) -> int:
     ap.add_argument("--owner", default=None, help="only this roster row (name as on the tab)")
     ap.add_argument("--date", default=None, help="adds: read only this day (YYYY-MM-DD)")
     ap.add_argument("--no-ownerville", action="store_true", help="audit without the View Progress check")
+    ap.add_argument("--why-removed", action="store_true",
+                    help="READ-ONLY: which rule removed each account's "
+                         "people, and on which days. Reads the local state "
+                         "file only -- no Contacts, no ApplicantStream.")
     ap.add_argument("--unstick-removals", action="store_true",
                     help="people the file calls removed whose card is still "
                          "on the account. Dry by default; --write puts them "
@@ -629,6 +677,14 @@ def main(argv=None) -> int:
             print("no roster row named %r" % args.owner, file=sys.stderr)
             return 2
     active = [o for o in owners if o.active]
+    if args.why_removed:
+        try:
+            from automations.shared import hub_autopublish as HA
+            HA.nothing_to_report()
+        except Exception:                                   # noqa: BLE001
+            pass
+        _log("=== why people were removed (READ-ONLY)")
+        return why_removed(active)
     if args.unstick_removals:
         try:
             from automations.shared import hub_autopublish as HA
