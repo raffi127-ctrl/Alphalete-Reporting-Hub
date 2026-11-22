@@ -363,28 +363,60 @@ def read_table(page, *, verbose: bool = True, campaign: str = None) -> tuple:
     # office where nothing has been done.
     current = (sel.evaluate(
         "s => (s.options[s.selectedIndex] || {}).text || ''") or "").strip()
-    if current != want:
+
+    # THE WHOLE ROSTER, FROM THE REQUEST THAT FILLS THE TABLE, AND BEFORE ANY
+    # OF THE WORK THE RENDERED TABLE NEEDS. The rendered table hands back one
+    # page -- 24 rows where it says 139 -- and sometimes 0; the endpoint
+    # behind it carries every row. ov_json has the evidence.
+    #
+    # WHY IT GOES FIRST. Everything below it exists to coax the TABLE into
+    # showing more: Show All reloads a three-quarter-megabyte page, and the
+    # length menu is prodded twice more, each with a settle. None of it
+    # changes what getStatus answers, and on 2026-11-21 an office's step
+    # still took 8m32s with the per-person search already skipped -- the time
+    # was all in here. The columns array is per programme, so the page is
+    # re-fetched with the chosen bid when it is not the one already showing;
+    # that is one cheap navigation instead of the reload.
+    #
+    # The scrape stays as the fallback: if OwnerVille changes that endpoint,
+    # a short read is still better than no read.
+    try:
+        from automations.obcl_ov_sweep import ov_json
+        bid = ov_json.bid_for(page, want)
+        if current != want:
+            page.goto(f"https://v2.ownerville.com/index.cfm?p={VIEW_PROGRESS_P}"
+                      f"&rqst={rqst}&bid={bid}", wait_until="domcontentloaded")
+            _settle(page)
+        return ov_json.read(page, bid=bid, page_html=page.content(),
+                            verbose=verbose)
+    except Exception as e:                                  # noqa: BLE001
+        # ALWAYS SAID, even when the caller asked for quiet. The fallback
+        # costs ~20s per missing person and reads a couple of dozen rows out
+        # of a hundred-odd, so it is never a detail: on 2026-11-21 a caller
+        # passing verbose=False took the fallback silently and looked exactly
+        # like the old behaviour, which is how it went unnoticed for a run.
+        print("  getStatus unusable (%s: %s) -- falling back to reading the "
+              "rendered table, which only ever shows page one"
+              % (type(e).__name__, str(e)[:200]), flush=True)
+
+    # ONLY THE FALLBACK NEEDS ANY OF THIS, which is why it sits here now.
+    # Re-picking the campaign the page is ALREADY showing fires its change
+    # handler, and the handler EMPTIES the grid: measured 2026-11-09 on Raf's
+    # View Progress -- 26 rows on load, 1 row after re-picking RES-AT&T, 26
+    # again after a plain reload. The read then finds nobody and nobody is
+    # ticked, which looks exactly like an office where nothing has been done.
+    # The goto above may have moved us, so ask the page again rather than
+    # trusting `current` from before it.
+    sel = _campaign_select(page)
+    showing = (sel.evaluate(
+        "s => (s.options[s.selectedIndex] || {}).text || ''") or "").strip()
+    if showing != want:
         sel.select_option(label=want)
         _settle(page)
     _show_all(page)
     _settle(page)
     _largest_page_length(page) or dov._show_all_entries(page)
     _settle(page)
-
-    # THE WHOLE ROSTER, FROM THE REQUEST THAT FILLS THE TABLE. The rendered
-    # table hands back one page -- 24 rows where it says 139 -- and sometimes
-    # 0; the endpoint behind it carries every row. ov_json has the evidence.
-    # The scrape stays as the fallback: if OwnerVille changes that endpoint,
-    # a short read is still better than no read.
-    try:
-        from automations.obcl_ov_sweep import ov_json
-        return ov_json.read(page, bid=ov_json.bid_for(page, want),
-                            page_html=page.content(), verbose=verbose)
-    except Exception as e:                                  # noqa: BLE001
-        if verbose:
-            print("  getStatus unusable (%s: %s) -- falling back to reading "
-                  "the rendered table, which only ever shows page one"
-                  % (type(e).__name__, str(e)[:120]), flush=True)
 
     got = page.evaluate(_READ_JS)
     heads = got.get("heads") or []
