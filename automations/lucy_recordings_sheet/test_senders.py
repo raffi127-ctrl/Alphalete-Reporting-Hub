@@ -40,6 +40,24 @@ class MatchSender(unittest.TestCase):
                  f("5217 Tennyson Pkwy 6.m4a", "B", SENT - 7200)]
         self.assertEqual(be.match_sender(self.AUDIO, files)[0], "")
 
+    def test_tie_is_settled_by_the_slack_message(self):
+        # Tennyson Pkwy 11/22: 4 reps, none sent at that time -> ask Slack who
+        # wrote the message with that ts in each rep's DM with the bot
+        files = [dict(f("5217 Tennyson Pkwy 6.m4a", "A", SENT + 7200), chans=["D_A"]),
+                 dict(f("5217 Tennyson Pkwy 6.m4a", "B", SENT - 7200), chans=["D_B"])]
+        asked = []
+
+        def who_posted(ch, ts):
+            asked.append((ch, ts))
+            return "B" if ch == "D_B" else ""
+        self.assertEqual(be.match_sender(self.AUDIO, files, who_posted), ("B", "message lookup"))
+        self.assertIn(("D_B", "%d.000100" % SENT), asked)
+
+    def test_tie_and_no_message_found_is_still_no_name(self):
+        files = [dict(f("5217 Tennyson Pkwy 6.m4a", "A", SENT + 7200), chans=["D_A"]),
+                 dict(f("5217 Tennyson Pkwy 6.m4a", "B", SENT - 7200), chans=["D_B"])]
+        self.assertEqual(be.match_sender(self.AUDIO, files, lambda ch, ts: "")[0], "")
+
     def test_one_sender_with_that_name_still_matches(self):
         files = [f("5217 Tennyson Pkwy 6.m4a", "A", None)]
         self.assertEqual(be.match_sender(self.AUDIO, files), ("A", "name"))

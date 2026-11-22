@@ -161,9 +161,12 @@ def _slack_files():
                 for by_chan in (f.get("shares") or {}).values():
                     for posts in (by_chan or {}).values():
                         share_ts.update(str(p.get("ts")) for p in posts or [] if p.get("ts"))
+                chans = []
+                for k in ("ims", "groups", "channels"):
+                    chans += [c for c in (f.get(k) or []) if c not in chans]
                 out.append({"name": f.get("name", "") or "", "uid": uid,
                             "created": f.get("created") or f.get("timestamp"),
-                            "share_ts": share_ts})
+                            "share_ts": share_ts, "chans": chans})
             if page >= (res.get("paging") or {}).get("pages", 1):
                 break
             page += 1
@@ -172,8 +175,37 @@ def _slack_files():
     return out
 
 
-def match_sender(audio, files):
-    """(uid, how) for one slack-* audio name, or ("", why-not)."""
+def _slack_poster():
+    """who_posted(channel, ts) -> the user who wrote the message at exactly that
+    ts in that channel (the rep's DM with the bot), or "". None without Slack."""
+    try:
+        from slack_watcher import web
+    except Exception:  # noqa: BLE001
+        return None
+    cache = {}
+
+    def who_posted(channel, ts):
+        if (channel, ts) not in cache:
+            uid = ""
+            try:
+                res = web.conversations_history(channel=channel, oldest=ts, latest=ts,
+                                                inclusive=True, limit=1)
+                for msg in res.get("messages", []) or []:
+                    if str(msg.get("ts")) == ts:
+                        uid = msg.get("user") or ""
+            except Exception:  # noqa: BLE001
+                uid = ""
+            cache[(channel, ts)] = uid
+        return cache[(channel, ts)]
+    return who_posted
+
+
+def match_sender(audio, files, who_posted=None):
+    """(uid, how) for one slack-* audio name, or ("", why-not).
+
+    Last resort when several reps sent a file with this name and none at this
+    time (Tennyson Pkwy, 4 reps, 11/22): look up the Slack message itself - the
+    audio name carries its exact ts - in each candidate's DM with the bot."""
     m = re.match(r"^slack-(\d+)_(\d+)_(.+)$", audio or "")
     if not m:
         return "", "no slack time in the name"
@@ -196,10 +228,22 @@ def match_sender(audio, files):
         return min(timed)[1], "name + time"
     if len({f["uid"] for f in same}) == 1:
         return same[0]["uid"], "name"
+    if who_posted is not None:
+        tried = []
+        for f in same + [f for f in files if f not in same]:
+            for ch in f.get("chans") or []:
+                if ch in tried:
+                    continue
+                tried.append(ch)
+                uid = who_posted(ch, msg_ts)
+                if uid:
+                    return uid, "message lookup"
+            if len(tried) >= 20:
+                break
     return "", ("%d senders share that name" % len({f["uid"] for f in same})) if same else "not in slack's list"
 
 
-def fix_senders(recs, files):
+def fix_senders(recs, files, who_posted=None):
     """Overwrite the bot's name-only guess with match_sender's. Returns the
     changes [(file, old uid, new uid, how)] so the run log shows them."""
     changes = []
@@ -210,7 +254,7 @@ def fix_senders(recs, files):
         if not audio.startswith("slack-"):
             continue
         old = r.get("_uploader_user_id") or ""
-        uid, how = match_sender(audio, files)
+        uid, how = match_sender(audio, files, who_posted)
         if uid and uid != old:
             r["_uploader_user_id"] = uid
             changes.append((audio, old, uid, how))
@@ -237,7 +281,7 @@ def _md(rec):
 
 def main():
     recs = scorecards._enrich_with_slack_uploaders(scorecards._load_all_completions())
-    sender_changes = fix_senders(recs, _slack_files())
+    sender_changes = fix_senders(recs, _slack_files(), _slack_poster())
     reps = load_reps()
     out_recs, names = [], {}
     for r in recs:
