@@ -276,6 +276,25 @@ def seed(office_key: str, week_start: dt.date, *, dry_run: bool = True,
             # showed" -- so it must never wipe what another funnel answered.
             if got is not None:
                 showed = list(showed or []) + list(got)
+
+            # AND THE TRAINING CALENDAR, as well as the Retention row rather
+            # than instead of it (Megan 2026-11-21: "we can mark this yes if
+            # they show up to day one on the applicant stream calendar").
+            # The two disagree: on the week of 11/16 the calendar had Jaime
+            # Molina and Carmen Lopez showing up and the board had their
+            # Showed Up empty, so the extension said "not in yet" about two
+            # people who were in. A union, because each only ever ADDS a name
+            # and ticking is on-only anyway.
+            #
+            # It costs seven page loads per account against the Retention
+            # row's two. Worth it for the one column somebody reads to decide
+            # whether a person is actually here.
+            try:
+                showed = list(showed or []) + list(
+                    fdot.read_week(app, account, week_start, log=log))
+            except Exception as e:                          # noqa: BLE001
+                log("  calendar for %s unreadable (%s) -- the Retention row "
+                    "stands alone for this funnel" % (account, type(e).__name__))
     got = F.seed_anywhere(office_key, week_start, people,
                           dry_run=dry_run, log=log)
     _tick_showed_up(office_key, week_start, showed, dry_run=dry_run, log=log)
