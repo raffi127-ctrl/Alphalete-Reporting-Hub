@@ -419,6 +419,10 @@ def _log_sender_changes(export: dict) -> None:
     ch = export.get("sender_changes") or []
     names = export.get("names") or {}
     log("sender fix: %d recording(s) moved off the bot's file-name guess" % len(ch))
+    lk = export.get("sender_lookup") or {}
+    if lk.get("calls"):
+        log("sender lookup: %d slack call(s), %d found, errors: %s"
+            % (lk["calls"], lk.get("found", 0), "; ".join(lk.get("errors") or []) or "none"))
     for audio, old, new, how in ch[-40:]:
         log("  %s  %s -> %s  [%s]" % (audio, names.get(old) or old or "-",
                                      names.get(new) or new or "(no name)", how))

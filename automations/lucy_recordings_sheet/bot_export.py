@@ -140,6 +140,7 @@ def _pdf(rec):
 SENT_WINDOW_SECONDS = 10 * 60
 LOOKUP_DAYS = 14
 LOOKUP_BUDGET_SECONDS = 120
+LOOKUP_STATS = {"calls": 0, "found": 0, "errors": []}  # into the export, for the run log
 
 
 def _slack_files():
@@ -186,6 +187,7 @@ def _slack_poster():
         return None
     import time
     cache = {}
+    stats = LOOKUP_STATS
     # 11/22: unbounded lookups over every old tie blew the 15-min export limit.
     # Only recent recordings (this week's thread + list) and a hard time budget.
     oldest_ok = time.time() - LOOKUP_DAYS * 86400
@@ -202,8 +204,13 @@ def _slack_poster():
                 for msg in res.get("messages", []) or []:
                     if str(msg.get("ts")) == ts:
                         uid = msg.get("user") or ""
-            except Exception:  # noqa: BLE001
+            except Exception as e:  # noqa: BLE001
                 uid = ""
+                if len(stats["errors"]) < 3:
+                    stats["errors"].append("%s: %s" % (channel, e))
+            stats["calls"] += 1
+            if uid:
+                stats["found"] += 1
             cache[(channel, ts)] = uid
         return cache[(channel, ts)]
     return who_posted
@@ -239,7 +246,9 @@ def match_sender(audio, files, who_posted=None):
         return same[0]["uid"], "name"
     if who_posted is not None:
         tried = set()
-        for f in same:  # only the reps who sent a file with this name
+        # the reps who sent a file with this name first, then every other DM the
+        # bot knows: the 11/18 Tennyson memo's sender was none of those 3 reps
+        for f in same + [x for x in files if x not in same]:
             for ch in f.get("chans") or []:
                 if ch in tried:
                     continue
@@ -316,6 +325,7 @@ def main():
         "names": names,
         "owners": load_owners(),
         "sender_changes": sender_changes,
+        "sender_lookup": LOOKUP_STATS,
     }))
 
 
