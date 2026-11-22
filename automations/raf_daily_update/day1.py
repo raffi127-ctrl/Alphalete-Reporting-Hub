@@ -48,7 +48,7 @@ import argparse
 import datetime as dt
 import sys
 import time
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 from automations.local_office_1on1s import obcl as OBCL
 from automations.raf_daily_update import layout as L
@@ -207,6 +207,50 @@ def read_board(starts: List[dt.date]) -> Dict[str, str]:
     return out
 
 
+# ------------------------------------------------- the training calendar
+
+def read_calendar(weeks: List[dt.date], accounts: Sequence[str],
+                  log=log) -> Dict[str, str]:
+    """{folded name: 'YES'} off ApplicantStream's FIRST DAY OF TRAINING rows.
+
+    Megan, 2026-11-21: "we can mark this yes if they show up to day one on
+    the applicant stream calendar." That is `office_admin.fdot`, which reads
+    the calendar's First Day of Training section and keeps Show Up = Yes.
+
+    WHY IT BEATS THE BOARD AND THE OBCL. Both of those are Raf's OWN office,
+    and he recruits for the whole org -- so the people who started at their
+    own ICD were never on either, and the column stopped at 104 of 224. The
+    calendar belongs to an ApplicantStream ACCOUNT, so reading each account
+    this office recruits on covers them.
+
+    A name the calendar does not carry is left out, not marked NO: the
+    calendar says who DID turn up, and saying nothing about somebody is not
+    the same as saying they did not.
+    """
+    from automations.applicant_tracker.applicantstream import session
+    from automations.office_admin import fdot
+
+    out: Dict[str, str] = {}
+    with session() as app:
+        for acct in accounts:
+            app.select_office(acct)
+            for wk in weeks:
+                try:
+                    got = fdot.read_week(app, acct, wk, log=lambda *a: None)
+                except Exception as e:                      # noqa: BLE001
+                    log("  calendar %s week of %s unreadable (%s) -- those "
+                        "names stay blank" % (acct, wk, type(e).__name__))
+                    continue
+                for r in got:
+                    name = ("%s %s" % (r.get("first", ""),
+                                       r.get("last", ""))).strip()
+                    if name:
+                        out[_fold(name)] = YES
+                log("  calendar %s, week of %s: %d showed up to day one"
+                    % (acct, wk, len(got)))
+    return out
+
+
 def read_obcl() -> Dict[str, str]:
     from automations.recruiting_report.fill import open_by_key
     sh = open_by_key(OBCL.SHEET_ID)
@@ -266,6 +310,16 @@ def pending(grid: List[List[str]], lay: Dict[str, int], year: int,
     return out
 
 
+def _accounts() -> List[str]:
+    """Every ApplicantStream account this office recruits on.
+
+    The same list the onboarding board seeds from, so the calendar is read
+    for exactly the funnels the Daily Update's people came through.
+    """
+    from automations.icd_onboarding.run import _appstream_ids
+    return _appstream_ids("raf")
+
+
 def _months(month: dt.date) -> List[dt.date]:
     prev = (month.replace(day=1) - dt.timedelta(days=1)).replace(day=1)
     return [prev, month.replace(day=1)]
@@ -298,7 +352,16 @@ def sweep(sheet_id: str, month: dt.date, write: bool, tab: str = "",
         answers = {}
         if starts:
             answers.update(read_obcl())            # the fallback, first in
-            answers.update(read_board(starts))     # the register, and it wins
+            answers.update(read_board(starts))     # Raf's own office
+            # THE CALENDAR LAST, so it wins. It is the only source that
+            # covers the whole org rather than this one office.
+            try:
+                weeks = sorted({L.parse_sheet_date(L.sheet_date(s_), s_.year)
+                                or s_ for s_ in starts})
+                answers.update(read_calendar(weeks, _accounts()))
+            except Exception as e:                          # noqa: BLE001
+                log("  calendar unavailable (%s) -- board and OBCL only"
+                    % type(e).__name__)
             answers = index(answers)
 
     total = 0
