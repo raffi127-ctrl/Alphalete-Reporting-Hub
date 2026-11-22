@@ -352,3 +352,62 @@ def test_the_grid_rows_span_every_column(page):
     assert widths["body"], "no rows rendered"
     for w in widths["body"]:
         assert w == widths["head"], (w, widths["head"])
+
+
+def test_the_test_button_sends_nothing(page):
+    """A send cannot be undone, so the only other way to find out whether the
+    path works was to send somebody their documents. The dry call runs the
+    same checks and writes nothing."""
+    calls = []
+    page.evaluate("""() => { window.__calls = [];
+        window.chrome = {runtime: {sendMessage: (m, cb) => {
+            window.__calls.push(m);
+            cb({ok: true, dry: !!(m.extra && m.extra.dry),
+                queued: ['Ada Fournier'], refused: [], machine: 'Lucy 3'});
+        }}}; }""")
+    _show(page, [_dd("Ada Fournier"), _dd("Bruno Castell")])
+    page.check(".bd-pick[data-who='Ada Fournier']")
+    page.click("#bd-testdd")
+    page.wait_for_timeout(200)
+    sent = page.evaluate("() => window.__calls")
+    assert sent, "the test button asked nothing"
+    last = sent[-1]
+    assert last["call"] == "board_digi_docs"
+    assert last["extra"]["dry"] is True, "the test button must ask dry"
+    assert last["extra"]["names"] == ["Ada Fournier"]
+    said = page.inner_text(".bd-sendsaid")
+    assert "TEST" in said and "nothing sent" in said, said
+
+
+def test_the_send_button_is_not_dry(page):
+    page.evaluate("""() => { window.__calls = [];
+        window.chrome = {runtime: {sendMessage: (m, cb) => {
+            window.__calls.push(m);
+            cb({ok: true, queued: ['Ada Fournier'], refused: [],
+                machine: 'Lucy 3'});
+        }}};
+        window.confirm = () => true; }""")
+    _show(page, [_dd("Ada Fournier")])
+    page.check(".bd-pick[data-who='Ada Fournier']")
+    page.click("#bd-senddd")
+    page.wait_for_timeout(200)
+    # NOT the last call: a real send reloads the board afterwards, so
+    # board_week is what arrives last.
+    sends = page.evaluate(
+        "() => window.__calls.filter(m => m.call === 'board_digi_docs')")
+    assert len(sends) == 1, sends
+    assert sends[0]["extra"]["dry"] is False
+
+
+def test_a_cancelled_send_asks_nothing_at_all(page):
+    """Cancel on the confirm must not reach Lucy."""
+    page.evaluate("""() => { window.__calls = [];
+        window.chrome = {runtime: {sendMessage: (m, cb) => {
+            window.__calls.push(m); cb({ok: true});
+        }}};
+        window.confirm = () => false; }""")
+    _show(page, [_dd("Ada Fournier")])
+    page.check(".bd-pick[data-who='Ada Fournier']")
+    page.click("#bd-senddd")
+    page.wait_for_timeout(200)
+    assert page.evaluate("() => window.__calls.length") == 0

@@ -2057,7 +2057,15 @@ function _ddPending(ws) {
   return out;
 }
 
+// `a.dry` runs every check and writes NOTHING -- no queue row, no marker.
+//
+// WHY IT EXISTS. The only way to prove this path worked was to send somebody
+// their documents, and there is no unsend; Megan, 2026-11-22: "I don't want
+// to send them to a real person". A send-only button with no safe way to try
+// it is a thing nobody can verify after a change, so it answers the same
+// shape either way and the panel has a button for it.
 function _boardDigiDocs(office, a) {
+  var dry = !!a.dry;
   var sh = _boardTab(office, a.weekTab || '', a.week || '');
   if (!sh) return {ok: false, error: 'No onboarding board for this office.'};
   var got = _boardRows(sh);
@@ -2106,15 +2114,17 @@ function _boardDigiDocs(office, a) {
       refused.push({name: who, why: 'already ' + pending[args.toLowerCase()]});
       return;
     }
-    rows.push([Utilities.formatDate(new Date(), Session.getScriptTimeZone(),
-                                    "yyyy-MM-dd'T'HH:mm:ssXXX"),
-               'rerun', args, 'OBCL board', 'queued', '', '']);
-    // The ask goes in the cell the admin is already reading, so the request
-    // survives a refresh and nobody asks twice. NOT the green a finished step
-    // gets: green would say the documents had gone.
-    sh.getRange(r.__row, col + 1)
-      .setValue(DD_QUEUED_PREFIX + 'digi docs asked for ' + today)
-      .setBackground('#ffe6b3');
+    if (!dry) {
+      rows.push([Utilities.formatDate(new Date(), Session.getScriptTimeZone(),
+                                      "yyyy-MM-dd'T'HH:mm:ssXXX"),
+                 'rerun', args, 'OBCL board', 'queued', '', '']);
+      // The ask goes in the cell the admin is already reading, so the request
+      // survives a refresh and nobody asks twice. NOT the green a finished
+      // step gets: green would say the documents had gone.
+      sh.getRange(r.__row, col + 1)
+        .setValue(DD_QUEUED_PREFIX + 'digi docs asked for ' + today)
+        .setBackground('#ffe6b3');
+    }
     queued.push(who);
   });
 
@@ -2122,7 +2132,8 @@ function _boardDigiDocs(office, a) {
     ws.getRange(ws.getLastRow() + 1, 1, rows.length, MINI_HEAD.length)
       .setValues(rows);
   }
-  return {ok: true, queued: queued, refused: refused, machine: machine};
+  return {ok: true, dry: dry, queued: queued, refused: refused,
+          machine: machine};
 }
 
 // The one column the ICD owns: who goes on which printed sheet.

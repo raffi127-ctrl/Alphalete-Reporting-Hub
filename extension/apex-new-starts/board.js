@@ -262,6 +262,11 @@
       '<div class="bd-send" id="bd-sendbar" hidden>' +
       '<span class="bd-sendn"></span>' +
       '<button id="bd-senddd" class="bd-go">Send digi docs</button>' +
+      // The same checks, writing nothing. A send cannot be undone, so the
+      // only other way to find out whether this works is to send somebody
+      // their documents (Megan, 2026-11-22: "I don't want to send them to a
+      // real person"). Says what it is on the button, not in a tooltip.
+      '<button id="bd-testdd" class="bd-try">Test — sends nothing</button>' +
       '<button id="bd-sendclear" class="bd-nvm2">clear</button>' +
       '<span class="bd-sendsaid"></span>' +
       '</div>';
@@ -587,27 +592,34 @@
       refresh();
     };
     const go = root.querySelector('#bd-senddd');
-    if (go) go.onclick = async () => {
+    const try_ = root.querySelector('#bd-testdd');
+    const run = async dry => {
       const names = picked();
       if (!names.length) return;
       // SENDING CANNOT BE UNDONE. Generating the bundle IS the send, so the
       // names are read back before it happens -- this is the last point at
-      // which somebody can notice they ticked the wrong line.
-      const who = names.length <= 6 ? names.join(', ')
-                                    : names.slice(0, 6).join(', ') +
-                                      ' and ' + (names.length - 6) + ' more';
-      if (!confirm('Send digi docs to ' + names.length +
-                   (names.length === 1 ? ' person' : ' people') + '?\n\n' +
-                   who + '\n\nThis also creates their AT&T courses. ' +
-                   'It cannot be undone.')) return;
-      go.disabled = true;
-      if (said) said.textContent = 'asking Lucy…';
+      // which somebody can notice they ticked the wrong line. A dry run
+      // writes nothing, so it does not ask: a confirm on something harmless
+      // only teaches people to click through confirms.
+      if (!dry) {
+        const who = names.length <= 6 ? names.join(', ')
+                                      : names.slice(0, 6).join(', ') +
+                                        ' and ' + (names.length - 6) + ' more';
+        if (!confirm('Send digi docs to ' + names.length +
+                     (names.length === 1 ? ' person' : ' people') + '?\n\n' +
+                     who + '\n\nThis also creates their AT&T courses. ' +
+                     'It cannot be undone.')) return;
+      }
+      if (go) go.disabled = true;
+      if (try_) try_.disabled = true;
+      if (said) said.textContent = dry ? 'checking…' : 'asking Lucy…';
       const got = await ask('board_digi_docs',
                             {office: state.office, week: state.week,
-                             names: names});
+                             names: names, dry: !!dry});
+      if (go) go.disabled = false;
+      if (try_) try_.disabled = false;
       if (!got || !got.ok) {
         if (said) said.textContent = (got && got.error) || 'No answer from Lucy.';
-        go.disabled = false;
         return;
       }
       // Say what happened to WHOM. A bare "done" after a send that refused
@@ -615,16 +627,23 @@
       // again for the people who never went.
       const bits = [];
       if ((got.queued || []).length) {
-        bits.push((got.queued.length) + ' queued on ' +
-                  (got.machine || 'Lucy'));
+        bits.push(dry
+          ? 'would send to ' + got.queued.length + ' (' +
+            got.queued.join(', ') + ') on ' + (got.machine || 'Lucy')
+          : got.queued.length + ' queued on ' + (got.machine || 'Lucy'));
       }
-      (got.refused || []).forEach(r => {
-        bits.push(r.name + ': ' + r.why);
-      });
-      if (said) said.textContent = bits.join(' · ') || 'nothing to send';
-      await load(state.office, state.week);
-      render(root);
+      (got.refused || []).forEach(r => { bits.push(r.name + ': ' + r.why); });
+      if (said) {
+        said.textContent = (dry ? 'TEST — nothing sent · ' : '') +
+          (bits.join(' · ') || 'nothing to send');
+      }
+      if (!dry) {
+        await load(state.office, state.week);
+        render(root);
+      }
     };
+    if (go) go.onclick = () => run(false);
+    if (try_) try_.onclick = () => run(true);
     refresh();
 
     // Open or shut one removed group. Toggling a CSS class rather than the
