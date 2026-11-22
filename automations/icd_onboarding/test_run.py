@@ -142,10 +142,25 @@ def test_the_search_has_a_time_budget():
 
 
 def test_one_name_failing_the_search_does_not_stop_the_others():
+    """A search that throws is one name lost, never the rest of the pass.
+
+    FIND THE LOOP BY SHAPE, NOT BY ITS VARIABLE'S NAME. This read
+    `src.index("for name in missing")` until the loop became `for name in
+    ask` (the ov_misses cooldown), and then raised ValueError: substring not
+    found on every run -- a test that had stopped checking anything and said
+    so only as a crash. A rename now fails on the assert below, which says
+    what is wrong, instead of on an index.
+    """
     import inspect
+    import re
     src = inspect.getsource(R.from_ownerville)
-    body = src[src.index("for name in missing"):]
-    assert "except Exception" in body and "continue" not in body.split("got += 1")[0][-80:]
+    m = re.search(r"^\s*for name in (\w+):", src, re.M)
+    assert m, "no per-name search loop in from_ownerville any more"
+    body = src[m.start():]
+    assert "except Exception" in body, "a throwing search would take the pass down"
+    # The failure still counts against the budget: no `continue` that skips
+    # the increment, or one bad name could be retried forever.
+    assert "continue" not in body.split("got += 1")[0][-80:]
 
 
 def test_somebody_the_search_never_finds_is_reported_not_ticked():

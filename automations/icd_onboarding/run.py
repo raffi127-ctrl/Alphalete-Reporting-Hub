@@ -436,18 +436,24 @@ def _board_names(office_key: str, week_start: dt.date,
 def from_ownerville(office_key: str, week_start: dt.date, *,
                     dry_run: bool = True, log=print,
                     budget_s: Optional[float] = None) -> int:
-    """Five columns off one View Progress read, plus a search for the rest.
+    """Five columns off one View Progress read.
 
-    THE PAGE ONLY EVER GIVES PAGE ONE. The table is served a page at a time,
-    so one read returns a couple of dozen rows out of a hundred-odd and the
-    people on the later pages come back unread — on Raf's office that was 24
-    of 127, and only 3 of the week's 29 got their five columns.
+    IT USED TO ONLY GIVE PAGE ONE. The table was read as rendered, which
+    served a couple of dozen rows out of a hundred-odd, so the people on the
+    later pages came back unread — on Raf's office that was 24 of 127, and
+    only 3 of the week's 29 got their five columns. Unread is never "not
+    done", so nothing was wrongly ticked; they simply never got an answer.
+    The answer then was to ask the server's own search about each missing
+    person, one at a time.
 
-    Unread is never "not done", so nothing was wrongly ticked; they simply
-    never got an answer. The sweep solved this long ago by asking the server's
-    own search about each missing person one at a time, and this does the same
-    — but only for the people on THIS WEEK'S BOARD, which is a couple of dozen
-    rather than the whole roster.
+    Since 2026-11-21 read_table reads the request that fills the table, so one
+    call returns the WHOLE roster and `complete` says so. The per-person
+    search is kept only for the case where that read falls short, because
+    against a complete roster it cannot find anybody the read missed: the
+    search box fires the same request and filters the answer in the browser.
+    Measured here on the week of 11/15 — 22 of 39 missing, 7 searched over
+    203s, 22 still missing afterwards. Those 22 are not unread; they are not
+    enrolled in this programme yet, and no amount of searching changes that.
     """
     import time
 
@@ -475,7 +481,17 @@ def from_ownerville(office_key: str, week_start: dt.date, *,
                                                     campaign=programme)
         found = {B._fold(n) for n in reps}
         missing = [n for n in wanted if B._fold(n) not in found]
-        if missing:
+        if missing and complete:
+            # STILL SAID OUT LOUD, just not searched for. These people have
+            # been looked for in the whole roster and are not in it, which is
+            # a real answer and the one somebody acts on -- they have not been
+            # added to this programme yet. Their columns stay untouched.
+            log("  ownerville: %d of this week's %d are not in the %s roster "
+                "(read was complete, so the search cannot find them): %s"
+                % (len(missing), len(wanted), programme,
+                   ", ".join(missing[:8])
+                   + (" ..." if len(missing) > 8 else "")))
+        if missing and not complete:
             # DON'T ASK AGAIN ABOUT SOMEBODY OWNERVILLE ALREADY SAID IT HAS
             # NOT GOT. Measured 2026-11-19: 21 of 29 were not there, each
             # search costs ~27s, and the budget then ran out with 10 names
@@ -485,8 +501,9 @@ def from_ownerville(office_key: str, week_start: dt.date, *,
             # still picked up; until then the budget goes to new names.
             ask = OVM.fresh(office_key, week_start, missing)
             skipped = len(missing) - len(ask)
-            log("  ownerville: %d of this week's %d were not on page one — "
-                "asking the search for them" % (len(missing), len(wanted)))
+            log("  ownerville: the read fell short — %d of this week's %d "
+                "unanswered, asking the search for them"
+                % (len(missing), len(wanted)))
             if skipped:
                 log("    skipping %d OwnerVille said it has not got in the "
                     "last %d min — they are re-asked after that, not ticked"
