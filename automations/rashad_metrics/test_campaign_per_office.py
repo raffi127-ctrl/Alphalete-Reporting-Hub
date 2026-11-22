@@ -64,21 +64,23 @@ class CampaignForOffice(unittest.TestCase):
         # office's whole board. Calvin is the first observed exception —
         # invD2DClientId=40 (RES-ENERGYWELL), read off his live URL on
         # 2026-08-29 — so the rule is now "only observed entries", not "none".
-        self.assertEqual(set(KP.CAMPAIGN_OVERRIDES.values()), {"40", "2", "16"},
+        self.assertEqual(set(KP.CAMPAIGN_OVERRIDES.values()), {"40", "1", "16"},
                          "every override must be an observed campaign id")
         # The CANONICAL name only. "Calvin Rivera" is the alias sheet's job —
         # every caller resolves it before this map is consulted — and listing
         # it here too would be the per-report patch aliases exist to replace.
         self.assertEqual(KP.campaign_for_office("Calvin Ribera"), "40")
 
-    def test_a_b2b_office_is_not_pinned_to_a_residential_campaign(self):
-        # Carlos's office (11580) is B2B and never runs RES AT&T. The default
-        # pin sent his session to 3 anyway, and the board came back looking
-        # fine only because his office renders its own B2B AT&T grid unpinned.
-        self.assertEqual(KP.campaign_for_office("Carlos Hidalgo"), "2")
-        self.assertIn("2", KP.CAMPAIGN_EXPECTED_SHAPE,
-                      "his pin must be one the shape guard can check — the "
-                      "point of moving him off 3")
+    def test_carlos_is_pinned_to_his_nds_campaign(self):
+        # Megan 2026-11-22: "carlos moved to nds not b2b". The old B2B pin (2)
+        # made his weekly captainship board refuse three runs in a row. 1 is
+        # RES AT&T OOF, the campaign nds_oof reads his NDS crew under.
+        from automations.nds_oof import config as NDS
+        self.assertEqual(KP.campaign_for_office("Carlos Hidalgo"),
+                         NDS.CAMPAIGN_ID)
+        self.assertNotIn(KP.campaign_for_office("Carlos Hidalgo"),
+                         KP.CAMPAIGN_EXPECTED_SHAPE,
+                         "a B2B shape check would refuse his NDS grid again")
 
     def test_everyone_else_still_gets_the_default(self):
         # The override map must not leak onto offices that never asked.
@@ -96,9 +98,13 @@ class MultiCampaignOffices(unittest.TestCase):
     the office.
     """
 
-    def test_carlos_runs_two_and_both_are_offered(self):
-        opts = KP.campaigns_for("Carlos Hidalgo")
-        self.assertEqual([cid for _l, cid, _k in opts], ["2", "16"])
+    def test_jay_runs_two_and_both_are_offered(self):
+        opts = KP.campaigns_for("Jay Turnage")
+        self.assertEqual([cid for _l, cid, _k in opts], ["3", "40"])
+
+    def test_carlos_is_no_longer_asked_which_b2b_campaign(self):
+        # He moved to NDS (2026-11-22): one campaign, so no picker.
+        self.assertEqual(KP.campaigns_for("Carlos Hidalgo"), [])
 
     def test_an_offices_default_campaign_is_one_it_actually_runs(self):
         # The pin an unpicked path uses has to be one of the office's own
@@ -141,18 +147,18 @@ class MultiCampaignOffices(unittest.TestCase):
                          set())
 
     def test_a_spoken_word_picks_the_campaign(self):
-        self.assertEqual(KP.campaign_by_keyword("Carlos Hidalgo", "box"), "16")
-        self.assertEqual(KP.campaign_by_keyword("Carlos Hidalgo", "att"), "2")
-        self.assertIsNone(KP.campaign_by_keyword("Carlos Hidalgo", "energywell"))
+        self.assertEqual(KP.campaign_by_keyword("Jay Turnage", "energywell"), "40")
+        self.assertEqual(KP.campaign_by_keyword("Jay Turnage", "att"), "3")
+        self.assertIsNone(KP.campaign_by_keyword("Jay Turnage", "box"))
 
     def test_the_label_says_which_campaign_a_board_is(self):
-        self.assertEqual(KP.campaign_label("Carlos Hidalgo", "16"), "B2B Box")
+        self.assertEqual(KP.campaign_label("Calvin Ribera", "16"), "Box Energy")
         self.assertEqual(KP.campaign_label("Jay Turnage", "40"), "Energy Wells")
         # One-campaign office, no campaign, and a foreign id all say nothing —
         # the label is for disambiguating, and there is nothing to disambiguate.
         self.assertEqual(KP.campaign_label("Chan Park", "3"), "")
-        self.assertEqual(KP.campaign_label("Carlos Hidalgo", None), "")
-        self.assertEqual(KP.campaign_label("Carlos Hidalgo", "40"), "")
+        self.assertEqual(KP.campaign_label("Jay Turnage", None), "")
+        self.assertEqual(KP.campaign_label("Jay Turnage", "16"), "")
 
 
 class WoundDownOfficesAreNotOpenQuestions(unittest.TestCase):
@@ -186,11 +192,12 @@ class OfferedIsNotKnocked(unittest.TestCase):
     """The scan reads what ownerville OFFERS; only the owner knows what they
     knock, and the gap is wide enough to matter."""
 
-    def test_carlos_is_offered_three_and_knocks_two(self):
-        # His page links carry BASE Energy (39). Megan, 2026-09-09: "carlos
-        # runs 2 campaigns." So /knocks offers two buttons, not three.
+    def test_carlos_dead_campaign_stays_recorded(self):
+        # His page links carry BASE Energy (39), offered and never knocked.
+        # Since 2026-11-22 he is NDS on one campaign, so no buttons at all,
+        # but the dead id stays written down for the next scan.
         self.assertEqual(KP.not_knocked("Carlos Hidalgo"), {"39"})
-        self.assertEqual(len(KP.campaigns_for("Carlos Hidalgo")), 2)
+        self.assertEqual(KP.campaigns_for("Carlos Hidalgo"), [])
 
     def test_a_dead_campaign_is_never_offered_as_a_button(self):
         # A button that returns an empty board for a day the office plainly

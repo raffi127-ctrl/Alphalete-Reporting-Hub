@@ -585,15 +585,16 @@ CAMPAIGN_OVERRIDES: "dict[str, str]" = {
     # NOTE: the "He is Energy Wells ONLY" below is STALE — Calvin knocks Box
     # Energy too (Megan 2026-09-09), and MULTI_CAMPAIGN now offers both. What
     # survives is the pin itself: 40 is his default, and 3 was returning zero.
-    # carlos hidalgo -> 2 (B2B AT&T SBS). His office (11580) is B2B and does
-    # not run RES AT&T at all, so the default pin of 3 was pointing his session
-    # at a campaign his picker never offers. It "worked" only because his office
-    # falls back to rendering its own B2B AT&T grid — an unpinned read dressed
-    # as a pinned one, and unchecked, because 3 is deliberately absent from
-    # CAMPAIGN_EXPECTED_SHAPE. Pinning 2 makes the read deliberate AND puts it
-    # under the shape guard. Id read live via `b2b_dispositions --probe-campaigns`
-    # on Lucy 2, 2026-07-29 (see b2b_dispositions/config.CAMPAIGN_URL_IDS).
-    "carlos hidalgo": "2",
+    # carlos hidalgo -> 1 (RES AT&T OOF). Megan 2026-11-22: "carlos moved to
+    # nds not b2b". He WAS 2 (B2B AT&T SBS, read live 2026-07-29), and that pin
+    # made his weekly board refuse on 11/15, 11/16 and 11/22: the grid his
+    # office renders now is the residential one, so assert_campaign_grid
+    # rightly said "campaign 2 was pinned, but the grid is not a B2B grid at
+    # all". Probed 11/18 on Lucy 3 with campaign=1, 2 and 3: identical rows
+    # every time (his office serves one grid whatever is pinned), so the pin is
+    # bookkeeping, not a switch. 1 is the campaign nds_oof reads his NDS crew
+    # under (nds_oof/config.CAMPAIGN_ID), so every report names the same one.
+    "carlos hidalgo": "1",
     # benjamin burden -> 16 (Box Energy). Megan 2026-09-10: "Ben is box." He is
     # single-campaign, so he needs no MULTI_CAMPAIGN entry — but he DID need
     # this, for the same reason Carlos did: without it he is pinned to 3
@@ -633,8 +634,10 @@ MULTI_CAMPAIGN: "dict[str, list]" = {
     # offered, Calvin gained one it did not.
     "jay turnage": [("AT&T", "3", "att"),
                     ("Energy Wells", "40", "energywell")],
-    "carlos hidalgo": [("B2B AT&T SBS", "2", "att"),
-                       ("B2B Box", "16", "box")],
+    # carlos hidalgo: REMOVED 2026-11-22. He knocked B2B AT&T SBS (2) + B2B
+    # Box (16) until he moved to NDS (Megan: "carlos moved to nds not b2b").
+    # One campaign now, so `/knocks Carlos Hidalgo` must not offer two B2B
+    # boards he no longer runs. See CAMPAIGN_OVERRIDES.
     # Calvin knocks BOTH (Megan 2026-09-09: "calvin also runs 2 campaigns").
     # He was listed as Energy Wells ONLY on a line of Raf's quoted in the
     # override below — see NOT_KNOCKED for why that is not the same evidence.
