@@ -589,6 +589,24 @@ def unstick_removals(owners: List[R.Owner], *, write: bool) -> int:
     return 0 if found == 0 else 0
 
 
+_RULE_NAMES = {
+    "not_hired": "no BOB, offer or start 7 days after the second round",
+    "no_show": "new start never showed",
+    "not_badged": "never fully badged",
+}
+
+
+def _rule_name(entry: dict) -> str:
+    """Which rule removed them, in words, however old the entry is."""
+    said = str(entry.get("reason", "") or "")
+    if "not marked BOB by the end of the day" in said:
+        return "not marked BOB by the end of that day (evening pass)"
+    rule = rules.rule_of(entry)
+    if rule in _RULE_NAMES:
+        return _RULE_NAMES[rule]
+    return said.split(":")[0].strip() or "?"
+
+
 def why_removed(owners: List[R.Owner]) -> int:
     """READ-ONLY: which rule took each account's people off the phone.
 
@@ -618,8 +636,12 @@ def why_removed(owners: List[R.Owner]) -> int:
         for e in entries.values():
             if e.get("status") != S.REMOVED:
                 continue
-            r = str(e.get("reason", "") or "?").split(":")[0].strip()
-            why[r or "?"] += 1
+            # BY RULE, NOT BY DATE. Splitting the reason on its first colon
+            # broke the evening rule -- "second round 2026-11-18: not marked
+            # BOB by the end of the day" -- into one bucket per date, so the
+            # single commonest rule in the fleet read as a dozen small ones
+            # and the summary said nothing (2026-11-22).
+            why[_rule_name(e)] += 1
             when[str(e.get("removed", "?"))[:10]] += 1
         _log("  %s's reception list (%s): %s applicants"
              % (o.owner, o.account,
@@ -631,6 +653,66 @@ def why_removed(owners: List[R.Owner]) -> int:
         if busiest:
             _log("      busiest removal days: %s"
                  % ", ".join("%s (%d)" % (d, n) for d, n in busiest))
+    return 0
+
+
+def check_marks(owners: List[R.Owner], limit: int = 0) -> int:
+    """READ-ONLY: what ApplicantStream says NOW about the people we removed.
+
+    Every removal in the fleet comes down to one thing -- nobody marked BOB
+    -- and that has two completely different causes. Either those people
+    genuinely were not brought on board, or the office does not mark its
+    outcomes and the rules are reading silence as "no". The counts cannot
+    tell them apart; only ApplicantStream can.
+
+    Measured 2026-11-22: Cyrus's list is 0 hired and 0 kept out of 111
+    people, where every other account has at least one of each. That is the
+    shape both causes make.
+
+    Reads the same facts the audit reads (`gather_facts`) and writes
+    nothing: no contact, no state, no sheet, no Hub row.
+    """
+    from automations.applicant_tracker.applicantstream import session
+
+    st = S.load()
+    today = dt.date.today()
+    with session() as app:
+        for o in owners:
+            entries = st.get(o.account) or {}
+            removed = {k: e for k, e in entries.items()
+                       if e.get("status") == S.REMOVED}
+            if not removed:
+                _log("  %s's reception list: nothing removed" % o.owner)
+                continue
+            keys = set(list(removed)[:limit] if limit else removed)
+            try:
+                facts, _seen = gather_facts(app, o.offices, keys, today)
+            except Exception as e:                          # noqa: BLE001
+                _log("  %s: ApplicantStream read failed (%s)"
+                     % (o.owner, type(e).__name__))
+                continue
+            bob = [k for k in keys if (facts.get(k) or {}).get("bob")]
+            offered = [k for k in keys
+                       if (facts.get(k) or {}).get("offered") and k not in bob]
+            sched = [k for k in keys
+                     if (facts.get(k) or {}).get("ns_sched")
+                     and k not in bob and k not in offered]
+            blank = [k for k in keys
+                     if k not in bob and k not in offered and k not in sched]
+            _log("  %s's reception list (%s): %d removed, %d checked"
+                 % (o.owner, o.account, len(removed), len(keys)))
+            _log("      marked BOB in ApplicantStream              %d" % len(bob))
+            _log("      marked offered, never BOB                  %d" % len(offered))
+            _log("      a start scheduled, never BOB               %d" % len(sched))
+            _log("      nothing marked at all                      %d" % len(blank))
+            # THE ONE THAT WOULD BE OUR FAULT. A person the office DID mark
+            # BOB and we removed anyway is a card taken off a phone for
+            # somebody who was hired -- the opposite of what the audit is
+            # for. Named, not counted.
+            for k in bob[:20]:
+                _log("      WAS MARKED BOB: %s (removed %s)"
+                     % (removed[k].get("display", k),
+                        removed[k].get("removed", "?")))
     return 0
 
 
@@ -649,6 +731,13 @@ def main(argv=None) -> int:
     ap.add_argument("--owner", default=None, help="only this roster row (name as on the tab)")
     ap.add_argument("--date", default=None, help="adds: read only this day (YYYY-MM-DD)")
     ap.add_argument("--no-ownerville", action="store_true", help="audit without the View Progress check")
+    ap.add_argument("--check-marks", action="store_true",
+                    help="READ-ONLY: ask ApplicantStream what it says now "
+                         "about the people we removed — were they marked "
+                         "BOB and we removed them anyway, or never marked "
+                         "at all? Writes nothing.")
+    ap.add_argument("--limit", type=int, default=0,
+                    help="--check-marks: only this many people per owner")
     ap.add_argument("--why-removed", action="store_true",
                     help="READ-ONLY: which rule removed each account's "
                          "people, and on which days. Reads the local state "
@@ -685,6 +774,14 @@ def main(argv=None) -> int:
             print("no roster row named %r" % args.owner, file=sys.stderr)
             return 2
     active = [o for o in owners if o.active]
+    if args.check_marks:
+        try:
+            from automations.shared import hub_autopublish as HA
+            HA.nothing_to_report()
+        except Exception:                                   # noqa: BLE001
+            pass
+        _log("=== what ApplicantStream says about the removed (READ-ONLY)")
+        return check_marks(active, limit=args.limit)
     if args.why_removed:
         try:
             from automations.shared import hub_autopublish as HA
