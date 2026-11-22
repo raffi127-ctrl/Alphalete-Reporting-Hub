@@ -13,8 +13,11 @@ Keep this file stdlib + pypdf/weasyprint only - it is NOT run with the Hub's ven
 import datetime as dt
 import html
 import json
+import re
 import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path.cwd()))  # the bot's .runtime: poster.py lives there
 
 
 def _cover(owner, day, rows, out):
@@ -55,6 +58,47 @@ def _cover(owner, day, rows, out):
         return None
 
 
+def with_interviewer(md_text, name):
+    """The report with `name` in the Interviewer cell (and the old-style title).
+    The value row is the first table row after the header that names
+    'Interviewer' - the same row poster._parse_metadata reads."""
+    lines = md_text.split("\n")
+    header = None
+    for i, ln in enumerate(lines):
+        if not ln.startswith("|"):
+            continue
+        cells = ln.strip().strip("|").split("|")
+        if header is None:
+            if cells and cells[0].strip().lower() == "interviewer":
+                header = i
+            continue
+        if re.fullmatch(r"[\s|:-]+", ln):
+            continue
+        cells[0] = " %s " % name
+        lines[i] = "|" + "|".join(cells) + "|"
+        break
+    out = "\n".join(lines)
+    return re.sub(r"^(#\s+Audit\s+[—–-]\s+).+?(\s+[×x]\s+)", lambda m: m.group(1) + name + m.group(2),
+                  out, count=1, flags=re.MULTILINE)
+
+
+def _sender_pdf(item, out):
+    """The scorecard re-drawn with the sender as interviewer, or None (then the
+    bot's own PDF goes in as before)."""
+    name, md = (item.get("name") or "").strip(), item.get("md") or ""
+    if not name or not md or not Path(md).is_file():
+        return None
+    try:
+        import poster
+        text = with_interviewer(Path(md).read_text(encoding="utf-8"), name)
+        tmp = out.with_name("_sender_%s_%s.pdf" % (out.stem, Path(md).stem))
+        poster.write_pdf_from_html(poster.markdown_to_poster_html(text, md_path=Path(md)), tmp)
+        return tmp
+    except Exception as e:  # noqa: BLE001
+        print("sender redraw failed for %s: %s" % (md, e), file=sys.stderr)
+        return None
+
+
 def main():
     from pypdf import PdfWriter
     jobs = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
@@ -66,10 +110,15 @@ def main():
         cover = _cover(j["owner"], j["day"], j["rows"], out)
         if cover:
             writer.append(str(cover))
-        n = 0
-        for p in j["pdfs"]:
+        n, temps = 0, []
+        items = j.get("senders") or [{"pdf": p} for p in j["pdfs"]]
+        for it in items:
+            p = it["pdf"]
+            redrawn = _sender_pdf(it, out)
+            if redrawn:
+                temps.append(redrawn)
             try:
-                writer.append(p)
+                writer.append(str(redrawn or p))
                 n += 1
             except Exception as e:  # noqa: BLE001
                 print("could not append %s: %s" % (p, e), file=sys.stderr)
@@ -79,9 +128,9 @@ def main():
             made.append(str(out))
         else:
             failed[str(out)] = "no readable scorecard PDF"
-        if cover:
+        for t in ([cover] if cover else []) + temps:
             try:
-                cover.unlink()
+                t.unlink()
             except OSError:
                 pass
     print(json.dumps({"made": made, "failed": failed}))

@@ -414,6 +414,16 @@ def apply_guard(records: list) -> tuple:
     return kept, dropped
 
 
+def _log_sender_changes(export: dict) -> None:
+    """Recordings whose sender bot_export corrected (same file name, other rep)."""
+    ch = export.get("sender_changes") or []
+    names = export.get("names") or {}
+    log("sender fix: %d recording(s) moved off the bot's file-name guess" % len(ch))
+    for audio, old, new, how in ch[-40:]:
+        log("  %s  %s -> %s  [%s]" % (audio, names.get(old) or old or "-",
+                                     names.get(new) or new or "(no name)", how))
+
+
 def _log_guard(export: dict, dropped: list, month_prefix: str) -> None:
     names = export.get("names") or {}
     mine = [(r, why) for r, why in dropped if (r.get("ts") or "").startswith(month_prefix)]
@@ -1386,6 +1396,7 @@ def main(argv=None) -> int:
     export = load_bot_export(a.from_json)
     log("bot: %d recording(s), %d rep(s), %d owner(s)"
         % (len(export["records"]), len(export["reps"]), len(export["owners"])))
+    _log_sender_changes(export)
     export["records"], dropped = apply_guard(export["records"])
     kept_all = list(export["records"])
     this_month = dt.datetime.now(CT).strftime("%Y-%m")

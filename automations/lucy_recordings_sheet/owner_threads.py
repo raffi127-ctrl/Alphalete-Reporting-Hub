@@ -142,7 +142,13 @@ def build_pdfs(owner_plan: dict, names: dict, today: dt.date, run_bot) -> dict:
                 sc = r.get("score")
                 rows.append([short_name(names.get(r.get("uid") or "") or "(no name)"), t,
                              "—" if sc is None else "%g/10" % sc])
-            jobs.append({"out": str(out), "owner": owner, "day": day, "rows": rows, "pdfs": pdfs})
+            # the sender's name goes on each scorecard (Raf 11/21: Gemini put the
+            # voice memo's name, "5217 Tennyson Pkwy 6", where Sydney should be)
+            senders = [{"pdf": r["pdf"], "md": r.get("md") or "",
+                        "name": names.get(r.get("uid") or "") or ""}
+                       for r in recs if r.get("pdf")]
+            jobs.append({"out": str(out), "owner": owner, "day": day, "rows": rows,
+                         "pdfs": pdfs, "senders": senders})
             where[(owner, day)] = (out, len(pdfs))
     if not jobs:
         return {}
