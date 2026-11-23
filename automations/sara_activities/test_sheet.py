@@ -74,6 +74,17 @@ class Plan(unittest.TestCase):
         self.assertEqual(row["TIME"], "10:05 AM")
         self.assertEqual(row["NOTES"], "")
 
+    def test_late_record_lands_in_its_slot(self):
+        existing = [TAB_HDR,
+                    ["11/23/26", "2:33 PM", "A"], ["11/23/26", "1:53 PM", "B"],
+                    ["11/21/26 15:02 tt", "3:02 PM", "C"]]
+        new = [["11/23/26", "1:46 PM", "LATE"], ["11/23/26", "2:34 PM", "TOP"]]
+        out = SH.placements(existing, new, 0, 1)
+        sim = existing[1:]
+        for at, row in out:
+            sim.insert(at - 2, row)
+        self.assertEqual([r[2] for r in sim], ["TOP", "A", "B", "LATE", "C"])
+
     def test_missing_header_refuses(self):
         with self.assertRaises(ValueError):
             _plan([["Date", "Order ID"]], self.recs)

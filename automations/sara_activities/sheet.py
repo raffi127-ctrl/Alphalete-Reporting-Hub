@@ -67,6 +67,30 @@ def header_index(header_row: List[str]) -> Dict[str, int]:
     return out
 
 
+def row_when(row: List[str], date_col: int, time_col: int) -> Optional[dt.datetime]:
+    """A tab row's moment: Raf's '11/21/26 15:02 tt' or ours '11/23/26' + '2:34 PM'."""
+    d = row[date_col] if date_col < len(row) else ""
+    t = row[time_col] if time_col < len(row) else ""
+    return parse_when(d) or parse_when("%s %s" % (d, t))
+
+
+def placements(existing: List[List[str]], new_rows: List[List[str]],
+               date_col: int, time_col: int) -> List[Tuple[int, List[str]]]:
+    """[(sheet_row_1based, row)] to insert ONE AT A TIME, in this order, so
+    every new row lands in its time slot (newest first) instead of all on
+    top. SaraPlus shows some records late (a 1:46 PM order appearing after a
+    2:33 PM one, 2026-11-23); top-only inserts left those out of order."""
+    ts = [row_when(r, date_col, time_col) or dt.datetime.min for r in existing[1:]]
+    out = []
+    for row in sorted(new_rows, key=lambda r: row_when(r, date_col, time_col)
+                      or dt.datetime.min):
+        t = row_when(row, date_col, time_col) or dt.datetime.min
+        j = next((i for i, x in enumerate(ts) if x < t), len(ts))
+        ts.insert(j, t)
+        out.append((j + 2, row))
+    return out
+
+
 def records_from_table(headers: List[str], rows: List[List[str]]) -> List[Dict[str, str]]:
     """Export/grid rows -> dicts keyed by the export's own header text.
     Drops rows without an Order ID (pager, footer, 'no records')."""

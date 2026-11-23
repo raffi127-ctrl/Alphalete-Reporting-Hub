@@ -113,13 +113,16 @@ def write(records, tab: str, *, apply_writes: bool, log=_log) -> int:
     if not apply_writes:
         log("PREVIEW -- nothing written")
         return len(new_rows)
-    if new_rows:
-        ws.insert_rows(new_rows, row=2, value_input_option="RAW")
+    # TIME fills first, while the row numbers are still the ones read.
     if fills:
         from gspread.utils import rowcol_to_a1
-        shift = len(new_rows)
-        ws.batch_update([{"range": rowcol_to_a1(r + shift, c), "values": [[v]]}
+        ws.batch_update([{"range": rowcol_to_a1(r, c), "values": [[v]]}
                          for r, c, v in fills], value_input_option="RAW")
+    if new_rows:
+        hdr = SH.header_index(existing[0])
+        for at, row in SH.placements(existing, new_rows, hdr["date"],
+                                     hdr[C.TIME_HEADER.lower()]):
+            ws.insert_rows([row], row=at, value_input_option="RAW")
     log("wrote %d new row(s), %d TIME cell(s)" % (len(new_rows), len(fills)))
     return len(new_rows)
 
