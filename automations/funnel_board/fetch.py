@@ -72,6 +72,7 @@ OPTIONAL = {
 # came out 0 for EVERY office - the exact names above weren't on the report,
 # and a missing optional row is silently 0).
 TRAINING_SEEN = set()
+ALL_ROWS_SEEN = set()  # every row name, printed by second_round_retention --dry-run
 
 
 def training_labels(by_label) -> dict:
@@ -80,6 +81,7 @@ def training_labels(by_label) -> dict:
     about training or orientation (Raf calls it the "Orientation and Training
     Calendar"): the "Total ..." one is booked, the "... Showed Up" one showed."""
     out = {}
+    ALL_ROWS_SEEN.update(by_label)
     hits = [l for l in by_label if re.search(r"training|orientation", l, re.I)]
     TRAINING_SEEN.update(hits)
     if OPTIONAL["trb"] not in by_label:

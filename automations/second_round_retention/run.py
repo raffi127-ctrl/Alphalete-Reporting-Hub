@@ -301,6 +301,7 @@ def main():
     from automations.funnel_board import fetch as _fetch
     log("training rows on the report: %s" % (", ".join(sorted(_fetch.TRAINING_SEEN)) or "NONE"))
     if a.dry_run:
+        log("all rows on the report: %s" % " | ".join(sorted(_fetch.ALL_ROWS_SEEN)))
         log("dry run — not writing (%d rows)" % len(rows))
         return 0
     save_pull(ns_rows, weeks, failed)
