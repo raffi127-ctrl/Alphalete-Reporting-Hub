@@ -102,42 +102,63 @@ class Rules(unittest.TestCase):
         self.assertEqual(rules.decide(ent(status=S.HIRED), {}, dt.date(2027, 6, 1))[0], rules.KEEP)
 
 
-class BobIsReadIntoTheFuture(unittest.TestCase):
-    """A BOB is filed under the day they START, not the day it was marked, so
-    a backward-only window returns nothing for exactly the people who ARE
-    marked (2026-11-17: the keeper came back empty for all five owners while
-    the page showed three people marked BOB - Booked that morning)."""
+class TheAuditReadsWholeWeeks(unittest.TestCase):
+    """The report renders ONE WEEK and ignores any attempt to move it -- its
+    week box is readonly and its URL parameters do nothing
+    (office_admin.retention._retarget exists for that reason). So asking for
+    35 days of COLUMNS found only the handful on screen.
 
-    def _windows(self):
+    Probed 2026-11-22 on Raf's own office: 11/21 and 11/22 had links and
+    every earlier day had none. On a Sunday that is two weekend days, both
+    zero -- and the audit concluded that nobody in the fleet had been marked
+    anything, then removed everybody older than a week.
+
+    Read as retargeted WEEK ranges instead, the same office answered 936
+    rows across all five labels, 146 of them Total Daily Bob. The marks were
+    always there.
+
+    This class replaces BobIsReadIntoTheFuture, whose forward window was
+    added to explain that empty keeper read. config.py already recorded the
+    reason as "now in doubt"; it is now answered outright, and Total Daily
+    Bob comes back 45-55 a week BACKWARD, so it is a count of BOBs made, not
+    of starts due.
+    """
+
+    def _weeks(self):
         seen = {}
-        def fake(_a, _office, labels, days):
-            seen.update(days if isinstance(days, dict)
-                        else {lab: days for lab in labels})
+
+        def fake(_a, office, labels, weeks, today=None):
+            seen["weeks"] = list(weeks)
+            seen["labels"] = tuple(labels)
             return []
-        with mock.patch.object(RUN, "read_lists", fake):
+
+        with mock.patch.object(RUN, "read_weeks", fake):
             RUN.gather_facts(None, ["11280"], set(), T)
         return seen
 
-    def test_bob_reaches_past_today(self):
-        w = self._windows()
-        self.assertGreater(max(w[C.LABEL_BOB]), T,
-                           "a BOB dated after today would never be seen")
-        self.assertGreaterEqual((max(w[C.LABEL_BOB]) - T).days,
-                                C.BOB_FORWARD_DAYS)
+    def test_it_asks_for_weeks_not_days(self):
+        w = self._weeks()["weeks"]
+        self.assertTrue(w)
+        for a, b in zip(w, w[1:]):
+            self.assertEqual((b - a).days, 7, "consecutive week starts")
 
-    def test_bob_still_reaches_back(self):
-        w = self._windows()
-        self.assertEqual(min(w[C.LABEL_BOB]),
-                         T - dt.timedelta(days=C.AUDIT_LOOKBACK_DAYS))
+    def test_the_window_still_covers_the_whole_lookback(self):
+        w = self._weeks()["weeks"]
+        self.assertLessEqual(w[0], T - dt.timedelta(days=C.AUDIT_LOOKBACK_DAYS))
+        self.assertGreaterEqual(w[-1] + dt.timedelta(days=6), T)
 
-    def test_the_other_labels_stay_backward_only(self):
-        """They are events that already happened; reading 60 future days of
-        each would be 60 pointless lookups per label per office."""
-        w = self._windows()
-        for label in C.AUDIT_LABELS:
-            if label == C.LABEL_BOB:
-                continue
-            self.assertEqual(max(w[label]), T, label)
+    def test_every_audit_label_is_asked_for(self):
+        self.assertEqual(self._weeks()["labels"], C.AUDIT_LABELS)
+
+    def test_a_week_hit_is_dated_at_its_end_never_its_start(self):
+        """A week range cannot say which day inside it, and every rule that
+        reads these dates measures an AGE. The earliest day would overstate
+        every age and remove people early; the latest understates it, so the
+        only mistake left is waiting too long."""
+        import inspect
+        src = inspect.getsource(RUN.read_weeks)
+        self.assertIn("week_start + dt.timedelta(days=6)", src)
+        self.assertIn("min(", src, "and never dated past today")
 
 
 class KeeperMustHaveBeenRead(unittest.TestCase):
@@ -423,17 +444,19 @@ class TwoOffices(unittest.TestCase):
         key = S.key_for(self.A)
         by_office = {"24232": [(C.LABEL_OFFERED, dt.date(2026, 11, 4), self.A)],
                      "24153": [(C.LABEL_OFFERED, dt.date(2026, 11, 2), self.A)]}
-        with mock.patch.object(RUN, "read_lists", lambda _a, office, _l, _d: by_office[office]):
+        with mock.patch.object(
+                RUN, "read_weeks",
+                lambda _a, office, _l, _w, _t=None: by_office[office]):
             facts, seen = RUN.gather_facts(None, ["24232", "24153"], {key}, T)
         self.assertEqual(facts[key]["offered"], dt.date(2026, 11, 2))
         self.assertEqual(seen, {C.LABEL_OFFERED})
 
     def test_audit_refuses_to_decide_on_an_unread_office(self):
-        def fake(_a, office, _l, _d):
+        def fake(_a, office, _l, _w, _t=None):
             if office == "24153":
                 raise RuntimeError("down")
             return []
-        with mock.patch.object(RUN, "read_lists", fake):
+        with mock.patch.object(RUN, "read_weeks", fake):
             with self.assertRaises(RuntimeError):
                 RUN.gather_facts(None, ["24232", "24153"], {"p:1"}, T)
 

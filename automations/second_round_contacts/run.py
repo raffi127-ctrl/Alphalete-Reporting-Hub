@@ -67,6 +67,61 @@ def read_lists(app, office: str, labels, days: List[dt.date]) -> List[Tuple[str,
     return out
 
 
+def read_weeks(app, office: str, labels, weeks: List[dt.date],
+               today: Optional[dt.date] = None):
+    """[(label, day, applicant)] for whole WEEKS, by retargeting the link.
+
+    WHY NOT THE DAY COLUMNS. `detail_href` reads a column off the report as
+    rendered, and the report renders ONE WEEK -- its week box is readonly
+    and its URL parameters are ignored (office_admin.retention._retarget
+    says so, and that is why that module exists). So asking for 35 days of
+    columns silently found only the handful on screen: probed 2026-11-22 on
+    Raf's own office, 11/21 and 11/22 had links and every earlier day had
+    NONE. On a Sunday that is two weekend days, both zero, and the audit
+    concluded nobody in the fleet had been marked anything.
+
+    The weekly drill link carries `dt`/`dt2`, and retargeting those IS
+    supported -- the same move `read_scheduled_week` has used for months.
+    Both dates are rewritten together, or a href with one week's start and
+    another's end returns a mixture.
+
+    DATED AT THE WEEK'S END, capped at today. A week-range hit cannot say
+    which day inside it, and every rule that reads these dates measures an
+    AGE -- 21 days to badge, 21 to show. Taking the earliest day would
+    overstate every age and remove people early; the latest understates it,
+    so the only mistake left is waiting too long, which is the mistake this
+    job should make.
+    """
+    from automations.linkedin_2nd_round_contacts.run import (_READ_TABLE,
+                                                             to_applicants)
+    from automations.office_admin.retention import _retarget, _week_href
+
+    today = today or dt.date.today()
+    owner = app.select_office(office)
+    _log("  [%s] %s" % (office, owner))
+    out: List[Tuple[str, dt.date, dict]] = []
+    for label in labels:
+        app.open_retention_details()
+        href = _week_href(app.page, label)
+        if not href:
+            _log("    %s: no such row on the report" % label)
+            continue
+        for week_start in weeks:
+            app.open_retention_details()
+            h = _week_href(app.page, label)
+            if not h:
+                continue
+            app._goto_detail(_retarget(h, week_start))
+            t = app.page.evaluate(_READ_TABLE)
+            people = to_applicants(t["header"], t["rows"])
+            if not people:
+                continue
+            when = min(week_start + dt.timedelta(days=6), today)
+            _log("    %s week of %s: %d" % (label, week_start, len(people)))
+            out.extend((label, when, p) for p in people)
+    return out
+
+
 def read_offices(app, offices: List[str], labels, days: List[dt.date]):
     """(found, errors) across an owner's offices. For the ADDS only: one office
     this login cannot open must not stop the numbers from the other one."""
@@ -228,15 +283,20 @@ def gather_facts(app, offices: List[str], keys: set, today: dt.date) -> Dict[str
     every office. A read that fails RAISES: the audit then skips this owner,
     because a person whose office went unread would look not hired and get
     deleted."""
-    back = [today - dt.timedelta(days=i) for i in range(C.AUDIT_LOOKBACK_DAYS, -1, -1)]
-    # The BOB mark alone is read forward too: it is filed under the day they
-    # are due to START, which has not happened yet.
-    days = {label: back for label in C.AUDIT_LABELS}
-    days[C.LABEL_BOB] = back + [today + dt.timedelta(days=i)
-                                for i in range(1, C.BOB_FORWARD_DAYS + 1)]
+    # BY WHOLE WEEKS, because the report renders one week at a time and
+    # ignores any attempt to move it -- see read_weeks. The lookback is the
+    # same span, asked for in the unit the page will actually answer.
+    from automations.shared.onboarding_week import week_start_of
+
+    first = week_start_of(today - dt.timedelta(days=C.AUDIT_LOOKBACK_DAYS))
+    weeks = []
+    w = first
+    while w <= today:
+        weeks.append(w)
+        w += dt.timedelta(days=7)
     found: List[Tuple[str, dt.date, dict]] = []
     for office in offices:
-        found.extend(read_lists(app, office, C.AUDIT_LABELS, days))
+        found.extend(read_weeks(app, office, C.AUDIT_LABELS, weeks, today))
     facts: Dict[str, dict] = {k: {} for k in keys}
     slot = {C.LABEL_OFFERED: "offered", C.LABEL_BOB: "bob", C.LABEL_NS_SCHED: "ns_sched",
             C.LABEL_NS_SHOWED: "ns_showed", C.LABEL_SHOWED: "showed"}
