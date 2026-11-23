@@ -56,6 +56,17 @@ class NoCode(RuntimeError):
     """Lucy 1 has no code for us, and will not have one."""
 
 
+class RelayBusy(NoCode):
+    """The relay never took the code request. Nothing is wrong with the
+    office's setup -- pressing again a minute later works."""
+
+
+# Tries at filing the code request, and the waits between them. Worst case
+# (each try a 30s relay timeout) adds ~2 minutes, inside the sign-in lock.
+REQUEST_TRIES = 3
+REQUEST_RETRY_WAITS = (10, 20)
+
+
 def recently_tried(now: Optional[dt.datetime] = None) -> bool:
     now = now or dt.datetime.now()
     try:
@@ -81,8 +92,23 @@ def code_from_relay(since: dt.datetime, *, office_key: str = "",
     `service` = "sterling" for the office admin page's Sterling sign-in."""
     from automations.icd_alerts import relay as R
 
-    if not R.request_code(since, office_key=office_key, service=service):
-        raise NoCode("could not file the code request with the relay")
+    # ASK AGAIN BEFORE GIVING UP (Aisha, Raf's office, 2026-11-23). The request
+    # is ONE call to the relay, and some minutes the relay is slow
+    # ([[reference_relay_slow_fleet_timeouts]]): one slow answer failed a whole
+    # Sterling batch -- "Sent to 0/3", the same three sent fine on her third
+    # press. A request that lands twice is harmless: Lucy 1 answers both with
+    # the same code.
+    for i in range(REQUEST_TRIES):
+        if R.request_code(since, office_key=office_key, service=service):
+            break
+        if i + 1 < REQUEST_TRIES:
+            wait = REQUEST_RETRY_WAITS[min(i, len(REQUEST_RETRY_WAITS) - 1)]
+            log("  Lucy's server didn't take the code request -- asking again in %ds"
+                % wait)
+            sleep(wait)
+    else:
+        raise RelayBusy("could not file the code request with the relay "
+                        "(%d tries)" % REQUEST_TRIES)
     log("  asked Lucy for the code (requested %s)" % since.strftime("%H:%M:%S"))
     deadline = clock() + wait_s
     while True:

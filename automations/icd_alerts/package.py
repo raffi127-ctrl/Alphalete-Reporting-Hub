@@ -182,6 +182,8 @@ AGENT_FILES = [
     "automations/icd_alerts/sterling_send.py",
     "automations/icd_alerts/sterling_forward.py",
     "automations/icd_alerts/sterling_setup.py",
+    # finish_setup's Leader In Calendar step (cb6a46b put it in agent_files.txt only).
+    "automations/icd_alerts/leader_in_calendar.py",
     # The owner's PNL, done on their own computer (Eve + Megan 2026-10-29).
     "automations/icd_alerts/pnl.py",
     # The PNL's Apex half: the owner's one sign-in window, and Carlos's

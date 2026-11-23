@@ -67,6 +67,39 @@ class FromTheRelay(unittest.TestCase):
         with self.assertRaises(SC.NoCode):
             self._get(answers({"status": "ready", "code": "1"}), request_ok=False)
 
+    def test_a_slow_relay_is_asked_again(self):
+        # Aisha 2026-11-23: one slow relay answer failed the whole batch.
+        clock = Clock()
+        tries = iter([False, True])
+        with mock.patch.object(R, "request_code",
+                               side_effect=lambda *a, **k: next(tries)), \
+             mock.patch.object(R, "poll_code",
+                               side_effect=answers({"status": "ready", "code": "77"})):
+            got = SC.code_from_relay(SINCE, wait_s=120, poll_s=15, sleep=clock.sleep,
+                                     clock=clock.time, log=lambda *_: None)
+        self.assertEqual(got, "77")
+
+    def test_a_relay_that_never_takes_it_says_busy_not_setup(self):
+        clock = Clock()
+        req = mock.Mock(return_value=False)
+        poll = mock.Mock()
+        with mock.patch.object(R, "request_code", req), \
+             mock.patch.object(R, "poll_code", poll):
+            with self.assertRaises(SC.RelayBusy):
+                SC.code_from_relay(SINCE, wait_s=120, poll_s=15, sleep=clock.sleep,
+                                   clock=clock.time, log=lambda *_: None)
+        self.assertEqual(req.call_count, SC.REQUEST_TRIES)
+        poll.assert_not_called()
+        self.assertEqual(clock.t, sum(SC.REQUEST_RETRY_WAITS))
+
+    def test_sterling_says_press_again_for_a_busy_relay(self):
+        from automations.icd_alerts import sterling_send as SS
+        busy = str(SS.code_failure(SC.RelayBusy("x")))
+        self.assertIn("press Send again", busy)
+        self.assertNotIn("forward", busy)
+        setup = str(SS.code_failure(SC.NoCode("no Sterling code forward is set up")))
+        self.assertIn("is the code forward set up?", setup)
+
 
 class FallsBackToTheOldPath(unittest.TestCase):
     def setUp(self):

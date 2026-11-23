@@ -345,6 +345,18 @@ def _enter_user(page, username: str, log=print) -> None:
     page.get_by_role("button", name="Continue").click()
 
 
+def code_failure(e: BaseException) -> "StepFailed":
+    """What the office reads when no code came. A relay that never took the
+    request is NOT a setup problem: "is the code forward set up?" sent Aisha
+    looking for one (2026-11-23) when pressing again was the fix."""
+    from automations.icd_alerts import sara_code
+    if isinstance(e, sara_code.RelayBusy):
+        return StepFailed("code", "Lucy's server was too busy to ask for the "
+                          "sign-in code -- nothing was sent, press Send again "
+                          "in a minute")
+    return StepFailed("code", "no code came back (%s) -- is the code forward set up?" % e)
+
+
 def sign_in(page, creds: Dict, *, office_key: str = "", get_code=None, log=print) -> None:
     """Login page -> (code) -> portal. Already signed in (remembered) = no-op.
     get_code(since) supplies the emailed code; default = Lucy 1 via code()."""
@@ -382,7 +394,7 @@ def sign_in(page, creds: Dict, *, office_key: str = "", get_code=None, log=print
     try:
         code_ = (get_code or (lambda t: code(t, office_key=office_key, log=log)))(since)
     except Exception as e:  # noqa: BLE001 -- includes sara_code.NoCode
-        raise StepFailed("code", "no code came back (%s) -- is the code forward set up?" % e)
+        raise code_failure(e)
     _type_code(page, code_)
     page.get_by_role("button", name="Continue").click()
     try:
