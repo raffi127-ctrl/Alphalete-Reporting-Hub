@@ -39,6 +39,17 @@ class Rules(unittest.TestCase):
     def test_hired_applicant_stays(self):
         self.assertEqual(run(contact("Maria Lopez", "Date and Time: 01/01/2026")), "keep")
 
+    def test_second_round_notes_count_as_applicants(self):
+        for note in ("2nd round 10/01/2026 - Rafael Hidalgo (AppStream 11280) - second_round_contacts",
+                     "LinkedIn Test 2nd round (AppStream 24226), 10/01/2026",
+                     "13 Rating: 4 Job Board: Indeed 2nd Interview Date/Time: 10/01/2026 9:00 AM"):
+            self.assertEqual(run(contact("Ann Lee", note)), "delete", note)
+            self.assertEqual(run(contact("Ann Lee", note.replace("10/01", "11/20"))), "keep", note)
+
+    def test_latest_interview_date_wins(self):
+        note = "2nd round 11/20/2026 - x - second_round_contacts  Date/Time: 09/01/2026"
+        self.assertEqual(run(contact("Ann Lee", note)), "keep")
+
     def test_label_always_stays(self):
         self.assertEqual(run(contact("Ann Lee", "Date and Time: 01/01/2026"),
                              labels=["2nd Rounds"]), "keep")

@@ -5,8 +5,10 @@ slow. Two rules, both approved by JD + Eve (11/17 and 11/19). Everything else
 is NEVER touched -- recruiters, managers, anyone we can't prove is one of
 these two:
 
-  A. APPLICANT: the contact's note has "Date and Time: MM/DD/YYYY" (the
-     interview), that date is more than 30 days ago, and the name is not on a
+  A. APPLICANT: the contact's note has an interview date -- "Date and Time:
+     MM/DD/YYYY" (1st round), "Date/Time: MM/DD/YYYY" (AppStream 2nd round
+     card) or "2nd round ... MM/DD/YYYY" (second_round_contacts / LinkedIn
+     test); with several, the LATEST one counts -- that date is more than 30 days ago, and the name is not on a
      Sales Board (= never hired).
   B. REP WHO LEFT WITHOUT SELLING: no note at all, phone or email matches an
      OwnerVille rep, EVERY matching OwnerVille record is retired, the OV start
@@ -47,7 +49,11 @@ SYSTEM_GROUPS = {"myContacts", "all", "starred", "friends", "family", "coworkers
                  "chatBuddies", "blocked"}
 OUT_DIR = Path(__file__).resolve().parents[2] / "output" / "reception-contacts"
 
-_INTERVIEW = re.compile(r"Date and Time:\s*(\d{1,2})/(\d{1,2})/(\d{4})")
+# Eve 11/23: 2nd-round notes use other wordings -- without these they were
+# never cleaned up (240 of them on the phone that day).
+_INTERVIEW = re.compile(
+    r"(?:Date(?: and |/)Time:\s*|2nd round\b[^/\n]{0,40}?\b)(\d{1,2})/(\d{1,2})/(\d{4})",
+    re.IGNORECASE)
 _SUFFIX = {"jr", "sr", "ii", "iii", "iv", "rt"}
 
 
@@ -72,13 +78,14 @@ def ov_date(s) -> Optional[dt.date]:
 
 
 def interview_date(bios: str) -> Optional[dt.date]:
-    m = _INTERVIEW.search(bios or "")
-    if not m:
-        return None
-    try:
-        return dt.date(int(m.group(3)), int(m.group(1)), int(m.group(2)))
-    except ValueError:
-        return None
+    """Latest interview date in the note (None if there is none)."""
+    found = []
+    for m in _INTERVIEW.finditer(bios or ""):
+        try:
+            found.append(dt.date(int(m.group(3)), int(m.group(1)), int(m.group(2))))
+        except ValueError:
+            continue
+    return max(found) if found else None
 
 
 def on_board(name: str, board: Set[str]) -> bool:
