@@ -46,6 +46,45 @@ SHAPE = {
     "dob": re.compile(r"^\d{1,2}[/-]\d{1,2}[/-]\d{2,4}$|^\d{4}-\d{2}-\d{2}$"),
 }
 
+# A date of birth has to be in the past and belong to somebody old enough to
+# be on a payroll. The bounds are wide on purpose: the job here is to catch a
+# field read off the wrong line, not to judge anybody.
+DOB_YOUNGEST_YEARS = 14
+DOB_OLDEST_YEARS = 100
+
+
+def _impossible_dob(val: str) -> str:
+    """Why this cannot be a date of birth, or "" when it could be.
+
+    Returns the REASON, so the person's row says what was wrong with it
+    rather than only that something was.
+    """
+    import datetime as _dt
+    raw = str(val or "").strip()
+    when = None
+    for fmt in ("%m/%d/%Y", "%m/%d/%y", "%m-%d-%Y", "%m-%d-%y", "%Y-%m-%d"):
+        try:
+            when = _dt.datetime.strptime(raw, fmt).date()
+            break
+        except ValueError:
+            continue
+    if when is None:
+        # The shape rule already passed, so this is a date we cannot read
+        # rather than a date that is wrong. Say so and let it through: a
+        # false alarm on a real birthday costs somebody their first day.
+        return ""
+    today = _dt.date.today()
+    if when > today:
+        return "is in the future"
+    years = (today - when).days / 365.25
+    if years < DOB_YOUNGEST_YEARS:
+        return ("would make them %d years old -- it is probably not a birth "
+                "date at all" % int(years))
+    if years > DOB_OLDEST_YEARS:
+        return "would make them over %d years old" % DOB_OLDEST_YEARS
+    return ""
+
+
 PAGE_SIZE = 50
 
 
@@ -294,6 +333,23 @@ def extract(bundle: dict, mapping: Dict[str, Dict[str, str]],
                 (sem, f"{doc} field {f.get('field_key')} doesn't look like a "
                       f"{sem} — field_map.json may be stale, recalibrate"))
             continue
+        # A SHAPE IS NOT A VALUE. "5/27/2026" is a perfectly formed date and
+        # it was read off Lioney Garcia's packet as a date of BIRTH, six
+        # months ago -- a newborn, queued to be typed onto a payroll record
+        # (2026-11-23). Every check passed, because every check was about
+        # punctuation.
+        #
+        # So the one field where a wrong value is unmistakable gets asked
+        # whether it could be true. Deliberately wide: this is not a view
+        # about who may work here, it is the difference between a birth date
+        # and a field read off the wrong line.
+        if sem == "dob":
+            why = _impossible_dob(val)
+            if why:
+                hire.rejected.append((sem, f"{doc} field "
+                                           f"{f.get('field_key')} reads "
+                                           f"{val!r}, which {why}"))
+                continue
         rank = _doc_rank(doc)
         if sem not in best or rank < best[sem][0]:
             best[sem] = (rank, val)
