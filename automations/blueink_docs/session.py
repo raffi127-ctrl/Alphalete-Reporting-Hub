@@ -52,7 +52,28 @@ LOGIN_URL = f"{APP_ROOT}/"
 _ECO_DIR = Path.home() / ".config" / "lucy-reports"
 _HERE = Path(__file__).resolve().parent
 
-if (_ECO_DIR / "blueink-creds.json").exists() or (_ECO_DIR / ".blueink_profile").exists():
+def _is_eco_machine() -> bool:
+    """Does this machine belong to an office, rather than to us?"""
+    try:
+        from automations.icd_alerts import config as IC
+        return bool(IC.install())
+    except Exception:          # noqa: BLE001 -- not an ECO box
+        return False
+
+
+# WHERE THE SESSION LIVES. On an office machine it is theirs and sits with
+# their other ECO credentials; on ours it stays beside this file.
+#
+# THE CREDS FILE IS NOT THE TEST ANY MORE (2026-11-23). This used to switch
+# to the home folder the moment ~/.config/lucy-reports/blueink-creds.json
+# existed -- and saving a Blue Ink PASSWORD creates exactly that file. So the
+# installer's sign-in box silently moved where the SESSION was looked for,
+# orphaned a working one, and the next run said "No Blue Ink session" on a
+# machine that had one. Same shape as the API key the same morning.
+#
+# An office machine carries an enrollment. A profile that is already here is
+# still honoured, so nothing moves under a machine that was working.
+if _is_eco_machine() or (_ECO_DIR / ".blueink_profile").exists():
     STORAGE_STATE = _ECO_DIR / "blueink_storage_state.json"
     PROFILE_DIR = _ECO_DIR / ".blueink_profile"
 else:
