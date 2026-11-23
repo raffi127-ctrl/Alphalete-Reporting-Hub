@@ -486,7 +486,27 @@ def worker(webc, token: str, state: Dict) -> None:
             state["done"].setdefault(ts, {})["status"] = status
             save_state(state)
         if status == "posted":
-            _publish("success")
+            _delivered(ts)
+
+
+def _delivered(ts: str) -> None:
+    """A transcript reached the rep: leave proof a ticket can read, THEN the pill.
+
+    A success pill alone cannot close a ticket for this report: it has no
+    `verify` and wrote no manifest, so delivery_check had nothing to read. The
+    11/21 setup-hour FAILED (keys not on Lucy 3 yet) stayed open for two days
+    over a bot that delivered three transcripts the same evening -- "ran clean,
+    but nothing can confirm it DELIVERED". We only get here after Slack accepted
+    the upload, so today's manifest is real proof. `close_on: exit_zero` was the
+    shortcut, but then a hand `--doctor` (exit 0, delivers nothing) would close a
+    real ticket too."""
+    try:
+        from automations.shared import run_manifest
+        run_manifest.write_manifest(REPORT_ID, succeeded=[ts],
+                                    note="transcript delivered")
+    except Exception as e:  # noqa: BLE001 -- the proof never blocks the pill
+        _log("manifest skipped: {}".format(e))
+    _publish("success")
 
 
 def claim(state: Dict, ts: str) -> bool:

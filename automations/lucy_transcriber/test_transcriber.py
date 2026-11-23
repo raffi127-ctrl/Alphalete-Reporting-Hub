@@ -387,6 +387,50 @@ class Bot(unittest.TestCase):
         self.assertEqual(sorted(B._jobs.get()["ts"] for _ in range(2)), ["1.0", "3.0"])
 
 
+class DeliveryProof(unittest.TestCase):
+    """A delivered transcript has to be able to close its own ticket (11/23:
+    failure-lucy_transcriber sat open 2 days over a bot that was delivering)."""
+
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+        from automations.shared import run_manifest, section_drop_alert
+        self.rm, self.sda = run_manifest, section_drop_alert
+        self._saved = (run_manifest.MANIFEST_DIR, section_drop_alert.resolved, B._publish)
+        run_manifest.MANIFEST_DIR = Path(tempfile.mkdtemp())
+        self.said = []
+        section_drop_alert.resolved = lambda rid, **kw: self.said.append(("resolved", rid))
+        B._publish = lambda status: self.said.append(("publish", status))
+
+    def tearDown(self):
+        (self.rm.MANIFEST_DIR, self.sda.resolved, B._publish) = self._saved
+
+    def test_delivery_leaves_proof_before_the_success_pill(self):
+        import datetime as dt
+        from automations.shared import delivery_check as D
+        B._delivered("123.4")
+        m = self.rm.read_manifest("lucy_transcriber")
+        self.assertEqual(m["succeeded"], ["123.4"])
+        self.assertEqual(m["failed"], [])
+        self.assertEqual(self.said[-1], ("publish", "success"))
+        verdict = D._from_manifest("lucy_transcriber", dt.date.today())
+        self.assertEqual(verdict[0], D.DELIVERED)
+
+    def test_no_delivery_no_proof(self):
+        # A hand --doctor / --stats run never reaches _delivered: nothing on
+        # disk, so it can't close a real ticket.
+        self.assertIsNone(self.rm.read_manifest("lucy_transcriber"))
+
+    def test_proof_that_cannot_be_written_still_lights_the_pill(self):
+        real = self.rm.write_manifest
+        self.rm.write_manifest = lambda *a, **k: (_ for _ in ()).throw(OSError("disk"))
+        try:
+            B._delivered("5.0")
+        finally:
+            self.rm.write_manifest = real
+        self.assertEqual(self.said, [("publish", "success")])
+
+
 class KeyDrop(unittest.TestCase):
     """The lock round trip, with fake keys in a temp folder."""
 
