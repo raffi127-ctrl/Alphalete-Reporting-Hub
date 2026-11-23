@@ -160,8 +160,15 @@ ALPHALETE_KEYS = ("raf", "alphalete", "")
 
 
 def using_own_key() -> bool:
-    """True when the key being read is this machine's own, not the repo's."""
-    return ECO_CREDS_PATH.exists()
+    """True when the KEY being read is this machine's own, not the repo's.
+
+    THE FILE EXISTING IS NOT THE ANSWER. assert_key_belongs_to leans on this
+    to stop one office sending out of another's Blue Ink account, and on
+    2026-11-23 the installer's sign-in box created that file with a password
+    in it and no key -- so this said "own key" about a machine still reading
+    Alphalete's. The guard would have waved through exactly the send it
+    exists to refuse."""
+    return bool(str(_read(ECO_CREDS_PATH).get("blueink_api_key") or "").strip())
 
 
 def assert_key_belongs_to(office_key: str) -> None:
@@ -343,13 +350,34 @@ EMAIL_SUBJECT = email_subject()
 EMAIL_MESSAGE = email_message()
 
 
-def _creds() -> dict:
-    # Resolved per call, not once at import: the ECO setup writes the home copy
-    # while the process that will read it is already running.
+def _read(path) -> dict:
     try:
-        return json.loads(creds_path().read_text())
-    except Exception:
+        body = json.loads(path.read_text())
+        return body if isinstance(body, dict) else {}
+    except Exception:          # noqa: BLE001
         return {}
+
+
+def _creds() -> dict:
+    """This machine's Blue Ink facts, the office's own first.
+
+    FIELD BY FIELD, NOT FILE BY FILE (2026-11-23). `creds_path` picks ONE
+    file, and the moment the installer saved a sign-in into the home copy,
+    that copy shadowed the repo one -- which on this machine is where the API
+    key lives. Blue Ink went from working to "No Blue Ink API key" with
+    nothing about a key having changed, and it took an Apex dry run to notice.
+    A password and a key are different facts and arrive at different times,
+    so a file that answers one question must not silence the other.
+
+    Resolved per call, not once at import: the ECO setup writes the home copy
+    while the process that will read it is already running.
+    """
+    body = dict(_read(REPO_ROOT / "blueink-creds.json"))
+    if ECO_CREDS_PATH.exists():
+        for k, v in _read(ECO_CREDS_PATH).items():
+            if v not in ("", None):
+                body[k] = v
+    return body
 
 
 def api_key() -> str:

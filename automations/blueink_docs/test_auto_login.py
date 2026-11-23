@@ -133,3 +133,56 @@ class TheSignInIsTwoScreens(unittest.TestCase):
         """"No password box" sends somebody to read the page when the answer
         is that the address is not an account."""
         self.assertIn("may not be an account", _source())
+
+
+class TheFilesAnswerDifferentQuestions(unittest.TestCase):
+    """A password saved into the home copy must not hide a key in the repo one.
+
+    2026-11-23: the installer's sign-in box created ~/.config/lucy-reports/
+    blueink-creds.json with an email and a password in it. creds_path() picks
+    ONE file, so that copy immediately shadowed the repo copy where this
+    machine's API key lives, and Blue Ink went from working to "No Blue Ink
+    API key" with nothing about a key having changed. An Apex dry run found
+    it, which is not a mechanism.
+    """
+
+    def _two_files(self, eco, repo):
+        d = Path(tempfile.mkdtemp())
+        eco_path, repo_root = d / "eco.json", d / "repo"
+        repo_root.mkdir()
+        eco_path.write_text(json.dumps(eco))
+        (repo_root / "blueink-creds.json").write_text(json.dumps(repo))
+        return mock.patch.multiple(config, ECO_CREDS_PATH=eco_path,
+                                   REPO_ROOT=repo_root)
+
+    def test_a_password_in_one_does_not_hide_a_key_in_the_other(self):
+        with self._two_files({"email": "a@b.com", "password": "pw"},
+                             {"blueink_api_key": "K",
+                              "envelope_template_id": "T-1"}), \
+             mock.patch.dict("os.environ", {}, clear=True):
+            self.assertEqual(config.api_key(), "K")
+            self.assertEqual(config.template_id(), "T-1")
+            self.assertEqual(config.login_creds()["email"], "a@b.com")
+
+    def test_the_offices_own_key_still_wins_where_it_has_one(self):
+        with self._two_files({"blueink_api_key": "THEIRS"},
+                             {"blueink_api_key": "OURS"}), \
+             mock.patch.dict("os.environ", {}, clear=True):
+            self.assertEqual(config.api_key(), "THEIRS")
+
+    def test_an_empty_value_does_not_count_as_an_answer(self):
+        with self._two_files({"blueink_api_key": ""},
+                             {"blueink_api_key": "OURS"}), \
+             mock.patch.dict("os.environ", {}, clear=True):
+            self.assertEqual(config.api_key(), "OURS")
+
+    def test_own_key_means_a_key_not_a_file(self):
+        """assert_key_belongs_to leans on this to stop one office sending out
+        of another's account. A file holding only a password said "own key"
+        about a machine still reading Alphalete's."""
+        with self._two_files({"email": "a@b.com", "password": "pw"},
+                             {"blueink_api_key": "OURS"}):
+            self.assertFalse(config.using_own_key())
+        with self._two_files({"blueink_api_key": "THEIRS"},
+                             {"blueink_api_key": "OURS"}):
+            self.assertTrue(config.using_own_key())
