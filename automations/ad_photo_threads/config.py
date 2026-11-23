@@ -174,6 +174,16 @@ NO_AD_ANSWERS = {
     "2026-11-12|carly ryan": "Other (no ad)",
     "2026-11-12|aldo rivero": "Other (no ad)",
     "2026-11-12|colson mcgee": "Other (no ad)",
+    # Ryan, 11/23: "Kamryn Wood" (11/18, Belen, tab `Ryan McSpadden` row 1985)
+    # jumped off the call -- Ad Title blank, the 3:15 slot in the 1st rounds
+    # thread names no ad either, and AppStream 22820 gave up. No clue -> the
+    # catch-all thread.
+    "2026-11-18|kamryn wood": "Other (no ad)",
+    # Jamis, 11/23: "Handshake / Marketing & Sales Assistant" (11/18, Naiara,
+    # tab `Jamis Garay new` row 1834, same text in the 2:45 slot reply) --
+    # typed once; the office's one Handshake marketing ad is "Handshake /
+    # Marketing Assistant" (33 rows).
+    "2026-11-18|zavien ratcliff": "Handshake / Marketing Assistant",
 }
 # Eve 11/5: a person said this row is someone already on an ad thread under
 # another name: it only comes off the no-ad list, never posted twice.
