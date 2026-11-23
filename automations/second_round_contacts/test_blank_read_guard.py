@@ -58,3 +58,22 @@ def test_the_lookback_is_wide_enough_that_blank_means_blank():
     """35 days back: a second round inside the 7-day rule's reach is always
     inside the window, so an empty read is never just a short window."""
     assert C.AUDIT_LOOKBACK_DAYS > C.NOT_HIRED_DAYS * 2
+
+
+def test_dry_run_beats_write(monkeypatch, capsys):
+    """The schedule handle's base_args are ['--write'] and `lucy rerun` only
+    appends, so without this there is no way to ask the fleet for a dry pass
+    of a job that deletes contacts off people's phones."""
+    from automations.second_round_contacts import run as RUN
+
+    seen = {}
+    owner = RUN.R.parse_rows([C.ROSTER_HEADERS,
+                              ["Raf", "11280", "r@x.com", "Yes",
+                               "", "", "", "", ""]])[0]
+    monkeypatch.setattr(RUN.R, "open_tab", lambda *a, **k: None)
+    monkeypatch.setattr(RUN.R, "read", lambda *a, **k: [owner])
+    monkeypatch.setattr(RUN, "run_audit",
+                        lambda owners, **kw: seen.setdefault("write", kw["write"]) or 0)
+    RUN.main(["--write", "--audit", "--dry-run"])
+    assert seen["write"] is False
+    assert "--write ignored" in capsys.readouterr().out

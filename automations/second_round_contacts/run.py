@@ -814,6 +814,12 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--write", action="store_true", help="create / remove contacts (default: dry run)")
     ap.add_argument("--audit", action="store_true", help="run Raf's removal rules instead of the adds")
+    ap.add_argument("--dry-run", dest="dry_run", action="store_true",
+                    help="turn --write OFF, whatever else asked for it. The "
+                         "only way to queue a dry pass: this report's "
+                         "schedule handle carries --write in base_args, and "
+                         "`lucy rerun` appends, so a rerun can add flags but "
+                         "never take one away.")
     ap.add_argument("--evening", action="store_true",
                     help="the end-of-day pass: also drop today's second rounds "
                          "that were marked neither showed up nor offered. "
@@ -849,6 +855,13 @@ def main(argv=None) -> int:
     # side. Passing --evening on an adds run used to be silently ignored, which
     # reads as "the 7pm cleanup ran and found nothing" -- so it implies --audit
     # instead of doing nothing.
+    # --dry-run WINS, said out loud. It exists because the handle's
+    # base_args are ['--write'] and `lucy rerun` only ever appends, so
+    # without this there is no way to ask the fleet for a dry pass of a job
+    # that deletes contacts off people's phones.
+    if args.dry_run and args.write:
+        args.write = False
+        _log("--dry-run: --write ignored, nothing will be changed")
     if args.evening and not args.audit:
         args.audit = True
         _log("--evening implies --audit (removals only happen on the audit pass)")
