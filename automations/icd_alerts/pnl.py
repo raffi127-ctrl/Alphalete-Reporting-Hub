@@ -54,7 +54,7 @@ PNL_KEYS = frozenset({
 # authenticator setup (apex_2fa_setup) instead of the plain sign-in -- after
 # it Lucy signs in by herself (apex_login). Empty until Eve has a time with
 # the owner: the setup needs him at the Mac for ~5 minutes.
-APEX_SETUP_KEYS = frozenset()
+APEX_SETUP_KEYS = frozenset({"jairo15"})   # Jairo said "today" in Slack (Eve 2026-11-23)
 # Offices that still get the plain hand sign-in window when Apex is signed out
 # (the 2026-10-29 step). Every OTHER PNL office gets NO Apex window at all
 # until it is in APEX_SETUP_KEYS -- only the DD check runs, nothing on screen

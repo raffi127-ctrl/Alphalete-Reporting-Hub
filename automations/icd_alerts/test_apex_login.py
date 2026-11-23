@@ -112,9 +112,9 @@ class Wiring(unittest.TestCase):
         # ...and inside the locked browser: the lock goes on first.
         self.assertLess(src.index('G.install(ctx, "block")'), i_sign)
 
-    def test_setup_window_is_off_until_eve_says(self):
+    def test_setup_window_only_for_offices_eve_scheduled(self):
         from automations.icd_alerts import pnl
-        self.assertEqual(pnl.APEX_SETUP_KEYS, frozenset())
+        self.assertEqual(pnl.APEX_SETUP_KEYS, frozenset({"jairo15"}))  # Eve 2026-11-23
 
     def test_setup_saves_only_after_verify_and_owner_presses_it(self):
         from automations.icd_alerts import apex_2fa_setup as S

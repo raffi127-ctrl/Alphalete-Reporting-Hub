@@ -34,9 +34,21 @@ ENABLE_PATH = "Identity/Account/Manage/EnableAuthenticator"
 SIGNIN_WAIT_S = 300
 VERIFY_WAIT_S = 300
 
-BANNER = "LUCY IS SETTING UP APEX -- PLEASE STAY FOR ABOUT 5 MINUTES"
-BANNER_DETAIL = ("Lucy will tell you each step in a small box. "
-                 "This window closes by itself when it is done.")
+# The bar on top of the window says, at every moment, wait or act (Eve
+# 2026-11-23: "que Lucy avise las esperas... lo más sencillo posible").
+# RED = Lucy is working, hands off. GREEN = your turn, do exactly this.
+WAIT = "WAIT -- DON'T TOUCH ANYTHING"
+WAIT_DETAIL = ("Lucy is working. When it is your turn this bar turns green "
+               "and tells you what to do.")
+TURN_CODE = "YOUR TURN: TYPE THE CODE FROM YOUR PHONE"
+TURN_CODE_DETAIL = ("Apex just texted it to you. Type it in the box below and "
+                    "press the button. Then wait.")
+TURN_VERIFY = "YOUR TURN: PRESS THE BLUE \"VERIFY\" BUTTON"
+TURN_VERIFY_DETAIL = "Only that -- Lucy already typed the code. Then wait."
+TURN_PHOTO = "YOUR TURN: TAKE A PHOTO OF THESE CODES"
+TURN_PHOTO_DETAIL = "With your phone. Then press OK in Lucy's small box."
+PROOF_DETAIL = ("Lucy is testing that she can sign in by herself. "
+                "This window closes by itself in about a minute.")
 
 ASK_USER = ("Lucy will sign into Apex by herself for your weekly PNL.\n\n"
             "Your Apex user name:")
@@ -44,10 +56,13 @@ ASK_PASSWORD = "Your Apex password (saved on this computer only):"
 SAY_TEXT_CODE = ("Apex is sending you a text-message code.\n\n"
                  "Press OK, then type the code in the Apex window.")
 SAY_VERIFY = ("Lucy already typed the code in.\n\n"
-              "Press OK, then press the blue \"Verify\" button in the Apex window.")
+              "Press OK, then press the blue \"Verify\" button in the Apex window. "
+              "Then wait.")
 SAY_BACKUP = ("Apex is showing backup codes.\n\n"
               "Take a photo of them with your phone and keep it. "
-              "Press OK when you have it.")
+              "Press OK when you have it.\n\n"
+              "Then a new window opens for about a minute while Lucy tests "
+              "her sign-in. Don't touch it -- it closes by itself.")
 SAY_DONE = "Done. Lucy signed into Apex by herself. Nothing else to do."
 SAY_SAVED_NOT_PROVEN = ("Saved. Lucy could not prove the sign-in yet -- "
                         "she will try again later. Nothing else to do.")
@@ -87,6 +102,8 @@ def prove(p, login, log=print) -> bool:
     try:
         ctx = browser.new_context(**G.launch_args())
         guard = G.install(ctx, "block")
+        from automations.shared import browser_banner
+        browser_banner.attach(ctx, WAIT, PROOF_DETAIL)
         try:
             ok, step = L.sign_in(ctx.new_page(), login, log=log)
             log("  proof sign-in: %s" % step)
@@ -127,7 +144,7 @@ def run(log=print, ask=None) -> int:
                 str(AS.APEX_PROFILE_DIR), headless=False,
                 args=["--disable-sync"], **G.launch_args())
             guard = G.install(ctx, "watch")
-            browser_banner.attach(ctx, BANNER, BANNER_DETAIL)
+            browser_banner.attach(ctx, WAIT, WAIT_DETAIL)
             try:
                 page = ctx.pages[0] if ctx.pages else ctx.new_page()
                 page.goto(AP.APEX_URL, wait_until="domcontentloaded",
@@ -137,6 +154,8 @@ def run(log=print, ask=None) -> int:
                 # 1. signed in, with HIS text-message code
                 if not L._past_login(page):
                     _fill_user_pass(page, user, pwd, log=log)
+                    browser_banner.show(page, TURN_CODE, TURN_CODE_DETAIL,
+                                        browser_banner.GREEN)
                     ask.message(SAY_TEXT_CODE)
                     end = time.time() + SIGNIN_WAIT_S
                     while time.time() < end and not L._past_login(page):
@@ -146,6 +165,7 @@ def run(log=print, ask=None) -> int:
                     ask.message("Nobody signed in, so nothing changed. "
                                 "Lucy will ask again another day.")
                     return 1
+                browser_banner.show(page, WAIT, WAIT_DETAIL)
 
                 # 2. the configure page: read the key, type the code
                 page.goto(AP.APEX_URL + ENABLE_PATH,
@@ -163,6 +183,8 @@ def run(log=print, ask=None) -> int:
                 code_box = page.locator(L._CODE).first
                 code_box.fill(L.fresh_code(key))
                 filled = time.time()
+                browser_banner.show(page, TURN_VERIFY, TURN_VERIFY_DETAIL,
+                                    browser_banner.GREEN)
                 ask.message(SAY_VERIFY)
 
                 # 3. he presses Verify; a code that went stale is replaced
@@ -182,11 +204,15 @@ def run(log=print, ask=None) -> int:
                     return 1
 
                 # 4. saved only now that Apex took the code
+                browser_banner.show(page, WAIT, WAIT_DETAIL)
                 L.save_creds(user, pwd, key)
                 log("  Apex setup: the app code is on; login saved on this computer")
                 page.wait_for_timeout(2000)
                 if "recoverycodes" in page.url.lower().replace("-", ""):
+                    browser_banner.show(page, TURN_PHOTO, TURN_PHOTO_DETAIL,
+                                        browser_banner.GREEN)
                     ask.message(SAY_BACKUP)
+                    browser_banner.show(page, WAIT, WAIT_DETAIL)
             finally:
                 guard.save()
                 try:
