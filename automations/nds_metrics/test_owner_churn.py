@@ -146,6 +146,22 @@ class TableauPhones(unittest.TestCase):
         self.assertIn("Someone: counted off the order log", got["sub"])
 
 
+class Thread(unittest.TestCase):
+    def test_churn_summary_goes_in_the_thread(self):
+        o = OC.OfficeChurn("Carlos Hidalgo", "NDS", {"0-30 Day": {"act": 5, "disc": 1}}, {}, 9)
+        client = mock.Mock()
+        with mock.patch.object(OC, "read_offices", return_value=([o], [])), \
+             mock.patch.object(OC, "tableau_phones", return_value={}), \
+             mock.patch.object(OC, "summary_png", return_value="/tmp/c.png"), \
+             mock.patch("automations.shared.slack_metrics_post._client", return_value=client), \
+             mock.patch("automations.shared.slack_metrics_post.dm_user_with_file") as dm:
+            OC.run(["Carlos Hidalgo"], log=lambda m: None, today=TODAY, thread_ts="9.9")
+        dm.assert_not_called()
+        kw = client.files_upload_v2.call_args[1]
+        self.assertEqual(kw["thread_ts"], "9.9")
+        self.assertIn("Wireless Churn", kw["initial_comment"])
+
+
 class Entry(unittest.TestCase):
     def test_names_and_dm(self):
         with mock.patch.object(OC, "run", return_value=0) as run:

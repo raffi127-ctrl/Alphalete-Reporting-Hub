@@ -97,3 +97,119 @@ def render_teams_box(tab_name: str, out_path, log=print) -> Path:
     log(f"[teams] {tab_name}: {rng} ({last - hdr - 1} row(s) under the header) "
         f"-> {out_path.name}")
     return out_path
+
+
+# ------------------------------------------------------------ last week ----
+# Carlos 2026-11-23 (Monday): "send a screenshot of the team totals for last
+# week on there" -- the NDS Metrics thread. By Monday the board has rolled to
+# the new week, so the live box reads 0 everywhere, and flipping the gold WE
+# cell would rewrite the live board for everyone (and today's typed zeros
+# would sit in the old week's Monday). Instead the box is rebuilt from the
+# rep rows' own 'Last Wk' column with the box's own filters: campaign = the
+# box's campaign, Term? = 0 (a terminated rep's apps are out of the box, as
+# on the board), grouped by today's Team. Head counts are the live box's
+# (today's roster); Sales Avg = Apps / Total Head Count, as the box does.
+STAT_COLS = ("Apps", "Total Head Count", "Leaders", "Entry Level", "In Training",
+             "Sales Avg by Rep")
+
+
+def _col_of(row, name):
+    n = _norm(name)
+    return next((i for i, c in enumerate(row) if _norm(c) == n), None)
+
+
+def _num(v) -> float:
+    try:
+        return float(str(v).replace(",", "").strip() or 0)
+    except ValueError:
+        return 0.0
+
+
+def last_week_rows(g: List[List[str]]):
+    """-> (week label e.g. 'WE 11.22', [(label, is_total, {stat: text})]):
+    the campaign row first, the teams by last week's Apps (high first), then
+    'Unaccounted For' -- the live box's shape, last week's Apps."""
+    rh = next(i for i, row in enumerate(g)
+              if len(row) > 1 and _norm(row[1]) == "rep"
+              and any(_norm(c) == "last wk" for c in row))
+    H = g[rh]
+    i_last, i_camp = _col_of(H, "Last Wk"), _col_of(H, "Campaign")
+    i_team, i_term = _col_of(H, "Team"), _col_of(H, "Term?")
+    if None in (i_last, i_camp, i_team):
+        raise RuntimeError("the rep header has no Last Wk / Campaign / Team column")
+    hdr, last, _last_col = box_rows(g)
+    bh = g[hdr - 1]
+    stat_i = {s: _col_of(bh, s) for s in STAT_COLS}
+    box = []
+    for r in range(hdr + 1, last + 1):
+        row = list(g[r - 1]) + [""] * 60
+        label = row[LABEL_COL - 1].strip()
+        if label:
+            box.append((label, row))
+    camp_label = box[0][0]
+    width = max(i_last, i_camp, i_team, i_term or 0) + 1
+    reps, camp_code = [], ""
+    for row in g[rh + 1:]:
+        row = list(row) + [""] * width
+        if _norm(row[1]) == _norm(camp_label):
+            camp_code = row[i_camp].strip()          # the total row's own campaign cell
+            break
+        if row[1].strip():
+            reps.append(row)
+    if not camp_code:
+        camp_code = max({r[i_camp].strip() for r in reps if r[i_camp].strip()} or {""},
+                        key=lambda c: sum(1 for r in reps if r[i_camp].strip() == c))
+
+    def counted(r):
+        term = r[i_term].strip() if i_term is not None else ""
+        return r[i_camp].strip() == camp_code and term in ("", "0")
+
+    def apps(team):
+        return sum(_num(r[i_last]) for r in reps if counted(r)
+                   and (team is None or r[i_team].strip() == team))
+
+    out = []
+    for label, row in box:
+        if _norm(label) == _norm(camp_label):
+            a = apps(None)
+        elif _norm(label) == LAST_LABEL:
+            a = apps("")
+        else:
+            a = apps(label)
+        stats = {}
+        for s in STAT_COLS[1:5]:
+            i = stat_i.get(s)
+            stats[s] = row[i].strip() if i is not None else ""
+        hc = _num(stats.get("Total Head Count"))
+        stats["Apps"] = "%d" % a
+        stats["Sales Avg by Rep"] = ("%.1f" % (a / hc)) if hc else ""
+        out.append((label, _norm(label) == _norm(camp_label), stats))
+    first, teams, unacc = out[:1], out[1:], []
+    if teams and _norm(teams[-1][0]) == LAST_LABEL:
+        teams, unacc = teams[:-1], teams[-1:]
+    teams.sort(key=lambda t: (-_num(t[2]["Apps"]), t[0].lower()))
+    week = ""
+    for row in g:
+        if len(row) > 3 and _norm(row[1]) == "last week" and str(row[3]).strip():
+            week = str(row[3]).strip()
+            break
+    return week, first + teams + unacc
+
+
+def render_last_week(tab_name: str, out_path, log=print) -> Path:
+    """Last week's Teams box (see last_week_rows) as a PNG at `out_path`."""
+    from automations.b2b_metrics.rep_boards import render_table_png
+    from automations.recruiting_report.fill import open_by_key, _retry
+    ws = open_by_key(SHEET_ID).worksheet(tab_name)
+    g = _retry(lambda: ws.get("A1:AT220"))
+    week, rows = last_week_rows(g)
+    table = [(label, "", is_total, {s: {"rate": v, "color": ""} for s, v in stats.items()})
+             for label, is_total, stats in rows]
+    sub = ("%s — Apps = each rep's Last Wk on the %s, grouped by today's Team "
+           "(terminated reps left out, like the board's Teams box); head counts are "
+           "today's roster" % (week or "last week", tab_name))
+    out = render_table_png("TEAMS — LAST WEEK%s" % ((" (%s)" % week) if week else ""),
+                           sub, list(STAT_COLS), table, Path(out_path))
+    log("[teams] %s last week %s: %s" % (tab_name, week,
+                                        ", ".join("%s %s" % (l, s["Apps"]) for l, _t, s in rows)))
+    return out

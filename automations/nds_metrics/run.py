@@ -2003,6 +2003,18 @@ def build_teams_board(cols, crew, today, log=print) -> Path:
         OUT_DIR / f"nds_teams_board_{today.isoformat()}.png", log=log)
 
 
+def build_teams_last_week(cols, crew, today, log=print) -> Path:
+    """The Teams box as it stood LAST week (Carlos 2026-11-23, a Monday:
+    "send a screenshot of the team totals for last week on there"). By
+    Monday the board has rolled, so the box is rebuilt from the rep rows'
+    Last Wk column (sales_boards.teams_box.render_last_week) -- the live
+    board is only read. ON_REQUEST, thread only (not texted)."""
+    from automations.sales_boards.teams_box import render_last_week
+    return render_last_week(
+        "NDS Sales Board",
+        OUT_DIR / f"nds_teams_last_week_{today.isoformat()}.png", log=log)
+
+
 def build_day_board(cols, crew, today, log=print) -> Path:
     """Yesterday's board cut (Carlos 2026-10-28) — see board_shots."""
     from automations.nds_metrics import board_shots
@@ -2048,7 +2060,7 @@ RETIRED = {"order_log"}
 # and then `--post` puts it in today's thread (and on the text chains when it
 # is in TEXT_SECTIONS) like any other board. `rerun nds_metrics --only
 # teams_board --post`. Take a sid out of here to make it a daily section.
-ON_REQUEST = {"teams_board"}
+ON_REQUEST = {"teams_board", "teams_last_week"}
 
 
 def thread_sections():
@@ -2082,6 +2094,10 @@ SECTIONS = [
     # never in the morning run, posted + texted by `--only teams_board --post`.
     ("teams_board", "\U0001F465", "NDS Teams Board",
      build_teams_board),
+    # Carlos 2026-11-23: last week's team totals, rebuilt off the rep rows'
+    # Last Wk column. ON_REQUEST: `--only teams_last_week` (base_args post).
+    ("teams_last_week", "\U0001F465", "NDS Teams — Last Week",
+     build_teams_last_week),
     # sales_metrics: REMOVED (Carlos 2026-10-21: "remove the sales metrics")
     # — the old shot was the D2D Metrics view filtered to RAF's office.
     ("activation_overview", "\U0001F4B5", "NDS Activation Report Overview",

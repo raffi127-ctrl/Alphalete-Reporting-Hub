@@ -221,6 +221,35 @@ class AddCarlos(unittest.TestCase):
         self.assertTrue(run.call_args[1]["summary_only"])
 
 
+class Thread(unittest.TestCase):
+    """Carlos 2026-11-23: "Send the churn and activation of totals on the nDS
+    metrics thread" -- the summary as a reply in that thread, nothing else."""
+
+    def test_summary_goes_in_the_thread_only(self):
+        import collections
+        o = OW.Office("Carlos Hidalgo", "Carlos Hidalgo", "NDS", [dt.date(2026, 11, 22)],
+                      {AW.TOTAL: {dt.date(2026, 11, 22): collections.Counter(lines=4, activated=3)}})
+        client = mock.Mock()
+        with mock.patch.object(OW, "read_offices", return_value=([o], [])), \
+             mock.patch.object(OW, "summary_png", return_value="/tmp/s.png"), \
+             mock.patch.object(OW, "owner_png") as board, \
+             mock.patch("automations.shared.slack_metrics_post._client", return_value=client), \
+             mock.patch("automations.shared.slack_metrics_post.dm_user_with_file") as dm:
+            OW.run(["Carlos Hidalgo"], log=lambda m: None, today=TODAY, summary_only=True,
+                   thread_ts="1795440292.801759")
+        board.assert_not_called()
+        dm.assert_not_called()
+        kw = client.files_upload_v2.call_args[1]
+        self.assertEqual((kw["channel"], kw["thread_ts"]), ("C07J46MQNUX", "1795440292.801759"))
+        self.assertIn("Activation Rate by Week Ending", kw["initial_comment"])
+
+    def test_flag(self):
+        with mock.patch.object(OW, "run", return_value=0) as run:
+            OW.entry(["--owner-weeks", "Carlos Hidalgo", "--summary-only", "--thread-ts", "1.2"])
+        self.assertEqual(run.call_args[1]["thread_ts"], "1.2")
+        self.assertIsNone(run.call_args[1]["dm"])
+
+
 class Entry(unittest.TestCase):
     def test_quoted_and_unquoted_names(self):
         for args in (["--owner-weeks", "Khalil Mansour;Colten Wright", "--dm", "U1"],

@@ -347,7 +347,8 @@ def tableau_check(offices: Sequence[OfficeChurn], today: dt.date, log=print) -> 
 
 
 def run(queries: Sequence[str], dm: Optional[str] = None, log=print,
-        today: Optional[dt.date] = None, check: bool = False) -> int:
+        today: Optional[dt.date] = None, check: bool = False,
+        thread_ts: Optional[str] = None) -> int:
     import os
     today = today or dt.date.today()
     offices, missing = read_offices(queries, today, log=log)
@@ -361,8 +362,12 @@ def run(queries: Sequence[str], dm: Optional[str] = None, log=print,
     apply_tableau(offices, tableau_phones(offices, today, log=log), log=log)
     path = summary_png(offices, today)
     log("[owner-churn] built %s" % path)
+    if thread_ts:
+        OW.post_to_thread(path, "\U0001F43A *Owners — Wireless Churn (Airs + BYODs)*"
+                          "\nSource: Tableau", thread_ts, log=log)
     if not dm:
-        log("[owner-churn] no --dm: built only, nothing sent")
+        if not thread_ts:
+            log("[owner-churn] no --dm: built only, nothing sent")
         return 0
     from automations.shared import slack_metrics_post as smp
     as_bot = bool(os.environ.get("SLACK_BOT_TOKEN")) or smp.BOT_TOKEN_PATH.exists()
@@ -397,4 +402,5 @@ def entry(args: Sequence[str]) -> int:
         j = args.index("--dm")
         dm = args[j + 1] if j + 1 < len(args) else None
     return run(queries, dm=dm, log=lambda m: print(m, flush=True),
-               check="--tableau-check" in args)
+               check="--tableau-check" in args,
+               thread_ts=OW._arg(args, "--thread-ts"))

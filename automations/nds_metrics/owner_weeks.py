@@ -264,8 +264,32 @@ def log_office(o: Office, today: dt.date, log=print) -> None:
 
 # ------------------------------------------------------------------ main ----
 
+def post_to_thread(path, comment: str, thread_ts: str, log=print,
+                   channel: Optional[str] = None) -> None:
+    """One picture as a reply in a thread of #alphalete-gp-sales (the NDS
+    Metrics thread) from the metrics token -- the token that thread is
+    posted with (nds_metrics.run.post_thread), so it reads as one poster.
+    Carlos 2026-11-23: "Send the churn and activation of totals on the nDS
+    metrics thread"."""
+    from automations.nds_metrics.run import CHANNEL
+    from automations.shared import slack_metrics_post as smp
+    client = smp._client()
+    client.files_upload_v2(channel=channel or CHANNEL[1], thread_ts=thread_ts,
+                           initial_comment=comment,
+                           file_uploads=[{"file": str(path), "filename": Path(path).name}])
+    log("[owner] posted %s in thread %s" % (Path(path).name, thread_ts))
+
+
+def _arg(args: Sequence[str], flag: str) -> Optional[str]:
+    if flag not in args:
+        return None
+    j = list(args).index(flag)
+    return args[j + 1] if j + 1 < len(args) else None
+
+
 def run(queries: Sequence[str], dm: Optional[str] = None, log=print,
-        today: Optional[dt.date] = None, summary_only: bool = False) -> int:
+        today: Optional[dt.date] = None, summary_only: bool = False,
+        thread_ts: Optional[str] = None) -> int:
     """`summary_only` = build + send just the owners summary (Carlos
     2026-11-23, on the summary: "I like this one. Add me to it")."""
     today = today or dt.date.today()
@@ -283,8 +307,12 @@ def run(queries: Sequence[str], dm: Optional[str] = None, log=print,
         shots.append((o.label, owner_png(o, today)))
     for name, path in shots:
         log("[owner-weeks] built %s -> %s" % (name, path))
+    if thread_ts:
+        post_to_thread(shots[0][1], "\U0001F4C6 *Owners — Activation Rate by Week Ending*"
+                       "\nSource: Tableau", thread_ts, log=log)
     if not dm:
-        log("[owner-weeks] no --dm: built only, nothing sent")
+        if not thread_ts:
+            log("[owner-weeks] no --dm: built only, nothing sent")
         return 0
     import os
     from automations.shared import slack_metrics_post as smp
@@ -331,4 +359,5 @@ def entry(args: Sequence[str]) -> int:
         j = args.index("--dm")
         dm = args[j + 1] if j + 1 < len(args) else None
     return run(queries, dm=dm, log=lambda m: print(m, flush=True),
-               summary_only="--summary-only" in args)
+               summary_only="--summary-only" in args,
+               thread_ts=_arg(args, "--thread-ts"))
