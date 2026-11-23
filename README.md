@@ -2,7 +2,7 @@
 
 Every operational README from Carlos's MacBook, gathered in one place so any device can read them. Synced twice a day (7:30am and 8:00pm Central) by `sync_readmes.sh`, after the 7pm README-updater tasks have run.
 
-_Last sync: 2026-11-22 07:30 CST_
+_Last sync: 2026-11-22 20:00 CST_
 
 **Read-only mirror.** Edit the source file on the MacBook (path shown per section), not this repo; the next sync overwrites everything here.
 
@@ -17,7 +17,7 @@ Source: `~/alphalete-readmes/`
 | [AD-SALES-BOARD-README.md](ops/AD-SALES-BOARD-README.md) | Ad Sales Board — how it works, and what breaks when you change it | 2026-11-19 |
 | [BOX-ORDER-LOG-README.md](ops/BOX-ORDER-LOG-README.md) | BOX Order Log — how it all works | 2026-10-29 |
 | [FOCUS-REPORT-CAMPAIGN-README.md](ops/FOCUS-REPORT-CAMPAIGN-README.md) | Focus Report Campaign Metrics — System README | 2026-09-30 |
-| [LOCAL-OFFICE-SALES-CALLOUTS-README.md](ops/LOCAL-OFFICE-SALES-CALLOUTS-README.md) | Local Office Sales Call Outs — README | 2026-11-21 |
+| [LOCAL-OFFICE-SALES-CALLOUTS-README.md](ops/LOCAL-OFFICE-SALES-CALLOUTS-README.md) | Local Office Sales Call Outs — README | 2026-11-22 |
 | [LOCAL-OFFICE-SALES-CALLOUTS-SESSION-README.md](ops/LOCAL-OFFICE-SALES-CALLOUTS-SESSION-README.md) | Local Office Sales Call Outs — session README (Sep 29 → Oct 19, 2026) | 2026-10-21 |
 | [LUCY2-OPERATIONS-README.md](ops/LUCY2-OPERATIONS-README.md) | Sheets identity per machine (11/4/2026) | 2026-11-19 |
 | [ONE-ON-ONES-README.md](ops/ONE-ON-ONES-README.md) | ONE-ON-ONES README — Carlos's Monday 1:1 call | 2026-10-19 |
