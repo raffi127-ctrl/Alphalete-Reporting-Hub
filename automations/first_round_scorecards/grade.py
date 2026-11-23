@@ -117,6 +117,11 @@ OFFICES = {
     "Frank Matos": {},
     "Nicolas Lujan": {},
     "Hasan Salame": {},
+    # 2026-11-23 (Eve): no script of their own yet -> Rafael's. Listed so
+    # script_watch reads their channel and switches them (and re-grades the
+    # last 14 days) the day one is filed there.
+    "Algemar Kennel": {},
+    "Vincent Dodson": {},
     # 2026-10-09: Tre's new script (Eve) -- no pay, 40 hrs + Saturdays, North Houston
     "Tre Mitchell": {"format": "tre"},
     # Scripts shaped differently from Rafael's -- see FORMATS below.
