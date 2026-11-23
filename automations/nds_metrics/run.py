@@ -2487,7 +2487,8 @@ def main(argv=None) -> int:
             if str(a.dm_reps or "").strip().lower() == "sheet":
                 spec = sheet_spec
         rc = ROL.send_shots(shots, today, everyone=everyone, spec=spec,
-                            daily=a.daily, dry=a.dm_reps_dry)
+                            daily=a.daily, dry=a.dm_reps_dry,
+                            lenient=str(a.dm_reps or "").strip().lower() == "sheet")
         print("=== done ===", flush=True)
         return rc
     only = set(a.only.split(",")) if a.only else None

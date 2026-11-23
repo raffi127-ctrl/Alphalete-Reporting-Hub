@@ -159,6 +159,9 @@ def fill_block(o: dict, data: dict, dry_run: bool) -> bool:
     return not vbad
 
 
+MIN_OWNERS = 20
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="fiber_zip_penetration")
     ap.add_argument("--csv", help="Use this crosstab file instead of pulling Tableau.")
@@ -184,6 +187,13 @@ def main(argv=None) -> int:
             text = core.decode(p)
     by_owner = core.parse_zips(text)
     print("  crosstab: %d owners" % len(by_owner))
+    if len(by_owner) < MIN_OWNERS:
+        # 11/23 on Lucy 2 the download came back with ONE owner (a remembered
+        # owner filter in that Tableau session). Writing from it would blank
+        # nobody but skip everyone -- fail loudly instead, write nothing.
+        print("  !! only %d owner(s) in the crosstab (expected ~60+) -- a Tableau "
+              "filter is stuck; nothing written" % len(by_owner))
+        return 1
 
     owners = [o for o in config.OWNERS if not args.owner or o["owner"] == args.owner]
     bad = []

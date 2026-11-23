@@ -1277,13 +1277,15 @@ def daily_lock(path=None):
 
 def send_shots(shots: Dict[str, Path], today: dt.date, everyone: Sequence[str] = (),
                spec: Optional[str] = None, daily: bool = False, dry: bool = False,
-               log=print, dm=None, state_path=None) -> int:
+               log=print, dm=None, state_path=None, lenient: bool = False) -> int:
     """DM the pictures: EVERY one to each Slack id in `everyone` (Carlos +
     Sebastian), and each rep only THEIR OWN off `spec` (rep_dm_plan).
     `daily` (the 9am launchd job): one person gets one picture at most once a
     day (state file, so the 9:20 tick retries only what failed), a bad map row
     is skipped instead of refusing every rep, and a run that finds another
-    send going stops. `dry` = log who would get what, send nothing.
+    send going stops. `lenient` (a map read off the sheet, which lists reps
+    with no picture today) skips bad rows the same way without --daily.
+    `dry` = log who would get what, send nothing.
     -> 0, or 1 when a DM failed or the rep plan was refused."""
     if dm is None:
         from automations.shared import slack_metrics_post as smp
@@ -1293,9 +1295,10 @@ def send_shots(shots: Dict[str, Path], today: dt.date, everyone: Sequence[str] =
         if not mine:
             log("[nds] order log DMs: another send is running -- this one stops, nothing sent")
             return 0
-        done = daily_sent(today, state_path) if daily else set()
+        prior = daily_sent(today, state_path) if daily else set()
+        sent_now = set()
         plan: Dict[str, str] = {}
-        refused, problems = None, ([] if daily else None)
+        refused, problems = None, ([] if (daily or lenient) else None)
         if spec:
             try:
                 plan = rep_dm_plan(list(shots), spec, problems=problems)
@@ -1311,10 +1314,14 @@ def send_shots(shots: Dict[str, Path], today: dt.date, everyone: Sequence[str] =
 
         def one(png, user, comment, rep, what):
             key = f"{user}|{rep}"
-            if key in done:
+            if key in sent_now:              # this run already sent it: an ALL person's own picture
+                return
+            if key in prior:
                 counts["already"] += 1
                 return
             if dry:
+                sent_now.add(key)
+                counts["sent"] += 1
                 log(f"[nds] {what} (dry): {rep} -> {user} ({Path(png).name})")
                 return
             try:
@@ -1324,7 +1331,7 @@ def send_shots(shots: Dict[str, Path], today: dt.date, everyone: Sequence[str] =
                 log(f"[nds] {what} FAILED: {rep} -> {user}: {type(e).__name__}: {e}")
                 return
             counts["sent"] += 1
-            done.add(key)
+            sent_now.add(key)
             if daily:
                 daily_mark(today, sent_key=key, path=state_path)
             log(f"[nds] {what} sent: {rep} -> {user}")
