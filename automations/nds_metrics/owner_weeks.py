@@ -12,10 +12,13 @@ WHOLE office: every rep under the owner, no crew filter.
     window, every owner on it). Wireless lines by sp.Order Date week;
     activated = Posted or Disconnected; cancelled = Canceled, never posted.
   * An owner who is NOT on that export falls back to the D2D 'A.Order Log'
-    (fiber_metrics.pull). Rafael Hidalgo sells AT&T fiber on 11280 and has
-    no NDS code (not one of the 67 owners on the 11/15 NDS export). EVERY
-    line of the office (fiber + wireless) by order-date week; Posted or
-    Disconnected = activated (the Fiber Activation Rate by Rep rule).
+    (fiber_metrics.pull). Rafael Hidalgo's office (11280) has no NDS code
+    (not one of the 67 owners on the 11/15 NDS export) but sells wireless
+    phones on its AT&T codes (Carlos 2026-11-23: "Rafael sells wireless
+    phones so you should be able to see phones on his order log as well"):
+    his WIRELESS lines by order-date week, the same count as the NDS
+    boards; fiber / video / voice lines stay out. Posted or Disconnected =
+    activated.
 
 One summary picture first (an office-total row per owner, a column per
 week ending), then one board per owner with a row per rep. Nothing is
@@ -110,7 +113,7 @@ class Office:
                  pulled_at=None):
         self.query = query
         self.label = label             # 'Khalil Mansour'
-        self.campaign = campaign       # 'NDS' | 'Fiber'
+        self.campaign = campaign       # 'NDS' | 'D2D'
         self.weeks = weeks
         self.data = data
         self.pulled_at = pulled_at
@@ -177,9 +180,8 @@ def read_offices(queries: Sequence[str], today: dt.date, log=print,
                 % (q, owner_name(hit[0]), len(rows),
                    _counts(dcols, rows, "product type (broken out)", "product type", "product"),
                    _counts(dcols, rows, "dtr status", "spe.status")))
-            weeks, data = AW.aggregate_tableau(dcols, rows, today, since=since,
-                                               wireless_only=False)
-            found[q] = Office(q, _pretty(hit[0]), "Fiber", weeks, data, d_pulled)
+            weeks, data = AW.aggregate_tableau(dcols, rows, today, since=since)
+            found[q] = Office(q, _pretty(hit[0]), "D2D", weeks, data, d_pulled)
     for q in missing:
         log("[owner-weeks] %r: NOT FOUND on either export -- left off" % q)
     return [found[q] for q in queries if q in found], missing
@@ -190,7 +192,8 @@ def read_offices(queries: Sequence[str], today: dt.date, log=print,
 def _sub(o: Office, today: dt.date) -> str:
     what = ("wireless lines off the Tableau NDS-SN order log"
             if o.campaign == "NDS" else
-            "every line (fiber + wireless) off the Tableau D2D order log -- no NDS code")
+            "wireless lines (phones, tablets, watches) off the Tableau D2D order log -- "
+            "his own AT&T codes, no NDS code; fiber / video lines left out")
     return ("%s's whole office — %s (of the sales made each Mon–Sun week: "
             "activated/sold %s; activated = Posted or Disconnected; cancels count as sold; "
             "* = week in progress; export pulled %s)"
@@ -198,12 +201,17 @@ def _sub(o: Office, today: dt.date) -> str:
                o.pulled_at.strftime("%m/%d %H:%M") if o.pulled_at else "n/a"))
 
 
+def board_name(o: Office) -> str:
+    """'NDS Activation Rate by Week Ending' / 'Wireless Activation Rate by
+    Week Ending' (a D2D office's phones)."""
+    return "%s Activation Rate by Week Ending" % ("NDS" if o.campaign == "NDS" else "Wireless")
+
+
 def owner_png(o: Office, today: dt.date, out_dir: Path = OUT_DIR) -> Path:
     slug = re.sub(r"[^a-z0-9]+", "_", o.label.lower()).strip("_")
     out = out_dir / ("owner_weeks_%s.png" % slug)
     return AW.render(o.weeks, o.data, out, today=today,
-                     title="%s — %s ACTIVATION RATE BY WEEK ENDING"
-                           % (o.label.upper(), o.campaign.upper()),
+                     title="%s — %s" % (o.label.upper(), board_name(o).upper()),
                      sub=_sub(o, today), total_label="Office Total",
                      active_reps_only=True)
 
@@ -222,13 +230,15 @@ def summary_png(offices: Sequence[Office], today: dt.date, out_dir: Path = OUT_D
     col_of = dict(zip(weeks, columns))
     rows = []
     for o in offices:
-        label = o.label if o.campaign == "NDS" else "%s (%s)" % (o.label, o.campaign.lower())
-        rows.append((label, "", False, AW.cells_for(o.data.get(AW.TOTAL, {}), weeks,
-                                                    col_of, today)))
+        rows.append((o.label, "", False, AW.cells_for(o.data.get(AW.TOTAL, {}), weeks,
+                                                      col_of, today)))
+    d2d = [o.label.split()[0] for o in offices if o.campaign != "NDS"]
     sub = ("Whole offices — %s (of the sales made each Mon–Sun week: activated/sold "
-           "lines + rate off Tableau; NDS = wireless lines on the NDS-SN order log; fiber = every "
-           "line on the D2D order log; activated = Posted or Disconnected; cancels count as sold; "
-           "* = week in progress)" % today.strftime("%B %d, %Y"))
+           "wireless lines + rate off Tableau's NDS-SN order log%s; activated = Posted or "
+           "Disconnected; cancels count as sold; * = week in progress)"
+           % (today.strftime("%B %d, %Y"),
+              ("; %s's off the D2D order log (his own AT&T codes)" % " & ".join(d2d))
+              if d2d else ""))
     return render_table_png("ACTIVATION RATE BY WEEK ENDING — OWNERS", sub, columns,
                             rows, out_dir / "owner_weeks_summary.png")
 
@@ -275,8 +285,7 @@ def run(queries: Sequence[str], dm: Optional[str] = None, log=print,
                 comment += "\n(not found on Tableau: %s)" % ", ".join(missing)
         else:
             o = next(x for x in offices if x.label == name)
-            comment = ("\U0001F4C6 *%s — %s Activation Rate by Week Ending*\nSource: Tableau"
-                       % (o.label, o.campaign))
+            comment = ("\U0001F4C6 *%s — %s*\nSource: Tableau" % (o.label, board_name(o)))
         for user in [u.strip() for u in str(dm).split(",") if u.strip()]:
             smp.dm_user_with_file(Path(path), user=user, file_name=Path(path).name,
                                   comment=comment)

@@ -113,7 +113,7 @@ class Board(unittest.TestCase):
         o1 = OW.Office("Khalil", "Khalil Mansour", "NDS",
                        [dt.date(2026, 11, 15), dt.date(2026, 11, 22)],
                        {AW.TOTAL: {dt.date(2026, 11, 22): {"lines": 4, "activated": 3}}})
-        o2 = OW.Office("Rafael", "Rafael Hidalgo", "Fiber", [dt.date(2026, 11, 22)],
+        o2 = OW.Office("Rafael", "Rafael Hidalgo", "D2D", [dt.date(2026, 11, 22)],
                        {AW.TOTAL: {dt.date(2026, 11, 22): {"lines": 2, "activated": 1}}})
         got = {}
         with mock.patch("automations.b2b_metrics.rep_boards.render_table_png",
@@ -121,8 +121,42 @@ class Board(unittest.TestCase):
                             rows=rows, columns=columns) or out):
             OW.summary_png([o1, o2], TODAY, out_dir=mock.MagicMock())
         self.assertEqual(got["columns"], ["WE 11/15", "WE 11/22"])
-        self.assertEqual([r[0] for r in got["rows"]], ["Khalil Mansour", "Rafael Hidalgo (fiber)"])
+        self.assertEqual([r[0] for r in got["rows"]], ["Khalil Mansour", "Rafael Hidalgo"])
         self.assertEqual(got["rows"][0][3]["WE 11/22"]["rate"], "75.0%")
+
+
+class D2DFallback(unittest.TestCase):
+    """Rafael has no NDS code: his PHONES come off the D2D order log (Carlos
+    2026-11-23: "Rafael sells wireless phones so you should be able to see
+    phones on his order log as well") -- wireless lines only, like NDS."""
+
+    def test_rafael_wireless_lines_off_the_d2d_log(self):
+        import tempfile
+        from pathlib import Path
+        d2d = [["Owner Name", "Rep", "sp.Order Date (copy)", "DTR Status",
+                "Product Type (Broken Out)", "sp.SPM Number", "spe.Name"],
+               ["Rafael Hidalgo", "Jorge Gramajo", "11/17/2026", "Posted", "WIRELESS", "R1", "S1"],
+               ["Rafael Hidalgo", "Jorge Gramajo", "11/17/2026", "Shipped", "WIRELESS", "R1", "S2"],
+               ["Rafael Hidalgo", "Jorge Gramajo", "11/17/2026", "Posted", "NEW INTERNET", "R1", "S3"],
+               ["Rafael Hidalgo", "Jon Smith", "11/18/2026", "Confirmed", "VIDEO", "R2", "S4"]]
+        with tempfile.TemporaryDirectory() as td:
+            n, d = Path(td, "nds.csv"), Path(td, "d2d.csv")
+            n.write_text("x")
+            d.write_text("x")
+            with mock.patch("automations.office_metrics.nds_orderlog._read_csv",
+                            return_value=export()), \
+                 mock.patch("automations.commission_sheet.sources.read_crosstab",
+                            return_value=d2d):
+                offices, missing = OW.read_offices(["Khalil Mansour", "Rafael Hidalgo"], TODAY,
+                                                   log=lambda m: None, nds_path=n, d2d_path=d)
+        self.assertEqual(missing, [])
+        raf = offices[1]
+        self.assertEqual((raf.label, raf.campaign), ("Rafael Hidalgo", "D2D"))
+        wk = raf.data[AW.TOTAL][dt.date(2026, 11, 22)]
+        self.assertEqual((wk["lines"], wk["activated"], wk["pending"]), (2, 1, 1))  # phones only
+        self.assertNotIn("Jon Smith", raf.data)                 # a video-only rep has no row
+        self.assertEqual(OW.board_name(raf), "Wireless Activation Rate by Week Ending")
+        self.assertEqual(OW.board_name(offices[0]), "NDS Activation Rate by Week Ending")
 
 
 class Entry(unittest.TestCase):
