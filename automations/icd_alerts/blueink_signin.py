@@ -55,7 +55,20 @@ def _say_through_window(lines):
 
 
 def run(log=print) -> int:
-    from automations.blueink_docs import session
+    from automations.blueink_docs import auto_login, session
+
+    # TRY THE SAVED PASSWORD FIRST, AND OPEN NOTHING IF IT WORKS. Blue Ink's
+    # sign-in needs no code, so on a machine that has the office's password
+    # this whole window is avoidable -- and a window nobody needed is exactly
+    # what Lucy is not supposed to put on an owner's screen. The box below is
+    # for when the password is absent, changed, or refused.
+    try:
+        if auto_login.ensure(log=log):
+            log("  Blue Ink signed in without anybody being asked.")
+            return 0
+    except Exception as exc:                        # noqa: BLE001
+        log("  automatic sign-in could not run (%s) -- asking the owner"
+            % type(exc).__name__)
 
     said = []
 

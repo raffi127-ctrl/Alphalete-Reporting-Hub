@@ -106,6 +106,50 @@ SEND_LOOK_BACK_DAYS = 7
 ECO_CREDS_PATH = (Path.home() / ".config" / "lucy-reports" / "blueink-creds.json")
 
 
+def login_creds() -> dict:
+    """{'email', 'password'} for THIS machine's Blue Ink account, or {}.
+
+    Blue Ink's sign-in is an email and a password with no second factor
+    (screenshot, Megan 2026-11-23) -- "Continue with Google" is an
+    alternative on that page, not a requirement. So the sign-in is the same
+    shape as OwnerVille's and Sterling's, and is typed the same way.
+
+    WHY THIS IS ALLOWED HERE WHEN session.py SAYS NOTHING TYPES A PASSWORD.
+    That rule was written for ONE SHARED ACCOUNT driven from our machines,
+    with the reason given as "the repo is public". The credential never goes
+    in the repo: it lives beside every other ECO login in the owner's own
+    home directory, readable by that user only, on the machine that already
+    holds their OwnerVille, Sterling, AppStream and Apex passwords. An ICD's
+    Blue Ink password is no different from those.
+
+    Read from the same file as the API key so an office has one Blue Ink
+    file, not two:
+
+        ~/.config/lucy-reports/blueink-creds.json
+        {"blueink_api_key": "...", "envelope_template_id": "T-...",
+         "email": "...", "password": "..."}
+
+    Absent is not an error -- it means this machine signs in by hand, which
+    is what every machine did before.
+    """
+    import json
+    import os
+    env_user = os.environ.get("BLUEINK_EMAIL")
+    env_pass = os.environ.get("BLUEINK_PASSWORD")
+    if env_user and env_pass:
+        return {"email": env_user, "password": env_pass}
+    path = creds_path()
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return {}
+    email = str(data.get("email") or "").strip()
+    password = str(data.get("password") or "")
+    if not email or not password:
+        return {}
+    return {"email": email, "password": password}
+
+
 def creds_path() -> Path:
     """This machine's Blue Ink key file. The office's own, else the repo's."""
     return ECO_CREDS_PATH if ECO_CREDS_PATH.exists() else REPO_ROOT / "blueink-creds.json"

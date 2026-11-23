@@ -5,6 +5,7 @@ import unittest
 from unittest import mock
 
 from automations.icd_alerts import blueink_signin as BS
+from automations.blueink_docs import auto_login as AUTO
 from automations.blueink_docs import session as SESSION
 
 
@@ -39,13 +40,29 @@ class WhoseAccountItNames(unittest.TestCase):
 
 class WhatTheOwnerIsTold(unittest.TestCase):
 
-    def _run(self, login):
+    def _run(self, login, auto=False):
+        """`auto` = whether the saved password signs in by itself.
+
+        MOCKED ON PURPOSE, not left to the machine. ensure() reaches for a
+        real session and would launch a browser on any box that has one, so a
+        test that did not mock it would pass here and hang in CI.
+        """
         dlg = _Dialogs()
         with mock.patch.dict("sys.modules",
                              {"automations.icd_alerts.dialogs": dlg}), \
+             mock.patch.object(AUTO, "ensure", lambda log=print: auto), \
              mock.patch.object(SESSION, "login", login):
             code = BS.run(log=lambda *_a: None)
         return code, dlg.said
+
+    def test_the_saved_password_means_the_owner_sees_nothing(self):
+        """The whole point: a sign-in that needs no person opens no window.
+        A box nobody needed is what Lucy is not supposed to put on a screen."""
+        def never(say=print):
+            raise AssertionError("login() should not be reached")
+        code, said = self._run(never, auto=True)
+        self.assertEqual(code, 0)
+        self.assertEqual(said, [])
 
     def test_a_good_sign_in_says_there_is_nothing_else_to_do(self):
         code, said = self._run(lambda say=print: 0)
