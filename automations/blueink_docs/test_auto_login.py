@@ -105,3 +105,31 @@ class WhatItRefusesToDo(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TheSignInIsTwoScreens(unittest.TestCase):
+    """Read off the live page on 2026-11-23, after the first cut timed out.
+
+    Blue Ink asks for the EMAIL alone, with a Continue button, and the
+    password box does not exist in the document until that is pressed. The
+    screenshot this was first written from showed both boxes at once because
+    that browser already remembered the email -- so the code expected one
+    screen and matched nothing. The email field is type="text" as well, which
+    is why asking for input[type='email'] found no field at all.
+    """
+
+    def test_the_email_box_is_not_asked_for_by_type_alone(self):
+        self.assertIn("name='email'", AL.EMAIL_BOX)
+        self.assertIn("#loginForm-email", AL.EMAIL_BOX)
+
+    def test_continue_is_pressed_before_the_password_is_looked_for(self):
+        src = _source()
+        self.assertLess(src.index("page.click(CONTINUE_BUTTON"),
+                        src.index("wait_for_selector(PASSWORD_BOX"))
+        self.assertLess(src.index("wait_for_selector(PASSWORD_BOX"),
+                        src.index("page.fill(PASSWORD_BOX"))
+
+    def test_a_rejected_email_is_named_as_that(self):
+        """"No password box" sends somebody to read the page when the answer
+        is that the address is not an account."""
+        self.assertIn("may not be an account", _source())

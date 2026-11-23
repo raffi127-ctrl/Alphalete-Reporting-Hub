@@ -27,9 +27,11 @@ TWO THINGS THIS DELIBERATELY DOES NOT DO.
   saved an empty session and called it success (2026-09-08). This uses the
   same two-stable-looks test session.signed_in was written for.
 
-NOT PROVED LIVE YET. Nothing here has run against a real Blue Ink sign-in
-page -- the selectors come from the screenshot. The first run that matters
-should be watched, exactly as sterling_send's Send press was.
+PROVED LIVE 2026-11-23, on a clean profile with no session to replay, so the
+only way it could reach the dashboard was by typing: signed in and saved a
+14KB session with nobody at the machine. The clean profile is the whole test
+-- run against the real profile it would have proved nothing, because that
+one is already signed in.
 
     python -m automations.blueink_docs.auto_login            # try it
     python -m automations.blueink_docs.auto_login --check    # creds present?
@@ -42,13 +44,24 @@ import sys
 from automations.blueink_docs import config
 from automations.blueink_docs import session
 
-# The page in the screenshot: two text boxes and a Log In button. Asked for by
-# what they ARE rather than by a class name -- Blue Ink is a single-page app
-# and its class names are generated, so they change without the page changing.
-EMAIL_BOX = "input[type='email'], input[name='email'], input[name='username']"
-PASSWORD_BOX = "input[type='password']"
-LOGIN_BUTTON = "button:has-text('Log In'), button:has-text('Login'), " \
-               "button[type='submit']"
+# IT IS TWO SCREENS, NOT ONE (read off the live page, 2026-11-23). The first
+# asks for the email alone and has a Continue button; the password box does
+# not exist in the document until that is pressed. The screenshot this was
+# first written from showed both boxes together because the email was already
+# remembered on that browser -- so the code expected one screen, found one
+# input it could not match, and timed out.
+#
+# The email field is type="text", not type="email", which is why asking for
+# input[type='email'] matched nothing at all. Asked for by NAME and id, which
+# the page gives them; its class names are generated and change on a rebuild.
+EMAIL_BOX = "#loginForm-email, input[name='email'], input[type='email']"
+CONTINUE_BUTTON = "button[type='submit']"
+PASSWORD_BOX = "input[type='password'], input[name='password']"
+LOGIN_BUTTON = "button[type='submit']"
+
+# The password screen has to ARRIVE. Continue is a round trip to Blue Ink, and
+# on a slow morning the box is not in the document for a second or two.
+PASSWORD_WAIT_MS = 30_000
 
 # Long enough for a slow sign-in, short enough that a hung page does not hold
 # a run open. A person signing in by hand gets ten minutes (session.login);
@@ -110,16 +123,35 @@ def login(log=print) -> int:
                 _save(ctx, log)
                 return 0
 
+            # SCREEN ONE: the email, then Continue.
             try:
                 page.fill(EMAIL_BOX, creds["email"], timeout=20_000)
-                page.fill(PASSWORD_BOX, creds["password"], timeout=20_000)
+                page.click(CONTINUE_BUTTON, timeout=20_000)
             except Exception as exc:                 # noqa: BLE001
-                # NEVER let the exception carry the password: a fill() error
-                # from Playwright quotes the value it was given, and that text
-                # goes into a log file and a Slack post.
                 raise NotSignedIn(
                     "Blue Ink's sign-in page did not look the way we expect "
                     "(%s). Nothing was typed." % type(exc).__name__) from None
+
+            # SCREEN TWO: the password, which does not exist until now.
+            try:
+                page.wait_for_selector(PASSWORD_BOX, timeout=PASSWORD_WAIT_MS)
+            except Exception:                        # noqa: BLE001
+                # A REJECTED EMAIL LOOKS EXACTLY LIKE A SLOW ONE, and saying
+                # so matters: "no password box" sends somebody looking at the
+                # page when the answer is that the address is wrong.
+                raise NotSignedIn(
+                    "Blue Ink never asked for a password after the email was "
+                    "entered -- the saved address may not be an account on "
+                    "this Blue Ink.") from None
+            try:
+                # NEVER let the exception carry the password: a fill() error
+                # from Playwright quotes the value it was given, and that text
+                # goes into a log file and a Slack post.
+                page.fill(PASSWORD_BOX, creds["password"], timeout=20_000)
+            except Exception as exc:                 # noqa: BLE001
+                raise NotSignedIn(
+                    "Blue Ink's password box would not take an entry (%s)."
+                    % type(exc).__name__) from None
             page.click(LOGIN_BUTTON, timeout=20_000)
 
             for _ in range(TRIES):
