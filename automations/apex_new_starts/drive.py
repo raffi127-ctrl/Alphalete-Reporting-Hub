@@ -1295,6 +1295,22 @@ def guard_unsaved(page, log=print) -> list:
     return seen
 
 
+def _same_host(url: str, page_url: str) -> bool:
+    """Is this URL on the host the page is already on?
+
+    The scope on what counts as a save. Without it any third-party beacon --
+    analytics, a font CDN's POST -- would be read as the person pressing
+    Save, which is worse than missing one: a record reported saved that is
+    not is a person nobody goes back to.
+    """
+    try:
+        from urllib.parse import urlparse
+        a, b = urlparse(url or ""), urlparse(page_url or "")
+        return bool(a.netloc) and a.netloc == b.netloc
+    except Exception:          # noqa: BLE001
+        return False
+
+
 def wait_for_save(page, apex_id, *, seconds: int = 2700, log=print) -> bool:
     """Wait until the person has saved the tab that is on screen.
 
@@ -1312,14 +1328,31 @@ def wait_for_save(page, apex_id, *, seconds: int = 2700, log=print) -> bool:
     (2026-11-13). Waiting costs nothing: nothing is saved until they save it.
     """
     done = []
+    seen = []                      # every non-GET, for when nothing matches
     want = "/employees/%s" % apex_id
 
     def _on(res):
         try:
             if (res.request.method or "GET").upper() == "GET":
                 return
-            if want in (res.url or "") and 200 <= res.status < 400:
-                done.append(res.url)
+            url = res.url or ""
+            if not (200 <= res.status < 400):
+                return
+            seen.append("%s %s" % (res.request.method, url))
+            # THE EMPLOYEE'S OWN URL IS NOT THE ONLY URL A SAVE POSTS TO.
+            # On 2026-11-23 this caught the employment record (202s) and the
+            # user profile (25s) and then sat through a tax & bank save that
+            # Megan made in this very window -- the record went Active and
+            # the run was still saying "I am watching for it". The last save
+            # is the one that moves somebody off Pending, so it does not
+            # have to post under /employees/<pending id> at all.
+            #
+            # So: anything this PAGE posts, to the host it is already on,
+            # counts. Scoped to the host so a third-party beacon cannot pass
+            # for a save, and the URL that matched is printed -- a watcher
+            # that says only "saved" cannot be checked by the next person.
+            if want in url or _same_host(url, page.url):
+                done.append(url)
         except Exception:      # noqa: BLE001 -- the page may be navigating
             pass
 
@@ -1327,7 +1360,7 @@ def wait_for_save(page, apex_id, *, seconds: int = 2700, log=print) -> bool:
     try:
         for i in range(max(1, seconds * 2)):
             if done:
-                log("    (saved after %.0fs)" % (i * 0.5))
+                log("    (saved after %.0fs — %s)" % (i * 0.5, done[0][:110]))
                 page.wait_for_timeout(1500)
                 return True
             page.wait_for_timeout(500)
@@ -1336,6 +1369,12 @@ def wait_for_save(page, apex_id, *, seconds: int = 2700, log=print) -> bool:
             page.remove_listener("response", _on)
         except Exception:      # noqa: BLE001
             pass
+        # NAME WHAT WENT PAST. A wait that gives up having seen requests it
+        # did not count is a different problem from one that saw nothing at
+        # all, and only the first is a bug in this function.
+        if not done and seen:
+            log("    (no save seen; %d other request(s) went past, e.g. %s)"
+                % (len(seen), seen[-1][:110]))
     log("    nobody saved this tab in %d minutes -- stopping here rather than "
         "leaving it" % (seconds // 60))
     return False

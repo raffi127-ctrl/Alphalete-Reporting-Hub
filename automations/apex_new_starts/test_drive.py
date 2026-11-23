@@ -479,13 +479,19 @@ def test_no_tab_is_left_behind_an_unsaved_one():
 
 
 def test_a_save_is_watched_for_not_asked_for():
-    """A POST to the employee's own URL IS the save -- a direct observation,
-    not a guess from a page that looks different afterwards. And not a
-    keypress in a terminal: that was the first version, and a step somebody
-    cannot find is a step that does not work."""
+    """A POST FROM THIS PAGE is the save -- a direct observation, not a guess
+    from a page that looks different afterwards. And not a keypress in a
+    terminal: that was the first version, and a step somebody cannot find is
+    a step that does not work.
+
+    It used to insist the POST go to the employee's own URL. On 2026-11-23
+    that caught two tabs and missed the third -- the tax & bank save is the
+    one that moves somebody off Pending, so it need not post under
+    /employees/<pending id> at all. The host the page is on is the scope now;
+    the behaviour is covered properly in test_wait_for_save.py."""
     import inspect
     src = inspect.getsource(drive.wait_for_save)
-    assert 'want in (res.url or "")' in src
+    assert "_same_host(url, page.url)" in src
     assert "GET" in src, "a GET is not a save"
     assert "input()" not in src, "nothing waits on a keyboard"
 
