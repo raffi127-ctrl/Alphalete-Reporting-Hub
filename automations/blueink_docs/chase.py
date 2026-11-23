@@ -137,6 +137,7 @@ def run(workbook, people, starts: Dict[str, dt.date], *, today: dt.date,
         send: bool = False, log=log) -> int:
     """Chase everybody due today. Returns how many reminders went (or would)."""
     from automations.blueink_docs import blueink as BI
+    from automations.blueink_docs import chase_email as CE
     from automations.blueink_docs import ledger
 
     rows = ledger.read(workbook)
@@ -178,8 +179,10 @@ def run(workbook, people, starts: Dict[str, dt.date], *, today: dt.date,
             log("    %-28s SKIPPED — packet has no id" % name)
             continue
         if not send:
-            log("    %-28s would remind (%s, starts %s)"
-                % (name, kind, start.strftime("%m/%d")))
+            said = CE.send(name, getattr(person, "email", ""), kind,
+                           really=False, log=log)
+            log("    %-28s would remind (%s, starts %s) + %s"
+                % (name, kind, start.strftime("%m/%d"), said))
             went += 1
             continue
         try:
@@ -188,7 +191,19 @@ def run(workbook, people, starts: Dict[str, dt.date], *, today: dt.date,
             log("    %-28s FAILED — %s: %s" % (name, type(e).__name__,
                                                str(e)[:90]))
             continue
-        log("    %-28s reminded (%s)" % (name, kind))
+        # AND SAY THAT WE DID (Megan, 2026-11-23). Blue Ink's remind carries
+        # no message of ours -- the endpoint takes packet fields and nothing
+        # else -- so its email arrives looking exactly like the first one,
+        # and somebody who has been meaning to get to it reads a duplicate
+        # and ignores it.
+        #
+        # AFTER the remind and only after it SUCCEEDED. Before it, we would
+        # be promising a message that has not been sent; after a failure, we
+        # would be claiming one that never will be, and they go hunting for
+        # an email that is not there.
+        said = CE.send(name, getattr(person, "email", ""), kind,
+                       really=True, log=log)
+        log("    %-28s reminded (%s) + %s" % (name, kind, said))
         writer.add(ledger.row_for(person, bundle, "reminded",
                                   note_for(kind, start)))
         went += 1
