@@ -233,7 +233,7 @@
    "priority": "P2",
    "freshness_target": null,
    "depends_on": [],
-   "timeout_minutes": 20,
+   "timeout_minutes": 30,
    "verify": {
     "type": "manifest",
     "report_id": "fiber-zip-penetration"
