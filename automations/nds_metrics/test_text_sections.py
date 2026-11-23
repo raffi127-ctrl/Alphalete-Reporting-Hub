@@ -57,9 +57,17 @@ class OnRequest(unittest.TestCase):
         self.assertNotIn("teams_board", morning)
         postable = [s[0] for s in R.postable_sections()]
         self.assertIn("teams_board", postable)
-        self.assertEqual([s for s in postable if s != "teams_board"], morning)
+        self.assertEqual([s for s in postable if s not in R.ON_REQUEST], morning)
         for sid in R.HELD_FROM_THREAD | R.RETIRED:
             self.assertNotIn(sid, postable)
+
+    def test_teams_last_week_is_thread_only(self):
+        """2026-11-23: last week's team totals -- on request, in the thread,
+        never texted (Carlos asked for the thread only)."""
+        self.assertIn("teams_last_week", R.ON_REQUEST)
+        self.assertNotIn("teams_last_week", [s[0] for s in R.thread_sections()])
+        self.assertIn("teams_last_week", [s[0] for s in R.postable_sections()])
+        self.assertNotIn("teams_last_week", R.TEXT_SECTIONS)
 
     def test_a_morning_run_never_builds_or_texts_it(self):
         built = []
