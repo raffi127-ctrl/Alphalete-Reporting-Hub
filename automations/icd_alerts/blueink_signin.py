@@ -41,21 +41,37 @@ from __future__ import annotations
 import sys
 
 
-def _say_through_window(lines):
+def _real_dialogs():
+    from automations.icd_alerts import dialogs
+    return dialogs
+
+
+def _say_through_window(lines, dialogs=None):
     """Collect what login() narrates and show it in ONE box at the end.
 
     Not a box per line: login() speaks four or five times, and a person
     clicking through five dialogs to be told the same thing learns to click
     without reading -- which is how the one that matters gets dismissed.
     """
-    from automations.icd_alerts import dialogs
+    dialogs = dialogs or _real_dialogs()
     body = "\n".join(l for l in lines if (l or "").strip())
     if body:
         dialogs.message(body)
 
 
-def run(log=print) -> int:
+def run(log=print, dialogs=None, auto=None) -> int:
+    """`dialogs` and `auto` are INJECTED, never patched.
+
+    This put two real boxes on Megan's screen on 2026-11-23, from a test that
+    thought it had replaced them: mock.patch.dict("sys.modules", ...) does not
+    intercept `from automations.icd_alerts import dialogs`, because that reads
+    an attribute off the already-imported PACKAGE. A test cannot be the only
+    thing standing between a module and somebody's screen, so the surfaces
+    are arguments with real defaults.
+    """
     from automations.blueink_docs import auto_login, session
+    dialogs = dialogs or _real_dialogs()
+    auto = auto or auto_login
 
     # TRY THE SAVED PASSWORD FIRST, AND OPEN NOTHING IF IT WORKS. Blue Ink's
     # sign-in needs no code, so on a machine that has the office's password
@@ -63,7 +79,7 @@ def run(log=print) -> int:
     # what Lucy is not supposed to put on an owner's screen. The box below is
     # for when the password is absent, changed, or refused.
     try:
-        if auto_login.ensure(log=log):
+        if auto.ensure(log=log):
             log("  Blue Ink signed in without anybody being asked.")
             return 0
     except Exception as exc:                        # noqa: BLE001
@@ -76,7 +92,6 @@ def run(log=print) -> int:
         said.append(str(text))
         log(str(text))
 
-    from automations.icd_alerts import dialogs
     dialogs.message(
         "Your Blue Ink sign-in has run out.\n\n"
         "New starts' paperwork cannot go out until you sign in again. "
@@ -93,7 +108,7 @@ def run(log=print) -> int:
         _say_through_window(
             ["Blue Ink could not be opened just now.",
              "Nothing has changed, and nothing was sent.",
-             "Try again in a few minutes."])
+             "Try again in a few minutes."], dialogs=dialogs)
         return 2
 
     if code == 0:
@@ -101,13 +116,13 @@ def run(log=print) -> int:
             ["You're signed in to Blue Ink.",
              "",
              "New starts' paperwork goes out on its own again -- there is "
-             "nothing else for you to do."])
+             "nothing else for you to do."], dialogs=dialogs)
     else:
         _say_through_window(
             ["Nobody signed in, so nothing has changed.",
              "",
              "Paperwork stays on hold until somebody does. Run this again "
-             "when you have a minute at the computer."])
+             "when you have a minute at the computer."], dialogs=dialogs)
     return code
 
 

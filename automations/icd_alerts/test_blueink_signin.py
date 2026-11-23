@@ -38,6 +38,35 @@ class WhoseAccountItNames(unittest.TestCase):
             self.assertNotIn(word + " =", src)
 
 
+class NoTestEverReachesTheRealScreen(unittest.TestCase):
+    """2026-11-23: two real boxes appeared on Megan's Mac, from a test that
+    believed it had replaced them. mock.patch.dict("sys.modules", ...) does
+    not intercept `from automations.icd_alerts import dialogs` -- that reads
+    an attribute off the already-imported PACKAGE, so the real module was
+    used and the suite popped dialogs on a working machine."""
+
+    def test_the_surfaces_are_arguments_not_imports(self):
+        import inspect
+        sig = inspect.signature(BS.run)
+        for name in ("dialogs", "auto"):
+            self.assertIn(name, sig.parameters,
+                          "run() must take %s so a test can pass its own, "
+                          "rather than patch an import that will not take"
+                          % name)
+
+    def test_nothing_imports_dialogs_inside_run(self):
+        """Checked on the parsed code, not the text -- the docstring of run()
+        talks about the import it must not make."""
+        import ast
+        import inspect
+        tree = ast.parse(inspect.getsource(BS.run).lstrip())
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom):
+                names = [a.name for a in node.names]
+                self.assertNotIn("dialogs", names,
+                                 "run() imports dialogs instead of taking it")
+
+
 class WhatTheOwnerIsTold(unittest.TestCase):
 
     def _run(self, login, auto=False):
@@ -48,11 +77,10 @@ class WhatTheOwnerIsTold(unittest.TestCase):
         test that did not mock it would pass here and hang in CI.
         """
         dlg = _Dialogs()
-        with mock.patch.dict("sys.modules",
-                             {"automations.icd_alerts.dialogs": dlg}), \
-             mock.patch.object(AUTO, "ensure", lambda log=print: auto), \
-             mock.patch.object(SESSION, "login", login):
-            code = BS.run(log=lambda *_a: None)
+        fake_auto = mock.Mock()
+        fake_auto.ensure = lambda log=print: auto
+        with mock.patch.object(SESSION, "login", login):
+            code = BS.run(log=lambda *_a: None, dialogs=dlg, auto=fake_auto)
         return code, dlg.said
 
     def test_the_saved_password_means_the_owner_sees_nothing(self):
