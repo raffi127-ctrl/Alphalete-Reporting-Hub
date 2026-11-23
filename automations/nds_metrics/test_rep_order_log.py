@@ -487,6 +487,137 @@ class ActiveReps(unittest.TestCase):
             self.assertEqual(ROL.active_board_reps(log=lambda *_a: None), ["Aaron De La Torre", "Carlos Hidalgo"])
 
 
+
+class DailySend(unittest.TestCase):
+    """Carlos 2026-11-23: "every morning send the reps the updated order log at 9am. send sebastian
+    and i alll of them" -- launchd 9:00 + 9:20 on Lucy 2, `--rep-shot active --dm sheet --dm-reps sheet
+    --daily`. Made-up names and ids: the real map lives on the control sheet, not in this repo."""
+    SHOTS = {"Maria Elena Lopez": "/tmp/maria.png", "Juan Perez": "/tmp/juan.png", "Ana Ruiz": "/tmp/ana.png"}
+    BOSSES = ["UBOSS0001", "UBOSS0002"]
+    SPEC = "maria_lopez=UREP00001,juan_perez=UREP00002,gone_rep=UREP00009"
+
+    def setUp(self):
+        import tempfile
+        from pathlib import Path as _P
+        self.tmp = tempfile.TemporaryDirectory()
+        self.state = _P(self.tmp.name) / "state.json"
+        self.sent, self.logs = [], []
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def dm(self, png, user, file_name, comment):
+        self.sent.append((user, file_name, comment))
+
+    def run_send(self, dm=None, **kw):
+        kw.setdefault("everyone", self.BOSSES)
+        kw.setdefault("spec", self.SPEC)
+        kw.setdefault("daily", True)
+        return ROL.send_shots(self.SHOTS, TODAY, dm=dm or self.dm, log=self.logs.append,
+                              state_path=self.state, **kw)
+
+    def test_sheet_rows_split_into_everyone_and_reps(self):
+        rows = [["Key", "Slack ID", "Rep", "Note"], ["ALL", "UBOSS0001", "Boss One"], ["all", "UBOSS0002"],
+                ["maria_lopez", "UREP00001", "Maria Elena Lopez"], ["", "UREP00003"], ["#old_rep", "UREP00004"],
+                ["juan_perez", ""], ["juan_perez", " UREP00002 "]]
+        self.assertEqual(ROL.slack_map_from_rows(rows),
+                         (["UBOSS0001", "UBOSS0002"], "maria_lopez=UREP00001,juan_perez=UREP00002"))
+        self.assertEqual(ROL.slack_map_from_rows([]), ([], ""))
+
+    def test_lenient_plan_skips_a_bad_row_instead_of_refusing_everyone(self):
+        problems = []
+        plan = ROL.rep_dm_plan(list(self.SHOTS), self.SPEC + ",ana=UREP00005,ana_ruiz=UREP00006,x=bad",
+                               problems=problems)
+        self.assertEqual(plan, {"Maria Elena Lopez": "UREP00001", "Juan Perez": "UREP00002"})
+        self.assertEqual(len(problems), 3)                       # gone_rep, Ana twice (both dropped), x=bad
+        self.assertIn("gone_rep: no picture today", problems[0])
+        with self.assertRaises(ValueError):                      # the one-off sends stay strict
+            ROL.rep_dm_plan(list(self.SHOTS), self.SPEC)
+
+    def test_each_rep_gets_only_their_own_and_the_bosses_get_all(self):
+        self.assertEqual(self.run_send(), 0)
+        got = {(u, f) for u, f, _c in self.sent}
+        self.assertEqual(got, {(b, f) for b in self.BOSSES for f in ("maria.png", "juan.png", "ana.png")}
+                         | {("UREP00001", "maria.png"), ("UREP00002", "juan.png")})
+        ana = [c for u, f, c in self.sent if f == "ana.png"]
+        self.assertTrue(all("not sent to the rep" in c for c in ana), ana)   # no Slack id: the bosses see it
+        self.assertFalse(any("not sent" in c for u, f, c in self.sent if f != "ana.png"))
+        self.assertTrue(ROL.daily_complete(TODAY, self.state))
+
+    def test_once_a_day_the_retry_tick_sends_nothing_twice(self):
+        self.run_send()
+        n = len(self.sent)
+        self.assertEqual(self.run_send(), 0)
+        self.assertEqual(len(self.sent), n)
+        self.assertFalse(ROL.daily_complete(TODAY + dt.timedelta(days=1), self.state))  # tomorrow starts fresh
+
+    def test_a_failed_dm_is_retried_alone(self):
+        def flaky(png, user, file_name, comment):
+            if user == "UREP00002":
+                raise RuntimeError("slack 500")
+            self.dm(png, user, file_name, comment)
+        self.assertEqual(self.run_send(dm=flaky), 1)
+        self.assertFalse(ROL.daily_complete(TODAY, self.state))
+        self.sent.clear()
+        self.assertEqual(self.run_send(), 0)
+        self.assertEqual([(u, f) for u, f, _c in self.sent], [("UREP00002", "juan.png")])
+        self.assertTrue(ROL.daily_complete(TODAY, self.state))
+
+    def test_dry_sends_nothing_and_keeps_no_state(self):
+        self.assertEqual(self.run_send(dry=True), 0)
+        self.assertEqual(self.sent, [])
+        self.assertFalse(self.state.exists())
+        self.assertTrue(any("(dry): Juan Perez -> UREP00002" in m for m in self.logs), self.logs)
+
+    def test_a_second_send_running_stops(self):
+        with ROL.daily_lock(self.state) as mine:
+            self.assertTrue(mine)
+            self.assertEqual(self.run_send(), 0)
+        self.assertEqual(self.sent, [])
+
+    def test_one_off_refusal_still_sends_the_everyone_copies(self):
+        self.assertEqual(self.run_send(daily=False, everyone=["UBOSS0001"]), 1)   # gone_rep -> refused
+        self.assertEqual(sorted(f for u, f, _c in self.sent), ["ana.png", "juan.png", "maria.png"])
+        self.assertEqual({u for u, _f, _c in self.sent}, {"UBOSS0001"})
+        self.assertFalse(self.state.exists())
+
+
+class DailySendCli(unittest.TestCase):
+    def test_done_today_stops_before_any_pull(self):
+        from automations.nds_metrics import run as R
+        with mock.patch.object(ROL, "daily_complete", return_value=True), \
+                mock.patch.object(R, "pull", side_effect=AssertionError("pulled")):
+            self.assertEqual(R.main(["--rep-shot", "active", "--dm", "sheet", "--dm-reps", "sheet", "--daily",
+                                     "--post"]), 0)
+
+    def test_sheet_flags_read_who_gets_what_off_the_tab(self):
+        from automations.nds_metrics import run as R
+        shots = {"Juan Perez": "/tmp/juan.png"}
+        with mock.patch.object(ROL, "daily_complete", return_value=False), \
+                mock.patch.object(R, "pull", return_value="x.csv"), \
+                mock.patch.object(R, "load_crew", return_value=(None, [])), \
+                mock.patch.object(ROL, "build", return_value=shots) as build, \
+                mock.patch.object(ROL, "sheet_slack_map", return_value=(["UBOSS0001"], "juan_perez=UREP00002")), \
+                mock.patch.object(ROL, "send_shots", return_value=0) as send:
+            self.assertEqual(R.main(["--rep-shot", "active", "--dm", "sheet", "--dm-reps", "sheet", "--daily",
+                                     "--post"]), 0)
+        self.assertTrue(build.call_args[1]["active_only"])
+        self.assertEqual(send.call_args[1]["everyone"], ["UBOSS0001"])
+        self.assertEqual(send.call_args[1]["spec"], "juan_perez=UREP00002")
+        self.assertTrue(send.call_args[1]["daily"])
+        self.assertFalse(send.call_args[1]["dry"])
+
+    def test_unreadable_tab_sends_nothing(self):
+        from automations.nds_metrics import run as R
+        with mock.patch.object(ROL, "daily_complete", return_value=False), \
+                mock.patch.object(R, "pull", return_value="x.csv"), \
+                mock.patch.object(R, "load_crew", return_value=(None, [])), \
+                mock.patch.object(ROL, "build", return_value={"Juan Perez": "/tmp/juan.png"}), \
+                mock.patch.object(ROL, "sheet_slack_map", side_effect=RuntimeError("quota")), \
+                mock.patch.object(ROL, "send_shots") as send:
+            self.assertEqual(R.main(["--rep-shot", "active", "--dm", "sheet", "--dm-reps", "sheet", "--daily"]), 1)
+        send.assert_not_called()
+
 class SoldUnder(unittest.TestCase):
     """Carlos 11/20: this week's sales under Esmeralda's login, last week's under Sebastian's and the
     customer Sundararaghandran Viswanathan all belong to Jacob."""

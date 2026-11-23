@@ -130,6 +130,7 @@ Python 3.9-safe (Lucy runtime).
 """
 from __future__ import annotations
 
+import contextlib
 import datetime as dt
 import html as _html
 from pathlib import Path
@@ -1132,27 +1133,221 @@ def is_same_person(board_name: str, export_name: str) -> bool:
 # you're unsure of ask me." Each rep gets ONLY their own picture, so the plan
 # fails closed: one bad key and nothing goes to anybody.
 
-def rep_dm_plan(reps: Sequence[str], spec: str) -> Dict[str, str]:
+def rep_dm_plan(reps: Sequence[str], spec: str, problems: Optional[list] = None) -> Dict[str, str]:
     """{rep: Slack id} from 'jacob_ortega=U0ATXM9KYPM,nathaly_benitez=U0BFJG4J8LB'.
     A key is name words joined by '_'; every word must be one of the rep's own
     name words. Raises ValueError -- nothing sent -- when a key matches no rep
-    or two, two keys land on one rep, or an id isn't a Slack user id."""
+    or two, two keys land on one rep, or an id isn't a Slack user id.
+
+    `problems` (a list) = the standing daily send: a bad entry is SKIPPED and
+    described there instead of raising, so one terminated rep's row (no
+    picture any more) can't cost everyone else theirs; a rep two keys land on
+    gets nothing at all."""
     import re
     plan: Dict[str, str] = {}
+    doubled = set()
+
+    def bad(msg):
+        if problems is None:
+            raise ValueError(msg)
+        problems.append(msg)
+
     for part in (p.strip() for p in str(spec or "").split(",")):
         if not part:
             continue
         key, _, uid = part.partition("=")
         words, uid = _name_words(key.replace("_", " ")), uid.strip()
         if not words or not re.fullmatch(r"[UW][A-Z0-9]{6,}", uid):
-            raise ValueError(f"bad --dm-reps entry {part!r} (want name_words=U...)")
+            bad(f"bad --dm-reps entry {part!r} (want name_words=U...)")
+            continue
         hits = [r for r in reps if set(words) <= set(_name_words(r))]
+        if not hits and problems is not None:
+            bad(f"{key}: no picture today (not active on the NDS Sales Board, or no lines on the log)")
+            continue
         if len(hits) != 1:
-            raise ValueError(f"--dm-reps {key!r} matches {len(hits)} rep(s) {hits} -- want exactly 1")
+            bad(f"--dm-reps {key!r} matches {len(hits)} rep(s) {hits} -- want exactly 1")
+            continue
         if hits[0] in plan:
-            raise ValueError(f"--dm-reps: two keys land on {hits[0]!r}")
+            bad(f"--dm-reps: two keys land on {hits[0]!r}")
+            doubled.add(hits[0])
+            continue
         plan[hits[0]] = uid
+    for rep in doubled:
+        plan.pop(rep, None)
     return plan
+
+
+# ---- The standing 9am send (Carlos 2026-11-23: "every morning send the reps
+# the updated order log at 9am. send sebastian and i alll of them").
+# launchd com.alphalete.nds-rep-dms on Lucy 2 (9:00 + a 9:20 retry) runs
+#   nds_metrics --rep-shot active --dm sheet --dm-reps sheet --daily
+# WHO gets WHAT lives on the private control sheet, not in this (public) repo:
+# tab 'NDS Rep Slack IDs', A = key, B = Slack id. Key ALL = gets every rep's
+# picture (Carlos, Sebastian); any other key = that rep's name words joined
+# by '_' (jacob_ortega), who gets only their own. A new rep = one new row.
+CONTROL_SHEET_ID = "1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw"
+SLACK_MAP_TAB = "NDS Rep Slack IDs"
+DAILY_STATE_PATH = Path.home() / ".config" / "recruiting-report" / "nds_rep_dm_state.json"
+DAILY_KEEP_DAYS = 14
+
+
+def slack_map_from_rows(rows) -> tuple:
+    """(everyone, spec) off the tab's rows: ALL rows -> `everyone` (Slack
+    ids that get every picture), the rest -> a --dm-reps spec. Row 1 is the
+    header; blank rows and keys starting with '#' are skipped."""
+    everyone, parts = [], []
+    for r in list(rows or [])[1:]:
+        key = str(r[0] if len(r) > 0 else "").strip()
+        uid = str(r[1] if len(r) > 1 else "").strip()
+        if not key or not uid or key.startswith("#"):
+            continue
+        if key.upper() == "ALL":
+            if uid not in everyone:
+                everyone.append(uid)
+        else:
+            parts.append(f"{key}={uid}")
+    return everyone, ",".join(parts)
+
+
+def sheet_slack_map(log=print) -> tuple:
+    """(everyone, spec) read off the control sheet's 'NDS Rep Slack IDs' tab."""
+    from automations.recruiting_report import fill as _fill
+    rows = _fill.open_by_key(CONTROL_SHEET_ID).worksheet(SLACK_MAP_TAB).get_all_values()
+    everyone, spec = slack_map_from_rows(rows)
+    log(f"[nds] who gets what: '{SLACK_MAP_TAB}' tab -> {len(everyone)} get every picture, "
+        f"{spec.count('=')} rep(s) get their own")
+    return everyone, spec
+
+
+def _daily_state(path=None) -> dict:
+    import json
+    try:
+        st = json.loads(Path(path or DAILY_STATE_PATH).read_text())
+        return st if isinstance(st, dict) else {}
+    except Exception:  # noqa: BLE001 -- no / garbled state = nothing sent yet
+        return {}
+
+
+def daily_sent(today: dt.date, path=None) -> set:
+    """'user|rep' pairs already DM'd today."""
+    return set((_daily_state(path).get(today.isoformat()) or {}).get("sent") or [])
+
+
+def daily_complete(today: dt.date, path=None) -> bool:
+    """True once a run today sent everything with no failure."""
+    return bool((_daily_state(path).get(today.isoformat()) or {}).get("complete"))
+
+
+def daily_mark(today: dt.date, sent_key: Optional[str] = None, complete: bool = False, path=None) -> None:
+    import json
+    p = Path(path or DAILY_STATE_PATH)
+    st = _daily_state(p)
+    day = st.setdefault(today.isoformat(), {})
+    sent = day.setdefault("sent", [])
+    if sent_key and sent_key not in sent:
+        sent.append(sent_key)
+    if complete:
+        day["complete"] = True
+    for old in sorted(st)[:-DAILY_KEEP_DAYS]:
+        st.pop(old, None)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    tmp = p.with_name(p.name + ".tmp")
+    tmp.write_text(json.dumps(st, indent=1))
+    tmp.replace(p)
+
+
+@contextlib.contextmanager
+def daily_lock(path=None):
+    """Yields True while this run holds the send lock, False when another
+    send already has it (a hand rerun beside the 9:00 tick)."""
+    import fcntl
+    p = Path(path or DAILY_STATE_PATH).with_suffix(".lock")
+    p.parent.mkdir(parents=True, exist_ok=True)
+    fh = open(p, "w")
+    try:
+        try:
+            fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            yield False
+            return
+        yield True
+    finally:
+        fh.close()                         # closing the file drops the lock
+
+
+def send_shots(shots: Dict[str, Path], today: dt.date, everyone: Sequence[str] = (),
+               spec: Optional[str] = None, daily: bool = False, dry: bool = False,
+               log=print, dm=None, state_path=None) -> int:
+    """DM the pictures: EVERY one to each Slack id in `everyone` (Carlos +
+    Sebastian), and each rep only THEIR OWN off `spec` (rep_dm_plan).
+    `daily` (the 9am launchd job): one person gets one picture at most once a
+    day (state file, so the 9:20 tick retries only what failed), a bad map row
+    is skipped instead of refusing every rep, and a run that finds another
+    send going stops. `dry` = log who would get what, send nothing.
+    -> 0, or 1 when a DM failed or the rep plan was refused."""
+    if dm is None:
+        from automations.shared import slack_metrics_post as smp
+        dm = smp.dm_user_with_file
+    lock = daily_lock(state_path) if (daily and not dry) else contextlib.nullcontext(True)
+    with lock as mine:
+        if not mine:
+            log("[nds] order log DMs: another send is running -- this one stops, nothing sent")
+            return 0
+        done = daily_sent(today, state_path) if daily else set()
+        plan: Dict[str, str] = {}
+        refused, problems = None, ([] if daily else None)
+        if spec:
+            try:
+                plan = rep_dm_plan(list(shots), spec, problems=problems)
+            except ValueError as e:
+                refused = str(e)
+            for msg in problems or []:
+                log(f"[nds] rep DM skipped: {msg}")
+        no_id = [rep for rep in shots if spec and not refused and rep not in plan]
+        for rep in no_id:
+            log(f"[nds] rep DM: {rep} -- no Slack id given, not sent")
+        counts = {"sent": 0, "already": 0}
+        failed: List[str] = []
+
+        def one(png, user, comment, rep, what):
+            key = f"{user}|{rep}"
+            if key in done:
+                counts["already"] += 1
+                return
+            if dry:
+                log(f"[nds] {what} (dry): {rep} -> {user} ({Path(png).name})")
+                return
+            try:
+                dm(Path(png), user=user, file_name=Path(png).name, comment=comment)
+            except Exception as e:  # noqa: BLE001 -- one bad DM never stops the rest
+                failed.append(f"{rep} -> {user}")
+                log(f"[nds] {what} FAILED: {rep} -> {user}: {type(e).__name__}: {e}")
+                return
+            counts["sent"] += 1
+            done.add(key)
+            if daily:
+                daily_mark(today, sent_key=key, path=state_path)
+            log(f"[nds] {what} sent: {rep} -> {user}")
+
+        for rep, png in shots.items():
+            note = " _(not sent to the rep: no Slack id on file)_" if rep in no_id else ""
+            for user in everyone:
+                one(png, user, f"\U0001F4CB *Order Log — {rep}*{note}", rep, "order log DM")
+        if refused:
+            log(f"[nds] rep DM REFUSED, nothing sent to the reps: {refused}")
+        else:
+            for rep, uid in plan.items():
+                one(shots[rep], uid, f"\U0001F4CB *Order Log — {rep}*", rep, "rep DM")
+        if everyone:
+            log(f"[nds] every picture to {len(everyone)} person(s): {len(shots)} picture(s) each")
+        if spec and not refused:
+            log(f"[nds] rep DMs: {len(plan)} rep(s) on the plan")
+        log(f"[nds] order log DMs {'planned (dry)' if dry else 'sent'}: {counts['sent']}"
+            + (f"; already sent today: {counts['already']}" if counts["already"] else "")
+            + (f"; FAILED: {', '.join(failed)}" if failed else ""))
+        if daily and not dry and not failed and not refused:
+            daily_mark(today, complete=True, path=state_path)
+        return 1 if (failed or refused) else 0
 
 
 def build(cols, crew: Sequence, today: dt.date, out_dir: Path, reps: Optional[Sequence[str]] = None,

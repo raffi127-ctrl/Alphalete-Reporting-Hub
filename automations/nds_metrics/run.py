@@ -2388,7 +2388,14 @@ def main(argv=None) -> int:
                          "words joined by '_' (jacob_ortega=U0ATXM9KYPM). Every KEY must match "
                          "exactly one rep or nothing is sent; reps with no KEY are skipped")
     ap.add_argument("--dm-reps-dry", action="store_true",
-                    help="with --dm-reps: log who would get which picture, send nothing")
+                    help="with --rep-shot: log who would get which picture, send nothing "
+                         "(covers --dm too)")
+    ap.add_argument("--daily", action="store_true",
+                    help="with --rep-shot: the standing 9am send (launchd com.alphalete.nds-rep-dms): "
+                         "each picture to each person at most once a day (state file; a retry "
+                         "sends only what failed), a bad map row is skipped, not fatal. "
+                         "'--dm sheet' / '--dm-reps sheet' read who gets what off the control "
+                         "sheet's 'NDS Rep Slack IDs' tab")
     ap.add_argument("--tab", action="store_true",
                     help="refresh the 'NDS Order Log' tab on the Vantura board from "
                          "today's wireless feed; alone = ONLY that, no pull, no post")
@@ -2402,6 +2409,14 @@ def main(argv=None) -> int:
     FLAGS["tier_columns"] = bool(getattr(a, "tier_columns", False)) or FLAGS["tier_columns"]
     today = (dt.date.fromisoformat(a.today) if a.today else dt.date.today())
     OUT_DIR.mkdir(parents=True, exist_ok=True)
+
+    if a.rep_shot and a.daily and not a.dm_reps_dry:
+        # the 9:20 retry after a good 9:00: done before any pull or picture
+        from automations.nds_metrics import rep_order_log as ROL
+        if ROL.daily_complete(today):
+            print(f"[nds] order log DMs: everything already sent today ({today}), nothing to do")
+            print("=== done ===", flush=True)
+            return 0
 
     if a.feed_trace is not None:
         # wins over every other switch (rerun appends to base_args, so --post
@@ -2452,46 +2467,29 @@ def main(argv=None) -> int:
         if not shots:
             print(f"[nds] rep order log: no rep matches {a.rep_shot!r}")
             return 1
-        if a.dm:
-            from automations.shared import slack_metrics_post as smp
-            users = [u.strip() for u in a.dm.split(",") if u.strip()]
-            for rep, png in shots.items():
-                for user in users:
-                    smp.dm_user_with_file(Path(png), user=user, file_name=Path(png).name,
-                                          comment=f"\U0001F4CB *Order Log — {rep}*")
-                print(f"[nds] DM'd rep order log for {rep} to {len(users)} person(s)")
-        if a.dm_reps:
-            # Carlos 11/21: "send them their own order log sheet in slack" --
-            # each rep their own picture only; a bad key sends nothing at all.
-            from automations.shared import slack_metrics_post as smp
+        # Carlos 11/21: "send them their own order log sheet in slack" --
+        # each rep their own picture only (--dm-reps); --dm gets every one.
+        # Carlos 11/23: "every morning send the reps the updated order log at
+        # 9am. send sebastian and i alll of them" -- the 9am launchd job reads
+        # both lists off the control sheet (`sheet`) and sends with --daily.
+        everyone = [u.strip() for u in (a.dm or "").split(",") if u.strip()]
+        spec = a.dm_reps
+        from_sheet = [x for x in (a.dm, a.dm_reps) if str(x or "").strip().lower() == "sheet"]
+        if from_sheet:
             try:
-                plan = ROL.rep_dm_plan(list(shots), a.dm_reps)
-            except ValueError as e:
-                print(f"[nds] rep DM REFUSED, nothing sent: {e}")
+                sheet_all, sheet_spec = ROL.sheet_slack_map()
+            except Exception as e:  # noqa: BLE001
+                print(f"[nds] order log DMs: can't read the '{ROL.SLACK_MAP_TAB}' tab, NOTHING sent: "
+                      f"{type(e).__name__}: {e}")
                 return 1
-            for rep in shots:
-                if rep not in plan:
-                    print(f"[nds] rep DM: {rep} -- no Slack id given, not sent")
-            failed = []
-            for rep, uid in plan.items():
-                png = Path(shots[rep])
-                if a.dm_reps_dry:
-                    print(f"[nds] rep DM (dry): {rep} -> {uid} ({png.name})")
-                    continue
-                try:
-                    smp.dm_user_with_file(png, user=uid, file_name=png.name,
-                                          comment=f"\U0001F4CB *Order Log — {rep}*")
-                    print(f"[nds] rep DM sent: {rep} -> {uid}")
-                except Exception as e:  # noqa: BLE001 -- one bad DM never stops the rest
-                    failed.append(rep)
-                    print(f"[nds] rep DM FAILED: {rep} -> {uid}: {type(e).__name__}: {e}")
-            print(f"[nds] rep DMs: {len(plan) - len(failed)}/{len(plan)} "
-                  f"{'planned (dry)' if a.dm_reps_dry else 'sent'}"
-                  + (f"; failed: {', '.join(failed)}" if failed else ""))
-            if failed:
-                return 1
+            if str(a.dm or "").strip().lower() == "sheet":
+                everyone = sheet_all
+            if str(a.dm_reps or "").strip().lower() == "sheet":
+                spec = sheet_spec
+        rc = ROL.send_shots(shots, today, everyone=everyone, spec=spec,
+                            daily=a.daily, dry=a.dm_reps_dry)
         print("=== done ===", flush=True)
-        return 0
+        return rc
     only = set(a.only.split(",")) if a.only else None
     artifacts = {}
     for sid, _e, _t, fn in SECTIONS:
