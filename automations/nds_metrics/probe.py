@@ -500,6 +500,11 @@ def main(argv=None) -> int:
 def _entry(argv=None):
     import sys as _sys
     args = list(argv if argv is not None else _sys.argv[1:])
+    if "--owner-weeks" in args:
+        # Carlos 2026-11-23: activation rate by week ending for other owners'
+        # offices, DM'd only with --dm (owner_weeks.py)
+        from automations.nds_metrics import owner_weeks
+        return owner_weeks.entry(args)
     if "--dd-join" in args:
         return dd_join()
     if "--soh-dump" in args:

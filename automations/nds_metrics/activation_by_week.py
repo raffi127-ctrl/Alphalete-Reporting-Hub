@@ -224,7 +224,8 @@ def cells_for(per_week: dict, all_weeks: Sequence[dt.date], col_of: dict, today:
 
 
 def crew_rows(all_weeks: Sequence[dt.date], data: dict, today: dt.date, col_of: dict, *,
-              not_saveable_row: bool = False, marks_missing: bool = False) -> list:
+              not_saveable_row: bool = False, marks_missing: bool = False,
+              total_label: str = "Crew Total") -> list:
     """The Crew Total rows: activation rate, cancel rate, lines still pending
     and -- on the SaraPlus board only -- the Not saveable count (Carlos
     2026-11-15), as (label, "", bold, cells) for render_table_png.
@@ -266,15 +267,15 @@ def crew_rows(all_weeks: Sequence[dt.date], data: dict, today: dt.date, col_of: 
             cells[col_of[we]] = {"rate": "%d" % c["not_saveable"], "color": ""}
         return cells
 
-    rows = [("Crew Total (all reps) \u2014 activation rate", "", True,
+    rows = [("%s (all reps) \u2014 activation rate" % total_label, "", True,
              cells_for(data.get(TOTAL, {}), all_weeks, col_of, today)),
-            ("Crew Total \u2014 cancel rate", "", True, _crew_cancel()),
-            ("Crew Total \u2014 lines still pending", "", True, _crew_pending())]
+            ("%s \u2014 cancel rate" % total_label, "", True, _crew_cancel()),
+            ("%s \u2014 lines still pending" % total_label, "", True, _crew_pending())]
     if not_saveable_row:
         # Carlos 2026-11-15: the lines he marked Not saveable on the NDS Order
         # Log tab (delivered or pending, never going to activate) leave the
         # pending line above and get their own count here
-        rows.append(("Crew Total \u2014 not saveable", "", True, _crew_not_saveable()))
+        rows.append(("%s \u2014 not saveable" % total_label, "", True, _crew_not_saveable()))
     return rows
 
 
@@ -282,12 +283,16 @@ def render(all_weeks: Sequence[dt.date], data: dict, out: Path, *,
            today: dt.date, pulled_at=None, feed_date: Optional[dt.date] = None,
            title: str = "NDS \u2014 ACTIVATION RATE BY WEEK ENDING",
            sub: Optional[str] = None, not_saveable_row: bool = False,
-           marks_missing: bool = False) -> Path:
+           marks_missing: bool = False, total_label: str = "Crew Total",
+           active_reps_only: bool = False) -> Path:
     """Same picture as 'NDS Activation Rate by Rep' (b2b_metrics.rep_boards.
     render_table_png): Crew Total first, a row per rep, a column per week
     ending, each cell (activated/sold) + rate on the activation colour bands.
     `not_saveable_row` adds the Crew Total -- not saveable row (the SaraPlus
-    board; the Tableau twin has none)."""
+    board; the Tableau twin has none). `total_label` names the total rows
+    ("Office Total" on another owner's board) and `active_reps_only` drops a
+    rep with no line in the weeks shown (owner_weeks: a 60-day export carries
+    reps who stopped selling before them)."""
     from automations.b2b_metrics.rep_boards import render_table_png
     this_we = week_ending(today)
     columns = []
@@ -298,8 +303,11 @@ def render(all_weeks: Sequence[dt.date], data: dict, out: Path, *,
     col_of = dict(zip(all_weeks, columns))
 
     rows = crew_rows(all_weeks, data, today, col_of, not_saveable_row=not_saveable_row,
-                     marks_missing=marks_missing)
+                     marks_missing=marks_missing, total_label=total_label)
     for rep in sorted((k for k in data if k != TOTAL), key=str.lower):
+        if active_reps_only and not any((data[rep].get(we) or {}).get("lines")
+                                        for we in all_weeks):
+            continue
         rows.append((rep, "", False, cells_for(data[rep], all_weeks, col_of, today)))
     if sub is None:
         sub = ("Carlos's crew on his own NDS code \u2014 %s (of the sales made each Mon\u2013Sun week: "
@@ -359,10 +367,14 @@ def build(soh, today: dt.date, out: Path, log=print, marks: Optional[dict] = Non
 POSTED_WORDS = ("posted",)
 
 
-def aggregate_tableau(cols, crew: Sequence, today: dt.date, weeks: int = WEEKS):
+def aggregate_tableau(cols, crew: Sequence, today: dt.date, weeks: int = WEEKS,
+                      since: Optional[dt.date] = None, wireless_only: bool = True):
     """-> (week endings oldest first, {rep | TOTAL: {we: Counter}}) in the
     SaraPlus aggregate's shape, off the crew's Tableau order-log lines (one
-    row per line, as nds_metrics.run.load_crew returns them)."""
+    row per line, as nds_metrics.run.load_crew returns them). `since` floors
+    the order dates (default NDS_SINCE, the crew's NDS start; another
+    owner's office passes its export window); `wireless_only=False` counts
+    every product line (the D2D fiber log, owner_weeks)."""
     from automations.nds_metrics.run import _c
     i_od = cols.need("order date", "sp.order date (copy)", "sp.order date", "order date")
     i_st = cols.need("status", "dtr status", "spe.status")
@@ -374,12 +386,13 @@ def aggregate_tableau(cols, crew: Sequence, today: dt.date, weeks: int = WEEKS):
     orders: Dict[tuple, set] = collections.defaultdict(set)      # (key, we) -> order ids
     orders_act: Dict[tuple, set] = collections.defaultdict(set)
     seen = set()
+    floor = since or NDS_SINCE
     for r in crew:
         od = _parse_date(_c(cols, r, i_od))
-        if od is None or od < NDS_SINCE:
+        if od is None or od < floor:
             continue
         prod = _c(cols, r, i_prod).upper() if i_prod is not None else "WIRELESS"
-        if prod and "WIRELESS" not in prod:
+        if wireless_only and prod and "WIRELESS" not in prod:
             continue                                   # Air / Internet lines are not wireless sales
         oid = _c(cols, r, i_spm) if i_spm is not None else ""
         line_id = (oid, _c(cols, r, i_spe) if i_spe is not None else "", _c(cols, r, i_rep), _c(cols, r, i_od))
