@@ -116,13 +116,16 @@ def _parse_date(v) -> Optional[dt.date]:
     return None
 
 
-def pull(today: dt.date, log=print) -> Path:
+def pull(today: dt.date, log=print, days: int = LOOKBACK_DAYS) -> Path:
     """The NDS-SN (RES-ATT-OOF) ORDERLOG .csv with OUR 60-day window (its
-    saved window pins stale — same gotcha as every one of these views)."""
+    saved window pins stale — same gotcha as every one of these views).
+    `days` = a longer look-back with its own daily cache (owner_churn: the
+    90 Day churn bucket reaches 120 days back)."""
     from automations.office_metrics import nds_orderlog as NO
     from automations.shared.tableau_patchright import tableau_session
-    start = today - dt.timedelta(days=LOOKBACK_DAYS)
-    out = OUT_DIR / f"nds_orderlog_{today.isoformat()}.csv"
+    start = today - dt.timedelta(days=days)
+    tag = "" if days == LOOKBACK_DAYS else f"{days}d_"
+    out = OUT_DIR / f"nds_orderlog_{tag}{today.isoformat()}.csv"
     out.parent.mkdir(parents=True, exist_ok=True)
 
     def _looks_like_csv(b: bytes) -> bool:

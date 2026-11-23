@@ -500,6 +500,11 @@ def main(argv=None) -> int:
 def _entry(argv=None):
     import sys as _sys
     args = list(argv if argv is not None else _sys.argv[1:])
+    if "--owner-churn" in args:
+        # Carlos 2026-11-23: wireless churn ICD totals per owner, Tableau's
+        # 0-30 / 30 / 60 / 90 day buckets, Airs + BYODs in (owner_churn.py)
+        from automations.nds_metrics import owner_churn
+        return owner_churn.entry(args)
     if "--owner-weeks" in args:
         # Carlos 2026-11-23: activation rate by week ending for other owners'
         # offices, DM'd only with --dm (owner_weeks.py)

@@ -64,13 +64,15 @@ def _parse_date(v) -> Optional[dt.date]:
     return None
 
 
-def pull(today: dt.date, log=print) -> Path:
-    """The D2D A.Order Log crosstab with OUR 60-day window."""
+def pull(today: dt.date, log=print, days: int = LOOKBACK_DAYS) -> Path:
+    """The D2D A.Order Log crosstab with OUR 60-day window (`days` = a longer
+    look-back with its own daily cache -- nds_metrics.owner_churn)."""
     from automations.commission_sheet.sources import read_crosstab  # noqa: F401
     from automations.harvest import adapter as _hv
     from automations.uploaded import order_log as _ol
-    start = today - dt.timedelta(days=LOOKBACK_DAYS)
-    out = OUT_DIR / f"d2d_orderlog_{today.isoformat()}.csv"
+    start = today - dt.timedelta(days=days)
+    tag = "" if days == LOOKBACK_DAYS else f"{days}d_"
+    out = OUT_DIR / f"d2d_orderlog_{tag}{today.isoformat()}.csv"
     out.parent.mkdir(parents=True, exist_ok=True)
     if out.exists() and out.stat().st_size > 1000:
         log(f"[fiber] reusing today's pull ({out.stat().st_size:,} bytes)")
