@@ -1172,6 +1172,123 @@ def _historical_expected(rows, target_date, lookback_weeks: int = 3, min_days: i
     return out
 
 
+_DECLARED_PROOF_DAYS = 30   # a clock-written row this recent = the report writes rows
+
+
+def _not_before_hour(rep_raw: dict):
+    """The hour of `cadence.not_before` ("07:30" -> 7), or None."""
+    nb = str(((rep_raw or {}).get("cadence") or {}).get("not_before") or "").strip()
+    try:
+        h = int(nb.split(":")[0])
+    except ValueError:
+        return None
+    return h if 0 <= h <= 23 else None
+
+
+def _declared_expected(cfg, rows, target_date,
+                       proof_days: int = _DECLARED_PROOF_DAYS) -> dict:
+    """Standalone reports the CONFIG says run today -- expected whether or not
+    the log has learned that yet. Same shape as _historical_expected, plus the
+    `aliases` the row could be filed under.
+
+    WHY (2026-11-23). _historical_expected only expects a report on a weekday
+    the log has SEEN it run. Blue Ink New Start Docs moved from a Monday agent
+    to a daily one on 11/16, the daily agent was never installed on Lucy 2, and
+    nothing ran 11/17-11/22 -- with no alert, because Tuesday to Sunday had no
+    history to miss. It surfaced only on Monday 11/23, off the old Monday rows.
+    Its config said all along: `standalone_weekdays` [0..6], `not_before` 07:30.
+
+    Expected here only when ALL hold -- anything less keeps the old guess:
+      * on_scheduler is false (the orchestrator alerts on its own reports);
+      * today is a declared run day (`standalone_weekdays` / `standalone_monthdays`,
+        both AND-ed, as in _offday_standalone_ids);
+      * a start HOUR is declared (`standalone_start_hour`, else `cadence.not_before`).
+        No hour, no deadline -- never invent one;
+      * its schedule wrote at least one Activity row in the last `proof_days`
+        (person-started rows don't count). A report whose wrapper never
+        publishes (vantura_week_roll, measured: 0 rows) has no row on a GOOD day
+        either, so a missing row proves nothing about it.
+    Every skip/offday guard in _run_watch still applies on top."""
+    import datetime as _dt
+    try:
+        from automations.day_orchestrator.hub_publish import _HUB_CARD
+    except Exception:  # noqa: BLE001
+        _HUB_CARD = {}
+    try:
+        from automations.day_orchestrator.hub_coverage import CURATED_ALIAS, slug
+    except Exception:  # noqa: BLE001
+        CURATED_ALIAS, slug = {}, lambda r: r.replace("_", "-").strip("-")
+    try:
+        raw = cfg.raw.get("reports", {}) or {}
+    except Exception:  # noqa: BLE001
+        return {}
+    wd = target_date.weekday()
+    try:
+        hours = _declared_start_hours(cfg, target_date)
+    except Exception:  # noqa: BLE001 — one malformed entry must not blind the rest
+        hours = {}     # (falls back to each report's own not_before below)
+    since = (target_date - _dt.timedelta(days=proof_days)).isoformat()
+    today = target_date.isoformat()
+    clock_rows = [r for r in rows
+                  if since <= str(r.get("Started At") or "")[:10] < today
+                  and not _person_started(str(r.get("User") or ""))]
+    out = {}
+    for rid, rep in raw.items():
+        rep = rep or {}
+        if rep.get("on_scheduler"):
+            continue
+        wdays = rep.get("standalone_weekdays")
+        mdays = rep.get("standalone_monthdays")
+        wdays = wdays if isinstance(wdays, list) and wdays else None
+        mdays = mdays if isinstance(mdays, list) and mdays else None
+        if wdays is None and mdays is None:
+            continue
+        if not ((wdays is None or wd in wdays)
+                and (mdays is None or target_date.day in mdays)):
+            continue
+        aliases = {c for c in (rid, _HUB_CARD.get(rid), CURATED_ALIAS.get(rid),
+                               slug(rid)) if c}
+        aliases |= {_current_card(a) for a in aliases}
+        hour = next((hours[a] for a in aliases if a in hours), None)
+        if hour is None:
+            hour = _not_before_hour(rep)
+        if hour is None:
+            continue
+        proof = [r for r in clock_rows
+                 if _current_card(str(r.get("Report ID") or "").strip()) in aliases]
+        if not proof:
+            continue
+        latest = max(proof, key=lambda r: str(r.get("Started At") or ""))
+        # File it under the id the log actually uses, so the alert's incident
+        # key matches the one a past alert for this report opened.
+        cid = _current_card(str(latest.get("Report ID") or "").strip())
+        out[cid] = {"start_hour": hour,
+                    "machine": str(rep.get("machine") or "")
+                               or str(latest.get("Machine") or ""),
+                    "name": str(rep.get("display_name") or rid),
+                    "aliases": aliases | {cid}}
+    return out
+
+
+def _expected_today(cfg, rows, target_date, ts: str = "") -> dict:
+    """Everything the didn't-run step should expect today: what HISTORY says
+    (_historical_expected), plus what the CONFIG says for the days history hasn't
+    learned yet (_declared_expected). History wins wherever it already watches a
+    report, so nothing it covers changes. A broken declaration costs only the
+    declared half -- never the pass."""
+    expected = _historical_expected(rows, target_date)
+    try:
+        declared = _declared_expected(cfg, rows, target_date)
+    except Exception as e:  # noqa: BLE001
+        print(f"[{ts}] watch: declared-schedule check failed: "
+              f"{type(e).__name__}: {e}", flush=True)
+        return expected
+    for cid, info in declared.items():
+        if not (info["aliases"] & set(expected)):
+            expected[cid] = info
+    return expected
+
+
 def _ran_here(machine) -> bool:
     """Did this run happen on THIS computer? Unknown machine answers True, so
     the old behaviour holds whenever the row can't say."""
@@ -1610,8 +1727,9 @@ def _run_watch(day: str, day_human: str, lucy2_hosts: str, dry_run: bool, ts: st
     #    "didn't run today" (MISSED) alert at the noon backstop.
     now = dt.datetime.now()
     declared_hours = _declared_start_hours(cfg, target_date)
-    for cid, info in _historical_expected(rows, target_date).items():
-        if cid in ran_ids or cid in skip or cid in already or cid in offday:
+    for cid, info in _expected_today(cfg, rows, target_date, ts).items():
+        ids = info.get("aliases") or {cid}
+        if ids & ran_ids or ids & skip or ids & already or ids & offday:
             continue
         # A DECLARED start time beats the one read off the log (see
         # _declared_start_hours): one stray early row must not move the deadline.
