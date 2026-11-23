@@ -29,8 +29,9 @@ reason is required. ARC refuses past dates, so the date is the day of the run,
 never the board's date. Afterwards the agent is read back through the API: the
 office end date must have moved off 5000-12-31, or it doesn't count.
 
-SHADOW MODE until Eve says go (LIVE = False). Nothing gets clicked. Eve gets a
-DM with each person it WOULD terminate, once per person.
+SHADOW MODE until Eve says go (LIVE = False). Nothing gets clicked. Eve and Raf
+get one group DM from Lucy with each person it WOULD terminate, once per person
+(Eve 11/23: Raf sees the test too). Login trouble still goes to Eve alone.
 
 Login: Raf's Credico session (`--account raf`). It's a 14-day token with no
 refresh, so when it dies this step reports '⏳ retrying' and does nothing until
@@ -56,6 +57,7 @@ OWNER_NAMES = {"rafael hidalgo", "raf hidalgo"}
 OFFBOARD_REASON = "No Sales"
 NOTE = "Terminated on the Alphalete Sales Board ({day}). Auto - Lucy."
 OPEN_END = "5000-12-31"
+RAF_USER_ID = "U045Z8N0ZQC"      # resources/owner-slack-ids.md
 API = "https://arcapi.credico.com/"
 SEEN = Path(__file__).resolve().parents[2] / "output" / "terminated_reps" / "arc_shadow_seen.json"
 
@@ -187,8 +189,25 @@ def _terminate(page, agent: dict, rep: Rep, today: dt.date) -> str:
     return "done" if not is_active(back, today) else "clicked Terminate but ARC still shows them active"
 
 
+def _dm_eve_and_raf(text: str) -> bool:
+    """One group DM (Lucy + Eve + Raf). False when this machine isn't Lucy."""
+    from automations.shared import slack_metrics_post as smp
+    from automations.sales_board_fixer.run import EVE_USER_ID
+    client = smp._client()
+    try:
+        who = client.auth_test().get("user", "")
+    except Exception:                                           # noqa: BLE001
+        who = ""
+    if who and "lucy" not in who.lower():
+        print("! esta máquina postea como %s, no Lucy -- no mando el DM" % who)
+        return False
+    ch = client.conversations_open(users=f"{EVE_USER_ID},{RAF_USER_ID}")["channel"]["id"]
+    client.chat_postMessage(channel=ch, text=text)
+    return True
+
+
 def _shadow_dm(results: list, logfn) -> None:
-    """Shadow mode: tell Eve once per person what LIVE would have done."""
+    """Shadow mode: tell Eve + Raf once per person what LIVE would have done."""
     try:
         seen = set(json.loads(SEEN.read_text(encoding="utf-8")))
     except Exception:                                           # noqa: BLE001
@@ -202,13 +221,12 @@ def _shadow_dm(results: list, logfn) -> None:
     text = ("ARC test run (nothing was clicked). This is what Lucy would do "
             f"in ARC, reason '{OFFBOARD_REASON}', dated today:\n" + "\n".join(lines))
     try:
-        from automations.sales_board_fixer.run import _dm_eve
-        if _dm_eve(text):
+        if _dm_eve_and_raf(text):
             SEEN.parent.mkdir(parents=True, exist_ok=True)
             SEEN.write_text(json.dumps(sorted(seen | {f"{norm_name(r.name)}|{r.term_date}"
                                                       for r in new})), encoding="utf-8")
     except Exception as e:                                      # noqa: BLE001
-        logfn(f"  ⚠ couldn't DM Eve the ARC test list: {type(e).__name__}")
+        logfn(f"  ⚠ couldn't DM Eve + Raf the ARC test list: {type(e).__name__}")
 
 
 def _once_a_day(today: dt.date, text: str, logfn) -> None:
