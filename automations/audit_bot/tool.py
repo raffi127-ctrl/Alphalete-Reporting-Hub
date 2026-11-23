@@ -227,6 +227,29 @@ def _action_reassign(args: str) -> tuple[bool, str]:
                   f"(old files in {backup.name}/)")
 
 
+def _action_fixname(args: str) -> tuple[bool, str]:
+    """Put the Slack sender's real name on ONE audit that went out with a
+    misheard interviewer name, re-render its PDF and DM it to the rep. Dry run
+    unless --apply. Scores untouched. (Tiffani Brown → "Sydney", 2026-11-23.)
+
+      audit_bot_tool fixname Sydney_2026-11-23.md U0B9924FHCL [--apply]"""
+    import os
+    import subprocess
+    root, rest, label = mc._audit_bot_root(shlex.split(args or ""))
+    if len([a for a in rest if a != "--apply"]) != 2:
+        return False, "usage: audit_bot_tool fixname [colten] <report.md> <SlackUserID> [--apply]"
+    py = root / ".runtime" / "venv" / "bin" / "python"
+    if not py.exists():
+        return False, f"no bot venv at {py}"
+    env = dict(os.environ)
+    env["DYLD_FALLBACK_LIBRARY_PATH"] = "/opt/homebrew/lib:" + env.get("DYLD_FALLBACK_LIBRARY_PATH", "")
+    script = mc.REPO_ROOT / "automations" / "audit_bot" / "fix_name.py"
+    r = subprocess.run([str(py), str(script), *rest], cwd=str(root / ".runtime"),
+                       capture_output=True, text=True, timeout=300, env=env)
+    out = (r.stdout + r.stderr).strip()
+    return r.returncode == 0, f"[{label}] {out[-1500:]}"
+
+
 def _action_ovreps(args: str) -> tuple[bool, str]:
     """READ-ONLY: an office's ACTIVE reps straight from OwnerVille (name +
     email), to work out which Slack account a rep is before `reassign`.
@@ -250,6 +273,7 @@ _ACTIONS = {
     "ovreps": _action_ovreps,
     "reassign": _action_reassign,
     "regrade": _action_regrade,
+    "fixname": _action_fixname,
     "grep": _action_grep,
     "channels": _action_channels,
     "snapshot": mc._action_audit_bot_snapshot,

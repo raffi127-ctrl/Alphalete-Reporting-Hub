@@ -301,6 +301,61 @@ def _slack_key(audio_path: Path) -> str | None:
     return f"{parts[0]}_{parts[1]}"
 
 
+def _sender_name(audio_path: Path) -> str | None:
+    """Name of the rep who sent the recording in Slack — the interviewer.
+
+    Gemini guesses the interviewer's name from the audio and mishears it
+    (11/23: Tiffani's "Hi my name is Tiffani" came out "Sydney"). The person
+    who uploads IS the interviewer, so we trust Slack over the audio.
+    Order: full name on the roster (reps.json) → Slack profile real_name →
+    first name on the roster. None when it isn't a Slack upload or nothing
+    is on file (then Gemini's guess stays, as before)."""
+    key = _slack_key(audio_path)
+    if not key:
+        return None
+    try:
+        pending = json.loads((RUNTIME_DIR / "slack_pending.json").read_text())
+        uid = (pending.get(key) or {}).get("user")
+    except Exception:  # noqa: BLE001
+        return None
+    if not uid:
+        return None
+    info = {}
+    try:
+        reps = json.loads((RUNTIME_DIR / "reps.json").read_text()).get("reps", {})
+        info = reps.get(uid) or {}
+    except Exception:  # noqa: BLE001
+        pass
+    roster = f"{info.get('first_name', '')} {info.get('last_name', '')}".strip()
+    if len(roster.split()) >= 2:
+        return roster
+    try:
+        sys.path.insert(0, str(RUNTIME_DIR))
+        from slack_watcher import web
+        prof = web.users_info(user=uid)["user"].get("profile", {})
+        real = (prof.get("real_name") or "").strip()
+        if real:
+            return real
+    except Exception as e:  # noqa: BLE001
+        log(f"  sender name lookup failed (non-fatal): {type(e).__name__}: {e}")
+    return roster or None
+
+
+def _force_interviewer(report_md: str, guessed: str, real: str) -> str:
+    """Put the real interviewer name where Gemini wrote its guess: the
+    Interviewer cell of the top table and the old '# Audit — X × Y' title."""
+    if not guessed or guessed == real:
+        return report_md
+    import re as _re
+    g = _re.escape(guessed)
+    report_md = _re.sub(rf"^\|\s*{g}\s*\|", f"| {real} |", report_md,
+                        count=1, flags=_re.MULTILINE)
+    report_md = _re.sub(rf"^(#\s+Audit\s+[—–-]\s+){g}(\s+[×x]\s+)",
+                        rf"\g<1>{real}\g<2>", report_md, count=1,
+                        flags=_re.MULTILINE)
+    return report_md
+
+
 def _reply_unreadable(audio_path: Path) -> str:
     """Post UNREADABLE_REPLY in the thread the recording came from. Best-effort:
     returns what happened, never raises."""
@@ -462,6 +517,15 @@ def audit_file(audio_path: Path) -> Path | None:
         f"11-frame framework in your system instructions and produce the report "
         f"in the exact format specified."
     )
+    sender = _sender_name(audio_path)
+    if sender:
+        log(f"  interviewer from Slack sender: {sender}")
+        user_prompt += (
+            f" The interviewer (the rep who recorded and sent this) is "
+            f"{sender}. Use exactly that name for the interviewer everywhere "
+            f"in the report — do NOT take the interviewer's name from the "
+            f"audio, even if it sounds different."
+        )
 
     try:
         response = client.models.generate_content(
@@ -540,6 +604,10 @@ def audit_file(audio_path: Path) -> Path | None:
     REPORTS.mkdir(parents=True, exist_ok=True)
     meta = _parse_metadata(report_md)
     interviewer = (meta.get("interviewer") or "").strip()
+    if sender and interviewer != sender:
+        log(f"  Gemini said interviewer '{interviewer}' — overriding with sender '{sender}'")
+        report_md = _force_interviewer(report_md, interviewer, sender)
+        interviewer = sender
 
     # Treat these as "unidentified" — fall back to the audio filename stem.
     placeholder_names = {
