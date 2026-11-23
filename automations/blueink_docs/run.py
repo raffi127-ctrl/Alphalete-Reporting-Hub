@@ -48,6 +48,48 @@ def _workbook():
     return fill._client().open_by_key(config.SHEET_ID)
 
 
+def sent_today(rows: List[List[str]], tab: str = "",
+               today: dt.date = None) -> List[str]:
+    """Names the Blue Ink Log shows a packet going out to TODAY.
+
+    A row counts only with a bundle id: that id is Blue Ink's own receipt, so
+    it is the proof the packet exists, whatever the Status column has moved on
+    to since (completed, declined...)."""
+    day = (today or dt.date.today()).isoformat()
+    week = (tab or "").strip()
+    names = []
+    for r in rows:
+        r = list(r) + [""] * (ledger.COL_STATUS + 1 - len(r))
+        if not str(r[ledger.COL_SENT_AT]).startswith(day):
+            continue
+        if not str(r[ledger.COL_BUNDLE]).strip():
+            continue
+        if week and str(r[ledger.COL_WEEK]).strip() != week:
+            continue
+        names.append(str(r[ledger.COL_NAME]).strip())
+    return names
+
+
+def _post_sent_summary(rows: List[List[str]], tab: str, *, post: bool) -> int:
+    """The channel summary for packets that ALREADY went out today. Sends nothing.
+
+    For a send run by hand from the queue without --slack. 2026-11-23: the
+    daily agent had never fired, the 11 owed went out 9:31-9:40, and the
+    recruiting room never heard. Re-running the send with --slack instead would
+    say "0 sent, 11 already sent earlier" -- and would mail anyone added to the
+    tab since, which nobody approved. Nothing sent today = nothing posted (no
+    blank board)."""
+    names = sent_today(rows, tab)
+    where = " on %r" % tab.strip() if (tab or "").strip() else ""
+    print("%d packet(s) went out today%s: %s"
+          % (len(names), where, ", ".join(names) or "none"))
+    if not names:
+        print("Nothing sent today -- nothing to post.")
+        return 1
+    slack_post.post(len(names), [], dry_run=not post)
+    return 0
+
+
 def _print_templates() -> int:
     templates = blueink.list_envelope_templates()
     if not templates:
@@ -685,6 +727,10 @@ def _main(argv=None) -> int:
     ap.add_argument("--highlight-only", action="store_true",
                     help="send nothing; just light-green the first name of "
                          "everyone the log already shows as sent")
+    ap.add_argument("--post-sent-summary", action="store_true",
+                    help="send nothing; post the channel summary for packets "
+                         "the Blue Ink Log shows went out TODAY (add --slack "
+                         "to really post; --tab narrows it to one week)")
     args = ap.parse_args(argv)
 
     if args.list_templates:
@@ -701,6 +747,9 @@ def _main(argv=None) -> int:
     workbook = _workbook()
     if args.sync_status:
         return _sync_status(workbook)
+    if args.post_sent_summary:
+        return _post_sent_summary(ledger.read(workbook), args.tab,
+                                  post=args.slack)
 
     if args.office:
         # THE OFFICE'S OWN BOARD. Same NewStart shape, so the ledger, the
