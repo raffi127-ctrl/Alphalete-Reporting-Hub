@@ -113,3 +113,50 @@ class GettingBackToTheRosterFirst(unittest.TestCase):
         tab.assert_not_called()
         self.assertEqual(out["A One"]["need"], drive.COMPLETE)
         self.assertIn("nobody was ruled out", " ".join(said))
+
+
+class TheLookupIsGivenSomethingToSearchOn(unittest.TestCase):
+    """__ansOpen is handed the person dict and searches by `find`.
+
+    2026-11-23: the supervised run always passed it and the batch pass never
+    did, so one found people on Pending and the other reported all 26 as
+    needing a person. Filled in inside triage so the next caller cannot
+    forget it.
+    """
+
+    class _Page:
+        url = "https://apex.example/roster"
+
+        def __init__(self):
+            self.asked = []
+
+        def evaluate(self, js, arg=None):
+            if "__ansOpen" in js:
+                self.asked.append(dict(arg or {}))
+                return ""
+            return True
+
+        def wait_for_timeout(self, _ms):
+            pass
+
+    def _triage(self, people):
+        page = self._Page()
+        with mock.patch.object(drive, "wait_for_roster", return_value=True), \
+             mock.patch.object(drive, "open_roster_tab", return_value=True), \
+             mock.patch.object(drive, "search_roster", return_value=0), \
+             mock.patch.object(drive, "on_roster", return_value=True):
+            drive.triage(page, people, log=lambda *_a: None)
+        return page.asked
+
+    def test_a_name_only_person_still_gets_a_find(self):
+        asked = self._triage([{"name": "Alexis Justice"}])
+        self.assertEqual(asked[0]["find"], "Justice")
+
+    def test_a_caller_that_supplies_find_keeps_theirs(self):
+        """The supervised run sets it deliberately; this must not override."""
+        asked = self._triage([{"name": "Alexis Justice", "find": "McCrobie"}])
+        self.assertEqual(asked[0]["find"], "McCrobie")
+
+    def test_the_rest_of_the_dict_is_passed_through(self):
+        asked = self._triage([{"name": "A One", "pages": ["x"]}])
+        self.assertEqual(asked[0]["pages"], ["x"])

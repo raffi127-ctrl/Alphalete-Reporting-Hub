@@ -313,6 +313,20 @@ def triage(page, people, log=print) -> Dict[str, dict]:
                         "already in Apex is UNKNOWN -- never create from this"}
                 for p in (people or []) if (p or {}).get("name")}
 
+    # THE PENDING TAB HAS TO BE THE ONE SHOWING. __ansOpen reads the rows the
+    # roster is currently displaying, so on a roster that opened to any other
+    # tab it finds nobody -- and "not on Pending" then routes 25 people to a
+    # person. Apex's own panel says so in as many words: "Open Roster ->
+    # Employees and click the Pending tab, then click this button again."
+    #
+    # Every supervised run so far worked only because the browser profile
+    # still had Pending selected from the last one. The batch pass opened a
+    # fresh session, landed on the default tab, and reported all 25 as
+    # by_hand (2026-11-23).
+    if not open_roster_tab(page, "Pending", log=log):
+        log("    (could not open the Pending tab -- the lookup below reads "
+            "whatever tab is showing)")
+
     out: Dict[str, dict] = {}
     for p in people or []:
         name = str((p or {}).get("name") or "").strip()
@@ -326,9 +340,19 @@ def triage(page, people, log=print) -> Dict[str, dict]:
         surname = str(p.get("find") or name.split()[-1])
         given = name.split()[0] if name.split() else ""
         try:
+            # `find` IS WHAT THE ENGINE SEARCHES ON. __ansOpen is handed this
+            # whole dict and looks people up by it; a dict carrying only a
+            # name gives it nothing to search, so it finds nobody and every
+            # person routes to by_hand. The supervised run always passed it
+            # and the batch pass never did -- which is why one found people
+            # on Pending and the other reported all 26 as needing a person
+            # (2026-11-23). Filled in here rather than at each caller, so
+            # the next one cannot forget it.
+            asked = dict(p)
+            asked.setdefault("find", surname)
             found = page.evaluate(
                 "async (p) => { const id = await window.__ansOpen(p);"
-                " return id ? String(id) : ''; }", p)
+                " return id ? String(id) : ''; }", asked)
         except Exception as e:      # noqa: BLE001
             out[name] = {"need": BY_HAND,
                          "why": "could not look on Pending (%s)"
