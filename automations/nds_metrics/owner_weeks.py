@@ -274,7 +274,14 @@ def run(queries: Sequence[str], dm: Optional[str] = None, log=print,
     if not dm:
         log("[owner-weeks] no --dm: built only, nothing sent")
         return 0
+    import os
     from automations.shared import slack_metrics_post as smp
+    # Lucy 1 (the machine whose Tableau sees every owner) has no 'Lucy' bot
+    # token: DM from the per-user metrics token there, like metrics_shot /
+    # activations_today do (as_bot=False).
+    as_bot = bool(os.environ.get("SLACK_BOT_TOKEN")) or smp.BOT_TOKEN_PATH.exists()
+    if not as_bot:
+        log("[owner-weeks] no Lucy bot token on this machine -- DMs go from the metrics token")
     stamp = today.strftime("%B %d, %Y")
     names = ", ".join(o.label.split()[0] for o in offices)
     for name, path in shots:
@@ -288,7 +295,7 @@ def run(queries: Sequence[str], dm: Optional[str] = None, log=print,
             comment = ("\U0001F4C6 *%s — %s*\nSource: Tableau" % (o.label, board_name(o)))
         for user in [u.strip() for u in str(dm).split(",") if u.strip()]:
             smp.dm_user_with_file(Path(path), user=user, file_name=Path(path).name,
-                                  comment=comment)
+                                  comment=comment, as_bot=as_bot)
         log("[owner-weeks] DM'd %s to %s" % (name, dm))
     return 0
 

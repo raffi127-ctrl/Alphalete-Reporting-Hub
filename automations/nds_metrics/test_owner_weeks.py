@@ -159,6 +159,36 @@ class D2DFallback(unittest.TestCase):
         self.assertEqual(OW.board_name(offices[0]), "NDS Activation Rate by Week Ending")
 
 
+class Dm(unittest.TestCase):
+    def _send(self, bot_token: bool):
+        import collections
+        o = OW.Office("Khalil", "Khalil Mansour", "NDS", [dt.date(2026, 11, 22)],
+                      {AW.TOTAL: {dt.date(2026, 11, 22): collections.Counter(lines=4, activated=3)}})
+        sent = []
+        with mock.patch.object(OW, "read_offices", return_value=([o], [])), \
+             mock.patch.object(OW, "summary_png", return_value="/tmp/s.png"), \
+             mock.patch.object(OW, "owner_png", return_value="/tmp/k.png"), \
+             mock.patch("automations.shared.slack_metrics_post.BOT_TOKEN_PATH") as tok, \
+             mock.patch.dict("os.environ", {}, clear=False), \
+             mock.patch("automations.shared.slack_metrics_post.dm_user_with_file",
+                        side_effect=lambda *a, **k: sent.append(k)):
+            import os
+            os.environ.pop("SLACK_BOT_TOKEN", None)
+            tok.exists.return_value = bot_token
+            OW.run(["Khalil"], dm="U046G04P5LG", log=lambda m: None, today=TODAY)
+        return sent
+
+    def test_only_carlos_gets_it_from_lucy(self):
+        sent = self._send(bot_token=True)
+        self.assertEqual([k["user"] for k in sent], ["U046G04P5LG", "U046G04P5LG"])
+        self.assertTrue(all(k["as_bot"] for k in sent))
+
+    def test_no_bot_token_falls_back_to_the_metrics_token(self):
+        sent = self._send(bot_token=False)
+        self.assertEqual(len(sent), 2)
+        self.assertFalse(any(k["as_bot"] for k in sent))
+
+
 class Entry(unittest.TestCase):
     def test_quoted_and_unquoted_names(self):
         for args in (["--owner-weeks", "Khalil Mansour;Colten Wright", "--dm", "U1"],
