@@ -201,9 +201,49 @@ def plan(values: List[List[str]], formulas: List[List[str]], lay: dict,
             if not str(f).strip():
                 writes.append({"range": a1(r, lay["need1"]),
                                "values": [["=%s*1%%/17" % a1(r, lay["doors"])]]})
+    total = total_row(values, lay, last)
+    if total is not None:
+        writes += total_writes(formulas, lay, last, total, [data[z] for z in matched])
     extra = sorted(set(data) - set(matched))
     return writes, {"matched": matched, "missing": missing, "not_on_sheet": extra,
-                    "first_row": lay["header_row"] + 1, "last_row": last}
+                    "first_row": lay["header_row"] + 1, "last_row": last, "total_row": total}
+
+
+def total_row(values: List[List[str]], lay: dict, last: int) -> Optional[int]:
+    """Raf's 'Total' row right under the zips (zip cell says 'Total')."""
+    for r in range(last + 1, min(last + 4, len(values))):
+        row = values[r]
+        if lay["zip"] < len(row) and norm(row[lay["zip"]]) == "total":
+            return r
+    return None
+
+
+def total_writes(formulas: List[List[str]], lay: dict, last: int, total: int,
+                 recs: List[dict]) -> List[dict]:
+    """Totals that agree with the rows above them:
+      sales / needed / expected = SUM of the zip rows (formulas, so a hand edit adds up)
+      days since last sale      = MIN (the office's most recent sale anywhere)
+      penetration rate          = total sales / total Tableau leads of these zips
+                                  (Tableau's own definition; its leads aren't on the tab)
+      sales needed 1%           = Raf's formula on the Fiber doors total, only if empty."""
+    out, top = [], lay["header_row"] + 1
+    cols = lay["cols"]
+    for f, fn in (("sales", "SUM"), ("needed", "SUM"), ("expected", "SUM"), ("days", "MIN")):
+        if f in cols:
+            c = cols[f]
+            out.append({"range": a1(total, c),
+                        "values": [["=%s(%s:%s)" % (fn, a1(top, c), a1(last, c))]]})
+    if "pct" in cols:
+        leads = sum(r.get("leads") or 0 for r in recs)
+        sales = sum(r.get("sales") or 0 for r in recs)
+        out.append({"range": a1(total, cols["pct"]),
+                    "values": [["%.2f%%" % (100.0 * sales / leads) if leads else ""]]})
+    if lay["need1"] is not None and lay["doors"] is not None:
+        cur = formulas[total][lay["need1"]] if lay["need1"] < len(formulas[total]) else ""
+        if not str(cur).strip() or str(cur).strip() == "?":
+            out.append({"range": a1(total, lay["need1"]),
+                        "values": [["=%s*1%%/17" % a1(total, lay["doors"])]]})
+    return out
 
 
 def cf_requests(sheet_id: int, lay: dict, last_row0: int, existing: List[dict]) -> List[dict]:

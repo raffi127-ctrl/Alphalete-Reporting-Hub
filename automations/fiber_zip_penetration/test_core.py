@@ -55,6 +55,19 @@ class T(unittest.TestCase):
         self.assertEqual(s["not_on_sheet"], ["75024"])
         self.assertEqual(s["last_row"], 3)
 
+    def test_total_row(self):
+        tot = [""] * 38
+        tot[23], tot[28], tot[31], tot[32], tot[33] = "Total", "=SUM(AC3:AC4)", "?", "=AC5*1%/17", "?"
+        vals = [[""], HDR, row("75001", f="=AC3*1%/17"), row("75024", f="=AC4*1%/17"), tot]
+        lay = C.layout(vals)
+        w, s = C.plan(vals, vals, lay, C.parse_zips(CSV)["Rafael Hidalgo"])
+        got = {x["range"]: x["values"][0][0] for x in w}
+        self.assertEqual(s["total_row"], 4)
+        self.assertEqual(got["AH5"], "=SUM(AH3:AH4)")
+        self.assertEqual(got["AK5"], "=MIN(AK3:AK4)")
+        self.assertEqual(got["AF5"], "%.2f%%" % (100 * 12 / (1084 + 2440)))  # sales / leads
+        self.assertNotIn("AG5", got)                     # Raf's total formula kept
+
     def test_tabs(self):
         t = ["Line up WE 11.29", "Line up WE 11.22", "Line Up WE 11.1", "Sales Board WE 11.29"]
         self.assertEqual(C.target_tabs(t, dt.date(2026, 11, 23)), ["Line up WE 11.29"])

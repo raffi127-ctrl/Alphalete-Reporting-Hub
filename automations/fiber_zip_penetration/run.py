@@ -75,7 +75,8 @@ def fill_owner(owner: str, sheet_id: str, data: dict, today: dt.date,
         meta = sh.fetch_sheet_metadata(params={"fields": "sheets(properties(sheetId),conditionalFormats)"})
         existing = next((x.get("conditionalFormats", []) for x in meta["sheets"]
                          if x["properties"]["sheetId"] == ws.id), [])
-        reqs = core.cf_requests(ws.id, lay, s["last_row"], existing)
+        color_to = s["total_row"] if s["total_row"] is not None else s["last_row"]
+        reqs = core.cf_requests(ws.id, lay, color_to, existing)
         if reqs:
             sh.batch_update({"requests": reqs})
         print("      wrote %d cells + colors on rows %d-%d" % (len(writes), s["first_row"] + 1,
