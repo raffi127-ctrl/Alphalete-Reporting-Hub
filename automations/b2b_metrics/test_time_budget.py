@@ -64,10 +64,16 @@ def _run_main(*, budget_s, office_cost_s, argv=("--all", "--post")):
     env = {} if budget_s is None else {"HUB_REPORT_TIMEOUT_S": str(budget_s)}
     fake_tb = mock.Mock()
     fake_tb.sync = mock.Mock()
+    # On the PACKAGE attribute too (2026-11-23 audit): runner does `from
+    # automations.thread_builder import sync`, which skips a sys.modules-only
+    # fake once the real module is loaded -- and the real sync() reads the
+    # Thread Builder sheet and overwrites thread_plans.json in the repo.
+    import automations.thread_builder as _tb_pkg
     with mock.patch.object(runner.time, "monotonic", clock), \
          mock.patch.object(runner, "_PROCESS_START", clock.now), \
          mock.patch.dict("os.environ", env, clear=False), \
          mock.patch.dict("sys.modules", {"automations.thread_builder.sync": fake_tb}), \
+         mock.patch.object(_tb_pkg, "sync", fake_tb, create=True), \
          mock.patch.object(runner, "run", fake_run), \
          mock.patch.object(runner, "_write_manifest",
                            lambda per_office, scoped=False, office=None: written.append(

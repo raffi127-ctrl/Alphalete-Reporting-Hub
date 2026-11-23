@@ -209,6 +209,11 @@ def _with_fake_manifest(fn):
             sys.modules.pop("automations.shared.run_manifest", None)
         if shared and old_attr is not None:
             shared.run_manifest = old_attr
+        elif shared:
+            # It had no attribute before: don't leave the fake bound on the
+            # package for every later test's `from automations.shared import
+            # run_manifest` (2026-11-23 audit).
+            shared.__dict__.pop("run_manifest", None)
     return fake
 
 

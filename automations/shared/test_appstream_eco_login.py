@@ -154,10 +154,18 @@ class IcdDm(unittest.TestCase):
 
 class DmComesFromLucy(unittest.TestCase):
     def test_local_run_queues_on_lucy_1_instead_of_posting(self):
+        """`enqueue` is patched ON THE REAL MODULE, not faked via sys.modules
+        (2026-11-23). The sys.modules fake is skipped by `from
+        automations.day_orchestrator import mini_control` once any earlier test
+        has imported the real one -- the import reads it off the package. So a
+        suite run wrote a REAL post_note row on Lucy 1's live queue ('Pat
+        Example', password x, users=...,U0PAT); only the fake Slack id kept
+        Lucy from posting it. Same trap as test_weekly_pdf_slack (9/7)."""
         from unittest import mock
+        from automations.day_orchestrator import mini_control as M
         calls = []
-        fake = mock.Mock(); fake.enqueue = lambda action, args, **kw: calls.append((action, args, kw))
-        with mock.patch.dict("sys.modules", {"automations.day_orchestrator.mini_control": fake}):
+        with mock.patch.object(M, "enqueue",
+                               lambda action, args, **kw: calls.append((action, args, kw))):
             ok = A._dm_icd("Pat Example", {"username": "LucyECOPat", "password": "x"},
                            "U0PAT", log=lambda m: None, via_lucy=True)
         self.assertTrue(ok)

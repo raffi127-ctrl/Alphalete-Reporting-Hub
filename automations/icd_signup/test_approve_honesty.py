@@ -56,11 +56,20 @@ class ARefusedBoxOfficeReturnsNonZero(unittest.TestCase):
         ch = mock.MagicMock()
         ch.cmd_approve.return_value = 0
         ch.cmd_knocks.return_value = knocks_rc
+        # The fake goes on the PACKAGE attribute too (2026-11-23 audit).
+        # approve() does `from automations.icd_alerts import approve`, which
+        # reads the package attribute once any earlier test imported the real
+        # module; the sys.modules fake was then skipped and the REAL
+        # cmd_approve/cmd_knocks ran for Ryan's office. (The two string
+        # patches below resolve through sys.modules, so they only ever landed
+        # on the fake -- they never protected the real module.)
+        import automations.icd_alerts as _alerts_pkg
         with mock.patch.object(A.store, "get", return_value=rec), \
                 mock.patch.object(A, "_already_approved", return_value=False), \
                 mock.patch.object(A.store, "set_status") as setst, \
                 mock.patch.dict("sys.modules",
                                 {"automations.icd_alerts.approve": ch}), \
+                mock.patch.object(_alerts_pkg, "approve", ch, create=True), \
                 mock.patch("automations.icd_alerts.approve.cmd_approve",
                            return_value=0, create=True), \
                 mock.patch("automations.icd_alerts.approve.cmd_knocks",

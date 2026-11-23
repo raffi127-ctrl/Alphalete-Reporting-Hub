@@ -37,18 +37,27 @@ class WatcherSkipsTheNote(unittest.TestCase):
                     "report_id": "vantura_orderlog_sales", "status": "success",
                     "started": "2026-10-08T06:50:00",
                     "machine": "Lucys-MacBook-Neo.local"}]
-        # Same sys.modules pattern as test_retract_false_alarms: importing the
-        # real incident_thread/notify here would bind them on the package and
-        # break that suite's mocks when both run in one process.
+        # Faked in BOTH places an import can find them (2026-11-23 audit). The
+        # code does `from automations.shared import incident_thread`, which
+        # reads the PACKAGE attribute once any earlier test imported the real
+        # module -- a sys.modules fake alone is then skipped, and the real
+        # incident_thread writes to #claudecorrections.
+        import automations.shared as _shared_pkg
+        import automations.day_orchestrator as _orch_pkg
         inc = mock.MagicMock()
         inc.open_keys.return_value = ["standalone-vantura_orderlog_sales"]
         notify = mock.MagicMock()
         notify._corrections_channel.return_value = "C1"
         with mock.patch.dict("sys.modules", {
                     "automations.shared.incident_thread": inc,
-                    "automations.day_orchestrator.notify": notify}),                 mock.patch("automations.shared.delivery_check.may_close",
-                           return_value=(False, "unknown", "no manifest")),                 mock.patch("socket.gethostname",
-                           return_value="Alphaletes-Mac-mini.local"),                 mock.patch("builtins.print"):
+                    "automations.day_orchestrator.notify": notify}), \
+             mock.patch.object(_shared_pkg, "incident_thread", inc, create=True), \
+             mock.patch.object(_orch_pkg, "notify", notify, create=True), \
+             mock.patch("automations.shared.delivery_check.may_close",
+                        return_value=(False, "unknown", "no manifest")), \
+             mock.patch("socket.gethostname",
+                        return_value="Alphaletes-Mac-mini.local"), \
+             mock.patch("builtins.print"):
             closed = R._close_recovered_incidents({}, reports, True, "t")
         self.assertEqual(closed, 0)
         inc.note_delivery_unverified.assert_not_called()

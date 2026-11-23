@@ -38,9 +38,18 @@ class Retract(unittest.TestCase):
         notify = mock.MagicMock()
         notify._corrections_channel.return_value = "C1"
 
+        # BOTH places an import can find them (2026-11-23 audit). md does
+        # `from automations.shared import incident_thread`, which reads the
+        # PACKAGE attribute once any earlier test imported the real module --
+        # a sys.modules fake alone is skipped, and the real resolve() replies
+        # in #claudecorrections and marks the parent post resolved.
+        import automations.shared as _shared_pkg
+        import automations.day_orchestrator as _orch_pkg
         with mock.patch.dict("sys.modules", {
                 "automations.shared.incident_thread": inc,
                 "automations.day_orchestrator.notify": notify}), \
+             mock.patch.object(_shared_pkg, "incident_thread", inc, create=True), \
+             mock.patch.object(_orch_pkg, "notify", notify, create=True), \
              mock.patch.object(md, "_handrun_only_ids", return_value=set(structural)), \
              mock.patch.object(md, "_oneshot_utility_ids", return_value=set()), \
              mock.patch.object(md, "_offday_standalone_ids", return_value=set(offday)):

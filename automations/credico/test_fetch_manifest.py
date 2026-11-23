@@ -14,9 +14,12 @@ the manifest fetch_week writes, and the config block that reads it.
 """
 from __future__ import annotations
 
+import contextlib
 import json
+import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from automations.credico import report as R
 
@@ -69,6 +72,26 @@ class FetchManifestUnits(unittest.TestCase):
         self.assertIn(SAT, note)
 
 
+@contextlib.contextmanager
+def _stub_run_manifest(stub):
+    """Stand `stub` in for run_manifest wherever an import can find it.
+
+    2026-11-23 audit: these tests used to swap sys.modules alone. The report
+    does `from automations.shared import run_manifest`, which reads the PACKAGE
+    attribute once any earlier test imported the real module -- so in a full
+    run the stub was skipped and a made-up credico manifest (week 9.6.26) was
+    written into the real output/manifests, which the delivery watcher reads.
+    Patch the attribute too, and point MANIFEST_DIR at a temp dir whatever
+    happens (same as b2b_metrics/test_manifest_merge)."""
+    import automations.shared as _pkg
+    from automations.shared import run_manifest as _real
+    with tempfile.TemporaryDirectory() as tmp, \
+         mock.patch.dict("sys.modules", {"automations.shared.run_manifest": stub}), \
+         mock.patch.object(_pkg, "run_manifest", stub), \
+         mock.patch.object(_real, "MANIFEST_DIR", Path(tmp)):
+        yield
+
+
 class ManifestWriting(unittest.TestCase):
 
     def test_it_files_under_the_schedule_config_id(self):
@@ -79,16 +102,8 @@ class ManifestWriting(unittest.TestCase):
             def write_manifest(report_id, **kw):
                 seen.update(kw, report_id=report_id)
 
-        import sys
-        real = sys.modules.get("automations.shared.run_manifest")
-        sys.modules["automations.shared.run_manifest"] = _Stub
-        try:
+        with _stub_run_manifest(_Stub):
             R._write_fetch_manifest("9.6.26", SAT, {PHX: "ok"})
-        finally:
-            if real is None:
-                sys.modules.pop("automations.shared.run_manifest", None)
-            else:
-                sys.modules["automations.shared.run_manifest"] = real
         self.assertEqual(seen["report_id"], R.FETCH_REPORT_ID)
         self.assertEqual(seen["succeeded"], [PHX])
         self.assertEqual(seen["failed"], [])
@@ -102,16 +117,8 @@ class ManifestWriting(unittest.TestCase):
             def write_manifest(*a, **k):
                 raise RuntimeError("disk full")
 
-        import sys
-        real = sys.modules.get("automations.shared.run_manifest")
-        sys.modules["automations.shared.run_manifest"] = _Boom
-        try:
+        with _stub_run_manifest(_Boom):
             R._write_fetch_manifest("9.6.26", SAT, {PHX: "ok"})   # must not raise
-        finally:
-            if real is None:
-                sys.modules.pop("automations.shared.run_manifest", None)
-            else:
-                sys.modules["automations.shared.run_manifest"] = real
 
 
 class OfficeSpellings(unittest.TestCase):
