@@ -69,14 +69,6 @@
       "campaign": "NDS"
     },
     {
-      "sheet_tab": "Isaac Amissah - NDS",
-      "office_id": "21190",
-      "as_owner": "Isaac Amissah",
-      "as_company": "Amis Solutions, Inc",
-      "confidence": 1.0,
-      "campaign": "NDS"
-    },
-    {
       "sheet_tab": "Isaiah Revelle - NDS",
       "office_id": "19717",
       "as_owner": "Isaiah Revelle",
@@ -210,6 +202,10 @@
     {
       "sheet_tab": "NDS Template",
       "reason": "template tab, not an office"
+    },
+    {
+      "sheet_tab": "Isaac Amissah - NDS",
+      "reason": "2026-11-23: AppStream office 21190 no longer visible; Rafael: not in our org's captainships, assume shutting down. Tab kept as-is (not deleted)."
     },
     {
       "sheet_tab": "Abdallah Ghousheh - NDS",
