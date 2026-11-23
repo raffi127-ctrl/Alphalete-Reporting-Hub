@@ -568,12 +568,26 @@ class DailySend(unittest.TestCase):
         self.assertEqual(self.sent, [])
         self.assertFalse(self.state.exists())
         self.assertTrue(any("(dry): Juan Perez -> UREP00002" in m for m in self.logs), self.logs)
+        self.assertIn("order log DMs planned (dry): 8", self.logs[-1])     # 3 x 2 bosses + 2 reps
+
+    def test_a_boss_who_is_also_a_rep_gets_their_own_picture_once_and_no_note(self):
+        spec = self.SPEC + ",ana_ruiz=UBOSS0001"                            # Ana is a boss AND a rep
+        self.assertEqual(self.run_send(spec=spec), 0)
+        ana = [(u, c) for u, f, c in self.sent if f == "ana.png"]
+        self.assertEqual(sorted(u for u, _c in ana), ["UBOSS0001", "UBOSS0002"])   # not twice to UBOSS0001
+        self.assertFalse(any("not sent" in c for _u, c in ana))
+        self.assertNotIn("already", self.logs[-1])
 
     def test_a_second_send_running_stops(self):
         with ROL.daily_lock(self.state) as mine:
             self.assertTrue(mine)
             self.assertEqual(self.run_send(), 0)
         self.assertEqual(self.sent, [])
+
+    def test_a_sheet_map_is_lenient_without_daily_too(self):
+        self.assertEqual(self.run_send(daily=False, everyone=[], lenient=True), 0)   # gone_rep skipped
+        self.assertEqual(sorted(u for u, _f, _c in self.sent), ["UREP00001", "UREP00002"])
+        self.assertTrue(any("gone_rep: no picture today" in m for m in self.logs), self.logs)
 
     def test_one_off_refusal_still_sends_the_everyone_copies(self):
         self.assertEqual(self.run_send(daily=False, everyone=["UBOSS0001"]), 1)   # gone_rep -> refused
@@ -606,6 +620,7 @@ class DailySendCli(unittest.TestCase):
         self.assertEqual(send.call_args[1]["spec"], "juan_perez=UREP00002")
         self.assertTrue(send.call_args[1]["daily"])
         self.assertFalse(send.call_args[1]["dry"])
+        self.assertTrue(send.call_args[1]["lenient"])
 
     def test_unreadable_tab_sends_nothing(self):
         from automations.nds_metrics import run as R
