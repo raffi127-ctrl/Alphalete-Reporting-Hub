@@ -22,8 +22,24 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from automations.eco_onboarding import settings as S     # noqa: E402
 from automations.eco_onboarding import store             # noqa: E402
+from automations.shared import onboarding_ui as UI       # noqa: E402
 
 st.set_page_config(page_title="LucyECO Onboarding", page_icon="📋")
+
+
+# CREDENTIALS BEFORE THE FIRST READ. On a laptop the store finds the oauth
+# token in the home directory; on Streamlit Community Cloud there is no home
+# directory, and the credentials come from st.secrets. Injecting the client
+# here is what makes this form work for the people it is FOR -- owners on the
+# public link -- rather than only for whoever runs it on this Mac.
+#
+# A failure is shown, not swallowed: an owner who cannot be told the sheet is
+# unreachable will type their answers into a form that drops them.
+_gc, _diag = UI.build_gs_client("ECO_ONBOARDING_LOCAL_ONLY")
+if _gc is not None:
+    store.set_client(_gc)
+elif st.query_params.get("debug") == "1":
+    st.warning("No Sheets client: %s" % _diag)
 
 
 # BOTH READS ARE CACHED. Opening the sheet takes a couple of MINUTES on a cold
@@ -55,10 +71,17 @@ def _ask_channel(q: S.Question, current: str) -> str:
     whether Lucy is actually in the room -- because "right id, Lucy not
     invited" looks exactly the same until the first post does not appear.
     """
-    from automations.shared import onboarding_ui as UI
     if current:
         st.caption("Currently: `%s`" % current)
-    got = UI.channel_id_input(q.label, key="eco_" + q.field, help=q.help)
+    # THE QUESTION'S OWN HELP GOES IN A CAPTION, NOT THE `help=` ARGUMENT.
+    # channel_id_input supplies its own help -- how to find a channel id --
+    # so passing ours too is `text_input() got multiple values for keyword
+    # argument 'help'`, which takes the whole page down at the question, not
+    # at the call. Nothing caught it: the tests exercise the schema and the
+    # store, and a Streamlit page only fails when a browser renders it.
+    if q.help:
+        st.caption(q.help)
+    got = UI.channel_id_input(q.label, key="eco_" + q.field)
     if not got:
         # Keep what they already answered rather than blanking it by leaving
         # the box alone: row_for drops empty fields, so this is only about

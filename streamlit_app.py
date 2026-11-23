@@ -65,6 +65,14 @@ TOOLS = [
     ("automations/online_presence/signup_app.py", "join-lucyeco-social",
      "Join LucyECO Social", ":material/photo_camera:",
      "Offices — Lucy posts your photos and answers your Google reviews", False),
+    # LINK ONLY. An office reaches this AFTER it has joined -- it is the
+    # second conversation, not an offer on the front page, and an owner who
+    # wandered in here from Home would be answering payroll questions for an
+    # office that is not enrolled in anything yet. Megan sends the link from
+    # the Hub card when an office is being set up.
+    ("eco_onboarding/app.py", "onboarding-enrollment", "Onboarding enrolment",
+     ":material/assignment:",
+     "Offices being set up — the answers their onboarding needs", False),
     ("disposition_signup/app.py", "daily-dispositions", "Daily Dispositions",
      ":material/schedule:",
      "Being replaced by Lucy ECOsystem — reachable by link only", False),

@@ -8942,6 +8942,29 @@ else:  # st.session_state.view == "user"
                     "https://alphaletetrackerintake.streamlit.app",
                     use_container_width=True)
                 st.caption("For Megan & Eve")
+            # ---- LucyECO Onboarding enrolment (Office Operations) — the
+            # office's own answers for its onboarding: where the job is, its
+            # Blue Ink bundle, its pay states, and where its OBCL board and
+            # Daily Update get posted. Everything downstream reads the `Office
+            # Settings` tab and REFUSES to guess, so until an office answers,
+            # its new starts sit held. A link you send, not a form you fill in
+            # for them: nobody here knows another office's bundle name.
+            st.markdown("### 📋 LucyECO Onboarding Enrolment")
+            with st.container(border=True):
+                st.markdown(
+                    "**Send an office this link when you set them up** — they "
+                    "answer once and their onboarding has what it needs: the "
+                    "state and city for background checks, the name of their "
+                    "Blue Ink document bundle, the two payroll states, and "
+                    "which Slack channel or text group their OBCL board and "
+                    "Daily Update go to. Nothing here is guessed for them — "
+                    "an unanswered question holds that office's new starts "
+                    "rather than filling in somebody else's answer.")
+                _safe_link_button(
+                    "📋 Open onboarding enrolment",
+                    "https://lucyeco.streamlit.app/onboarding-enrollment",
+                    use_container_width=True)
+                st.caption("Send to an office owner · answers land on Office Settings")
             # ---- Daily Dispositions sign-up (Office Operations) — an OWNER
             # enrolls their own office in the KNOCKS & DISPOSITIONS board: how
             # often (15/30/60 min) and where (iMessage, email, hourly Slack).

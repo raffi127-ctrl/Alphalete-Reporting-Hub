@@ -1,0 +1,10 @@
+# Streamlit Community Cloud deps for the LucyECO Onboarding enrolment form
+# (entry point: eco_onboarding/app.py). WITHOUT THIS FILE Cloud installs only
+# streamlit, `import gspread` fails, and the form shows an office list it
+# cannot read and a Save button that saves nowhere — the same silent drop to
+# local mode that metric_request's deps were written to stop.
+streamlit>=1.30
+gspread>=5.10          # read and write the Office Settings tab
+google-auth>=2.20      # the [gcp_oauth] / [gcp_service_account] secret
+slack_sdk>=3.21        # check Lucy is actually in the channel they typed
+certifi>=2023.7        # SSL bundle for that Slack client

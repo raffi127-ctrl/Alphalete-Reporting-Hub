@@ -20,7 +20,7 @@ import unittest
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 APPS = ("document_builder", "pay_structure", "office_onboarding",
         "tracker_onboarding", "metric_request", "metric_edit",
-        "disposition_signup", "icd_signup")
+        "disposition_signup", "icd_signup", "eco_onboarding")
 
 
 def _names(path: pathlib.Path):

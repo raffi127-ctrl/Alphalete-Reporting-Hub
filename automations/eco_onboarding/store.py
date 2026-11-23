@@ -19,12 +19,39 @@ from typing import Dict, List, Optional, Tuple
 from automations.eco_onboarding import settings as S
 
 
+# THE CLIENT THE OWNER-FACING FORM INJECTS. On a laptop, `open_by_key` finds
+# the oauth token in the home directory. On Streamlit Community Cloud there is
+# no home directory and no token: the credentials arrive as `st.secrets`, and
+# the form hands the resulting gspread client to `set_client` before its first
+# read. Without this, the form ran green locally and could not open the sheet
+# at all for the one audience it exists for.
+_CLIENT = None
+
+
+def set_client(gc) -> None:
+    global _CLIENT
+    _CLIENT = gc
+
+
+def relay_id() -> str:
+    """The relay workbook's key, from the one module that declares it.
+
+    Imported in here rather than at the top because `icd_alerts.post` pulls in
+    Slack and the whole alert stack, which the form does not need and Cloud
+    does not install. If that import is unavailable the caller gets the error,
+    not a second copy of the id that can drift from the first."""
+    from automations.icd_alerts import post as P
+    return P.RELAY_SPREADSHEET_ID
+
+
 def _book(book=None):
     if book is not None:
         return book
-    from automations.icd_alerts import post as P
+    sheet_id = relay_id()
+    if _CLIENT is not None:
+        return _CLIENT.open_by_key(sheet_id)
     from automations.recruiting_report.fill import open_by_key
-    return open_by_key(P.RELAY_SPREADSHEET_ID)
+    return open_by_key(sheet_id)
 
 
 def _sheet(book=None):
