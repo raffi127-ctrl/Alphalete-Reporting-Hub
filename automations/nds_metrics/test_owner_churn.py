@@ -79,6 +79,42 @@ class Picture(unittest.TestCase):
         self.assertIn("Rafael's off the D2D order log", got["sub"])
 
 
+class Coverage(unittest.TestCase):
+    """The 150-day D2D crosstab times out; a shorter pull blanks the buckets it
+    cannot reach instead of undercounting them."""
+
+    def test_short_window_blanks_the_old_buckets(self):
+        total = {b: {"act": 10, "disc": 1} for b, _lo, _hi in OC.BUCKETS}
+        got = OC.cells(total, covered=105)
+        self.assertEqual(got["0-30 Day"]["rate"], "10.0%")
+        self.assertEqual(got["60 Day"]["rate"], "10.0%")         # 90 + 15 <= 105
+        self.assertEqual(got["90 Day"], {"rate": "n/a", "color": ""})
+        got = OC.cells(total, covered=60)
+        self.assertEqual(got["30 Day"], {"rate": "n/a", "color": ""})
+        self.assertEqual(OC.cells(total)["90 Day"]["rate"], "10.0%")   # 150 days: all
+
+    def test_chunks_walk_back_contiguously(self):
+        self.assertEqual(OC.D2D_CHUNKS[0][1], 61)                # right after the 60-day pull
+        self.assertEqual(OC.D2D_CHUNKS[1][1], OC.D2D_CHUNKS[0][0] + 1)
+        self.assertEqual(OC.D2D_CHUNKS[-1][0], OC.LOOKBACK_DAYS)
+
+    def test_merge_lines_up_columns_by_name(self):
+        import tempfile
+        from pathlib import Path
+        a = [["Owner Name", "Rep", "DTR Status"], ["Rafael Hidalgo", "A", "Posted"]]
+        b = [["Rep", "Owner Name", "DTR Status"], ["B", "Rafael Hidalgo", "Disconnected"]]
+        with tempfile.TemporaryDirectory() as td:
+            pa, pb = Path(td, "a.csv"), Path(td, "b.csv")
+            pa.write_text("x")
+            pb.write_text("x")
+            with mock.patch("automations.commission_sheet.sources.read_crosstab",
+                            side_effect=lambda p: a if Path(p).name == "a.csv" else b):
+                cols, data, i_owner = OC.load_merged([pa, pb], log=lambda m: None)
+        self.assertEqual(cols.header, ["Owner Name", "Rep", "DTR Status"])
+        self.assertEqual(data, [["Rafael Hidalgo", "A", "Posted"],
+                                ["Rafael Hidalgo", "B", "Disconnected"]])
+
+
 class Entry(unittest.TestCase):
     def test_names_and_dm(self):
         with mock.patch.object(OC, "run", return_value=0) as run:
