@@ -84,6 +84,81 @@ def fill_owner(owner: str, sheet_id: str, data: dict, today: dt.date,
     return ok
 
 
+def fill_block(o: dict, data: dict, dry_run: bool) -> bool:
+    """Lucy's own block on an owner's Line Up (block.py). Writes ONLY inside the
+    block's 8 columns, then re-reads the tab and checks every other cell's
+    formula/value is exactly what it was before."""
+    from automations.recruiting_report.fill import open_by_key
+    from automations.fiber_zip_penetration import block
+    import re
+    who = o["owner"]
+    sh = open_by_key(o["sheet"])
+    if o.get("tab_regex"):
+        meta = sh.fetch_sheet_metadata(params={"fields": "sheets(properties(title,index,hidden))"})
+        props = sorted((s["properties"] for s in meta["sheets"]), key=lambda p: p["index"])
+        hits = [p["title"] for p in props
+                if not p.get("hidden") and re.match(o["tab_regex"], p["title"], re.I)]
+        if not hits:
+            print("  [%s] no tab matching %r -- skipped" % (who, o["tab_regex"]))
+            return False
+        tab = hits[0]
+    else:
+        tab = o["tab"]
+    try:
+        ws = sh.worksheet(tab)
+    except Exception:  # noqa: BLE001 -- gspread WorksheetNotFound
+        if not o.get("create_tab"):
+            print("  [%s] tab %r not found -- skipped" % (who, tab))
+            return False
+        if dry_run:
+            print("  [%s] would create tab %r with %d zips" % (who, tab, len(data)))
+            return True
+        ws = sh.add_worksheet(title=tab, rows=max(100, len(data) + 10), cols=block.WIDTH + 2)
+        print("  [%s] created tab %r" % (who, tab))
+    values = ws.get_all_values()
+    formulas = ws.get_all_values(value_render_option="FORMULA")
+    col = block.find_block(values, who)
+    if col is None:
+        last = block.last_used_col(values, formulas)
+        col = 0 if last < 0 else last + 2
+        old_rows = 0
+    else:
+        old_rows = block.block_rows_in_use(values, col)
+    g, total = block.grid(who, data, col, old_rows)
+    print("  [%s] '%s': block at %s, %d zips, Total on row %d%s"
+          % (who, tab, block.a1(0, col), len(data), total + 1,
+             "" if old_rows else " (NEW)"))
+    if dry_run:
+        for r in g[:4]:
+            print("      ", r)
+        return True
+    need_cols, need_rows = col + block.WIDTH, len(g)
+    if ws.col_count < need_cols:
+        ws.add_cols(need_cols - ws.col_count)          # appended at the far right
+    if ws.row_count < need_rows:
+        ws.add_rows(need_rows - ws.row_count)          # appended at the bottom
+    q = "'%s'!" % tab.replace("'", "''")
+    sh.values_batch_update({"valueInputOption": "USER_ENTERED", "data": [
+        {"range": q + block.a1(0, col), "values": g}]})
+    meta = sh.fetch_sheet_metadata(params={"fields": "sheets(properties(sheetId),conditionalFormats)"})
+    existing = next((x.get("conditionalFormats", []) for x in meta["sheets"]
+                     if x["properties"]["sheetId"] == ws.id), [])
+    lay = {"header_row": 1, "cols": {"pct": col + block.PCT_OFFSET}}
+    reqs = block.format_requests(ws.id, col, total) + core.cf_requests(ws.id, lay, total - 1, existing)
+    sh.batch_update({"requests": reqs})
+    # Safety check: nothing outside the block moved.
+    after_f = ws.get_all_values(value_render_option="FORMULA")
+    after_v = ws.get_all_values()
+    bad = block.outside_changed(formulas, after_f, col)
+    if bad:
+        print("  [%s] !! formulas changed OUTSIDE the block: %s" % (who, bad[:10]))
+        return False
+    vbad = block.outside_changed(values, after_v, col)
+    print("      wrote %d rows; outside the block: formulas identical, %d value changes%s"
+          % (len(g), len(vbad), (" %s" % vbad[:5]) if vbad else ""))
+    return not vbad
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="fiber_zip_penetration")
     ap.add_argument("--csv", help="Use this crosstab file instead of pulling Tableau.")
@@ -122,6 +197,20 @@ def main(argv=None) -> int:
             if not fill_owner(o["owner"], o["sheet"], data, today, args.dry_run):
                 bad.append(o["owner"])
         except Exception as e:  # noqa: BLE001 -- one owner never blocks the rest
+            print("  [%s] FAILED: %s" % (o["owner"], e))
+            bad.append(o["owner"])
+
+    blocks = [o for o in config.BLOCKS if not args.owner or o["owner"] == args.owner]
+    for o in blocks:
+        data = by_owner.get(o["owner"])
+        if not data:
+            print("  [%s] not in the crosstab -- skipped" % o["owner"])
+            bad.append(o["owner"])
+            continue
+        try:
+            if not fill_block(o, data, args.dry_run):
+                bad.append(o["owner"])
+        except Exception as e:  # noqa: BLE001
             print("  [%s] FAILED: %s" % (o["owner"], e))
             bad.append(o["owner"])
 

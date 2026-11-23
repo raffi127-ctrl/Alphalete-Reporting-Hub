@@ -26,6 +26,34 @@ VIEW_URL = "%s&%s=%s" % (_BASE_VIEW_URL, quote(PENETRATION_TYPE_FIELD),
 
 # owner (Tableau 'Account_Owner_Name__c' spelling) -> spreadsheet id.
 # The tab is found by name ('Line Up WE <m>.<d>'), the columns by header label.
+# ROLL OUT (Eve 2026-11-23: "los dueños que hagan fiber que sean de nuestra org").
+# Who: the 'ATT Fiber Team' section of the Alphalete ORG Sales Board. Their
+# Line Ups have no zip table, so Lucy adds her own block to the right of
+# everything (block.py). Names = Tableau spelling. 'tab' = the Line Up;
+# 'tab_regex' = weekly Line Ups, the LEFTMOST visible match wins (newest);
+# 'create_tab' = owner has no Line Up -> Lucy makes a 'Zip Penetration' tab.
+# Omar Mohamad (ORG Fiber Team) has no rows in the by-zip crosstab -> not here.
+BLOCKS: List[Dict] = [
+    {"owner": "Haytham Nagi", "sheet": "1le2wVPAeYsclQyP212IY9K92a9BAfoUWGd7n1DgIj8Y",
+     "tab": "Territory Line Up"},
+    {"owner": "Cyrus Wade", "sheet": "1boVLrvhqKVFHgUdGeQWTSFywlLSAoHh0X8b-MT1ZCrA",
+     "tab_regex": r"^\s*\d{1,2}\.\d{1,2}\s*Line\s*up\s*$"},
+    {"owner": "Kash Rai", "sheet": "1WJLw5WpSJfvvDsVQlNwu5yyof1WRom8yK87MQCCyC_0",
+     "tab": "Zip Penetration", "create_tab": True},
+    {"owner": "Aya Al-Khafaji", "sheet": "1D7Gf8E6eFEYj6Md8uRozdFKUSD4XGxUt85WuY9quEIE",
+     "tab": "Zip Penetration", "create_tab": True},
+    {"owner": "Hammad Haque", "sheet": "1HywODqAFpXP_Vn2uRAenie8nnvRPx90yBB6-KqJqq7U",
+     "tab": "Line Up "},
+    {"owner": "Salik Mallick", "sheet": "1HywODqAFpXP_Vn2uRAenie8nnvRPx90yBB6-KqJqq7U",
+     "tab": "Line Up "},
+    {"owner": "Rashad Reed", "sheet": "1MitP5ZgVlCQhH5tzjZ0ltfaqSW_l9zholzTz0AUSUl0",
+     "tab": "Zip Penetration", "create_tab": True},
+    {"owner": "Jacob Dover", "sheet": "10ISMTZxmg4fp96tehPGmAIm_VheFhDa_D4yc0Ojnbcs",
+     "tab": "Line Up "},
+    {"owner": "Cody Cannon", "sheet": "1Emdb7DfQ40Xd262gVDZwAB1LAIi1rPicsr7nYmCnNRk",
+     "tab": "Line Up"},
+]
+
 OWNERS: List[Dict[str, str]] = [
     {"owner": "Rafael Hidalgo",
      "sheet": "1MC9pfKryQrRtcMthUBL2hOciDCaa83U059pz0N2CmHc"},  # Alphalete SALES BOARD 2025
