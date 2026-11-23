@@ -77,3 +77,58 @@ def test_dry_run_beats_write(monkeypatch, capsys):
     RUN.main(["--write", "--audit", "--dry-run"])
     assert seen["write"] is False
     assert "--write ignored" in capsys.readouterr().out
+
+
+# --------------------------------- give people back, take nobody off yet
+
+def _audit_once(monkeypatch, restore_only):
+    """One tracked person the rules want DELETED, with write on."""
+    from automations.second_round_contacts import run as RUN
+
+    entry = {"status": "tracked", "second_round": "2026-11-01",
+             "display": "Ada Fournier (2R 11/1)", "resourceName": "people/c1",
+             "first_name": "Ada", "last_name": "Fournier"}
+    monkeypatch.setattr(RUN.S, "load",
+                        lambda: {"a@x.com": {"p:5550100001": entry}})
+    monkeypatch.setattr(RUN.S, "save", lambda st: None)
+    monkeypatch.setattr(RUN, "gather_facts",
+                        lambda *a, **k: ({"p:5550100001": {}},
+                                         {C.EVENING_KEEPER}))
+    monkeypatch.setattr(RUN.K, "service", lambda a: object())
+    monkeypatch.setattr(RUN.K, "ensure_group", lambda *a, **k: {})
+    monkeypatch.setattr("automations.applicant_tracker.applicantstream.session",
+                        lambda *a, **k: _FakeSession())
+    gone = []
+    monkeypatch.setattr(RUN.K, "still_exists", lambda svc, rn: True)
+    monkeypatch.setattr(RUN.K, "delete",
+                        lambda svc, rn: gone.append(rn))
+    o = type("O", (), {"owner": "Raf", "label": "Raf", "account": "a@x.com",
+                       "offices": ["11280"], "ov_campaign": "RES-AT&T",
+                       "active": True})()
+    RUN.run_audit([o], write=True, ownerville=False,
+                  restore_only=restore_only, today=dt.date(2026, 11, 22))
+    return gone, entry
+
+
+class _FakeSession:
+    def __enter__(self):
+        return object()
+
+    def __exit__(self, *a):
+        return False
+
+
+def test_restore_only_deletes_nobody(monkeypatch):
+    """The read was broken for weeks and right for an hour. A restore is a
+    mark we can now see; a removal is an absence, and an absence is exactly
+    what was wrong before."""
+    gone, entry = _audit_once(monkeypatch, restore_only=True)
+    assert gone == []
+    assert entry["status"] == "tracked", "and the person is left tracked"
+
+
+def test_without_it_the_removal_still_happens(monkeypatch):
+    """So the flag is doing the work, not a broken fixture."""
+    gone, entry = _audit_once(monkeypatch, restore_only=False)
+    assert gone == ["people/c1"]
+    assert entry["status"] == "removed"

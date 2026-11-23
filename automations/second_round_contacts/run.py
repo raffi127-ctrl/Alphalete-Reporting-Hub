@@ -311,7 +311,7 @@ def gather_facts(app, offices: List[str], keys: set, today: dt.date) -> Dict[str
 
 
 def run_audit(owners: List[R.Owner], *, write: bool, ownerville: bool = True,
-              evening: bool = False,
+              evening: bool = False, restore_only: bool = False,
               ws=None, today: Optional[dt.date] = None) -> int:
     from automations.applicant_tracker.applicantstream import session
     today = today or dt.date.today()
@@ -469,6 +469,17 @@ def run_audit(owners: List[R.Owner], *, write: bool, ownerville: bool = True,
                                         evening=evening and keeper_read)
             if verdict == rules.DELETE:
                 deleted += 1
+                # PUT PEOPLE BACK, TAKE NOBODY OFF (Megan, 2026-11-22: "run
+                # the audit for the other five but don't remove anything
+                # yet"). The read was broken for weeks and has been right
+                # for an hour; the restores are provably safe because every
+                # one of them is a mark we can now see, while a removal is
+                # an absence -- and an absence is exactly what was wrong
+                # before. So the half that gives people back runs, and the
+                # half that takes them away waits for somebody to look.
+                if restore_only:
+                    _log("    HELD %s: %s" % (e.get("display", name), why))
+                    continue
                 _log("    %s %s: %s" % ("remove" if write else "would remove", e.get("display", name), why))
                 if write:
                     try:
@@ -515,8 +526,9 @@ def run_audit(owners: List[R.Owner], *, write: bool, ownerville: bool = True,
                 waiting += 1
         if write:
             S.save(st)
-        res = "audit: %d removed, %d put back, %d graduated (hired+badged), %d waiting%s" % (
-            deleted, restored, hired, waiting, "" if write else " [DRY RUN]")
+        res = "audit: %d %s, %d put back, %d graduated (hired+badged), %d waiting%s" % (
+            deleted, "held back from removal" if restore_only else "removed",
+            restored, hired, waiting, "" if write else " [DRY RUN]")
         _log("  %s: %s" % (o.owner, res))
         if ws is not None and write:
             R.stamp(ws, o, res)
@@ -838,6 +850,11 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--write", action="store_true", help="create / remove contacts (default: dry run)")
     ap.add_argument("--audit", action="store_true", help="run Raf's removal rules instead of the adds")
+    ap.add_argument("--restore-only", action="store_true",
+                    help="apply the put-backs and REMOVE NOBODY. For a pass "
+                         "straight after a read was fixed: a restore is a "
+                         "mark we can now see, a removal is an absence, and "
+                         "an absence is what was wrong before.")
     ap.add_argument("--dry-run", dest="dry_run", action="store_true",
                     help="turn --write OFF, whatever else asked for it. The "
                          "only way to queue a dry pass: this report's "
@@ -929,6 +946,7 @@ def main(argv=None) -> int:
         return 0
     if args.audit:
         failed = run_audit(active, write=args.write,
+                         restore_only=args.restore_only,
                            ownerville=not args.no_ownerville,
                            evening=args.evening, ws=ws)
     else:
