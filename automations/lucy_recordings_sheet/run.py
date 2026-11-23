@@ -272,7 +272,11 @@ def new_starts_table(rows: list, weeks: list, owners: list, offices: dict) -> tu
         if s or ts:
             k = len(set().union(*(office_weeks[x] for x in ids))) or n
             name = o.get("name", o["id"]) + ("" if k >= n else " (%d wk)" % k)
-            out.append([name, s, h, round(h / s, 4) if s else None, round(h / k, 1), ts, th])
+            # Raf 11/21: an office that books new starts on the Training calendar
+            # (Nabil, Stergios) gets its % from THAT calendar - its New Starts
+            # calendar alone read 100%. Used instead of, never added to (Eve).
+            pct = round(th / ts, 4) if ts else (round(h / s, 4) if s else None)
+            out.append([name, s, h, pct, round(h / k, 1), ts, th])
     out.sort(key=lambda r: (-(r[3] if r[3] is not None else -1), -r[1], -r[5], r[0]))
     return out, sorted(seen)
 
@@ -1112,7 +1116,8 @@ def new_starts_html(table: list, weeks_seen: list) -> str:
         '<th style="background:%s">Training Scheduled</th><th style="background:%s">Training Showed</th>'
         '</tr>%s</table>'
         '<div style="padding:6px 2px;font-size:12px;color:#5B6478">Training = the Training calendar in '
-        'AppStream, shown apart from New Starts (some offices book new starts there).</div></div>'
+        'AppStream, shown apart from New Starts. Offices that book new starts on Training get '
+        'their %% Started from it (Training Showed / Training Scheduled).</div></div>'
         % (n, span, TRAINING_HEAD, TRAINING_HEAD, "".join(body)))
 
 

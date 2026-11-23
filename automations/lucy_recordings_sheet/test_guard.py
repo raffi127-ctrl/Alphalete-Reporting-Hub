@@ -93,10 +93,17 @@ class NewStartsTest(unittest.TestCase):
                 ["2026-11-01", "2026-11-02", "B1", "y", "0", "0", "9", "7"]]
         owners = [{"id": "a", "name": "Ann"}, {"id": "b", "name": "Bo"}]
         table, _ = new_starts_table(rows, self.WEEKS, owners, {"a": ["A1"], "b": ["B1"]})
-        self.assertEqual(table, [["Ann", 10, 5, 0.5, 5.0, 3, 2], ["Bo", 0, 0, None, 0.0, 9, 7]])
+        # Raf 11/21: with Training numbers the % comes from Training (2/3, 7/9)
+        self.assertEqual(table, [["Bo", 0, 0, 0.7778, 0.0, 9, 7], ["Ann", 10, 5, 0.6667, 5.0, 3, 2]])
         html = new_starts_html(table, ["2026-11-01"])
         self.assertIn("Training Scheduled", html)
-        self.assertIn("—", html)
+        self.assertIn("78%", html)
+
+    def test_nabil_new_starts_100_becomes_training_pct(self):
+        rows = [["2026-11-01", "2026-11-02", "21548", "Nabil", "30", "30", "36", "15"]]
+        table, _ = new_starts_table(rows, self.WEEKS, [{"id": "n", "name": "Nabil Halik"}],
+                                    {"n": ["21548"]})
+        self.assertEqual(table[0][3], 0.4167)
 
     def test_no_data_leaves_the_table_out(self):
         self.assertEqual(new_starts_html([], []), "")

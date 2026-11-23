@@ -109,9 +109,21 @@ def rows_for(office, days):
     return rows
 
 
+# Offices whose THIRD calendar is their Training calendar (AppStream names the
+# section "TRAINING INTERVIEWS"; checked in Eve's AppStream 2026-11-23). The
+# report only knows it as "Total Third Interviews" / "Third Interviews Showed
+# Up", so for these offices that IS Training (G/H). Other offices use the third
+# calendar for a real 3rd round (Rafael 11280: "Third Interviews") - never them.
+THIRD_IS_TRAINING = {"21548",   # Nabil Halik
+                     "21981"}   # Stergios Kasapidis
+
+
 def new_start_rows(office, days):
+    third = office["office_id"] in THIRD_IS_TRAINING
     return [[week_sunday(d).isoformat(), d.isoformat(), office["office_id"], office["owner"],
-             days[d][2], days[d][3], days[d][4], days[d][5]] for d in sorted(days)]
+             days[d][2], days[d][3],
+             days[d][6] if third and len(days[d]) > 7 else days[d][4],
+             days[d][7] if third and len(days[d]) > 7 else days[d][5]] for d in sorted(days)]
 
 
 def _sheets():
