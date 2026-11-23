@@ -135,13 +135,13 @@ def test_check_rebuild_turns_write_off(monkeypatch, capsys):
     seen = {}
     monkeypatch.setattr(RUN.R, "open_tab", lambda *a, **k: None)
     monkeypatch.setattr(RUN.R, "read", lambda *a, **k: [])
-    monkeypatch.setattr(RUN, "check_rebuild",
-                        lambda owners: seen.setdefault("ran", True) or 0)
+    monkeypatch.setattr(RUN, "doctor",
+                        lambda owners, **kw: seen.setdefault("ran", True) or 0)
     monkeypatch.setattr(RUN, "run_pass",
                         lambda *a, **k: seen.setdefault("wrote", True))
     monkeypatch.setattr(RUN, "run_audit",
                         lambda *a, **k: seen.setdefault("wrote", True))
-    RUN.main(["--write", "--check-rebuild"])
+    RUN.main(["--write", "--doctor"])
     assert seen.get("ran") is True
     assert "wrote" not in seen, "a read-only probe reached a writing pass"
     assert "--write ignored" in capsys.readouterr().out

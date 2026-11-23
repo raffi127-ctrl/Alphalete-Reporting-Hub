@@ -523,6 +523,106 @@ def run_audit(owners: List[R.Owner], *, write: bool, ownerville: bool = True,
     return failed
 
 
+def unstick_removals(owners: List[R.Owner], *, write: bool) -> int:
+    """People the file calls removed whose card is still on the account.
+
+    THE ONES ALREADY STUCK. `still_exists` used to answer False for every
+    error, not just a 404, so a rate-limited pass marked people REMOVED
+    without deleting anything -- 22 of them on Raf's account on
+    2026-11-22, every one a second round between 11/9 and 11/12, which is
+    what one bad pass on the biggest account looks like. The fix stops new
+    ones; it cannot clear these, because nothing looks at a removed person
+    again.
+
+    IT PUTS THEM BACK TO TRACKED RATHER THAN DELETING THEM. The audit's
+    rules decide who comes off a phone, and they have had a fortnight of
+    new facts since: somebody here may have been rehired, or shown up
+    late. Deleting them from here would be this function overruling the
+    rules on 22 real people. Tracked is the state they were in before the
+    bad pass, so the next audit simply decides them again -- and now the
+    delete either happens or says it failed.
+    """
+    st = S.load()
+    found = 0
+    for o in owners:
+        if not K.has_token(o.account):
+            _log("  %s: no Contacts token on this machine -- cannot check"
+                 % o.owner)
+            continue
+        entries = st.get(o.account) or {}
+        gone = {k: e for k, e in entries.items()
+                if e.get("status") == S.REMOVED}
+        if not gone:
+            continue
+        try:
+            on_account = set(S.rebuild(K.service(o.account)))
+        except Exception as e:                              # noqa: BLE001
+            _log("  %s: Contacts read failed (%s) -- skipped"
+                 % (o.owner, type(e).__name__))
+            continue
+        stuck = sorted(set(gone) & on_account)
+        # NAMED AS THE ACCOUNT, NOT THE PERSON. "Cyrus Wade: 91 marked
+        # removed" reads as Cyrus being removed -- Megan, 2026-11-22: "cy
+        # shouldn't be removed. he started years ago and is now an ICD".
+        # These are the APPLICANTS in that owner's reception account, and
+        # the owner is whose phone the list is on.
+        _log("  %s's reception list (%s): %d applicants marked removed, "
+             "%d of them still on the account"
+             % (o.owner, o.account, len(gone), len(stuck)))
+        for k in stuck:
+            e = entries[k]
+            _log("    %s %s — removed %s (%s)"
+                 % ("putting back" if write else "would put back",
+                    e.get("display", k), e.get("removed", "?"),
+                    e.get("reason", "")))
+            if write:
+                e["status"] = S.TRACKED
+                for f in ("removed", "removed_by", "removed_rule", "reason"):
+                    e.pop(f, None)
+                e["unstuck"] = dt.date.today().isoformat()
+        found += len(stuck)
+        if stuck and write:
+            S.save(st)
+    if not write:
+        _log("  [DRY RUN] nothing changed. --write puts them back to tracked, "
+             "and the next audit decides them again.")
+    return 0 if found == 0 else 0
+
+
+_RULE_NAMES = {
+    "not_hired": "no BOB, offer or start 7 days after the second round",
+    "no_show": "new start never showed",
+    "not_badged": "never fully badged",
+}
+
+
+# ------------------------------------------------------------- the doctor --
+#
+# ONE READ-ONLY COMMAND, THREE QUESTIONS. These went in one at a time on
+# 2026-11-22 while chasing why the audit was deleting contacts nobody had
+# decided to delete, and each answered the question the previous one raised:
+# does the memory survive without the file, which rule took these people
+# off, and does ApplicantStream agree. Left as three flags they are three
+# things to remember and to maintain, for questions that are now answered.
+#
+# Kept because the next time this job looks wrong they are the first three
+# things to ask, and asking them together is how the answers are read:
+# "91 removed" means nothing until you know which rule, and the rule means
+# nothing until you know whether the read found anything at all.
+#
+# Writes nothing anywhere: no contact, no state, no sheet, no Hub row.
+
+def _rule_name(entry: dict) -> str:
+    """Which rule removed them, in words, however old the entry is."""
+    said = str(entry.get("reason", "") or "")
+    if "not marked BOB by the end of the day" in said:
+        return "not marked BOB by the end of that day (evening pass)"
+    rule = rules.rule_of(entry)
+    if rule in _RULE_NAMES:
+        return _RULE_NAMES[rule]
+    return said.split(":")[0].strip() or "?"
+
+
 def check_rebuild(owners: List[R.Owner]) -> int:
     """READ-ONLY: does the account's own cards say what the file says?
 
@@ -597,90 +697,6 @@ def check_rebuild(owners: List[R.Owner]) -> int:
         if missed:
             worst = max(worst, 1)
     return worst
-
-
-def unstick_removals(owners: List[R.Owner], *, write: bool) -> int:
-    """People the file calls removed whose card is still on the account.
-
-    THE ONES ALREADY STUCK. `still_exists` used to answer False for every
-    error, not just a 404, so a rate-limited pass marked people REMOVED
-    without deleting anything -- 22 of them on Raf's account on
-    2026-11-22, every one a second round between 11/9 and 11/12, which is
-    what one bad pass on the biggest account looks like. The fix stops new
-    ones; it cannot clear these, because nothing looks at a removed person
-    again.
-
-    IT PUTS THEM BACK TO TRACKED RATHER THAN DELETING THEM. The audit's
-    rules decide who comes off a phone, and they have had a fortnight of
-    new facts since: somebody here may have been rehired, or shown up
-    late. Deleting them from here would be this function overruling the
-    rules on 22 real people. Tracked is the state they were in before the
-    bad pass, so the next audit simply decides them again -- and now the
-    delete either happens or says it failed.
-    """
-    st = S.load()
-    found = 0
-    for o in owners:
-        if not K.has_token(o.account):
-            _log("  %s: no Contacts token on this machine -- cannot check"
-                 % o.owner)
-            continue
-        entries = st.get(o.account) or {}
-        gone = {k: e for k, e in entries.items()
-                if e.get("status") == S.REMOVED}
-        if not gone:
-            continue
-        try:
-            on_account = set(S.rebuild(K.service(o.account)))
-        except Exception as e:                              # noqa: BLE001
-            _log("  %s: Contacts read failed (%s) -- skipped"
-                 % (o.owner, type(e).__name__))
-            continue
-        stuck = sorted(set(gone) & on_account)
-        # NAMED AS THE ACCOUNT, NOT THE PERSON. "Cyrus Wade: 91 marked
-        # removed" reads as Cyrus being removed -- Megan, 2026-11-22: "cy
-        # shouldn't be removed. he started years ago and is now an ICD".
-        # These are the APPLICANTS in that owner's reception account, and
-        # the owner is whose phone the list is on.
-        _log("  %s's reception list (%s): %d applicants marked removed, "
-             "%d of them still on the account"
-             % (o.owner, o.account, len(gone), len(stuck)))
-        for k in stuck:
-            e = entries[k]
-            _log("    %s %s — removed %s (%s)"
-                 % ("putting back" if write else "would put back",
-                    e.get("display", k), e.get("removed", "?"),
-                    e.get("reason", "")))
-            if write:
-                e["status"] = S.TRACKED
-                for f in ("removed", "removed_by", "removed_rule", "reason"):
-                    e.pop(f, None)
-                e["unstuck"] = dt.date.today().isoformat()
-        found += len(stuck)
-        if stuck and write:
-            S.save(st)
-    if not write:
-        _log("  [DRY RUN] nothing changed. --write puts them back to tracked, "
-             "and the next audit decides them again.")
-    return 0 if found == 0 else 0
-
-
-_RULE_NAMES = {
-    "not_hired": "no BOB, offer or start 7 days after the second round",
-    "no_show": "new start never showed",
-    "not_badged": "never fully badged",
-}
-
-
-def _rule_name(entry: dict) -> str:
-    """Which rule removed them, in words, however old the entry is."""
-    said = str(entry.get("reason", "") or "")
-    if "not marked BOB by the end of the day" in said:
-        return "not marked BOB by the end of that day (evening pass)"
-    rule = rules.rule_of(entry)
-    if rule in _RULE_NAMES:
-        return _RULE_NAMES[rule]
-    return said.split(":")[0].strip() or "?"
 
 
 def why_removed(owners: List[R.Owner]) -> int:
@@ -801,6 +817,20 @@ def check_marks(owners: List[R.Owner], limit: int = 0) -> int:
     return 0
 
 
+
+
+def doctor(owners: List[R.Owner], *, limit: int = 0) -> int:
+    """All three, in the order they make sense to read."""
+    _log("=== 1. which rule took people off the phone (local file)")
+    why_removed(owners)
+    _log("")
+    _log("=== 2. what ApplicantStream says about them now")
+    worst = check_marks(owners, limit=limit)
+    _log("")
+    _log("=== 3. can this account's memory be rebuilt without the file")
+    return max(worst, check_rebuild(owners))
+
+
 # ----------------------------------------------------------------- main --
 
 def main(argv=None) -> int:
@@ -822,28 +852,20 @@ def main(argv=None) -> int:
     ap.add_argument("--owner", default=None, help="only this roster row (name as on the tab)")
     ap.add_argument("--date", default=None, help="adds: read only this day (YYYY-MM-DD)")
     ap.add_argument("--no-ownerville", action="store_true", help="audit without the View Progress check")
-    ap.add_argument("--check-marks", action="store_true",
-                    help="READ-ONLY: ask ApplicantStream what it says now "
-                         "about the people we removed — were they marked "
-                         "BOB and we removed them anyway, or never marked "
-                         "at all? Writes nothing.")
+    ap.add_argument("--doctor", action="store_true",
+                    help="READ-ONLY: why this job looks wrong. Which rule "
+                         "removed each account's people, what "
+                         "ApplicantStream says about them now, and whether "
+                         "the memory survives without the local file. "
+                         "Writes nothing.")
     ap.add_argument("--limit", type=int, default=0,
-                    help="--check-marks: only this many people per owner")
-    ap.add_argument("--why-removed", action="store_true",
-                    help="READ-ONLY: which rule removed each account's "
-                         "people, and on which days. Reads the local state "
-                         "file only -- no Contacts, no ApplicantStream.")
+                    help="--doctor: only this many people per owner on the "
+                         "ApplicantStream half (it is the slow one)")
     ap.add_argument("--unstick-removals", action="store_true",
                     help="people the file calls removed whose card is still "
                          "on the account. Dry by default; --write puts them "
                          "back to tracked so the next audit decides them "
                          "again. It never deletes a contact itself.")
-    ap.add_argument("--check-rebuild", action="store_true",
-                    help="READ-ONLY: diff each account's own cards against "
-                         "the local state file, and print. Writes nothing. "
-                         "Run it where the file is (Lucy 1) to prove a "
-                         "machine without the file can still know what was "
-                         "created.")
     args = ap.parse_args(argv)
     # The evening rule is a REMOVAL rule, and removals only happen on the audit
     # side. Passing --evening on an adds run used to be silently ignored, which
@@ -872,22 +894,23 @@ def main(argv=None) -> int:
             print("no roster row named %r" % args.owner, file=sys.stderr)
             return 2
     active = [o for o in owners if o.active]
-    if args.check_marks:
+    if args.doctor:
+        # --write IS TURNED OFF HERE, OUT LOUD. The handle's base_args are
+        # ['--write'] and `lucy rerun` only appends, so the probe always
+        # arrives as `--write --doctor`. It writes nothing either way;
+        # saying so beats relying on the order of two statements, on a job
+        # that deletes contacts off people's phones.
+        if args.write:
+            args.write = False
+            _log("--doctor is read-only: --write ignored")
+        # A QUESTION IS NOT A DELIVERY: a read-only probe that marks the
+        # card green says the job ran when it did not.
         try:
             from automations.shared import hub_autopublish as HA
             HA.nothing_to_report()
         except Exception:                                   # noqa: BLE001
             pass
-        _log("=== what ApplicantStream says about the removed (READ-ONLY)")
-        return check_marks(active, limit=args.limit)
-    if args.why_removed:
-        try:
-            from automations.shared import hub_autopublish as HA
-            HA.nothing_to_report()
-        except Exception:                                   # noqa: BLE001
-            pass
-        _log("=== why people were removed (READ-ONLY)")
-        return why_removed(active)
+        return doctor(active, limit=args.limit)
     if args.unstick_removals:
         try:
             from automations.shared import hub_autopublish as HA
@@ -896,27 +919,6 @@ def main(argv=None) -> int:
             pass
         _log("=== stuck removals%s" % ("" if args.write else " (DRY RUN)"))
         return unstick_removals(active, write=args.write)
-    if args.check_rebuild:
-        # --write IS TURNED OFF HERE, OUT LOUD. The only way to queue this on
-        # Lucy 1 is `lucy rerun second_round_contacts --check-rebuild`, and
-        # that handle's base_args are ['--write'], so the probe always
-        # arrives as `--write --check-rebuild`. It returns before any write
-        # either way; saying it rather than relying on the order of two
-        # statements is the difference between safe and safe-by-accident on
-        # a job that edits real people's phones.
-        if args.write:
-            args.write = False
-            _log("--check-rebuild is read-only: --write ignored")
-        # A QUESTION IS NOT A DELIVERY. A read-only probe that marks the card
-        # green says the job ran when it did not -- the same class as a dry
-        # run turning a card red (hub_autopublish, 2026-11-15).
-        try:
-            from automations.shared import hub_autopublish as HA
-            HA.nothing_to_report()
-        except Exception:                                   # noqa: BLE001
-            pass
-        _log("=== rebuild check (READ-ONLY, writes nothing)")
-        return check_rebuild(active)
     _log("=== 2nd rounds -> reception contacts%s: %d active owner(s) on '%s' ===" % (
         " [AUDIT]" if args.audit else "", len(active), C.ROSTER_TAB))
     for o in owners:
