@@ -209,6 +209,37 @@
   }
  },
  "reports": {
+  "fiber_zip_penetration": {
+   "on_scheduler": true,
+   "display_name": "Fiber Zip Penetration -> Line Up",
+   "source_type": "tableau",
+   "data_sources": [],
+   "command": [
+    "automations.fiber_zip_penetration.run"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ],
+    "not_before": "04:00"
+   },
+   "priority": "P2",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 20,
+   "verify": {
+    "type": "manifest",
+    "report_id": "fiber-zip-penetration"
+   },
+   "_note": "Raf Loom 2026-11-20: once a day, before 6am, Tableau ATT Tracker 2.1 D2D > Fiber Lead Performance > 'Office New Fiber Lead Penetration By Zip' crosstab -> the zip table on each owner's 'Line Up WE m.d' tab (Current Penetration Rate red/yellow/green, Total Current Sales, Sales Needed 2%, Expected 2%, Days since last Sale). data_sources [] on purpose: the feed loads late in the morning (see int_wow_penetration) and Raf said a day-old snapshot is fine, so it never waits. Owners in fiber_zip_penetration/config.py; Raf only until Eve says roll out."
+  },
   "ars_web_watch": {
    "on_scheduler": true,
    "_note": "Eve 2026-11-20: ARS REPORT workbooks are being replaced by Camila's ARS Interview Tracker web. READ-ONLY daily check: an office with >=3 web rows and 0 ARS rows in the last 5 days = it stopped filling ARS, so Hub reports reading ARS lose it. DMs Eve only when that list changes. No machine pin: any Lucy with Sheets + Slack.",
