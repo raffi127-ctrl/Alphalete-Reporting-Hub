@@ -207,6 +207,34 @@ JOBS: Dict[str, dict] = {
         "fix": ("lucy rerun install_icd_onboarding_seed_names_agent "
                 "--machine \"Lucy 3\""),
     },
+    # THE 7PM 2ND-ROUND CLEANUP. It beat an id that was not in this registry
+    # from the day it was installed, so every night's beat was printed as
+    # "unknown job" and thrown away -- the pass could have stopped for a week
+    # with nothing to say so. Found 2026-11-23 while reading its own logs.
+    #
+    # This is the ONE pass that TAKES CONTACTS OFF a phone, so a stopped pass
+    # is quiet in both directions: nobody is removed, and nobody is told that
+    # nobody was removed. It is also the pass whose rule is only true after
+    # the day ends (a blank before 7pm means unmarked, not "no"), so there is
+    # no second opportunity to catch up on later in the day.
+    "second_round_contacts_evening": {
+        "name": "2nd-round contacts, evening cleanup (daily 19:00)",
+        "machine": "Lucy 1",       # the box holding the reception contacts tokens
+        "first_by": "20:00",       # the one pass 19:00 + 60 min grace
+        "max_gap_min": None,       # one opportunity a day; first_by covers it
+        "active_until": None,
+        "weekdays": None,          # second rounds are booked any day
+        "watch_from": "2026-11-17",
+        "means": ("second rounds that went nowhere keep their cards on the "
+                  "owner's phone, and applicants brought on board keep being "
+                  "counted as waiting. Nothing is sent and nothing is lost -- "
+                  "the reception lists just stop being trimmed, and the "
+                  "removal reasons for that day can never be recovered, "
+                  "because the rule reads a blank the day after as the same "
+                  "blank it read that evening."),
+        "fix": ("lucy rerun install_second_round_contacts_evening_agent "
+                "--machine \"Lucy 1\""),
+    },
     "obcl_ov_sweep": {
         "name": "OBCL <- OwnerVille sweep",
         "machine": "Lucy 3",

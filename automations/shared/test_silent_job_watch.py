@@ -269,6 +269,29 @@ class TheRegistryStaysHonest(unittest.TestCase):
                     f"{spec['machine']!r}")
 
 
+    def test_every_wrapper_beat_is_a_registered_job(self):
+        """The reverse of the test above, and the one that was missing.
+
+        A beat whose id is not in JOBS is PRINTED as "unknown job" and thrown
+        away: the wrapper looks watched, the registry says nothing, and the
+        pass can stop for a week with nobody told. It has happened twice --
+        `icd_onboarding_no_shows` (found 2026-11-22, unwatched since 11/16) and
+        `second_round_contacts_evening` (found 2026-11-23, unwatched since it
+        was installed on 11/17). Both were found by reading a log by hand,
+        which is not a mechanism."""
+        from pathlib import Path
+        root = Path(sjw.__file__).resolve().parents[2]
+        for wrapper in sorted((root / "deploy").glob("*.sh")):
+            text = wrapper.read_text(encoding="utf-8", errors="replace")
+            for jid in re.findall(r"--beat\s+([A-Za-z0-9_]+)", text):
+                with self.subTest(wrapper=wrapper.name, job=jid):
+                    self.assertIn(
+                        jid, sjw.JOBS,
+                        f"{wrapper.name} beats {jid!r}, which is not in "
+                        f"silent_job_watch.JOBS — the beat is discarded as an "
+                        f"unknown job, so nothing notices if that pass stops")
+
+
 class EachQueueIsWatchedOnce(unittest.TestCase):
     """mini_control_<lucy>: the read lane beats every 10 min (2026-10-19, Lucy 1
     stopped polling and nothing said so). Lucy 3 watches Lucy 1 — the mini's

@@ -46,21 +46,37 @@ def _reports() -> dict:
 class ScheduleConfigInvariants(unittest.TestCase):
 
     def test_a_scheduled_report_with_a_start_time_has_run_days(self):
-        """on_scheduler + not_before + no weekdays = a report that can never
-        fire, and that nothing downstream will ever report as missing."""
+        """A cadence that names NO day a report may run on is a report that
+        can never fire, and that nothing downstream will ever report missing.
+
+        AN ABSENT `weekdays` IS NOT THAT. registry._build_report reads
+        `cad.get("weekdays", [0, 1, 2, 3, 4, 5, 6])`, so leaving the key out
+        means every day -- which is how most daily reports in this file are
+        written. An EMPTY LIST is the broken one: the key is there, `.get`
+        returns it instead of the default, and `wd in []` is false forever.
+
+        This test read an absent key as broken until 2026-11-23 and failed on
+        `appstream_office_list`, a report that fires daily at 09:30 and always
+        had. A check that cries wolf is a check somebody switches off, so it
+        now asks the question the registry actually answers."""
         broken = []
         for rid, rep in _reports().items():
             if not isinstance(rep, dict) or rep.get("on_scheduler") is not True:
                 continue
             cad = rep.get("cadence") or {}
+            if not cad.get("not_before"):
+                continue
             # days_of_month counts as run days (registry: weekday OR day of month)
-            if (cad.get("not_before") and not cad.get("weekdays")
-                    and not cad.get("days_of_month")):
-                broken.append(f"{rid} (not_before={cad['not_before']})")
+            if cad.get("days_of_month"):
+                continue
+            if "weekdays" in cad and not cad["weekdays"]:
+                broken.append(f"{rid} (not_before={cad['not_before']}, "
+                              f"weekdays={cad['weekdays']!r})")
         self.assertEqual(
             broken, [],
-            "these are on the scheduler with a start time but NO run days, so "
-            "they never fire and nothing flags them: " + ", ".join(broken))
+            "these are on the scheduler with a start time and an EMPTY list "
+            "of run days, so they never fire and nothing flags them: "
+            + ", ".join(broken))
 
     def test_the_two_owner_chat_reports_run_daily(self):
         """The regression itself — both were [] and silently never ran."""
