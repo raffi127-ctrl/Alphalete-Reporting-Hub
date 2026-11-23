@@ -69,51 +69,45 @@ def read_lists(app, office: str, labels, days: List[dt.date]) -> List[Tuple[str,
 
 def read_weeks(app, office: str, labels, weeks: List[dt.date],
                today: Optional[dt.date] = None):
-    """[(label, day, applicant)] for whole WEEKS, by retargeting the link.
+    """[(label, day, applicant)] for whole WEEKS, via office_admin.retention.
 
-    WHY NOT THE DAY COLUMNS. `detail_href` reads a column off the report as
-    rendered, and the report renders ONE WEEK -- its week box is readonly
-    and its URL parameters are ignored (office_admin.retention._retarget
-    says so, and that is why that module exists). So asking for 35 days of
-    columns silently found only the handful on screen: probed 2026-11-22 on
-    Raf's own office, 11/21 and 11/22 had links and every earlier day had
-    NONE. On a Sunday that is two weekend days, both zero, and the audit
-    concluded nobody in the fleet had been marked anything.
+    WHY NOT THE DAY COLUMNS. `detail_href` reads a date column off the
+    report as drawn, and the report draws ONE WEEK: its week box is
+    readonly and its URL parameters are ignored. So asking for 35 days of
+    columns silently found only the handful on screen -- probed 2026-11-22
+    on Raf's own office, 11/21 and 11/22 had links and every earlier day
+    had none. On a Sunday that is two weekend days, both zero, and the
+    audit concluded nobody in the fleet had been marked anything.
 
-    The weekly drill link carries `dt`/`dt2`, and retargeting those IS
-    supported -- the same move `read_scheduled_week` has used for months.
-    Both dates are rewritten together, or a href with one week's start and
-    another's end returns a mixture.
+    WHY THIS IS A LOOP AND NOT A READER. `retention.read_week` already
+    opens the report, finds the row by label, retargets the week and parses
+    the people, and it takes the row label as an argument -- which is the
+    whole of what this needs. The first version of this function walked the
+    pages itself and was a second copy of that, which is how two readers of
+    one report drift until they disagree about what the page says. Megan
+    spotted it: "I feel like we're building something that's already been
+    built out."
 
-    DATED AT THE WEEK'S END, capped at today. A week-range hit cannot say
-    which day inside it, and every rule that reads these dates measures an
-    AGE -- 21 days to badge, 21 to show. Taking the earliest day would
-    overstate every age and remove people early; the latest understates it,
-    so the only mistake left is waiting too long, which is the mistake this
-    job should make.
+    DATED AT THE WEEK'S END, capped at today. A week range cannot say which
+    day inside it, and every rule reading these dates measures an AGE -- 21
+    days to badge, 21 to show. The earliest day would overstate every age
+    and remove people early; the latest understates it, so the only mistake
+    left is waiting too long, which is the mistake this job should make.
     """
-    from automations.linkedin_2nd_round_contacts.run import (_READ_TABLE,
-                                                             to_applicants)
-    from automations.office_admin.retention import _retarget, _week_href
+    from automations.office_admin import retention as RET
 
     today = today or dt.date.today()
     owner = app.select_office(office)
     _log("  [%s] %s" % (office, owner))
     out: List[Tuple[str, dt.date, dict]] = []
     for label in labels:
-        app.open_retention_details()
-        href = _week_href(app.page, label)
-        if not href:
-            _log("    %s: no such row on the report" % label)
-            continue
         for week_start in weeks:
-            app.open_retention_details()
-            h = _week_href(app.page, label)
-            if not h:
-                continue
-            app._goto_detail(_retarget(h, week_start))
-            t = app.page.evaluate(_READ_TABLE)
-            people = to_applicants(t["header"], t["rows"])
+            try:
+                people = RET.read_week(app, office, week_start,
+                                       log=lambda *a: None, row_label=label)
+            except RET.NotOnTheReport:
+                _log("    %s: no such row on the report" % label)
+                break
             if not people:
                 continue
             when = min(week_start + dt.timedelta(days=6), today)
