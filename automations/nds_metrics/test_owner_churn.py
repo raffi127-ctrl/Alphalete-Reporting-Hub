@@ -76,7 +76,7 @@ class Picture(unittest.TestCase):
         c = got["rows"][0][3]["0-30 Day"]
         self.assertEqual((c["disc"], c["act"], c["rate"], c["color"]), ("2", "50", "4.0%", "Yellow"))
         self.assertEqual(got["rows"][0][3]["30 Day"], {})      # nothing activated: blank
-        self.assertIn("Rafael's off the D2D order log", got["sub"])
+        self.assertIn("Rafael: his office's D2D wireless churn view", got["sub"])
 
 
 class Coverage(unittest.TestCase):
@@ -115,6 +115,37 @@ class Coverage(unittest.TestCase):
                                 ["Rafael Hidalgo", "B", "Disconnected"]])
 
 
+class TableauPhones(unittest.TestCase):
+    """Carlos: "What tableau churn reports look at" -- phones are the view's
+    ICD totals, Air comes on top from the order log."""
+
+    def test_view_phones_plus_order_log_air(self):
+        o = OC.OfficeChurn("Jairo Ruiz", "NDS",
+                           {b: {"act": 999, "disc": 999} for b, _lo, _hi in OC.BUCKETS},
+                           {"air": {"0-30 Day": {"act": 48, "disc": 5},
+                                    "90 Day": {"act": 31, "disc": 9}}}, 9)
+        phones = {"Jairo Ruiz": OC._from_view({"0-30": {"num": 69.0, "denom": 1382.0},
+                                               "30": {"num": 83.0, "denom": 1503.0},
+                                               "60": {"num": 151.0, "denom": 1483.0},
+                                               "90": {"num": 199.0, "denom": 1265.0}})}
+        OC.apply_tableau([o], phones, log=lambda m: None)
+        self.assertEqual(o.basis, "tableau")
+        self.assertEqual(o.total["0-30 Day"], {"act": 1430, "disc": 74})
+        self.assertEqual(o.total["30 Day"], {"act": 1503, "disc": 83})
+        self.assertEqual(o.total["90 Day"], {"act": 1296, "disc": 208})
+
+    def test_no_view_keeps_the_order_log_count_and_says_so(self):
+        o = OC.OfficeChurn("Someone Else", "D2D", {"0-30 Day": {"act": 10, "disc": 1}}, {}, 9)
+        OC.apply_tableau([o], {}, log=lambda m: None)
+        self.assertEqual(o.basis, "order log")
+        self.assertEqual(o.total["0-30 Day"], {"act": 10, "disc": 1})
+        got = {}
+        with mock.patch("automations.b2b_metrics.rep_boards.render_table_png",
+                        lambda title, sub, columns, rows, out: got.update(sub=sub) or out):
+            OC.summary_png([o], TODAY, out_dir=mock.MagicMock())
+        self.assertIn("Someone: counted off the order log", got["sub"])
+
+
 class Entry(unittest.TestCase):
     def test_names_and_dm(self):
         with mock.patch.object(OC, "run", return_value=0) as run:
@@ -126,6 +157,7 @@ class Entry(unittest.TestCase):
         o = OC.OfficeChurn("Carlos Hidalgo", "NDS", {"0-30 Day": {"act": 5, "disc": 1}}, {}, 9)
         sent = []
         with mock.patch.object(OC, "read_offices", return_value=([o], [])), \
+             mock.patch.object(OC, "tableau_phones", return_value={}), \
              mock.patch.object(OC, "summary_png", return_value=mock.MagicMock(name="p")), \
              mock.patch("automations.shared.slack_metrics_post.BOT_TOKEN_PATH") as tok, \
              mock.patch.dict("os.environ", {}, clear=False), \

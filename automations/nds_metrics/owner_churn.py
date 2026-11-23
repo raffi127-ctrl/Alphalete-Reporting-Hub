@@ -10,12 +10,22 @@ Tableau churn bucket -- 0-30 Day = activated 0-30 days ago, 30 Day = 31-60,
 60 Day = 61-90, 90 Day = 91-120 (the 'Churn Buckets' the order log and the
 CHURNRATES views use) -- each cell disconnected/activated + churn %.
 
-Counting = the NDS CHURN report's All Orders row (nds_churn.compute.box_class
-+ rep_churn): distinct lines ACTIVATED (Posted, or Disconnected -- it was
-active first) by their posted date; non-BYOD phones + BYOD phones + Internet
-Air; no upgrades, tablets, watches or fiber Internet; churned = Disconnected.
-Smart Circle's own CHURNRATES view counts port phone lines only and has no
-Air, so these can run a little off it by design ("Include airs and BYODs").
+Counting -- PHONES (BYODs in) are Tableau's own numbers, AIR is added on:
+  * phones = the ICD total on Smart Circle's NDS CHURNRATES view (ChurnALlExp,
+    every NDS owner's reps, sliced to the owner) -- for Rafael (D2D, no NDS
+    code) his office's WirelessLocalOffice churn view. Checked 2026-11-23
+    (--tableau-check): our order-log count of the same phones matched the
+    view's ACTIVATIONS in every bucket (Jairo 1383/1382, 1503/1503, 1485/1483,
+    1263/1265; Carlos exact) but counted MORE DISCONNECTS the older the
+    bucket (Jairo 90 Day 315 vs 199) -- the view leaves some later
+    disconnects out (most likely non-pay), and the order-log export has no
+    disconnect reason to copy that rule. So the view's numbers are used.
+  * + Internet Air off the order log (none of the views carry Air): the NDS
+    CHURN report's rule (nds_churn.compute.box_class + rep_churn) -- distinct
+    lines activated (Posted / Disconnected) by posted date; churned =
+    Disconnected.
+  * an owner the view does not carry falls back to the order-log count for
+    every line (phones + Air) and the subtitle says so.
 
 Source: the NDS-SN ORDERLOG export (every NDS owner); an owner with no NDS
 code (Rafael Hidalgo, 11280) comes off the D2D 'A.Order Log' by the same
@@ -80,6 +90,7 @@ class OfficeChurn:
         self.per_cls = per_cls
         self.lines = lines
         self.covered = covered        # days of order dates the export reached
+        self.basis = "order log"      # 'tableau' once the view's phones are in
 
 
 def pull_d2d_long(today: dt.date, log=print) -> Tuple[List[Path], int]:
@@ -206,12 +217,13 @@ def summary_png(offices: Sequence[OfficeChurn], today: dt.date, out_dir: Path = 
     columns = [b for b, _lo, _hi in BUCKETS]
     rows = [(o.label, "", False, cells(o.total, o.covered)) for o in offices]
     d2d = [o.label.split()[0] for o in offices if o.source != "NDS"]
+    own = [o.label.split()[0] for o in offices if o.basis != "tableau"]
     sub = ("ICD totals — %s (disconnected/activated lines by activation date: 0-30 Day = "
-           "activated 0-30 days ago, 30 Day = 31-60, 60 Day = 61-90, 90 Day = 91-120; phones incl. "
-           "BYODs + Internet Air; no upgrades, tablets, watches or fiber Internet; off Tableau's "
-           "NDS-SN order log%s)"
+           "activated 0-30 days ago, 30 Day = 31-60, 60 Day = 61-90, 90 Day = 91-120. Phones incl. "
+           "BYODs = Tableau's churn view%s + Internet Air off the order log%s)"
            % (today.strftime("%B %d, %Y"),
-              ("; %s's off the D2D order log (his own AT&T codes)" % " & ".join(d2d)) if d2d else ""))
+              (" (%s: his office's D2D wireless churn view)" % " & ".join(d2d)) if d2d else "",
+              ("; %s: counted off the order log, not on the view" % " & ".join(own)) if own else ""))
     return render_table_png("WIRELESS CHURN — OWNERS (AIRS + BYODS INCLUDED)", sub,
                             columns, rows, out_dir / "owner_churn_summary.png")
 
@@ -225,6 +237,78 @@ def log_office(o: OfficeChurn, log=print) -> None:
         % (o.label, o.source, o.lines, o.covered, fmt(o.total)))
     for cls in CLASSES:
         log("[owner-churn]    %-8s %s" % (cls, fmt(o.per_cls.get(cls) or {})))
+
+
+PERIOD_OF = dict(zip((b for b, _lo, _hi in BUCKETS), ("0-30", "30", "60", "90")))
+
+
+def _from_view(tot: dict) -> Dict[str, Dict[str, int]]:
+    return {b: {"act": int(round((tot.get(pk) or {}).get("denom") or 0)),
+                "disc": int(round((tot.get(pk) or {}).get("num") or 0))}
+            for b, pk in PERIOD_OF.items()}
+
+
+def tableau_phones(offices: Sequence[OfficeChurn], today: dt.date, log=print
+                   ) -> Dict[str, Dict[str, Dict[str, int]]]:
+    """label -> {bucket: {'act', 'disc'}}: the ICD total phones (BYODs in, no
+    Air) off Tableau's own churn views. NDS owners: Smart Circle's CHURNRATES
+    ChurnALlExp sliced to the owner. Rafael (D2D): his office's
+    WirelessLocalOffice view (locked to RAFAEL HIDALGO). Missing = no view."""
+    out: Dict[str, Dict[str, Dict[str, int]]] = {}
+    nds = [o for o in offices if o.source == "NDS"]
+    if nds:
+        from automations.office_metrics import nds_churn as NC
+        path = OUT_DIR / ("nds_churn_view_all_%s.csv" % today.isoformat())
+        try:
+            if not (path.exists() and path.stat().st_size > 200):
+                path.parent.mkdir(parents=True, exist_ok=True)
+                NC._fetch(path, verbose=False)
+            for o in nds:
+                NC._SLICE_OWNER = o.label
+                tot = NC._parse(path)["office_total"]
+                if tot:
+                    out[o.label] = _from_view(tot)
+                else:
+                    log("[owner-churn] %s: no rows on the NDS churn view" % o.label)
+        except Exception as e:  # noqa: BLE001 -- falls back to the order log
+            log("[owner-churn] NDS churn view unavailable (%s: %s)" % (type(e).__name__, str(e)[:120]))
+    for o in offices:
+        if o.source != "D2D":
+            continue
+        if "RAFAEL" not in o.label.upper():
+            log("[owner-churn] %s: no D2D churn view of his own -- order log" % o.label)
+            continue
+        try:
+            from automations.wireless_churn import pull as WL
+            path = OUT_DIR / ("wireless_churn_rafael_%s.csv" % today.isoformat())
+            if not (path.exists() and path.stat().st_size > 200):
+                path.parent.mkdir(parents=True, exist_ok=True)
+                WL.fetch_crosstab(path)
+            tot = WL.parse(path)["office_total"]
+            if tot:
+                out[o.label] = _from_view(tot)
+            else:
+                log("[owner-churn] %s: the D2D wireless churn view came back empty" % o.label)
+        except Exception as e:  # noqa: BLE001
+            log("[owner-churn] D2D wireless churn view unavailable (%s: %s)"
+                % (type(e).__name__, str(e)[:120]))
+    return out
+
+
+def apply_tableau(offices: Sequence[OfficeChurn], phones: dict, log=print) -> None:
+    """Phones from the view + the order log's Air, per bucket."""
+    for o in offices:
+        tp = phones.get(o.label)
+        if not tp:
+            continue
+        air = o.per_cls.get("air") or {}
+        o.total = {b: {"act": tp[b]["act"] + ((air.get(b) or {}).get("act", 0)),
+                       "disc": tp[b]["disc"] + ((air.get(b) or {}).get("disc", 0))}
+                   for b, _lo, _hi in BUCKETS}
+        o.basis = "tableau"
+        log("[owner-churn] %s = Tableau phones + order-log Air: %s"
+            % (o.label, "  ".join("%s %d/%d" % (b, o.total[b]["disc"], o.total[b]["act"])
+                                  for b, _lo, _hi in BUCKETS)))
 
 
 def tableau_check(offices: Sequence[OfficeChurn], today: dt.date, log=print) -> None:
@@ -274,6 +358,7 @@ def run(queries: Sequence[str], dm: Optional[str] = None, log=print,
         log_office(o, log=log)
     if check:
         tableau_check(offices, today, log=log)
+    apply_tableau(offices, tableau_phones(offices, today, log=log), log=log)
     path = summary_png(offices, today)
     log("[owner-churn] built %s" % path)
     if not dm:
