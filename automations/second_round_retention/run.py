@@ -94,7 +94,8 @@ def pull_office(page, rqst, weeks, today):
             d = sun + dt.timedelta(days=i)
             if d in days and d <= today:
                 out[d] = (days[d]["b2"], days[d]["s2"], days[d]["nss"], days[d]["nsh"],
-                          days[d].get("trb", 0), days[d].get("trs", 0))
+                          days[d].get("trb", 0), days[d].get("trs", 0),
+                          days[d].get("b3", 0), days[d].get("s3", 0))
     return out
 
 
@@ -283,6 +284,10 @@ def main():
                     s = sum(v[1] for v in days.values())
                     log("%-6s %-28s %3d/%-3d %s" % (o["office_id"], o["owner"][:28], s, b,
                                                     "%d%%" % round(100 * s / b) if b else "-"))
+                    if a.dry_run:
+                        tot = [sum(v[i] for v in days.values()) for i in range(2, 8)]
+                        log("       new starts %d/%d · training %d/%d · third calendar %d/%d"
+                            % (tot[1], tot[0], tot[3], tot[2], tot[5], tot[4]))
                 except Exception as e:
                     left.append(o)
                     log("%-6s %-28s failed: %s: %s" % (o["office_id"], o["owner"][:28],

@@ -58,6 +58,11 @@ WANT = {
 OPTIONAL = {
     "trb": "Total Training",
     "trs": "Training Showed Up",
+    # Eve 11/23: report 783 has no training row at all; calendars are named
+    # per office, and Raf's "Orientation and Training Calendar" may be an
+    # office's THIRD calendar. Read it so second_round_retention can show it.
+    "b3": "Total Third Interviews",
+    "s3": "Third Interviews Showed Up",
     # Carlos 2026-11-17, for the grade card's Vitals: invited to a 2nd =
     # the three "Invite to next –" rows (en dash, exactly as AppStream
     # prints them); booked for a 2nd = the green "Second Interviews
