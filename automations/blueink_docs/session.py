@@ -121,12 +121,42 @@ def _require_session() -> None:
             "open until it says saved.")
 
 
-def login() -> int:
-    """Open a real browser, let a human sign in, save the session."""
+def whose_account() -> str:
+    """Which Blue Ink account the person at THIS machine should sign in as.
+
+    Alphalete's address was printed as an instruction on every machine. On an
+    ICD's own computer that is the wrong account and a confident one: they
+    have their own Blue Ink login, and signing in as ours would send their new
+    starts our contract bundle. Same mistake as the bundle name, which was
+    pre-filled with Alphalete's until 2026-11-22 (Megan: "no one will be like
+    alphalete's").
+
+    An office machine carries an enrollment; ours does not. We do not know
+    their Blue Ink address -- the enrolment asks for the bundle, not the
+    login -- so say "your own" rather than name one.
+    """
+    try:
+        from automations.icd_alerts import config as C
+        if C.install():
+            return ""
+    except Exception:                           # noqa: BLE001 -- not an ECO box
+        pass
+    return "alphaletemarketing@gmail.com"
+
+
+def login(say=print) -> int:
+    """Open a real browser, let a human sign in, save the session.
+
+    `say` is where the words go. On an office machine there is no terminal in
+    front of anybody, so blueink_signin passes a function that puts them in a
+    window instead -- the one place this is allowed to show something.
+    """
     sync_playwright = _sync_api()
-    print("Opening Blue Ink. Sign in as alphaletemarketing@gmail.com --\n"
-          "Google SSO and 2FA are all fine, take as long as you need.\n"
-          "This waits until it sees the dashboard, then saves the session.\n")
+    who = whose_account()
+    say("Opening Blue Ink. Sign in as %s --\n"
+        "Google SSO and 2FA are all fine, take as long as you need.\n"
+        "This waits until it sees the dashboard, then saves the session.\n"
+        % (who or "your own Blue Ink account"))
     with sync_playwright() as p:
         ctx = p.chromium.launch_persistent_context(
             user_data_dir=str(PROFILE_DIR), headless=False, no_viewport=True,
@@ -134,7 +164,7 @@ def login() -> int:
                   "--disable-sync"])          # never sync into a human's Chrome
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         page.goto(LOGIN_URL, wait_until="domcontentloaded")
-        print("waiting for sign-in...", flush=True)
+        say("waiting for sign-in...")
         # WHAT COUNTS AS SIGNED IN. Not the URL. The app routes itself to
         # /dashboard while still logged out (it renders the sign-in over that
         # route), so "is /dashboard in the url" is true within a second of
@@ -159,11 +189,11 @@ def login() -> int:
                 stable = 0                      # mid-navigation; look again
             page.wait_for_timeout(3000)
         if not ok:
-            print("\nNo Blue Ink session appeared -- NOTHING was saved.\n"
-                  f"The browser was left at: {page.url}\n"
-                  "If that says 'page not found', the app moved and LOGIN_URL "
-                  "in this file needs updating. If you were still typing, just "
-                  "rerun it.", file=sys.stderr)
+            say("\nNo Blue Ink session appeared -- NOTHING was saved.\n"
+                "The browser was left at: %s\n"
+                "If that says 'page not found', the app moved and LOGIN_URL "
+                "in this file needs updating. If you were still typing, just "
+                "rerun it." % page.url)
             ctx.close()
             return 1
         ctx.storage_state(path=str(STORAGE_STATE))
@@ -176,18 +206,18 @@ def login() -> int:
         # later run reads it as a good session and fails somewhere further in.
         if not cookies and not items:
             STORAGE_STATE.unlink(missing_ok=True)
-            print("\nThe browser reported a session but saved nothing -- "
-                  "removed the empty file rather than leave a fake one. "
-                  "Rerun.", file=sys.stderr)
+            say("\nThe browser reported a session but saved nothing -- "
+                "removed the empty file rather than leave a fake one. "
+                "Rerun.")
             ctx.close()
             return 1
         STORAGE_STATE.chmod(0o600)
         ctx.close()
     # Saved FROM this profile, so there is nothing to adopt back into it.
     _stamp_adopted()
-    print(f"\nSaved {cookies} cookie(s) and {items} stored item(s) to "
-          f"{STORAGE_STATE.name} (owner-only). This machine can now read and "
-          "send without anyone signing in again.")
+    say("\nSaved %d cookie(s) and %d stored item(s) to %s (owner-only). "
+        "This machine can now read and send without anyone signing in again."
+        % (cookies, items, STORAGE_STATE.name))
     return 0
 
 
