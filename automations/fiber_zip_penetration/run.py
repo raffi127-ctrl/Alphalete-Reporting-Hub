@@ -102,8 +102,10 @@ def main(argv=None) -> int:
         text = core.decode(Path(args.csv))
     else:
         from automations.int_wow_penetration import pull
+        from automations.shared.tableau_patchright import download_crosstab_patchright
         with tempfile.TemporaryDirectory(prefix="fiber_zip_") as tmp:
-            p = pull.fetch_crosstab(Path(tmp) / "fiber_by_zip.csv")
+            p = download_crosstab_patchright(config.VIEW_URL, pull.WORKSHEET,
+                                             Path(tmp) / "fiber_by_zip.csv")
             text = core.decode(p)
     by_owner = core.parse_zips(text)
     print("  crosstab: %d owners" % len(by_owner))
