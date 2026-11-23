@@ -8960,11 +8960,19 @@ else:  # st.session_state.view == "user"
                     "Daily Update go to. Nothing here is guessed for them — "
                     "an unanswered question holds that office's new starts "
                     "rather than filling in somebody else's answer.")
-                _safe_link_button(
-                    "📋 Open onboarding enrolment",
-                    "https://lucyeco.streamlit.app/onboarding-enrollment",
-                    use_container_width=True)
-                st.caption("Send to an office owner · answers land on Office Settings")
+                # NOT LIVE YET, AND THE CARD SAYS SO. lucyeco.streamlit.app
+                # deploys from the `site` branch, and nothing on the ICD
+                # onboarding build is published until the whole build is done
+                # (Megan, 2026-11-23: "we're not taking anything live until
+                # it's FULLY built out"). A button that looks ready and 404s
+                # is how somebody sends an office a dead link, so the link is
+                # shown as text rather than offered as a button until then.
+                st.warning(
+                    "**Not live yet** — the page is built and waiting on the "
+                    "rest of the onboarding build. Don't send this to an "
+                    "office until then.")
+                st.caption("Will be: lucyeco.streamlit.app/onboarding-enrollment "
+                           "· answers land on the Office Settings tab")
             # ---- Daily Dispositions sign-up (Office Operations) — an OWNER
             # enrolls their own office in the KNOCKS & DISPOSITIONS board: how
             # often (15/30/60 min) and where (iMessage, email, hourly Slack).
