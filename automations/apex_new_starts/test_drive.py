@@ -500,7 +500,7 @@ def test_a_save_is_watched_for_not_asked_for():
     the behaviour is covered properly in test_wait_for_save.py."""
     import inspect
     src = inspect.getsource(drive.wait_for_save)
-    assert "_same_host(url, page.url)" in src
+    assert "_same_site(url, page.url)" in src
     assert "GET" in src, "a GET is not a save"
     assert "input()" not in src, "nothing waits on a keyboard"
 
@@ -1083,6 +1083,13 @@ def test_a_full_social_the_page_accepts_is_set():
         def evaluate(self, js, arg=None):
             if "removeAttribute" in js:
                 return "visible"
+            # THE TWO BOXES AGREE ON THIS PAGE. Added 2026-11-23 with the
+            # check itself: a page where the Social typed cleanly is a page
+            # where SSN and ConfirmSSN hold the same thing, and a double that
+            # said otherwise would make the good case look like the Alexis
+            # Justice failure.
+            if "ConfirmSSN" in js and "a === b" in js:
+                return True
             if "blanks" in js:
                 return {"bad": False, "filled": 9, "blanks": 0}
             if ".length" in js:

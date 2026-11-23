@@ -419,6 +419,14 @@ def _rule_out_the_active(page, out: Dict[str, dict], log=print) -> None:
     pending = [n for n, v in out.items() if v.get("need") == COMPLETE]
     if not pending:
         return
+    # BACK TO THE ROSTER FIRST. The Pending lookup OPENS the person it finds,
+    # so by the time this runs the page is on an employee record, which has
+    # no roster tabs at all -- the first cut reported "no 'Active' tab on
+    # this page" for exactly that reason (2026-11-23) and, correctly, cleared
+    # nobody.
+    if not to_roster(page, log=log):
+        log("    (could not get back to the roster, so nobody was ruled out)")
+        return
     if not open_roster_tab(page, "Active", log=log):
         log("    (could not open Active, so nobody was ruled out by it)")
         return
@@ -1191,6 +1199,27 @@ def fill_profile(page, values, log=print) -> dict:
     return {"set": set_, "missed": miss, "absent": gaps}
 
 
+def _ssn_boxes_agree(page) -> bool:
+    """Do SSN and ConfirmSSN show the same thing?
+
+    Compared as the page shows them -- both are masked the same way, so this
+    says whether Apex will accept the pair WITHOUT reading the Social. It
+    never returns the values and never logs them.
+
+    False when either box cannot be read: an unanswerable question about a
+    Social is not a yes.
+    """
+    try:
+        return bool(page.evaluate(
+            r"""() => { const g = n => { const e =
+                     document.querySelector('[name="' + n + '"]');
+                     return e ? String(e.value) : null; };
+                 const a = g('SSN'), b = g('ConfirmSSN');
+                 return a !== null && b !== null && a !== '' && a === b; }"""))
+    except Exception:      # noqa: BLE001
+        return False
+
+
 def fill_tax(page, values, social=None, log=print) -> dict:
     """The Tax & Bank Information tab, Social included. Never presses Save.
 
@@ -1215,6 +1244,25 @@ def fill_tax(page, values, social=None, log=print) -> dict:
     if social is not None:
         ok1 = type_by_name(page, "SSN", social, log=log, secret=True)
         ok2 = type_by_name(page, "ConfirmSSN", social, log=log, secret=True)
+        # AND THE TWO BOXES HAVE TO AGREE (2026-11-23). type_by_name verifies
+        # a masked box by COUNTING characters, because the value comes back
+        # masked and the digits cannot be read. A digit that lands wrong but
+        # keeps the length is therefore invisible to it -- which is what Apex
+        # refused on Alexis Justice: both boxes nine long, "Confirm SSN" in
+        # red, and the run sat waiting for a Save that could never succeed.
+        #
+        # The boxes mask IDENTICALLY, so they can be compared to each other
+        # without ever reading the Social. That is a real check on the thing
+        # Apex is actually testing, and it costs nothing.
+        if ok1 and ok2 and not _ssn_boxes_agree(page):
+            log("    the two Social boxes do not match -- retyping the "
+                "confirmation")
+            ok2 = type_by_name(page, "ConfirmSSN", social, log=log, secret=True)
+            if not _ssn_boxes_agree(page):
+                log("    they still do not match. Apex will refuse this tab, "
+                    "so it is reported rather than left for a Save that "
+                    "cannot work.")
+                ok2 = False
         (set_ if (ok1 and ok2) else miss).append("Social")
     gaps = absent(values, TAX_REQUIRED)
     if gaps:
@@ -1344,18 +1392,28 @@ def guard_unsaved(page, log=print) -> list:
     return seen
 
 
-def _same_host(url: str, page_url: str) -> bool:
-    """Is this URL on the host the page is already on?
+def _same_site(url: str, page_url: str) -> bool:
+    """Is this URL Apex's own, as the page's address defines "own"?
 
-    The scope on what counts as a save. Without it any third-party beacon --
-    analytics, a font CDN's POST -- would be read as the person pressing
-    Save, which is worse than missing one: a record reported saved that is
-    not is a person nobody goes back to.
+    NOT THE SAME HOST. Watched live on 2026-11-23: the page sits on
+    apex.herbjoyent.com and every save posts to apexapi.herbjoyent.com --
+    a different host entirely. A same-host rule would have matched none of
+    them, and the only reason the first two tabs were ever seen is that
+    their URL happened to carry the employee's id.
+
+    So the scope is the last two labels of the host: apex and apexapi are
+    both herbjoyent.com. Still a scope and not a free-for-all -- an
+    analytics beacon on somebody else's domain is not a save, and calling
+    one a save would be the worse bug, because a record reported saved that
+    is not is a person nobody goes back to.
     """
     try:
         from urllib.parse import urlparse
         a, b = urlparse(url or ""), urlparse(page_url or "")
-        return bool(a.netloc) and a.netloc == b.netloc
+        if not a.netloc or not b.netloc:
+            return False
+        site = lambda h: ".".join(h.split(":")[0].lower().split(".")[-2:])
+        return site(a.netloc) == site(b.netloc)
     except Exception:          # noqa: BLE001
         return False
 
@@ -1400,8 +1458,13 @@ def wait_for_save(page, apex_id, *, seconds: int = 2700, log=print) -> bool:
             # counts. Scoped to the host so a third-party beacon cannot pass
             # for a save, and the URL that matched is printed -- a watcher
             # that says only "saved" cannot be checked by the next person.
-            if want in url or _same_host(url, page.url):
-                done.append(url)
+            # THE SITE CHECK IS NOT A FALLBACK, IT IS THE RULE. Matching the
+            # employee's own path FIRST, as this did, means a URL shaped
+            # like /employees/<id> counts no matter whose domain it is on.
+            # `want` only decides which match is worth preferring in the
+            # log; it never admits one on its own.
+            if _same_site(url, page.url):
+                done.insert(0, url) if want in url else done.append(url)
         except Exception:      # noqa: BLE001 -- the page may be navigating
             pass
 

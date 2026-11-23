@@ -62,12 +62,26 @@ class WhatCountsAsASave(unittest.TestCase):
         ok, _said = self._run([_Res(HOST + "/onboarding/complete/987")])
         self.assertTrue(ok)
 
+    def test_the_api_host_counts_as_apex(self):
+        """Watched live 2026-11-23: the page is on apex.herbjoyent.com and
+        every save posts to apexapi.herbjoyent.com. A same-host rule matches
+        none of them."""
+        ok, said = self._run(
+            [_Res("https://apexapi.herbjoyent.com/onboarding/complete/987")])
+        self.assertTrue(ok)
+        self.assertIn("apexapi", said)
+
     def test_the_url_that_counted_is_printed(self):
         """A watcher that says only "saved" cannot be checked by the next
         person who has to work out why it did not."""
         ok, said = self._run([_Res(HOST + "/onboarding/complete/987")])
         self.assertTrue(ok)
         self.assertIn("/onboarding/complete/987", said)
+
+    def test_a_different_company_is_not_a_save(self):
+        """The scope is Apex's own domain, not anything that posts."""
+        ok, _said = self._run([_Res("https://apexapi.evil.example/employees/123")])
+        self.assertFalse(ok)
 
     def test_somebody_elses_host_is_not_a_save(self):
         """A record reported saved that is not is worse than a missed one:
