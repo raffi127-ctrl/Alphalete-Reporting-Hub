@@ -132,6 +132,40 @@ def restore(entry: dict, facts: dict, today: dt.date) -> Tuple[bool, str]:
     return True, why
 
 
+# OFFICES WHOSE REMOVALS ARE HELD, and why (2026-11-23).
+#
+# Every removal rule reads the SAME shape: ApplicantStream shows no BOB, no
+# offer and no scheduled start, so the person was not brought on board. That
+# is only true where the office MARKS its outcomes. Where it does not, an
+# unmarked hire looks exactly like a candidate who said no, and the cards come
+# off the owner's phone either way.
+#
+# How an office lands here: the restore pass put NOBODY back while the same
+# pass, on the same day, with the same reader, put 27 back for one office and
+# 19 for another. On 2026-11-23 Cyrus's account restored 0 of 91 and held 23,
+# against 0 hired and 0 kept out of 111 on --check-marks. One account reading
+# empty while others read full is not proof the office hires nobody; it is the
+# question this list refuses to answer by deleting.
+#
+# Holding costs nothing and loses nothing: the person stays on the phone, the
+# state file keeps tracking them, and the day they are marked they graduate
+# normally. Removing is the move that cannot be checked afterwards, because
+# what it leaves behind is an absence.
+#
+# TAKE AN OFFICE OFF THIS LIST once --check-marks shows it marking, or once
+# somebody has asked them. Do not take one off because the list looks long.
+HOLD_REMOVALS = {
+    "Cyrus Wade": "restored 0 of 91 on 2026-11-23 while other offices "
+                  "restored 27 and 19 -- check whether the office marks BOB "
+                  "in ApplicantStream before taking 23 cards off the phone",
+}
+
+
+def removals_held(owner: str) -> str:
+    """Why this owner's removals are held, or "" when they are not."""
+    return HOLD_REMOVALS.get((owner or "").strip(), "")
+
+
 def decide(entry: dict, facts: dict, today: dt.date,
            evening: bool = False) -> Tuple[str, str]:
     """(verdict, reason) for one tracked contact.

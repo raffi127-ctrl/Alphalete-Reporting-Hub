@@ -401,6 +401,9 @@ def run_audit(owners: List[R.Owner], *, write: bool, ownerville: bool = True,
         # does not mean "nobody was brought on board" -- it means we could not
         # tell, and acting on it would empty the whole group in one pass. A
         # blank is only an answer when the data proves it is one.
+        held_why = rules.removals_held(o.owner)
+        if held_why:
+            _log("  %s: removals HELD for this office -- %s" % (o.owner, held_why))
         keeper_read = C.EVENING_KEEPER in seen_all.get(account, set())
         if evening and not keeper_read:
             _log("  %s: NOT REMOVING ANYONE -- '%s' came back empty for every "
@@ -429,7 +432,7 @@ def run_audit(owners: List[R.Owner], *, write: bool, ownerville: bool = True,
                  "empties the owner's phone." % o.owner)
             failed += 1
             continue
-        deleted = hired = waiting = restored = 0
+        deleted = hired = waiting = restored = held = 0
         for k, f in facts.items():
             e = st[account][k]
             name = " ".join(x for x in (e.get("first_name"), e.get("last_name")) if x)
@@ -480,6 +483,18 @@ def run_audit(owners: List[R.Owner], *, write: bool, ownerville: bool = True,
                 if restore_only:
                     _log("    HELD %s: %s" % (e.get("display", name), why))
                     continue
+                # AND HELD FOR THIS OFFICE WHATEVER THE MODE (2026-11-23).
+                # Every removal rule reads "ApplicantStream shows no BOB, no
+                # offer, no start", which is only an answer where the office
+                # marks its outcomes. rules.HOLD_REMOVALS names the ones where
+                # that is in doubt and says why. Unlike --restore-only this
+                # also binds the 7pm scheduled pass, which is the one that
+                # would actually take the cards off.
+                if held_why:
+                    _log("    HELD %s: %s (office held: %s)"
+                         % (e.get("display", name), why, held_why))
+                    held += 1
+                    continue
                 _log("    %s %s: %s" % ("remove" if write else "would remove", e.get("display", name), why))
                 if write:
                     try:
@@ -526,9 +541,15 @@ def run_audit(owners: List[R.Owner], *, write: bool, ownerville: bool = True,
                 waiting += 1
         if write:
             S.save(st)
-        res = "audit: %d %s, %d put back, %d graduated (hired+badged), %d waiting%s" % (
-            deleted, "held back from removal" if restore_only else "removed",
-            restored, hired, waiting, "" if write else " [DRY RUN]")
+        # `deleted` is incremented when the RULE says remove, before either
+        # hold is applied, so the headline number has to take the held ones
+        # back out. A summary that counts a person we deliberately kept as a
+        # person we removed is how a held pass gets filed as a finished one.
+        res = "audit: %d %s, %d put back, %d graduated (hired+badged), %d waiting%s%s" % (
+            deleted - held, "held back from removal" if restore_only else "removed",
+            restored, hired, waiting,
+            (", %d held (this office's removals are on hold)" % held) if held else "",
+            "" if write else " [DRY RUN]")
         _log("  %s: %s" % (o.owner, res))
         if ws is not None and write:
             R.stamp(ws, o, res)
