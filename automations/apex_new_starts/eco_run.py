@@ -205,7 +205,8 @@ def plan(people: List[Starter], hires: Dict[str, BID.NewHire],
 
 
 def _result(week_start: dt.date, *, status: str, added=(), blocked=(),
-            error: str = "", counted: int = 0, live: bool = False) -> Dict:
+            error: str = "", counted: int = 0, live: bool = False,
+            apex=None) -> Dict:
     """The job's answer. Plain JSON -- names and reasons, never a number.
 
     Built in one place so there is one thing to read when asking "could a
@@ -218,6 +219,10 @@ def _result(week_start: dt.date, *, status: str, added=(), blocked=(),
            "mode": "live" if live else "dry"}
     if error:
         out["error"] = error
+    if apex is not None:
+        # WHAT APEX ALREADY HOLDS, beside what the data says is ready. Names
+        # only -- the same rule as everything else in here.
+        out["apex"] = {k: list(v) for k, v in apex.items()}
     return out
 
 
@@ -288,9 +293,22 @@ def run_week(week_start: dt.date, *, office_appstream: str, office_key: str = ""
 
     got = plan(people, hires, log=log, office_key=office_key)
     if not live:
-        return _result(monday, status="dry_run", live=False, counted=len(people),
+        # AND ASK APEX WHO ACTUALLY NEEDS ANYTHING (2026-11-23). "26 ready"
+        # only ever meant "26 have complete data" -- it says nothing about
+        # whether Apex already holds them. Alexis Justice and Brandon
+        # Aceituno were both ACTIVE and both still sat on the Pending list,
+        # so the plan named them as work and the only way to find out
+        # otherwise was a supervised run, one person at a time.
+        #
+        # Read-only: triage opens no record and types nothing. If Apex cannot
+        # be reached the dry run still answers with the data half it always
+        # had and says the Apex half is unknown -- a plan that quietly
+        # dropped back to the old meaning is what made this invisible.
+        state = _apex_state([p for p, _ in got["ready"]], log=log)
+        return _result(monday, status="dry_run", live=False,
+                       counted=len(people),
                        added=[p.name for p, _ in got["ready"]],
-                       blocked=got["blocked"])
+                       blocked=got["blocked"], apex=state)
 
     # THE GATE. Everything above this line reads; everything below SAVES to a
     # payroll record, and no code has yet done that unwatched. Somebody has to
@@ -319,6 +337,41 @@ def run_week(week_start: dt.date, *, office_appstream: str, office_key: str = ""
                     if b.get("ask")}, log=log)
     return _result(monday, status="filled", live=True, counted=len(people),
                    added=added, blocked=blocked)
+
+
+def _apex_state(ready, log=print) -> Dict:
+    """{verdict: [name, ...]} for the people the data says are ready.
+
+    READS ONLY. It opens Apex, triages, and closes -- no record is opened and
+    nothing is typed. The point is to answer "who is actually left" without
+    somebody sitting through one supervised run per name.
+    """
+    names = [p.name for p in (ready or [])]
+    if not names:
+        return {}
+    try:
+        with apex.ApexSession(log=log, visible=False) as s:
+            s.require_login()
+            from automations.apex_new_starts import drive
+            if not drive.to_roster(s.page, log=log):
+                return {"unknown": names}
+            need = drive.triage(s.page, [{"name": n} for n in names], log=log)
+    except Exception as e:          # noqa: BLE001
+        # NOT A FAILED DRY RUN. The data half is still worth having, and an
+        # unreachable Apex is reported as unknown rather than as nobody
+        # needing anything.
+        log("  could not ask Apex who is left (%s: %s)"
+            % (type(e).__name__, str(e)[:120]))
+        return {"unknown": names}
+    out: Dict[str, List[str]] = {}
+    for name in names:
+        what = (need.get(name) or {}).get("need") or "unknown"
+        out.setdefault(what, []).append(name)
+    for what, who in sorted(out.items()):
+        log("  Apex says %d %s: %s"
+            % (len(who), what,
+               ", ".join(who[:6]) + (" ..." if len(who) > 6 else "")))
+    return out
 
 
 def _genders_from_board(office_key: str, monday: dt.date, log=print) -> Dict:
