@@ -20,8 +20,9 @@ LIVE_TAB = "SARA+ CC"
 SANDBOX_TAB = "SARA+ CC - SANDBOX (Claude)"
 
 # Which tab the automatic pull (the hook in the Sales Board sweep) writes.
-# SANDBOX until the first pulls are checked; then LIVE_TAB.
-TARGET_TAB = SANDBOX_TAB
+# SANDBOX until the first pulls were checked (2026-11-23: 12 new, Raf's 30
+# rows intact, no dups, sorted) -> LIVE.
+TARGET_TAB = LIVE_TAB
 
 # Raf: "every 15 minutes, 30 minutes, hour, anything within that".
 INTERVAL_MIN = 15
