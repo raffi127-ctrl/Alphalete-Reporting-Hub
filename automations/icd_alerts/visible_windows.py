@@ -46,6 +46,10 @@ ALLOWED: Dict[str, Tuple[str, str]] = {
         (PERSON, "the question boxes every set-up step asks through"),
     "automations/icd_alerts/apex_signin.py":
         (PERSON, "the owner signs in to Apex once"),
+    "automations/icd_alerts/apex_2fa_setup.py":
+        (PERSON, "set-up: the owner types his Apex user name and password, "
+                 "types the code Apex texts him, and presses Verify on the "
+                 "authenticator page -- once, with him at the Mac"),
     "automations/icd_alerts/box_signin.py":
         (PERSON, "the owner signs in to My Service Cloud (authenticator code)"),
     "automations/icd_alerts/ov_signin.py":
@@ -77,6 +81,12 @@ ALLOWED: Dict[str, Tuple[str, str]] = {
     "automations/icd_alerts/sterling_send.py":
         (OURS, "try_here is the mapping run on OUR computer; the office send "
                "and its sign-in test are hidden"),
+    "automations/oat_processing/octo_lookup.py":
+        (HIDDEN, "real Octo Browser for Indeed -- it exists to look like a "
+                 "real browser, so headless is the thing Indeed walls. "
+                 "Opened in the background (open -g -j / SW_SHOWMINNOACTIVE) "
+                 "and held off the front by resume_push's _FocusGuard, which "
+                 "stands down if the human-verification box needs clicking"),
     "automations/icd_alerts/optix_read.py":
         (OURS, "switched off at offices -- the Lucy Optix extension in the "
                "owner's own Chrome is the reader (2026-11-07)"),

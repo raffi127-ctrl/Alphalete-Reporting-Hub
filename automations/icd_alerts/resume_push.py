@@ -592,8 +592,17 @@ class _FocusGuard:
     # Chrome can show for up to a quarter second before it is hidden.
     HELD_POLL_SECONDS = 0.25
 
-    def __init__(self):
+    def __init__(self, pids=None):
+        """`pids` names the processes to hide; Lucy's Chrome by default.
+
+        A callable, not a list, because the app may not have started yet when
+        the guard does -- and because Octo Browser's phone lookup reuses this
+        guard rather than growing a second copy of it (2026-11-23). Anything
+        that must run a REAL browser on an office computer has the same
+        problem and deserves the same answer.
+        """
         import threading
+        self._pid_source = pids or _lucy_pids
         self._until = 0.0
         self._pids = set()
         self._stop = threading.Event()
@@ -612,12 +621,12 @@ class _FocusGuard:
         self._stop.set()
 
     def expect(self, seconds: float = WINDOW_SECONDS) -> None:
-        self._pids = set(_lucy_pids())
+        self._pids = set(self._pid_source())
         self._until = max(self._until, time.time() + seconds)
 
     def hold(self, stand_down=None) -> None:
         """Keep Chrome hidden until stop(), or until stand_down() is true."""
-        self._pids = set(_lucy_pids())
+        self._pids = set(self._pid_source())
         self._stand_down = stand_down
         self._held = True
 

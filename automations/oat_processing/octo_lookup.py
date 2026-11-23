@@ -528,11 +528,27 @@ def ensure_octo(log=_log) -> Tuple[bool, str, bool]:
         return False, "Octo Browser is not installed on this computer", False
     try:
         if IS_MAC:
-            subprocess.Popen(["open", "-a", app], stdin=subprocess.DEVNULL,
+            # -g DOES NOT RAISE IT, -j STARTS IT HIDDEN. This runs by itself
+            # at 5am on somebody's office computer and nobody has to act, so
+            # it must not take their screen (CLAUDE.md: ECO runs in the
+            # background). Octo cannot run headless -- it exists to look like
+            # a real browser to Indeed, and a headless one is the thing
+            # Indeed walls -- so the answer is the resume_push answer: open
+            # the real browser behind everything, and keep it there.
+            subprocess.Popen(["open", "-g", "-j", "-a", app],
+                             stdin=subprocess.DEVNULL,
                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         else:
+            # Windows: started without a window of its own being shown.
+            si = None
+            try:
+                si = subprocess.STARTUPINFO()
+                si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                si.wShowWindow = 7          # SW_SHOWMINNOACTIVE
+            except Exception:  # noqa: BLE001 -- not Windows after all
+                si = None
             subprocess.Popen([app], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                             stderr=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL, startupinfo=si,
                              creationflags=getattr(subprocess, "DETACHED_PROCESS", 0))
     except Exception as e:  # noqa: BLE001
         return False, "Octo Browser would not open (%s)" % type(e).__name__, False
@@ -544,6 +560,49 @@ def ensure_octo(log=_log) -> Tuple[bool, str, bool]:
             return True, "", True
     return False, ("Octo Browser opened but its local API on port %d never answered "
                    "-- is it signed in?" % API_PORT), True
+
+
+def _octo_pids():
+    """Octo Browser's processes on this machine, for the focus guard."""
+    try:
+        out = subprocess.run(["pgrep", "-f", "Octo Browser"],
+                             capture_output=True, text=True).stdout
+        return [int(x) for x in out.split()]
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def _focus_guard(walled=None):
+    """Keep Octo off the owner's screen for the whole run, or None.
+
+    Octo CANNOT run headless for this job: it exists to look like a real
+    browser to Indeed, and starting a profile opens a window that takes the
+    front. The standing rule for exactly that case is resume_push's -- open
+    the real browser behind everything and stop it taking focus -- so this
+    borrows resume_push's guard rather than growing a second one.
+
+    `walled` lets the guard STAND DOWN. When Indeed's "Verify you are human"
+    box stops the run, a person has to click it, and a hidden window they
+    cannot reach is worse than a visible one they can.
+    """
+    try:
+        # IMPORTED AS A MODULE OFF THE PACKAGE, deliberately: test_octo_lookup
+        # pins every `automations.*` import this file makes to
+        # `automations.icd_alerts`, which is how it checks that nothing is
+        # reached for that an office machine does not ship.
+        from automations.icd_alerts import resume_push
+        _FocusGuard = resume_push._FocusGuard
+    except Exception:  # noqa: BLE001 -- not an ECO machine / no Mac helpers
+        return None
+    try:
+        guard = _FocusGuard(pids=_octo_pids).start()
+        guard.hold(stand_down=walled)
+        return guard
+    except Exception:  # noqa: BLE001
+        # A guard that will not start must never stop the lookups: the run
+        # still works, it is just visible, and that is a smaller fault than
+        # no phone numbers.
+        return None
 
 
 def quit_octo(log=_log) -> None:
@@ -1044,6 +1103,7 @@ def run(office_id, *, names: Optional[List[str]] = None, account: str = "",
                              "lookups": bool(lookups), "billing": bool(billing)}}
     _write_lock()
     launched = False
+    guard = None        # set once Octo is up; stopped in the finally
     try:
         # WHO. The flagged list (or the names given), each with its account.
         items: List[Dict] = []
@@ -1104,6 +1164,11 @@ def run(office_id, *, names: Optional[List[str]] = None, account: str = "",
                               "Install Octo Browser on the office computer and sign it in once; "
                               "the morning run finds it on its own." % why), log=log)
             return summary
+
+        # OCTO IS UP, SO KEEP IT OFF THEIR SCREEN from here until the run
+        # ends. Starting a profile opens a window that takes the front, and
+        # this fires at 5am with nobody at the desk.
+        guard = _focus_guard()
 
         run_deadline = t0 + RUN_BUDGET_MIN * 60
         found_rows: List[Dict] = []
@@ -1231,6 +1296,11 @@ def run(office_id, *, names: Optional[List[str]] = None, account: str = "",
             _report(office_id, summary, loud=loud, log=log)
         return summary
     finally:
+        if guard is not None:
+            try:
+                guard.stop()
+            except Exception:  # noqa: BLE001
+                pass
         if launched:
             quit_octo(log)
         _clear_lock()
