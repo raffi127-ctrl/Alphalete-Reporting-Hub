@@ -489,6 +489,15 @@ def _apex_login_saved() -> bool:
     return bool(L.creds())
 
 
+def setup_still_wanted(key: str) -> bool:
+    """The code-app setup is still owed: switched on for this office and no
+    login saved yet. Asked on EVERY Apex try, signed in or not -- Jairo
+    signed in by hand in the old window the day his setup went on
+    (Eve 2026-11-23), and a session that works would otherwise mark Apex
+    done and the setup would wait days for that session to run out."""
+    return key in APEX_SETUP_KEYS and not _apex_login_saved()
+
+
 def run_apex_check(log=print) -> int:
     """Export the newest pay period, match it to the DD by name, and file
     what was found as `probe-pnl-apex` -- counts and names, never money."""
@@ -533,8 +542,13 @@ def run_apex_check(log=print) -> int:
             line = apex_line(per, pay, weeks)
             # Done only once the names were matched too: a DD read that lost
             # the browser to knocks tries again within the hour.
-            if pay and weeks:
+            if pay and weeks and not setup_still_wanted(key):
                 state["apex_ok_v1"] = dt.date.today().isoformat()
+        if not status.startswith("signed out") and setup_still_wanted(key):
+            from automations.icd_alerts import autoprompt as AU
+            shown = AU.offer("apex_2fa", log=log)
+            line += "; code-app setup window %s" % (
+                "opened" if shown else "not opened: nobody at the Mac")
         lock = G.summary()
         if lock:
             line += "; " + lock

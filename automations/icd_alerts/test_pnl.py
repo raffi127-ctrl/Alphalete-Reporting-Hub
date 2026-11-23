@@ -132,6 +132,14 @@ class ApexTests(unittest.TestCase):
         self.assertFalse(P.apex_due({"dd_ok_v4": "x"},
                                     dt.datetime(2026, 10, 29, 22)))
 
+    def test_setup_still_wanted_until_the_login_is_saved(self):
+        from unittest import mock
+        with mock.patch.object(P, "_apex_login_saved", return_value=False):
+            self.assertTrue(P.setup_still_wanted("jairo15"))
+            self.assertFalse(P.setup_still_wanted("someone_else"))
+        with mock.patch.object(P, "_apex_login_saved", return_value=True):
+            self.assertFalse(P.setup_still_wanted("jairo15"))
+
     def test_apex_window_is_offered(self):
         from automations.icd_alerts import autoprompt as AU
         self.assertEqual(AU.SYSTEMS["apex"]["module"],
