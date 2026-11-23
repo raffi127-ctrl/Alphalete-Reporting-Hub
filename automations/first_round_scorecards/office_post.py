@@ -111,6 +111,12 @@ CHANNELS: Dict[str, str] = {
     "Frank Matos": "C0C6BT2CZT3",             # #frank-matos-recruiting
     "Nicolas Lujan": "C0C2W413YJ3",           # #nicolas-lujan-interviews
     "Hasan Salame": "C0CAZ17H5NF",            # #24279-hasans-funnel-rafael-hidalgo20261026
+    # Eve 2026-11-23: audited since 11/11-ish, never posted to their own room.
+    # Same channels their ad photo threads read (Lucy already in them). Not in
+    # grade.OFFICES on purpose: no script of their own yet -> Rafael's (Eve),
+    # and script_watch leaves them alone until they get an OFFICES entry.
+    "Algemar Kennel": "C0CFLK9MK4H",          # #aglemar-kennel-recruiting (Se7en Summit, El Paso)
+    "Vincent Dodson": "C0CDETE7Z61",          # Relevant Specialized Connections (Lubbock)
 }
 # Several ZOOMS INFO owners, one office: one post, under this name
 SAME_OFFICE = {"Raf Hidalgo 2nd funnel": "Rafael Hidalgo",
