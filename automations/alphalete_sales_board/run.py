@@ -932,6 +932,16 @@ def main(argv=None) -> int:
                              % (prev.isoformat(), S.CATCHUP_MAX_TRIES,
                                 prev.isoformat()))
 
+        # SARA+ CC (Raf Loom 2026-11-23): every ~15 min, Activities -> the
+        # 'SARA+ CC' tab. HERE, inside this lock, because it is the same
+        # SaraPlus login ("only one login at a time"). Never raises.
+        if apply_writes and day == dt.date.today():
+            try:
+                from automations.sara_activities import run as SARA_CC
+                SARA_CC.maybe_run(headless=not args.headed, log=_log)
+            except Exception as e:  # noqa: BLE001 -- never the board's problem
+                _log("SARA+ CC step skipped: %s: %s" % (type(e).__name__, e))
+
     _clear_failures()
     if apply_writes:
         _record_delivery(n_cells)     # BEFORE the Hub row: that is where the close is decided
