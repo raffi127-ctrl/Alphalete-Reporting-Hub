@@ -123,6 +123,16 @@ def _pretty(label: str) -> str:
     return " ".join(w.capitalize() for w in owner_name(label).split())
 
 
+def _label(query: str, hit: str) -> str:
+    """The name as asked ('Carlos Hidalgo'), not the export's owner cell
+    ('CARLOS HIDALGO TX' would read 'Carlos Hidalgo Tx'); a one-word query
+    keeps the export's full name ('khalil' -> 'Khalil Mansour')."""
+    words = query.split()
+    if len(words) >= 2:
+        return " ".join(w[:1].upper() + w[1:] for w in words)
+    return _pretty(hit)
+
+
 def read_offices(queries: Sequence[str], today: dt.date, log=print,
                  nds_path: Optional[Path] = None, d2d_path: Optional[Path] = None
                  ) -> Tuple[List[Office], List[str]]:
@@ -154,7 +164,7 @@ def read_offices(queries: Sequence[str], today: dt.date, log=print,
                _counts(ncols, rows, "product type (broken out)", "product type"),
                _counts(ncols, rows, "dtr status", "spe.status")))
         weeks, data = AW.aggregate_tableau(ncols, rows, today, since=since)
-        found[q] = Office(q, _pretty(hit[0]), "NDS", weeks, data, n_pulled)
+        found[q] = Office(q, _label(q, hit[0]), "NDS", weeks, data, n_pulled)
     fallback = [q for q in missing]
     missing = []
     if fallback:
@@ -181,7 +191,7 @@ def read_offices(queries: Sequence[str], today: dt.date, log=print,
                    _counts(dcols, rows, "product type (broken out)", "product type", "product"),
                    _counts(dcols, rows, "dtr status", "spe.status")))
             weeks, data = AW.aggregate_tableau(dcols, rows, today, since=since)
-            found[q] = Office(q, _pretty(hit[0]), "D2D", weeks, data, d_pulled)
+            found[q] = Office(q, _label(q, hit[0]), "D2D", weeks, data, d_pulled)
     for q in missing:
         log("[owner-weeks] %r: NOT FOUND on either export -- left off" % q)
     return [found[q] for q in queries if q in found], missing
@@ -255,7 +265,9 @@ def log_office(o: Office, today: dt.date, log=print) -> None:
 # ------------------------------------------------------------------ main ----
 
 def run(queries: Sequence[str], dm: Optional[str] = None, log=print,
-        today: Optional[dt.date] = None) -> int:
+        today: Optional[dt.date] = None, summary_only: bool = False) -> int:
+    """`summary_only` = build + send just the owners summary (Carlos
+    2026-11-23, on the summary: "I like this one. Add me to it")."""
     today = today or dt.date.today()
     offices, missing = read_offices(queries, today, log=log)
     if not offices:
@@ -264,7 +276,7 @@ def run(queries: Sequence[str], dm: Optional[str] = None, log=print,
     for o in offices:
         log_office(o, today, log=log)
     shots = [("summary", summary_png(offices, today))]
-    for o in offices:
+    for o in ([] if summary_only else offices):
         if not o.weeks:
             log("[owner-weeks] %s: no lines in the window -- no board" % o.label)
             continue
@@ -318,4 +330,5 @@ def entry(args: Sequence[str]) -> int:
     if "--dm" in args:
         j = args.index("--dm")
         dm = args[j + 1] if j + 1 < len(args) else None
-    return run(queries, dm=dm, log=lambda m: print(m, flush=True))
+    return run(queries, dm=dm, log=lambda m: print(m, flush=True),
+               summary_only="--summary-only" in args)

@@ -189,6 +189,38 @@ class Dm(unittest.TestCase):
         self.assertFalse(any(k["as_bot"] for k in sent))
 
 
+class AddCarlos(unittest.TestCase):
+    """Carlos 2026-11-23 on the owners summary: "I like this one. Add me to it"."""
+
+    def test_label_is_the_name_asked(self):
+        tx = "CARLOS HIDALGO TX\r [alphalete specialized marketing inc(tx]"
+        self.assertEqual(OW._label("Carlos Hidalgo", tx), "Carlos Hidalgo")
+        self.assertEqual(OW._label("khalil", KHALIL), "Khalil Mansour")
+
+    def test_summary_only_sends_just_the_summary(self):
+        import collections
+        o = OW.Office("Carlos Hidalgo", "Carlos Hidalgo", "NDS", [dt.date(2026, 11, 22)],
+                      {AW.TOTAL: {dt.date(2026, 11, 22): collections.Counter(lines=4, activated=3)}})
+        sent = []
+        with mock.patch.object(OW, "read_offices", return_value=([o], [])), \
+             mock.patch.object(OW, "summary_png", return_value="/tmp/s.png"), \
+             mock.patch.object(OW, "owner_png") as board, \
+             mock.patch("automations.shared.slack_metrics_post.dm_user_with_file",
+                        side_effect=lambda *a, **k: sent.append(k)):
+            OW.run(["Carlos Hidalgo"], dm="U046G04P5LG", log=lambda m: None, today=TODAY,
+                   summary_only=True)
+        board.assert_not_called()
+        self.assertEqual(len(sent), 1)
+        self.assertIn("Carlos", sent[0]["comment"])
+
+    def test_flag(self):
+        with mock.patch.object(OW, "run", return_value=0) as run:
+            OW.entry(["--owner-weeks", "Carlos Hidalgo;Khalil Mansour", "--summary-only",
+                      "--dm", "U1"])
+        self.assertEqual(run.call_args[0][0], ["Carlos Hidalgo", "Khalil Mansour"])
+        self.assertTrue(run.call_args[1]["summary_only"])
+
+
 class Entry(unittest.TestCase):
     def test_quoted_and_unquoted_names(self):
         for args in (["--owner-weeks", "Khalil Mansour;Colten Wright", "--dm", "U1"],
