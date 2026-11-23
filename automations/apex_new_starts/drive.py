@@ -140,6 +140,7 @@ def hand_over(page, *, genders=None, socials=None, log=print) -> dict:
 COMPLETE = "complete"      # already on Pending — fill the three tabs
 ADD = "add"                # Apex has never heard of them — create the record
 BY_HAND = "by_hand"        # in Apex but not on Pending, or we could not tell
+ALREADY = "already done"   # on Active: the record exists and is finished
 
 
 def to_roster(page, log=print) -> bool:
@@ -382,12 +383,60 @@ def triage(page, people, log=print) -> Dict[str, dict]:
                                 "they are in Apex is UNKNOWN"}
         else:
             out[name] = {"need": ADD, "why": "not in Apex at all"}
+    # ON PENDING IS NOT THE SAME AS STILL PENDING (2026-11-23). Alena
+    # Guerrero was ACTIVE, and the Pending lookup found her anyway and said
+    # "on Pending" -- so a finished payroll record was about to have all
+    # three of its tabs typed over again. Megan saw it on the screen and
+    # stopped it; nothing in here would have.
+    #
+    # The roster has an Active tab and this has never looked at it. So the
+    # ones found on Pending are checked against Active ONCE, as a single
+    # pass, rather than a tab click each -- the cost the per-person check
+    # was avoiding -- and anybody on both is already done.
+    _rule_out_the_active(page, out, log=log)
+
     tally = {}
     for v in out.values():
         tally[v["need"]] = tally.get(v["need"], 0) + 1
     log("  triage: %s" % (", ".join("%d to %s" % (n, k)
                                     for k, n in sorted(tally.items())) or "nobody"))
     return out
+
+
+def _rule_out_the_active(page, out: Dict[str, dict], log=print) -> None:
+    """Anybody the Pending lookup found who is ALSO on Active is done.
+
+    A CONTRADICTION IS NOT A TIE-BREAK. Active wins because the two verdicts
+    are not symmetrical: treating a finished employee as pending types over a
+    live payroll record, and treating a pending one as finished leaves a row
+    for a person to pick up. The first cannot be noticed afterwards.
+
+    AND IF ACTIVE CANNOT BE READ, NOBODY IS CLEARED BY IT. An unreadable tab
+    says nothing about anybody, so every verdict stands as it was and the run
+    says the check did not happen -- rather than silently going back to the
+    behaviour that typed over Alena.
+    """
+    pending = [n for n, v in out.items() if v.get("need") == COMPLETE]
+    if not pending:
+        return
+    if not open_roster_tab(page, "Active", log=log):
+        log("    (could not open Active, so nobody was ruled out by it)")
+        return
+    for name in pending:
+        parts = name.split()
+        surname = parts[-1] if parts else ""
+        given = parts[0] if parts else ""
+        there = search_roster(page, surname, given, log=log)
+        if there is None:
+            log("    %s: the Active search could not be run -- left as %s"
+                % (name, COMPLETE))
+            continue
+        if there:
+            out[name] = {"need": ALREADY,
+                         "why": "on Active already — the Pending row is "
+                                "stale, and the record is finished",
+                         "id": out[name].get("id", "")}
+            log("    %s: ACTIVE already — not touching the record" % name)
 
 
 def set_dropdown(page, label: str, value: str, log=print) -> bool:

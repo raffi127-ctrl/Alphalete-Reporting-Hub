@@ -101,10 +101,18 @@ class _Triage:
 
     url = "https://apex.example/roster"
 
-    def __init__(self, pending=(), anywhere=(), raises=None, says=None,
-                 no_search=False, no_tab=False):
+    def __init__(self, pending=(), anywhere=(), active=(), raises=None,
+                 says=None, no_search=False, no_tab=False):
         self.pending = set(pending)
         self.anywhere = set(anywhere)
+        # THE ACTIVE TAB IS ITS OWN LIST (2026-11-23). This double used to
+        # answer every search outside All Employees from `pending`, so the
+        # moment the triage learned to check Active, everybody on Pending
+        # read as Active too. A roster where three tabs give one answer is
+        # not a roster -- and the live mistake it was hiding is the opposite
+        # one: Alena Guerrero sat on BOTH, which is the whole point of the
+        # check.
+        self.active = set(active)
         self.raises = raises or set()
         self.says = says or {}
         self.no_search, self.no_tab = no_search, no_tab
@@ -159,7 +167,8 @@ class _Triage:
         if "data-ans-f" in js:                               # the filter boxes
             return {} if self.no_search else {"last": True, "first": True}
         if "includes(want)" in js:                           # the row count
-            who = self.anywhere if self.tab == "All Employees" else self.pending
+            who = {"All Employees": self.anywhere,
+                   "Active": self.active}.get(self.tab, self.pending)
             if self.looked_for in self.says:
                 return 0
             return sum(1 for n in who
@@ -1191,3 +1200,14 @@ def test_the_first_name_fallback_searches_the_first_name_box():
     sr = inspect.getsource(drive.search_roster)
     assert "if surname:" in sr and "elif not surname:" in sr
     assert "surname or given" in sr, "count rows for whichever name was used"
+
+
+def test_somebody_on_pending_AND_active_is_left_alone():
+    """Alena Guerrero, 2026-11-23: Active in Apex, and the Pending lookup
+    found her anyway. The triage said "on Pending" and a finished payroll
+    record was a keystroke from having all three tabs typed over. A person
+    saw it on screen and stopped it; nothing in here would have."""
+    page = _Triage(pending={"Alena Guerrero"}, active={"Alena Guerrero"})
+    got = drive.triage(page, [{"name": "Alena Guerrero"}], log=lambda *a: None)
+    assert got["Alena Guerrero"]["need"] == drive.ALREADY
+    assert "stale" in got["Alena Guerrero"]["why"]

@@ -472,6 +472,16 @@ def run(office_key: str, name: str, week_start: dt.date, log=print,
         need = drive.triage(s.page, [who], log=log).get(person.name, {})
         log("")
         log("  %s: %s" % (person.name, need.get("why", "unknown")))
+        if need.get("need") == drive.ALREADY:
+            # SAID OUT LOUD, NOT TREATED AS A FAILURE. Their record is
+            # finished; the Pending row that named them is stale. Typing over
+            # it is the thing this verdict exists to stop (Alena Guerrero,
+            # 2026-11-23, caught on screen by a person).
+            log("")
+            log("  Their Apex record is already Active and finished.")
+            log("  Nothing was opened and nothing was typed.")
+            log("")
+            return 0
         if need.get("need") == drive.COMPLETE:
             return _complete(s.page, who, person,
                              need.get("id", ""), log=log, social=social,
