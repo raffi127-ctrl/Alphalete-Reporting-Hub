@@ -55,6 +55,11 @@ ALLOWED: Dict[str, Tuple[str, str]] = {
     "automations/icd_alerts/ov_signin.py":
         (PERSON, "the owner signs in to OwnerVille by hand when the saved "
                  "sign-in stopped working"),
+    "automations/icd_alerts/leader_in_calendar.py":
+        (PERSON, "set-up: opens the office's ApplicantStream Office Level "
+                 "Settings so the owner ticks Leader In Calendar -- ticking "
+                 "it also makes a leader REQUIRED in first and second rounds, "
+                 "so the owner sees what is being switched on"),
     "automations/icd_alerts/code_forward.py":
         (PERSON, "set-up: opens the owner's Gmail forwarding page"),
     "automations/icd_alerts/gmail_filters.py":

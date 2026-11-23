@@ -16,11 +16,21 @@ TWO THINGS ARE NEEDED AND THEY ARE NOT THE SAME THING:
 An office can have the first and not the second: the board fills, nothing is
 sent. That is a fine state and this says so rather than calling it failure.
 
-NOTHING HERE TYPES A PASSWORD. The sign-in opens a real browser and waits for
-the person -- Google SSO and 2FA included. The key is pasted by the owner into
-a password box on their own machine and never leaves it. The repo is public and
-this session can SEND documents, which is why there has never been an automated
-password path and this does not add one.
+THE OWNER TYPES THEIR PASSWORD ONCE, HERE, AND IS NEVER ASKED AGAIN.
+
+Until 2026-11-23 there was no automated password path at all, and the reason
+given was "the repo is public". That reason is about the REPO, and the
+credential never goes near it: it is typed into a password box on the owner's
+own machine and saved beside their OwnerVille, Sterling, AppStream and Apex
+passwords, readable by that user alone. Blue Ink's sign-in is an email, a
+password and a Log In button -- no code, no second factor (Megan, 2026-11-23)
+-- so once it is saved, Lucy signs in by herself and the fortnightly expiry
+stops being anybody's problem. Without it, every office is interrupted every
+two weeks by a window Lucy is not supposed to open at all.
+
+Nobody here reads it back: it goes from the box to the file, and from the file
+into the sign-in page. It is not logged, not posted, and not carried in an
+exception (blueink_docs/auto_login.py).
 
 WHERE IT IS KEPT: `~/.config/lucy-reports/`, beside every other ECO credential,
 never in the repo -- the ICD app may be installed where the user cannot write,
@@ -48,6 +58,70 @@ ASK_KEY = (
     "onboarding documents.\n\n"
     "In Blue Ink: Settings → API → create a private API key, then paste it "
     "here. It stays on this computer.")
+
+
+ASK_EMAIL = (
+    "Lucy can sign in to Blue Ink for you, so nobody has to do it again "
+    "every couple of weeks.\n\n"
+    "The email address you use to sign in to Blue Ink:")
+ASK_PASSWORD = (
+    "And your Blue Ink password.\n\n"
+    "It is saved on this computer only, next to your other sign-ins. "
+    "Nobody can read it from here and it is never sent anywhere.")
+
+
+def have_login() -> bool:
+    """Is there already an email and password saved on this machine?"""
+    try:
+        from automations.blueink_docs import config as BC
+        return bool(BC.login_creds())
+    except Exception:          # noqa: BLE001
+        return False
+
+
+def save_login(email: str, password: str) -> None:
+    """Into the office's own Blue Ink file, beside the API key.
+
+    READ-MODIFY-WRITE, never a fresh file: the key and the template id may
+    already be in there, and rewriting the file from scratch would throw them
+    away to save a password.
+    """
+    ECO_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        body = json.loads(CREDS_PATH.read_text())
+        if not isinstance(body, dict):
+            body = {}
+    except Exception:          # noqa: BLE001
+        body = {}
+    body["email"] = email
+    body["password"] = password
+    CREDS_PATH.write_text(json.dumps(body, indent=2))
+    try:
+        CREDS_PATH.chmod(0o600)
+    except OSError:
+        pass
+
+
+def ask_login(ask, log=print) -> str:
+    """Ask for the sign-in and save it. A word for the summary.
+
+    SKIPPED WHEN IT IS ALREADY THERE, like every other setup step -- this
+    runs on a link an office may use a dozen times.
+    """
+    if have_login():
+        return "sign-in saved"
+    try:
+        email = (ask.text(ASK_EMAIL) or "").strip()
+        if not email:
+            return "no sign-in saved"
+        password = ask.password(ASK_PASSWORD)
+    except ask.Cancelled:
+        return "no sign-in saved"
+    if not password:
+        return "no sign-in saved"
+    save_login(email, password)
+    log("      Blue Ink sign-in saved on this computer.")
+    return "sign-in saved"
 
 
 def have_key() -> bool:
@@ -217,6 +291,17 @@ def run(*, ask=None, log=print) -> str:
         if S.have_session() and S.check(headless=True) == 0:
             said.append("signed in")
             return ", ".join(said)
+        # THE SAVED PASSWORD FIRST. If this office has one, nobody is asked
+        # anything -- which is the whole point of having asked once.
+        said.append(ask_login(ask, log))
+        try:
+            from automations.blueink_docs import auto_login as AL
+            if AL.can_try() and AL.ensure(log=log):
+                said.append("signed in")
+                return ", ".join(said)
+        except Exception as e:  # noqa: BLE001
+            log("  automatic Blue Ink sign-in stopped: %s" % type(e).__name__)
+
         yes = ask.choose(
             "Sign in to Blue Ink?\n\n"
             "Lucy needs this to see who has signed their onboarding documents, "

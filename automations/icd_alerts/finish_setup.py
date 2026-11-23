@@ -385,6 +385,15 @@ def _service_cloud_deferred(log) -> str:
     return "left for later on purpose (--skip-box)"
 
 
+def _leader_in_calendar(log) -> str:
+    """Raf's trainer-calendar audit cannot say WHO ran an interview until the
+    office records a leader against it, and that is one box on an admin page
+    they would otherwise never open (Megan, 2026-11-23). Checks hidden first,
+    so an office that already ticked it sees nothing."""
+    from automations.icd_alerts import leader_in_calendar as LIC
+    return LIC.run(log)
+
+
 def run(log=print, skip_box: bool = False) -> int:
     log("")
     log("  Getting this computer fully set up. Anything already done is")
@@ -398,7 +407,8 @@ def run(log=print, skip_box: bool = False) -> int:
                    ("Box sales sign-in",
                     _service_cloud_deferred if skip_box else _service_cloud),
                    ("OwnerVille sign-in", _ownerville),
-                   ("Resume pushing", _resume_push)]
+                   ("Resume pushing", _resume_push),
+                   ("Leader In Calendar", _leader_in_calendar)]
     # NOT HERE: Blue Ink and the onboarding-documents question. Both belong
     # to the Sterling / background-check enrolment (`sterling_setup`), which
     # an office runs when it takes on onboarding -- not to the main ECO
