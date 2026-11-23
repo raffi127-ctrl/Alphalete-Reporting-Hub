@@ -391,6 +391,26 @@ def write_photo() -> None:
         "</body></html>", encoding="utf-8")
 
 
+def keep_display_on() -> None:
+    """Megan 2026-11-23: Lucy 1's monitor went black while the Mac was up, on AC,
+    SleepDisabled=1, and this job ticking clean. `pmset disablesleep 1` stops the
+    SYSTEM sleeping, not the display's own sleep timer, and nothing here held the
+    display. Each tick asks for 90s of no display sleep; ticks are 60s apart, so
+    the overlap keeps it on for good.
+
+    -d only, never -u: -u declares a person at the machine, which can reset the
+    idle clock keep_open waits on before bringing the page back. Its own session,
+    so launchd doesn't kill it with this tick's process group."""
+    if sys.platform != "darwin":
+        return
+    try:
+        subprocess.Popen(["/usr/bin/caffeinate", "-d", "-t", "90"],
+                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL, start_new_session=True)
+    except OSError:
+        pass
+
+
 def keep_open(target: str) -> None:
     """Open it after a restart; otherwise bring it back in front once it has been
     covered. Megan 2026-11-01: Lucy 1 kept leaving the page as automations ran.
@@ -434,6 +454,7 @@ def main() -> int:
         write_runs()
     elif target == PHOTO:
         write_photo()
+    keep_display_on()
     keep_open(target)
     return 0
 

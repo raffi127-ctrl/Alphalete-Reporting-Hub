@@ -9,6 +9,28 @@ def _m(ts, key, state="open 2026-11-01", marks=(), title="*Report X* — failed"
             "reactions": [{"name": n} for n in marks]}
 
 
+class DisplayStaysOn(unittest.TestCase):
+    """Lucy 1's monitor went black 2026-11-23: the Mac never slept, the display did."""
+
+    def test_each_tick_holds_the_display_awake_past_the_next_tick(self):
+        from unittest import mock
+        with mock.patch.object(run.sys, "platform", "darwin"), \
+                mock.patch.object(run.subprocess, "Popen") as popen:
+            run.keep_display_on()
+        cmd = popen.call_args.args[0]
+        self.assertEqual(cmd[:2], ["/usr/bin/caffeinate", "-d"])
+        self.assertNotIn("-u", cmd)                        # would reset the idle clock
+        self.assertGreater(int(cmd[cmd.index("-t") + 1]), 60)  # ticks are 60s apart
+        self.assertTrue(popen.call_args.kwargs["start_new_session"])
+
+    def test_not_a_mac_does_nothing(self):
+        from unittest import mock
+        with mock.patch.object(run.sys, "platform", "win32"), \
+                mock.patch.object(run.subprocess, "Popen") as popen:
+            run.keep_display_on()
+        popen.assert_not_called()
+
+
 class Alerts(unittest.TestCase):
     def test_superseded_and_plain_posts_are_left_out(self):
         got = open_alerts([_m(1, "a", "superseded 2026-10-30"),
