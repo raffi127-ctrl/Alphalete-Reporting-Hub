@@ -150,8 +150,32 @@ def login_creds() -> dict:
     return {"email": email, "password": password}
 
 
+def is_eco_machine() -> bool:
+    """Does this machine belong to an office, rather than to us?
+
+    An office machine carries an enrollment. Ours does not. That one fact
+    decides whether Alphalete's own Blue Ink file may be read at all.
+    """
+    try:
+        from automations.icd_alerts import config as IC
+        return bool(IC.install())
+    except Exception:          # noqa: BLE001 -- not an ECO box
+        return False
+
+
 def creds_path() -> Path:
-    """This machine's Blue Ink key file. The office's own, else the repo's."""
+    """This machine's Blue Ink file. The office's own, else the repo's.
+
+    THE REPO COPY IS ALPHALETE'S, AND ONLY ALPHALETE'S (Megan, 2026-11-23:
+    "nothing should fall back to Alphalete's. That's specific to Raf. There
+    should never, ever be any overlap with personal account information
+    between ICDs."). On a machine that belongs to an office there is no
+    fallback at all -- it reads their file or it reads nothing, and a missing
+    answer is reported as missing instead of being quietly answered out of
+    somebody else's account.
+    """
+    if is_eco_machine():
+        return ECO_CREDS_PATH
     return ECO_CREDS_PATH if ECO_CREDS_PATH.exists() else REPO_ROOT / "blueink-creds.json"
 
 
@@ -372,11 +396,19 @@ def _creds() -> dict:
     Resolved per call, not once at import: the ECO setup writes the home copy
     while the process that will read it is already running.
     """
+    own = _read(ECO_CREDS_PATH)
+    if is_eco_machine():
+        # NO MERGE, NO FALLBACK. An office's Blue Ink facts are theirs alone.
+        # Merging the repo copy underneath would hand one office another's
+        # key, template or sign-in for any field they had not filled in --
+        # and a Blue Ink bundle launches the moment it is created, so the
+        # first sign of it would be a real contract sent from the wrong
+        # account, to a real person, with nothing reporting it.
+        return {k: v for k, v in own.items() if v not in ("", None)}
     body = dict(_read(REPO_ROOT / "blueink-creds.json"))
-    if ECO_CREDS_PATH.exists():
-        for k, v in _read(ECO_CREDS_PATH).items():
-            if v not in ("", None):
-                body[k] = v
+    for k, v in own.items():
+        if v not in ("", None):
+            body[k] = v
     return body
 
 

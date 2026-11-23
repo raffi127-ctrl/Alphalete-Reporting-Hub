@@ -77,3 +77,68 @@ class KeyBelongsToTheOffice(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NoOfficeEverReadsAnothersAccount(unittest.TestCase):
+    """Megan, 2026-11-23: "nothing should fall back to Alphalete's. That's
+    specific to Raf. There should never, ever be any overlap with personal
+    account information between ICDs."
+
+    The repo copy is Alphalete's own file. On a machine that belongs to an
+    office there is no fallback to it at all: their file answers, or nothing
+    does. A missing answer has to READ as missing -- quietly answering it out
+    of somebody else's account is how a real contract goes to a real person
+    from the wrong Blue Ink, with nothing reporting it.
+    """
+
+    def _machines(self, eco: dict, repo: dict, is_eco: bool):
+        import json
+        import tempfile
+        d = Path(tempfile.mkdtemp())
+        eco_path, repo_root = d / "eco.json", d / "repo"
+        repo_root.mkdir()
+        if eco is not None:
+            eco_path.write_text(json.dumps(eco))
+        (repo_root / "blueink-creds.json").write_text(json.dumps(repo))
+        return mock.patch.multiple(C, ECO_CREDS_PATH=eco_path,
+                                   REPO_ROOT=repo_root,
+                                   is_eco_machine=lambda: is_eco)
+
+    def test_an_office_machine_never_reads_the_repo_key(self):
+        with self._machines({"email": "a@b.com", "password": "pw"},
+                            {"blueink_api_key": "ALPHALETES"}, True), \
+             mock.patch.dict("os.environ", {}, clear=True):
+            self.assertRaises(RuntimeError, C.api_key)
+
+    def test_an_office_machine_never_reads_the_repo_template(self):
+        """A template id is as much theirs as a key: the wrong one sends
+        Alphalete's contract bundle to their new start."""
+        with self._machines({"blueink_api_key": "THEIRS"},
+                            {"envelope_template_id": "T-ALPHALETE"}, True), \
+             mock.patch.dict("os.environ", {}, clear=True):
+            self.assertRaises(RuntimeError, C.template_id)
+
+    def test_an_office_machine_never_reads_the_repo_sign_in(self):
+        with self._machines({"blueink_api_key": "THEIRS"},
+                            {"email": "alphalete@x.com", "password": "pw"},
+                            True), \
+             mock.patch.dict("os.environ", {}, clear=True):
+            self.assertEqual(C.login_creds(), {})
+
+    def test_our_own_machines_are_untouched(self):
+        """Alphalete's machines have always read the repo copy, and this
+        changes nothing for them -- they carry no office enrollment."""
+        with self._machines({"email": "a@b.com", "password": "pw"},
+                            {"blueink_api_key": "OURS",
+                             "envelope_template_id": "T-1"}, False), \
+             mock.patch.dict("os.environ", {}, clear=True):
+            self.assertEqual(C.api_key(), "OURS")
+            self.assertEqual(C.template_id(), "T-1")
+
+    def test_an_office_with_its_own_answers_still_gets_them(self):
+        with self._machines({"blueink_api_key": "THEIRS",
+                             "envelope_template_id": "T-THEIRS"},
+                            {"blueink_api_key": "OURS"}, True), \
+             mock.patch.dict("os.environ", {}, clear=True):
+            self.assertEqual(C.api_key(), "THEIRS")
+            self.assertEqual(C.template_id(), "T-THEIRS")
