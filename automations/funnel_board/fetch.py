@@ -68,6 +68,31 @@ OPTIONAL = {
     "inv_na": "Invite to next \u2013 NA First Calendar",
 }
 
+# Seen training/orientation row names, for the run log (Eve 11/23: Training
+# came out 0 for EVERY office - the exact names above weren't on the report,
+# and a missing optional row is silently 0).
+TRAINING_SEEN = set()
+
+
+def training_labels(by_label) -> dict:
+    """{trb, trs} -> the report's own row names for the training calendar.
+    Exact "Total Training"/"Training Showed Up" first; otherwise any row
+    about training or orientation (Raf calls it the "Orientation and Training
+    Calendar"): the "Total ..." one is booked, the "... Showed Up" one showed."""
+    out = {}
+    hits = [l for l in by_label if re.search(r"training|orientation", l, re.I)]
+    TRAINING_SEEN.update(hits)
+    if OPTIONAL["trb"] not in by_label:
+        tot = [l for l in hits if re.match(r"total\b", l, re.I)]
+        if tot:
+            out["trb"] = sorted(tot, key=len)[0]
+    if OPTIONAL["trs"] not in by_label:
+        sh = [l for l in hits if re.search(r"showed", l, re.I)]
+        if sh:
+            out["trs"] = sorted(sh, key=len)[0]
+    return out
+
+
 _JS_ROWS = """() => {
     const t = document.getElementById('totalsTable');
     if (!t) return null;
@@ -163,7 +188,9 @@ def report_week(page, rqst, start: dt.date, verbose=True):
         vals = by_label[label]["vals"]
         for i, d in enumerate(dates):
             out[d][key] = _num(vals[i]) or 0
-    for key, label in OPTIONAL.items():
+    labels = dict(OPTIONAL)
+    labels.update(training_labels(by_label))
+    for key, label in labels.items():
         vals = by_label[label]["vals"] if label in by_label else [None] * len(dates)
         for i, d in enumerate(dates):
             out[d][key] = _num(vals[i]) or 0
