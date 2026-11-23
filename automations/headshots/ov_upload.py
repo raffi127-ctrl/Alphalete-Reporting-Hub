@@ -71,10 +71,44 @@ def _campaign_select(page):
     # yet, so the wait dies on "waiting for navigation to finish" rather than
     # on anything being wrong (2026-11-16, the evening eight of Raf's owner
     # submits were lost to exactly that sentence at the sibling call).
+    #
+    # NOT JUST THE FIRST VISIBLE SELECT (2026-11-23). OwnerVille added an
+    # owner switcher ("Maxamad Aden (23066 - Maximal Management, Inc.)", 97
+    # options) ABOVE the campaign dropdown -- same week as the sidebar search
+    # box that broke _search_box on 11/19. `.first` grabbed it, and digi_docs
+    # refused 12 new starts with "campaign 'RES-AT&T' matched 0 of 97".
+    # Pick the visible select that LOOKS like the campaign list; skip the
+    # owner switcher and DataTables' page-length box (10/25/50/100).
     _wait_loaded(page)
-    sel = page.locator("select:visible").first
-    sel.wait_for(state="visible", timeout=60000)
-    return sel
+    page.locator("select:visible").first.wait_for(state="visible",
+                                                  timeout=60000)
+    sels = page.locator("select:visible")
+    for i in range(sels.count()):
+        cand = sels.nth(i)
+        try:
+            opts = cand.locator("option").all_inner_texts()
+        except Exception:                                   # noqa: BLE001
+            continue
+        if _looks_like_campaigns(opts):
+            return cand
+    return sels.first        # nothing recognisable: old behaviour, and
+                             # _select_campaign still refuses a bad match
+
+
+_OWNER_OPTION = re.compile(r"\(\s*\d{3,}\s*-\s*")   # "Name (23066 - Co.)"
+
+
+def _looks_like_campaigns(options) -> bool:
+    """True for the campaign dropdown's options, False for the owner switcher
+    or the page-length box. Plain text rules, no OV ids to go stale."""
+    opts = [o.strip() for o in options if o and o.strip()]
+    if not opts:
+        return False
+    if sum(1 for o in opts if _OWNER_OPTION.search(o)) * 2 > len(opts):
+        return False                                    # owner switcher
+    if all(o.isdigit() or o.lower() == "all" for o in opts):
+        return False                                    # 10 / 25 / 50 / All
+    return True
 
 
 def _search_box(page):

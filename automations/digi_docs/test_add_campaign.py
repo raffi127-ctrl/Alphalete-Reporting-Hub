@@ -47,6 +47,8 @@ class _Page:
     def locator(self, _):
         class _F:
             def __init__(s, sel): s.first = sel
+            def count(s): return 1           # one visible select on the page
+            def nth(s, _i): return s.first
         return _F(self.sel)
 
     def wait_for_load_state(self, *a, **k):
