@@ -433,7 +433,11 @@ def read_apex(log=print):
             idx, _, end = done[0]
             return "ok", AP.export_period(page, idx, end)
         except Exception as e:  # noqa: BLE001
-            return "failed: %s: %s" % (type(e).__name__, str(e)[:200]), None
+            # Say what screen it was on (Jairo's Mac 2026-11-24 12:13: signed
+            # in alone, then "Payroll Entry did not load" with no clue why).
+            from automations.icd_alerts import apex_login as L
+            return "failed: %s: %s [%s]" % (type(e).__name__, str(e)[:120],
+                                            L.where(page) if "page" in locals() else "no page"), None
         finally:
             if guard:
                 guard.save()
