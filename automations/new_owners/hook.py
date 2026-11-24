@@ -67,6 +67,74 @@ def _add_to_headcount(ss, name: str, label: str, org_head: str, *,
         return {"status": "failed"}
 
 
+# The ORG-board sections whose owners also belong on the Country Sales Board.
+# That tab's day block is 'Fiber - All Units' off the ATT D2D tracker, so only
+# the ATT Fiber section feeds it.
+COUNTRY_SECTIONS = {"att fiber team"}
+
+
+def _add_to_allcamp_and_country(ss, name: str, label: str, *, aliases,
+                                dry_run: bool, logfn=print) -> dict:
+    """Eve 2026-11-24, the chain: ORG board -> ALWAYS the All Campaigns board
+    -> and, once there, the ATT Country Sales Board too.
+
+    Same day, not 'on its next run'. All Campaigns' own roster sync would catch
+    them a few minutes later anyway, but the Country board's only adder was the
+    FRIDAY att_owners_list run reading LAST week — so someone whose first sale
+    is a Monday stayed off it for ~11 days and their units counted nowhere.
+    Both inserts reuse the boards' own add_one (row at the last data row so the
+    fixed ranges grow, history blank); the day fills + newcomer last-week
+    backfill of each board's daily run, which comes after this one, do the rest.
+
+    Advisory: returns {'allcamp': status, 'country': status}; a failure is a
+    status the notice spells out, never an exception."""
+    out = {"allcamp": None, "country": None}
+    try:
+        from automations.all_campaigns_board import roster as acr
+        from automations.all_campaigns_board.run import TARGET_TAB
+        aws = next(w for w in ss.worksheets()
+                   if w.title.strip() == TARGET_TAB.strip())
+        anchor = fs.find_daily_section(_retry(aws.get_all_values),
+                                       acr.agg_target_label())
+        cands = fs._candidates_for(name, aliases)
+        if any(fs._candidates_for(n, aliases) & cands for n in anchor.icd_rows):
+            out["allcamp"] = "already"
+        elif name.strip().lower() in acr.EXCLUDE:
+            out["allcamp"] = "excluded"
+            logfn(f"  {name} is EXCLUDED from All Campaigns (removed by hand) "
+                  f"— not adding there, nor to Country")
+        elif dry_run:
+            out["allcamp"] = "would_add"
+            logfn(f"    (dry-run) would add {name!r} to All Campaigns")
+        else:
+            acr.add_one(aws, name, logfn=logfn)
+            out["allcamp"] = "added"
+    except Exception as e:  # noqa: BLE001
+        logfn(f"  ⚠ All Campaigns add for {name} failed ({type(e).__name__}: "
+              f"{str(e)[:100]}) — its roster sync retries on its next run")
+        out["allcamp"] = "failed"
+
+    if out["allcamp"] not in ("added", "already", "would_add"):
+        return out
+    if label.strip().lower() not in COUNTRY_SECTIONS:
+        out["country"] = "n/a"
+        return out
+    try:
+        from automations.recruiting_report.fill import open_by_key
+        from automations.country_sales_board.run import SHEET_ID, PROD_TAB
+        from automations.att_owners_list import board as country
+        cws = open_by_key(SHEET_ID).worksheet(PROD_TAB)
+        res = country.sync(cws, [name], aliases=aliases, dry_run=dry_run,
+                           logfn=logfn)
+        out["country"] = ("added" if res.get("added") else
+                          "would_add" if res.get("would_add") else "already")
+    except Exception as e:  # noqa: BLE001
+        logfn(f"  ⚠ Country Sales Board add for {name} failed "
+              f"({type(e).__name__}: {str(e)[:100]}) — add them by hand")
+        out["country"] = "failed"
+    return out
+
+
 def run(ws, pulls_by_label: Dict[str, tuple], *, today: Optional[dt.date] = None,
         dry_run: bool = False, aliases=None, logfn=print) -> dict:
     """Walk the bank against this run's pulls.
@@ -144,6 +212,12 @@ def run(ws, pulls_by_label: Dict[str, tuple], *, today: Optional[dt.date] = None
             note += f" · Headcount row {hc.get('daily_row')}"
         elif hc.get("status") not in ("already", "would_add"):
             note += " · NOT on the Headcount tab — add by hand"
+        chain = _add_to_allcamp_and_country(ss, r.name, label, aliases=aliases,
+                                            dry_run=dry_run, logfn=logfn)
+        if chain["allcamp"] == "failed":
+            note += " · NOT on All Campaigns yet"
+        if chain["country"] == "failed":
+            note += " · NOT on the Country Sales Board — add by hand"
         bank.mark(bws, cmap, r.row, status=bank.ADDED, activated_on=today,
                   notes=note, dry_run=dry_run, logfn=logfn)
         out["added"].append({"name": r.name, "campaign": label,
@@ -151,7 +225,9 @@ def run(ws, pulls_by_label: Dict[str, tuple], *, today: Optional[dt.date] = None
                              "org_head": r.org_head,
                              "daily_row": res.get("daily_row"),
                              "leaderboard_row": res.get("leaderboard_row"),
-                             "headcount": hc.get("status")})
+                             "headcount": hc.get("status"),
+                             "allcamp": chain["allcamp"],
+                             "country": chain["country"]})
         if label not in touched:
             touched.append(label)
         if not dry_run:

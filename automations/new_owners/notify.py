@@ -106,11 +106,17 @@ def campaign_message(adds: List[dict], today: dt.date) -> str:
             detail.append("no Org Head on the bank row — set it")
         if a.get("headcount") in ("failed", "no_campaign"):
             detail.append(":warning: NOT added to Org Active Headcount — add by hand")
+        if a.get("allcamp") == "failed":
+            detail.append(":warning: NOT on All Campaigns yet — its next run retries")
+        if a.get("country") == "failed":
+            detail.append(":warning: NOT on the Country Sales Board — add by hand")
+        elif a.get("country") in ("added", "already"):
+            detail.append("+ Country Sales Board")
         lines.append(f"• *{a['name']}* — {a['campaign']}"
                      + (f" ({' · '.join(detail)})" if detail else ""))
     lines.append("_Daily breakdown + weekly total apps, plus a row on Org Active "
-                 "Headcount. They roll into the All Campaigns board on its next "
-                 "run._")
+                 "Headcount and the All Campaigns board (ATT Fiber owners also "
+                 "get one on the Country Sales Board)._")
     return "\n".join(lines)
 
 
