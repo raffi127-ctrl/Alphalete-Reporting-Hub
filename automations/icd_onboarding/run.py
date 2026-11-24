@@ -595,11 +595,11 @@ def from_ownerville(office_key: str, week_start: dt.date, *,
     """
     import time
 
+    from automations.icd_onboarding import ov_anywhere as OVA
     from automations.icd_onboarding import ov_misses as OVM
     from automations.obcl_ov_sweep import config as OVC
     from automations.obcl_ov_sweep import ov_table
     from automations.obcl_ov_sweep.run import PROFILE_DIR
-    from automations.shared.tableau_patchright import ownerville_session
 
     programme = _ov_program(office_key)
     if not programme:
@@ -613,8 +613,15 @@ def from_ownerville(office_key: str, week_start: dt.date, *,
                           columns=F.columns_for("ownerville"))
     budget = OVC.SEARCH_BUDGET_S if budget_s is None else budget_s
 
-    with ownerville_session(headless=True, verbose=False,
-                            profile_dir=PROFILE_DIR) as page:
+    # WHICHEVER SESSION THIS MACHINE HAS (`ov_anywhere`). On a Lucy that is the
+    # Hub's one-per-box OwnerVille, which every office's read queues behind --
+    # the 8am sweep waited its whole 30 minutes behind three other jobs on
+    # 2026-11-24 and refused rather than guess whose rows it had. On the
+    # office's own computer it is THEIR OwnerVille, with their login, and
+    # nothing queues at all (Megan, same day: "the OV sweep would happen on
+    # the ECO machine").
+    with OVA.session_anywhere(office_key, campaign=programme,
+                              profile_dir=PROFILE_DIR, log=log) as page:
         heads, reps, complete = ov_table.read_table(page, verbose=False,
                                                     campaign=programme)
         found = {B._fold(n) for n in reps}

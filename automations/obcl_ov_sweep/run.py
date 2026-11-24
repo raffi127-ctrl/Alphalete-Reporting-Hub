@@ -111,14 +111,21 @@ def _submit(ready, writes, *, live: bool) -> None:
     walk up to the confirm box — nobody is submitted and they stay blue. When
     live, only a submit OwnerVille CONFIRMS ("Review in Progress" on a fresh
     re-open) moves someone off blue and ticks the OBCL box."""
+    from automations.icd_onboarding import ov_anywhere as OVA
     from automations.obcl_ov_sweep import owner_submit
-    from automations.shared.tableau_patchright import ownerville_session
     real = bool(live and config.OWNER_SUBMIT_LIVE)
     if live and not config.OWNER_SUBMIT_LIVE:
         print("  OWNER SUBMIT is GATED (config.OWNER_SUBMIT_LIVE = False) — "
               "dry walk only, nobody submitted", flush=True)
-    with ownerville_session(headless=True, verbose=False,
-                            profile_dir=PROFILE_DIR) as page:
+    # WHICHEVER SESSION THIS MACHINE HAS (`icd_onboarding.ov_anywhere`). This
+    # sweep has no --office: it is Alphalete's own OBCL, so the key is blank
+    # and on any Lucy that routes to the Hub's one-per-box OwnerVille exactly
+    # as before. On an office's own computer it would be THEIR OwnerVille --
+    # which is the point, because the one shared session is what this job lost
+    # its whole 30-minute wait to at 08:00 on 2026-11-24, behind
+    # focus_office_att, captainship_drafts and a second copy of itself.
+    with OVA.session_anywhere("", profile_dir=PROFILE_DIR,
+                              log=lambda m: print(m, flush=True)) as page:
         for p in list(ready):
             outcome, detail = owner_submit.submit_one(page, p.name,
                                                       dry_run=not real)
@@ -251,9 +258,14 @@ def main(argv=None) -> int:
 
     import time
     t0 = time.monotonic()
-    from automations.shared.tableau_patchright import ownerville_session
-    with ownerville_session(headless=not args.show, verbose=False,
-                            profile_dir=PROFILE_DIR) as page:
+    from automations.icd_onboarding import ov_anywhere as OVA
+    # Same routing as the submit above. `--show` still opens a window on a
+    # Lucy; on an office machine it is IGNORED, because a browser on the
+    # owner's screen is never a flag's call -- the session opens one only when
+    # a sign-in needs it ([[feedback_eco_runs_in_background]]).
+    with OVA.session_anywhere("", profile_dir=PROFILE_DIR,
+                              headless=not args.show,
+                              log=lambda m: print(m, flush=True)) as page:
         heads, reps, complete = ov_table.read_table(page)
         matched, missing = match(todo, reps)
         if missing and not complete:

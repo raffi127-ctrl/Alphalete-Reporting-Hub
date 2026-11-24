@@ -193,10 +193,10 @@ def _press(office_key: str, week_start: dt.date, *, column: str, what: str,
     something Megan has not switched on, and a gate being on cannot make a dry
     run press anything. Both have to agree.
     """
+    from automations.icd_onboarding import ov_anywhere as OVA
     from automations.icd_onboarding import ov_misses as OVM
     from automations.obcl_ov_sweep import config as OVC
     from automations.obcl_ov_sweep.run import PROFILE_DIR
-    from automations.shared.tableau_patchright import ownerville_session
 
     programme = _ov_program(office_key)
     if not programme:
@@ -242,8 +242,12 @@ def _press(office_key: str, week_start: dt.date, *, column: str, what: str,
     found: List[str] = []
     t0 = time.monotonic()
     done = 0
-    with ownerville_session(headless=True, verbose=False,
-                            profile_dir=PROFILE_DIR) as page:
+    # WHICHEVER SESSION THIS MACHINE HAS (`ov_anywhere`): the Hub's one-per-box
+    # session on a Lucy, and this office's OWN OwnerVille on its own computer,
+    # where nothing queues behind another office (Megan, 2026-11-24: "the OV
+    # sweep would happen on the ECO machine").
+    with OVA.session_anywhere(office_key, campaign=programme,
+                              profile_dir=PROFILE_DIR, log=log) as page:
         for name in askable:
             if time.monotonic() - t0 >= budget:
                 log("    time budget reached; %d not reached this run"
@@ -315,10 +319,10 @@ def uid_reasons(office_key: str, week_start: dt.date, *, dry_run: bool = True,
 
     Presses nothing and writes nothing, whatever --write says. Hand-run only.
     """
+    from automations.icd_onboarding import ov_anywhere as OVA
     from automations.obcl_ov_sweep import config as OVC
     from automations.obcl_ov_sweep import uid_request
     from automations.obcl_ov_sweep.run import PROFILE_DIR
-    from automations.shared.tableau_patchright import ownerville_session
 
     programme = _ov_program(office_key)
     if not programme:
@@ -330,8 +334,12 @@ def uid_reasons(office_key: str, week_start: dt.date, *, dry_run: bool = True,
         return 0
     budget = OVC.SEARCH_BUDGET_S if budget_s is None else budget_s
     t0, seen, tally = time.monotonic(), 0, {}
-    with ownerville_session(headless=True, verbose=False,
-                            profile_dir=PROFILE_DIR) as page:
+    # WHICHEVER SESSION THIS MACHINE HAS (`ov_anywhere`): the Hub's one-per-box
+    # session on a Lucy, and this office's OWN OwnerVille on its own computer,
+    # where nothing queues behind another office (Megan, 2026-11-24: "the OV
+    # sweep would happen on the ECO machine").
+    with OVA.session_anywhere(office_key, campaign=programme,
+                              profile_dir=PROFILE_DIR, log=log) as page:
         for name in wanted:
             if time.monotonic() - t0 >= budget:
                 log("    time budget reached; %d not read this run"
