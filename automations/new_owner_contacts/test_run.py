@@ -124,5 +124,36 @@ class MessageTest(unittest.TestCase):
         self.assertIn("(555) 123-4567", txt)
 
 
+class ShotTest(unittest.TestCase):
+    def test_circle_crop_is_small_and_ringed(self):
+        import tempfile
+        from pathlib import Path
+        from PIL import Image, ImageDraw
+        im = Image.new("RGB", (900, 600), "white")
+        d = ImageDraw.Draw(im)
+        for y in range(25, 600, 25):
+            d.line([(5, y), (890, y)], fill=(200, 200, 200))
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Path(tmp) / "board.png"
+            im.save(src)
+            out = R.circle_crop(src, (300, 325, [(5, 890)]), Path(tmp) / "c.png")
+            cut = Image.open(out).convert("RGB")
+            self.assertLess(cut.size[1], 600 // 2)          # a cut, not the board
+            reds = sum(1 for p in cut.getdata() if p[0] > 200 and p[1] < 50)
+            self.assertGreater(reds, 100)                     # the ring is drawn
+
+    def test_no_thread_means_text_only(self):
+        from unittest import mock
+        from automations.tableau_screenshots import slack_post as sp
+        with mock.patch.object(sp, "find_today_threads", return_value=[]):
+            self.assertIsNone(R.tracker_shot(object(), "Hasan Salame", "Fiber"))
+
+    def test_any_failure_means_text_only(self):
+        from unittest import mock
+        from automations.tableau_screenshots import slack_post as sp
+        with mock.patch.object(sp, "find_today_threads", side_effect=RuntimeError("x")):
+            self.assertIsNone(R.tracker_shot(object(), "Hasan Salame", "Fiber"))
+
+
 if __name__ == "__main__":
     unittest.main()

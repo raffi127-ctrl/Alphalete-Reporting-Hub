@@ -78,6 +78,16 @@ WEEKLY_SUBJECT = "Participants"
 LOOKBACK_DAYS = 45      # how far back to read onboarding mails each pass
 ORG_RECHECK_DAYS = 30   # an onboarding not on New Owners is re-checked this long (Eve may add the row late)
 SALES_WINDOW_DAYS = 14  # order-log window read for first sales
+EVE_USER_ID = "U088E2KJEV8"           # --preview-shot goes to Eve, never Raf
+
+# The picture under the DM (Raf 2026-11-24: "can we also have it take a small
+# screenshot with a circle of their name?"). It is cut from the morning's
+# country tracker in #alphalete-sales - the board Raf reads - so it works from
+# Lucy 1 even though the trackers are captured on Lucy 3.
+TRACKER_CHANNEL = "C068PH3RFSM"       # #alphalete-sales
+TRACKER_BOARDS = {"Fiber": ["att_country", "att_country_internet_only"],
+                  "NDS": ["nds"]}
+SHOT_ROWS = 4                         # rows kept above and below the owner
 
 _SUBJECT = re.compile(
     r"^\s*(?:\[[^\]]*\]\s*)?(?P<camp>[^|]+?)\s*\|\s*Important Campaign Info\s*"
@@ -504,8 +514,89 @@ def save_state(state: dict) -> None:
                           encoding="utf-8")
 
 
-def send(text: str) -> bool:
-    """DM Raf as Lucy. Refuses from Windows / a non-Lucy token (atef_nds_watch)."""
+def circle_crop(png: Path, band, dest: Path, rows: int = SHOT_ROWS) -> Path:
+    """A small cut of the board around `band` (top, bot, segs) with a red ring
+    drawn round that row. Full board width, `rows` rows above and below."""
+    from PIL import Image, ImageDraw
+    im = Image.open(png).convert("RGB")
+    W, H = im.size
+    top, bot, segs = band
+    h = max(12, bot - top)
+    y0, y1 = max(0, top - rows * h - h), min(H, bot + rows * h + h)
+    x0 = min((a for a, _ in segs), default=0)
+    x1 = min(W - 1, max((b for _, b in segs), default=W - 1))
+    pad = max(16, h)                  # white margin so the ring is never cut
+    cut = Image.new("RGB", (x1 - x0 + 1 + 2 * pad, y1 - y0), "white")
+    cut.paste(im.crop((x0, y0, x1 + 1, y1)), (pad, 0))
+    d = ImageDraw.Draw(cut)
+    # A pill, not an ellipse: a row is ~50x wider than tall, and an ellipse
+    # that wide pinches in at the ends and runs through the name.
+    y_a, y_b = top - y0 - h * 0.45, bot - y0 + h * 0.45
+    d.rounded_rectangle([(pad // 3, y_a), (cut.size[0] - pad // 3, y_b)],
+                        radius=(y_b - y_a) / 2, outline=(220, 0, 0),
+                        width=max(3, h // 5))
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    cut.save(dest)
+    return dest
+
+
+def _download_png(client, f: dict, dest: Path) -> Optional[Path]:
+    import requests
+    url = f.get("url_private_download") or f.get("url_private")
+    r = requests.get(url, headers={"Authorization": f"Bearer {client.token}"},
+                     timeout=60)
+    r.raise_for_status()
+    if not r.content.startswith(b"\x89PNG"):
+        print("   shot: download was not a PNG (token lacks files:read?)")
+        return None
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(r.content)
+    return dest
+
+
+def tracker_shot(client, name: str, program: str,
+                 day: Optional[dt.date] = None) -> Optional[Path]:
+    """The circled cut of today's tracker with `name` on it, or None.
+
+    NEVER blocks the DM: no thread yet, no files:read, no API key, name not on
+    the board -> None, and the DM goes out as text like before."""
+    try:
+        from automations.tableau_screenshots import highlight as hl
+        from automations.tableau_screenshots import pages as pages_mod
+        from automations.tableau_screenshots import slack_post as sp
+        day = day or dt.date.today()
+        msgs = []
+        for ts in sp.find_today_threads(client, TRACKER_CHANNEL, day):
+            msgs += sp._image_replies(client, TRACKER_CHANNEL, ts)
+        if not msgs:
+            print(f"   shot: no tracker thread in #alphalete-sales for {day}")
+            return None
+        people = {name: hl.spellings(name)}
+        folder = OUT_DIR / "shots" / day.isoformat()
+        for pid in TRACKER_BOARDS.get(program, []):
+            spec = pages_mod.by_id(pid)
+            m = spec and next((m for m in reversed(msgs)
+                               if sp._reply_matches(m, spec, day)), None)
+            if not m:
+                continue
+            png = _download_png(client, m["files"][0], folder / f"{pid}.png")
+            if png is None:
+                return None
+            bands = hl.locate(png, people).get(name) or []
+            if bands:
+                dest = folder / f"{norm_name(name).replace(' ', '_')}_{pid}.png"
+                return circle_crop(png, bands[0], dest)
+            print(f"   shot: {name} not found on {spec['title']}")
+        return None
+    except Exception as e:  # noqa: BLE001 - the text DM still goes
+        print(f"   shot: skipped ({type(e).__name__}: {e})")
+        return None
+
+
+def send(text: str, *, name: str = "", program: str = "",
+         to: str = RAF_USER_ID) -> bool:
+    """DM Raf as Lucy, with the circled tracker cut when it can be made.
+    Refuses from Windows / a non-Lucy token (atef_nds_watch)."""
     if platform.system() == "Windows":
         print("! not sending from Windows (token here is a person, not Lucy).")
         return False
@@ -519,7 +610,15 @@ def send(text: str) -> bool:
     if who and "lucy" not in who.lower():
         print(f"! this machine posts as {who}, not Lucy - not sending.")
         return False
-    ch = client.conversations_open(users=RAF_USER_ID)["channel"]["id"]
+    ch = client.conversations_open(users=to)["channel"]["id"]
+    shot = tracker_shot(client, name, program) if name else None
+    if shot is not None:
+        try:
+            client.files_upload_v2(channel=ch, file=str(shot),
+                                   filename=shot.name, initial_comment=text)
+            return True
+        except Exception as e:  # noqa: BLE001 - fall back to the text
+            print(f"   shot: upload failed ({type(e).__name__}: {e}) - text only")
     client.chat_postMessage(channel=ch, text=text)
     return True
 
@@ -650,7 +749,7 @@ def run(*, apply: bool, skip_sales: bool = False) -> int:
             if not apply:
                 print(f"\n--- would DM Raf ---\n{text}\n")
                 continue
-            if send(text):
+            if send(text, name=w["name"], program=w["program"]):
                 w["dm"] = today.isoformat()
                 print(f"  DM'd Raf: {w['name']} first sale {day}")
             else:
@@ -676,7 +775,28 @@ def main(argv=None) -> int:
                     help="read everything, print what would happen, write nothing")
     ap.add_argument("--skip-sales", action="store_true",
                     help="contacts only — don't pull the order logs")
+    ap.add_argument("--preview-shot", nargs=2, metavar=("NAME", "PROGRAM"),
+                    help='DM Eve (not Raf) the circled tracker cut for NAME '
+                         '(PROGRAM Fiber or NDS), e.g. --preview-shot "Hasan Salame" Fiber')
+    ap.add_argument("--resend", metavar="NAME",
+                    help="DM Raf again (with the tracker picture) for an owner "
+                         "whose first sale was already found, e.g. "
+                         '--resend "Hasan Salame". Runs nothing else.')
     a = ap.parse_args(argv)
+    if a.resend:
+        w = next((w for w in load_state().get("watch", {}).values()
+                  if norm_name(w["name"]) == norm_name(a.resend)
+                  and w.get("first_sale")), None)
+        if w is None:
+            print(f"! {a.resend}: no first sale on file - nothing to resend")
+            return 1
+        text = message(w, dt.date.fromisoformat(w["first_sale"]))
+        return 0 if send(text, name=w["name"], program=w["program"]) else 1
+    if a.preview_shot:
+        name, prog = a.preview_shot
+        ok = send(f"PREVIEW (goes to Raf like this): *{name}* first sale ({prog})",
+                  name=name, program=prog, to=EVE_USER_ID)
+        return 0 if ok else 1
     return run(apply=a.apply and not a.dry_run, skip_sales=a.skip_sales)
 
 
