@@ -802,12 +802,15 @@ def _scrape_dd_view_data(dd_url: str, page=None, verbose: bool = True):
     weeks in July. Raises only when NO candidate produced a real grid."""
     from automations.recruiting_report.opt_phase import (
         scrape_view_data, PROGRAM_SUMMARY_XY_CANDIDATES,
-        PROGRAM_SUMMARY_MIN_ROWS)
+        PROGRAM_SUMMARY_MIN_ROWS, PROGRAM_SUMMARY_VIEWPORT)
     last_err = None
     for xy in PROGRAM_SUMMARY_XY_CANDIDATES:
         try:
+            # viewport: Lucy 2 is a laptop; its real window gave a 1408x606 viz
+            # on 11/23 and every point missed the grid. See opt_phase.
             fields, records = scrape_view_data(
-                dd_url, verbose=verbose, page=page, activate_xy=xy)
+                dd_url, verbose=verbose, page=page, activate_xy=xy,
+                viewport=PROGRAM_SUMMARY_VIEWPORT)
         except Exception as e:                               # noqa: BLE001
             last_err = f"{type(e).__name__}: {str(e)[:120]}"
             if verbose:

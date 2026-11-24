@@ -110,6 +110,15 @@ def _fmt(d: dt.date) -> str:
 # docstring for how this was found.
 PINNED_ID_FILTERS = ("Contract ID", "Account Id")
 
+# The owner dropdown SCI added to BoxOrderLog (found 2026-11-24). For Raf's
+# login it opened on 'ROSHAN AHMAD [Sapphire Marketing, Inc]', so every
+# all-owners pull came back with Roshan's rows only: Abel's email had nothing
+# to send, on the base view AND the ALLEXPORDERLOG team view. Released ONLY for
+# the pulls that pick their owner in code (run_owner, per_office, the campaign
+# stamper) — Carlos's own post reads his CarlosOrderLog custom view, where this
+# dropdown is what keeps it to his office, so it must stay as saved there.
+OWNER_FILTERS = ("Owner & Office",)
+
 
 def _all_item(viz, field: str):
     """The '(All)' checkbox for one categorical filter.
@@ -338,6 +347,21 @@ def describe_text_boxes(viz, fields: Sequence = PINNED_ID_FILTERS) -> str:
     return "\n".join(lines)
 
 
+def _apply_button(viz):
+    """The open dropdown's 'Apply' button, or None when the filter applies on
+    its own. Live markup (2026-11-24): `.tab-button` 'Cancel' / 'Apply' inside
+    `.CFApplyButtonContainer`."""
+    try:
+        btns = viz.locator(".tab-button")
+        for i in range(min(btns.count(), 10)):
+            b = btns.nth(i)
+            if _text(b, timeout_ms=2_000).strip().casefold() == "apply":
+                return b
+    except Exception:                                       # noqa: BLE001
+        pass
+    return None
+
+
 def _release_dropdown(page, viz, field: str, verbose: bool,
                       settle_ms: int = 15_000) -> str:
     """Open `field`'s dropdown and tick '(All)'.
@@ -403,6 +427,31 @@ def _release_dropdown(page, viz, field: str, verbose: bool,
                               "wouldn't take the keypress ({!r})".format(
                                   field, sel, exc), flush=True)
                     continue
+                # APPLY-BUTTON DROPDOWNS (Owner & Office, 2026-11-24): the tick
+                # is only a draft until 'Apply' is pressed, and Escape CANCELS
+                # it — the old path ticked (All), saw aria-checked=true, pressed
+                # Escape and called it released while the view stayed on
+                # Roshan. So press Apply when the menu has one, and judge by
+                # the dropdown's own value, which an applied filter does update.
+                apply_btn = _apply_button(viz)
+                if apply_btn is not None:
+                    try:
+                        apply_btn.click(timeout=10_000)
+                    except Exception as exc:                # noqa: BLE001
+                        if verbose:
+                            print("  ⚠ BOX filter {!r}: Apply wouldn't take "
+                                  "the click ({!r})".format(field, exc),
+                                  flush=True)
+                        return "stuck"
+                    page.wait_for_timeout(settle_ms)
+                    now = _text(combo)
+                    ok = _is_all(now)
+                    if verbose:
+                        print("  -> BOX filter {!r} {} (Apply) — dropdown now "
+                              "reads {!r}".format(
+                                  field, "released to (All)" if ok
+                                  else "did NOT flip", now), flush=True)
+                    return "released" if ok else "stuck"
                 # Un-pinning re-queries against every contract; give it room.
                 page.wait_for_timeout(settle_ms)
                 # Read the tick BEFORE Escape. Closing the menu detaches its
@@ -704,7 +753,7 @@ def describe_filters(page, viz, limit: int = 25) -> str:
     # any id, so every probe above reads zero and the filter looks deleted. Its
     # value ("Multiple values") is right here and says otherwise.
     _try("dropdowns (title=value)", lambda: _describe_combos(viz))
-    for field in PINNED_ID_FILTERS:
+    for field in PINNED_ID_FILTERS + OWNER_FILTERS:
         _try("dropdown for {!r}".format(field),
              (lambda f=field: "{} ({})".format(
                  _text(_field_combo(viz, f)[0]) if _field_combo(viz, f)[0]
@@ -1022,8 +1071,38 @@ def should_block_send(newest: Optional[dt.date],
                 newest, behind, today, min_days_behind - 1))
 
 
-def date_window_hook(start: dt.date, end: dt.date, verbose: bool = True):
+def release_owner_filter(page, viz, verbose: bool = True) -> dict:
+    """Put the Owner & Office dropdown on '(All)' — see OWNER_FILTERS.
+
+    {field: verdict} like release_pinned_filters, except a view WITHOUT the
+    dropdown reads 'already_all': nothing there can narrow the owners. That is
+    safe here (unlike the ID filters) because every caller filters owners in
+    code and already fails loudly when an owner it wants isn't in the pull —
+    run_owner prints 'Owners present in this pull' and exits 1."""
+    out = {}
+    for field in OWNER_FILTERS:
+        try:
+            shape = _release_dropdown(page, viz, field, verbose)
+        except Exception as exc:                            # noqa: BLE001
+            if verbose:
+                print("  ⚠ BOX filter {!r} release failed ({!r})".format(
+                    field, exc), flush=True)
+            shape = "error"
+        if shape == "absent":
+            if verbose:
+                print("  -> BOX filter {!r} not on this view — no owner "
+                      "narrowing".format(field), flush=True)
+            shape = "already_all"
+        out[field] = shape
+    return out
+
+
+def date_window_hook(start: dt.date, end: dt.date, verbose: bool = True,
+                     all_owners: bool = False):
     """Build a sync `pre_export(page, viz)` that pins the export to start→end.
+
+    all_owners=True also puts the Owner & Office dropdown on (All) — only for a
+    caller that picks its owner in code (see OWNER_FILTERS).
 
     Passing this to download_crosstab_patchright also disables its same-day
     cache (cacheable = pre_export is None), which is what we want: never serve
@@ -1055,7 +1134,10 @@ def date_window_hook(start: dt.date, end: dt.date, verbose: bool = True):
         # said out loud once a day instead of scrolling past in a log. This is
         # the hook every BOX pull goes through — Carlos's post, both owner
         # emails and per_office — so one call covers the whole family.
-        ok = confirm_release(release_pinned_filters(page, viz, verbose=verbose),
+        verdicts = release_pinned_filters(page, viz, verbose=verbose)
+        if all_owners:
+            verdicts.update(release_owner_filter(page, viz, verbose=verbose))
+        ok = confirm_release(verdicts,
                              view_label="BOX B2BBOXEnergyTracker/BoxOrderLog",
                              verbose=verbose)
         if not ok and _strict_filters():
@@ -1073,9 +1155,11 @@ def date_window_hook(start: dt.date, end: dt.date, verbose: bool = True):
             # pull — and a failed pull is a loud, visible failure, which is
             # strictly better than a silent export that undercounts by a third.
             raise RuntimeError(
-                "BOX pull aborted: could not confirm the view's Contract ID / "
-                "Account Id filters are (All), so this export may be capped to "
-                "a stale ID list. Refusing to build numbers from it. Set "
+                "BOX pull aborted: could not confirm the view's filters ({}) "
+                "are (All), so this export may be capped. Refusing to build "
+                "numbers from it. Set ".format(", ".join(
+                    f for f, v in sorted(verdicts.items())
+                    if v not in CONFIRMED_CLEAN)) +
                 "ALPHALETE_BOX_ALLOW_UNCONFIRMED=1 to pull anyway (and see the "
                 "alert in #claudecorrections-and-requests).")
         # Let the release requery settle before the export reads it.

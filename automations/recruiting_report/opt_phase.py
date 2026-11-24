@@ -265,6 +265,13 @@ PROGRAM_SUMMARY_VIEW_URL = (
 PROGRAM_SUMMARY_XY = (0.033, 0.539)
 PROGRAM_SUMMARY_XY_CANDIDATES = ((0.033, 0.539), (0.033, 0.560), (0.05, 0.47))
 PROGRAM_SUMMARY_MIN_ROWS = 5   # real grid is ~76-86 rows; 1 = wrong worksheet
+# The page size those click points were measured at (2026-07-28, above). The
+# fractions only mean anything on this layout: on Lucy 2 — a LAPTOP, whose
+# screen caps the real window — the viz came out 1408x606 and all three points
+# missed the downline grid (Carlos's DD failed 11/23: '3 row(s) — wrong
+# worksheet'). The DD scrapes now emulate this size for the click and put the
+# page back afterwards; see _fit_viewport.
+PROGRAM_SUMMARY_VIEWPORT = {"width": 1664, "height": 949}
 PROGRAM_SUMMARY_PATH = WORKSPACE / "output" / "opt_program_summary.csv"
 
 # Direct Deposit roster — the set of ICD owners ever seen in the DD view
@@ -1235,13 +1242,61 @@ def _scrape_view_data_grid(win, verbose: bool = True,
     return fields, list(seen.values())
 
 
+def _fit_viewport(page, want: Dict, verbose: bool = True) -> Optional[Dict]:
+    """Make the page at least `want` (width/height in CSS px) for a
+    click-by-fraction scrape. Returns the size to put back afterwards, or None
+    when the page was already big enough and nothing changed.
+
+    The browser runs with a REAL window (no_viewport), which the screen caps:
+    fine on the mini's monitor, too small on a laptop Lucy. Emulating the
+    viewport renders the dashboard at the calibrated size whatever the screen,
+    and mouse clicks are in those same page coordinates."""
+    try:
+        w, h = page.evaluate("() => [window.innerWidth, window.innerHeight]")
+    except Exception:                                       # noqa: BLE001
+        return None
+    if w >= want["width"] and h >= want["height"]:
+        return None
+    try:
+        page.set_viewport_size(want)
+    except Exception as e:                                  # noqa: BLE001
+        if verbose:
+            print(f"  ⚠ couldn't size the page to {want} ({e}); clicking at "
+                  f"{w}x{h}", flush=True)
+        return None
+    if verbose:
+        print(f"  → page was {w}x{h}; sized to {want['width']}x"
+              f"{want['height']} for the calibrated click", flush=True)
+    return {"width": int(w), "height": int(h)}
+
+
 def _scrape_one_view_data(page, ctx, view_url: str, verbose: bool = True,
                           activate_xy: Optional[Tuple[float, float]] = None,
                           scrape_kwargs: Optional[Dict] = None,
+                          viewport: Optional[Dict] = None,
                           ) -> Tuple[List[str], List[List[str]]]:
     """Navigate an already-authenticated `page` to `view_url`, drive
     Download -> Data, scrape + close the View Data window. Returns
-    (fields, records). Reusable in a loop with one shared page."""
+    (fields, records). Reusable in a loop with one shared page.
+
+    viewport: the size `activate_xy` was measured at — the page is held at
+    least that big for this scrape and put back after (see _fit_viewport)."""
+    restore = _fit_viewport(page, viewport, verbose) if viewport else None
+    try:
+        return _scrape_one_view_data_inner(page, ctx, view_url, verbose,
+                                           activate_xy, scrape_kwargs)
+    finally:
+        if restore:
+            try:
+                page.set_viewport_size(restore)
+            except Exception:                               # noqa: BLE001
+                pass
+
+
+def _scrape_one_view_data_inner(page, ctx, view_url: str, verbose: bool,
+                                activate_xy: Optional[Tuple[float, float]],
+                                scrape_kwargs: Optional[Dict],
+                                ) -> Tuple[List[str], List[List[str]]]:
     for pg in list(ctx.pages):
         if "hybrid-window" in (pg.url or "") or "/assets/vizql/" in (pg.url or ""):
             try:
@@ -1342,7 +1397,8 @@ def _scrape_one_view_data(page, ctx, view_url: str, verbose: bool = True,
 
 def scrape_view_data(view_url: str, verbose: bool = True,
                      activate_xy: Optional[Tuple[float, float]] = None,
-                     page=None, scrape_kwargs: Optional[Dict] = None
+                     page=None, scrape_kwargs: Optional[Dict] = None,
+                     viewport: Optional[Dict] = None,
                      ) -> Tuple[List[str], List[List[str]]]:
     """Drive Tableau's Download -> Data on `view_url` and scrape the View Data
     window. Returns (field_names, records). Used for views whose per-ICD table
@@ -1362,11 +1418,11 @@ def scrape_view_data(view_url: str, verbose: bool = True,
     ~637 long-format rows)."""
     if page is not None:
         return _scrape_one_view_data(page, page.context, view_url, verbose,
-                                     activate_xy, scrape_kwargs)
+                                     activate_xy, scrape_kwargs, viewport)
     from automations.shared.tableau_patchright import tableau_session
     with tableau_session(verbose=verbose) as pg:
         return _scrape_one_view_data(pg, pg.context, view_url, verbose,
-                                     activate_xy, scrape_kwargs)
+                                     activate_xy, scrape_kwargs, viewport)
 
 
 def _program_summary_url(we_sunday: Optional[dt.date] = None) -> str:
@@ -1402,7 +1458,8 @@ def download_program_summary(out_path: Path = PROGRAM_SUMMARY_PATH,
     last_n = None
     for xy in PROGRAM_SUMMARY_XY_CANDIDATES:
         fields, records = scrape_view_data(url, verbose=verbose, page=page,
-                                           activate_xy=xy)
+                                           activate_xy=xy,
+                                           viewport=PROGRAM_SUMMARY_VIEWPORT)
         last_n = len(records)
         if last_n < PROGRAM_SUMMARY_MIN_ROWS:
             if verbose:

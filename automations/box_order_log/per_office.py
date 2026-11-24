@@ -188,7 +188,7 @@ def _ensure_team_export(from_file: str, verbose: bool) -> Path:
                 shared.name))
         return shared
     boxrun._pull(shared, verbose=verbose, view_url=TEAM_VIEW_URL,
-                 crosstab_sheet=TEAM_CROSSTAB_SHEET)
+                 crosstab_sheet=TEAM_CROSSTAB_SHEET, all_owners=True)
     return shared
 
 

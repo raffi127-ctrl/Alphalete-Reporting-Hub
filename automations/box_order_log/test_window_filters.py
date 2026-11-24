@@ -475,3 +475,126 @@ class QueryBoxLabelTest(unittest.TestCase):
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
+
+
+class OwnerFilterTest(unittest.TestCase):
+    """2026-11-24: SCI added an 'Owner & Office' dropdown to BoxOrderLog and for
+    Raf's login it opened on Roshan, so Abel's email pull held Roshan's rows
+    only. The owner-in-code pulls must put it on (All); Carlos's own post must
+    not touch it (his custom view is meant to show his office)."""
+
+    def test_owner_dropdown_is_released_to_all(self):
+        page, viz = build(field="Owner & Office",
+                          value="ROSHAN AHMAD [Sapphire Marketing, Inc]")
+        verdicts = window.release_owner_filter(page, viz, verbose=False)
+        self.assertEqual(verdicts, {"Owner & Office": "released"})
+        self.assertEqual(viz.combo.text, "(All)")
+
+    def test_view_without_the_dropdown_is_not_a_failure(self):
+        page, viz = build(field="Contract ID")
+        self.assertEqual(window.release_owner_filter(page, viz, verbose=False),
+                         {"Owner & Office": "already_all"})
+
+    def test_owner_dropdown_with_no_all_item_blocks_the_pull(self):
+        page, viz = build(field="Owner & Office", value="ROSHAN AHMAD",
+                          with_all=False)
+        verdicts = window.release_owner_filter(page, viz, verbose=False)
+        self.assertEqual(verdicts, {"Owner & Office": "stuck"})
+        self.assertNotIn(verdicts["Owner & Office"], window.CONFIRMED_CLEAN)
+
+    def _hook_calls(self, **kw):
+        import datetime as dt
+        from unittest import mock
+        calls = []
+
+        class Box:
+            first = None
+
+            def __init__(self):
+                self.first = self
+
+            def wait_for(self, **_):
+                pass
+
+            def click(self, **_):
+                pass
+
+            def fill(self, _v):
+                pass
+
+            def press(self, _k):
+                pass
+
+        class HookViz:
+            def locator(self, _sel):
+                return Box()
+
+        class HookPage:
+            def wait_for_timeout(self, _ms):
+                pass
+
+        with mock.patch.object(window, "release_pinned_filters",
+                               lambda *a, **k: calls.append("ids") or {}), \
+                mock.patch.object(window, "release_owner_filter",
+                                  lambda *a, **k: calls.append("owner") or {}), \
+                mock.patch.object(window, "confirm_release", lambda *a, **k: True):
+            window.date_window_hook(dt.date(2026, 9, 15), dt.date(2026, 11, 24),
+                                    verbose=False, **kw)(HookPage(), HookViz())
+        return calls
+
+    def test_hook_leaves_the_owner_alone_by_default(self):
+        self.assertEqual(self._hook_calls(), ["ids"])
+
+    def test_hook_releases_the_owner_when_asked(self):
+        self.assertEqual(self._hook_calls(all_owners=True), ["ids", "owner"])
+
+
+class ApplyButtonDropdownTest(unittest.TestCase):
+    """2026-11-24, live: the Owner & Office dropdown has Cancel/Apply. Ticking
+    (All) is a draft, Escape throws it away, and only Apply changes the view.
+    The old code ticked, read aria-checked=true, pressed Escape and called it
+    released while the export stayed on Roshan."""
+
+    def _build_apply_mode(self):
+        page, viz = build(field="Owner & Office",
+                          value="ROSHAN AHMAD [Sapphire Marketing, Inc]")
+        pending = {}
+        orig_open, orig_set = viz.open_menu, viz.set_value
+
+        def open_menu():
+            was = viz.opened
+            orig_open()
+            if not was:
+                Node(cls=["tab-button"], text="Cancel", parent=viz.menu)
+                viz.apply = Node(cls=["tab-button"], text="Apply", parent=viz.menu)
+
+        def set_value(text):            # a tick only drafts the value
+            pending["v"] = text
+
+        orig_click = page.click
+
+        def click(node):
+            if node is getattr(viz, "apply", None):
+                orig_set(pending.get("v", viz.combo.text))
+                viz.close_menu()
+                return
+            orig_click(node)
+
+        viz.open_menu, viz.set_value, page.click = open_menu, set_value, click
+        return page, viz
+
+    def test_apply_is_pressed_and_the_view_reads_all(self):
+        page, viz = self._build_apply_mode()
+        self.assertEqual(window._release_dropdown(page, viz, "Owner & Office",
+                                                  False), "released")
+        self.assertEqual(viz.combo.text, "(All)")
+
+    def test_tick_without_apply_would_not_count(self):
+        """Guard on the fake itself: Escape alone leaves the old owner."""
+        page, viz = self._build_apply_mode()
+        viz.open_menu()
+        item = [n for n in viz.menu.kids if n.text == "(All)"][0]
+        page.focused = item
+        page.press(" ")
+        page.press("Escape")
+        self.assertEqual(viz.combo.text, "ROSHAN AHMAD [Sapphire Marketing, Inc]")

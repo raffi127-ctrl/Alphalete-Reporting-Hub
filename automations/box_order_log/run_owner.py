@@ -75,7 +75,11 @@ def _pull(dest: Path, verbose: bool = True, today: Optional[dt.date] = None,
     # Same SCI date-filter drift hits the base view (all owners) — force the
     # window so per-owner pulls (Roshan et al.) never truncate. See window.py.
     start, end = window.default_window(today)
-    hook = window.date_window_hook(start, end, verbose=verbose)
+    # all_owners: this pull picks its owner in code (_filter_owner), so the
+    # view's Owner & Office dropdown must be on (All) — 11/24 it opened on
+    # Roshan and Abel's email had no rows. See window.OWNER_FILTERS.
+    hook = window.date_window_hook(start, end, verbose=verbose,
+                                   all_owners=True)
     with tableau_session(verbose=verbose) as page:
         return download_crosstab_patchright(
             _view_url(team), CROSSTAB_SHEET, dest, verbose=verbose, page=page,

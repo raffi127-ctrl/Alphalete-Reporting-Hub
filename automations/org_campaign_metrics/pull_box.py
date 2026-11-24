@@ -309,7 +309,8 @@ def _order_log(page, today, monday, sunday, log):
         log("  [box] reusing today's shared order-log export %s" % shared.name)
     else:
         start, end = window.default_window(today)
-        hook = window.date_window_hook(start, end, verbose=False)
+        hook = window.date_window_hook(start, end, verbose=False,
+                                       all_owners=True)
         _download_hooked(page, per_office.TEAM_VIEW_URL,
                          per_office.TEAM_CROSSTAB_SHEET, shared, hook)
     sales, stats = clean.load(shared)

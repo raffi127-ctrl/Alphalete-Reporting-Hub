@@ -2074,7 +2074,8 @@ def _owner_dd_probe(owner: str, weeks_csv: "str | None", log=_log, *,
             raise RuntimeError("--skip-tieout")
         from automations.shared.tableau_patchright import tableau_session
         from automations.recruiting_report.opt_phase import (
-            PROGRAM_SUMMARY_XY_CANDIDATES, _program_summary_url, scrape_view_data)
+            PROGRAM_SUMMARY_XY_CANDIDATES, PROGRAM_SUMMARY_VIEWPORT,
+            _program_summary_url, scrape_view_data)
         with tableau_session(verbose=False) as page:
             for wk in weeks:
                 url = _program_summary_url(wk)
@@ -2082,7 +2083,8 @@ def _owner_dd_probe(owner: str, weeks_csv: "str | None", log=_log, *,
                 for xy in PROGRAM_SUMMARY_XY_CANDIDATES:
                     try:
                         fields, records = scrape_view_data(
-                            url, verbose=False, page=page, activate_xy=xy)
+                            url, verbose=False, page=page, activate_xy=xy,
+                            viewport=PROGRAM_SUMMARY_VIEWPORT)
                     except Exception as e:  # noqa: BLE001
                         plog(f"[WE {wk.month}.{wk.day}] summary scrape at {xy} "
                              f"failed: {str(e)[:100]}")
@@ -2541,7 +2543,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.rafdd_probe:
         from automations.shared.tableau_patchright import tableau_session
         from automations.recruiting_report.opt_phase import (
-            _program_summary_url, scrape_view_data)
+            PROGRAM_SUMMARY_VIEWPORT, _program_summary_url, scrape_view_data)
         rl = []
 
         def rlog2(msg):
@@ -2556,7 +2558,8 @@ def main(argv: list[str] | None = None) -> int:
                 for xy in XY:
                     try:
                         fields, records = scrape_view_data(
-                            url, verbose=False, page=page, activate_xy=xy)
+                            url, verbose=False, page=page, activate_xy=xy,
+                            viewport=PROGRAM_SUMMARY_VIEWPORT)
                     except Exception as e:  # noqa: BLE001
                         rlog2(f"[{we}] scrape at {xy} failed: {str(e)[:90]}")
                         continue

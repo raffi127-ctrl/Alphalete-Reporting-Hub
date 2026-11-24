@@ -97,6 +97,58 @@ def find_thread_ts(client, channel: str, today: dt.date):
     return found
 
 
+def _posted_captions(client, channel: str, ts: str) -> set:
+    """Captions of the image replies already in this thread.
+
+    WHY (2026-11-24). The 4am run posted all 18 images to #alphalete-sales, then
+    the #alphalete-lvl1-chat copy died on image 6 (a Slack upload timeout). The
+    only re-run on offer re-sent EVERY image to BOTH threads, so finishing the
+    mirror meant 18 duplicates in the main channel. A re-run now appends only
+    what each thread is missing."""
+    seen, cursor = set(), None
+    for _ in range(10):
+        resp = client.conversations_replies(
+            channel=channel, ts=ts, limit=200,
+            **({"cursor": cursor} if cursor else {}))
+        for m in resp.get("messages", [])[1:]:
+            if m.get("files"):
+                seen.add((m.get("text") or "").strip())
+        cursor = (resp.get("response_metadata") or {}).get("next_cursor")
+        if not cursor:
+            break
+    return seen
+
+
+# A dropped connection mid-upload (2026-11-22 and 11-24: TLS handshake timed out
+# on Slack's upload URL) killed the whole post. Those are network blips: wait and
+# try again, after checking the image didn't land after all.
+UPLOAD_TRIES = 3
+UPLOAD_BACKOFF_S = (15, 45)
+
+
+def _upload(client, channel: str, ts: str, png, caption: str):
+    import socket
+    import urllib.error
+    for i in range(UPLOAD_TRIES):
+        try:
+            return client.files_upload_v2(
+                channel=channel, thread_ts=ts, file=str(png),
+                filename=Path(png).name, initial_comment=caption)
+        except (urllib.error.URLError, socket.timeout, TimeoutError,
+                ConnectionError) as e:
+            if i == UPLOAD_TRIES - 1:
+                raise
+            wait = UPLOAD_BACKOFF_S[min(i, len(UPLOAD_BACKOFF_S) - 1)]
+            print(f"  upload of {Path(png).name} to {channel} failed "
+                  f"({type(e).__name__}); retry in {wait}s", flush=True)
+            time.sleep(wait)
+            try:
+                if caption.strip() in _posted_captions(client, channel, ts):
+                    return {"ok": True}
+            except Exception:                              # noqa: BLE001
+                pass
+
+
 def _post_thread(client, channel: str, captures: list, sections: list,
                  today: dt.date, *, banner: str = "") -> dict:
     # ALPHALETE_NEW_THREAD (run.py --new-thread): a fresh dated parent even
@@ -115,11 +167,15 @@ def _post_thread(client, channel: str, captures: list, sections: list,
                 client.reactions_add(channel=channel, timestamp=ts, name=name)
             except Exception:
                 pass
+    already = set() if created else _posted_captions(client, channel, ts)
     posted = []
     for meta, png in captures:
-        up = client.files_upload_v2(
-            channel=channel, thread_ts=ts, file=str(png), filename=Path(png).name,
-            initial_comment=reply_caption(meta, today))
+        caption = reply_caption(meta, today)
+        if caption.strip() in already:
+            posted.append({"id": meta.get("id"), "title": meta["title"], "ok": True,
+                           "skipped": "already in the thread"})
+            continue
+        up = _upload(client, channel, ts, png, caption)
         posted.append({"id": meta.get("id"), "title": meta["title"], "ok": up.get("ok")})
         time.sleep(3)                  # keep images in order (large files post late)
     return {"channel": channel, "thread_ts": ts, "created": created, "posted": posted,

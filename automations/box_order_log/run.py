@@ -80,7 +80,7 @@ OUTPUT_DIR = Path(__file__).resolve().parents[2] / "output"
 def _pull(dest: Path, verbose: bool = True, view_url: str = "",
           crosstab_sheet: str = "", today: Optional[dt.date] = None,
           tier_owner: str = "", tier_dest: Optional[Path] = None,
-          rep_lvl: Optional[dict] = None):
+          rep_lvl: Optional[dict] = None, all_owners: bool = False):
     """Download the order-log crosstab. Returns (csv_path, tier_png, tier_note).
 
     tier_png is None when the board couldn't be captured, and tier_note then
@@ -105,7 +105,11 @@ def _pull(dest: Path, verbose: bool = True, view_url: str = "",
     # 2026-08-01, which truncated the feed to 2 reps) and we can't stop it, so
     # we override it at pull time. See window.py.
     start, end = window.default_window(today)
-    hook = window.date_window_hook(start, end, verbose=verbose)
+    # all_owners: a per-office pull picks its office in code, so the view's
+    # Owner & Office dropdown must be on (All) — Carlos's own post (no
+    # --owner-office) keeps his custom view's saved owner. See window.OWNER_FILTERS.
+    hook = window.date_window_hook(start, end, verbose=verbose,
+                                   all_owners=all_owners)
     with tableau_session(verbose=verbose) as page:
         out = download_crosstab_patchright(
             view_url or VIEW_URL, crosstab_sheet or CROSSTAB_SHEET, dest,
@@ -719,7 +723,8 @@ def main(argv: Optional[list] = None) -> int:
                 src, verbose=verbose, view_url=(args.view_url or ""),
                 crosstab_sheet=(args.crosstab_sheet or ""), today=today,
                 tier_owner=tier_owner, tier_dest=OUTPUT_DIR,
-                rep_lvl=rep_lvl_res if want_rep_lvl else None)
+                rep_lvl=rep_lvl_res if want_rep_lvl else None,
+                all_owners=bool(args.owner_office))
         except Exception as exc:
             print("✗ Tableau pull failed: {}".format(exc), file=sys.stderr)
             traceback.print_exc()

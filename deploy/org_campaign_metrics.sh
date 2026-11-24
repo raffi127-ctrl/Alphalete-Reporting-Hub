@@ -38,6 +38,35 @@ ORG_CAMPAIGN_SSID="$ORG_SCI_SSID" \
     "$VENV_PY" -u -m automations.org_campaign_metrics.run --write >> "$LOG_FILE" 2>&1
 ST_SCI=$?
 echo "[$(date)] org-campaign-metrics SCI pass finished exit=$ST_SCI" >> "$LOG_FILE"
+
+# ---- ONE LATE RETRY PER FAILED PASS (2026-11-24) ----------------------------
+# 82e865a gave the Campaign Log read five tries over ~8 minutes, and the
+# stamper STILL died on that read on 11/24 (pass 1, ~08:54-09:02) -- the same
+# morning-window ReadTimeout as 11/14, 15, 17, 20, 21. Every hand re-run later
+# in the morning has passed. Nothing re-runs a standalone agent on its own, so
+# the alert sat until a person did it. Wait out the bad window here instead:
+# one more try of ONLY the pass that failed, 20 minutes on, before alerting.
+RETRY_WAIT_S="${ORG_CAMPAIGN_RETRY_WAIT_S:-1200}"
+if [ $ST -ne 0 ] || [ $ST_SCI -ne 0 ]; then
+    echo "[$(date)] org-campaign-metrics: a pass failed (main=$ST sci=$ST_SCI) — one retry in ${RETRY_WAIT_S}s" >> "$LOG_FILE"
+    sleep "$RETRY_WAIT_S"
+    if [ $ST -ne 0 ]; then
+        echo "[$(date)] org-campaign-metrics main pass RETRY starting" >> "$LOG_FILE"
+        "$VENV_PY" -u -m automations.org_campaign_metrics.run --write >> "$LOG_FILE" 2>&1
+        ST=$?
+        echo "[$(date)] org-campaign-metrics main pass RETRY finished exit=$ST" >> "$LOG_FILE"
+        # A retry that fails again: the alert shows the retry's own error.
+        [ $ST -ne 0 ] && PASS1_LINES=$(wc -l < "$LOG_FILE" | tr -d ' ')
+    fi
+    if [ $ST_SCI -ne 0 ]; then
+        echo "[$(date)] org-campaign-metrics SCI pass RETRY starting" >> "$LOG_FILE"
+        ORG_CAMPAIGN_SSID="$ORG_SCI_SSID" \
+            "$VENV_PY" -u -m automations.org_campaign_metrics.run --write >> "$LOG_FILE" 2>&1
+        ST_SCI=$?
+        echo "[$(date)] org-campaign-metrics SCI pass RETRY finished exit=$ST_SCI" >> "$LOG_FILE"
+    fi
+fi
+
 # The re-run line names the pass that failed: a bare `lucy rerun` only writes
 # the Alphalete book, so on 10/12 the suggested fix could not repair the SCI one.
 RERUN=""
