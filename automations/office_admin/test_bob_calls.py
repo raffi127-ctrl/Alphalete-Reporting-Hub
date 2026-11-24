@@ -127,3 +127,57 @@ def test_there_is_a_way_past_the_gate_and_it_says_so():
     src = inspect.getsource(DU.main)
     assert "force_post" in src
     assert "--force-post posts anyway" in src
+
+
+# ------------------------------------------------- the button on the admin page
+
+def _app_src():
+    import pathlib
+    return (pathlib.Path(__file__).resolve().parents[2] / "office_admin"
+            / "app.py").read_text()
+
+
+def test_the_admin_page_has_the_button():
+    """Megan, 2026-11-24: "there should be some button that says, I've made the
+    brought on board calls for today"."""
+    src = _app_src()
+    assert "_bob_section" in src
+    assert "I've made today's BOB calls" in src
+    # and it is actually reached from the page, not just defined. The
+    # indentation is what tells the CALL from the `def` line.
+    assert "\n    _bob_section(admin)" in src
+
+
+def test_the_button_records_and_does_not_post():
+    """A button that posted directly would mean one mis-press sends the office
+    its day's record with the answers still missing -- which is the thing the
+    gate exists to stop, so the button must not be the way round it."""
+    src = _app_src()
+    at = src.index("def _bob_section")
+    end = src.index("def _bgc_section", at)
+    body = src[at:end]
+    assert "BOB.mark(" in body
+    for word in ("chat_postMessage", "daily_update", "--post", "force_post"):
+        assert word not in body, word
+
+
+def test_the_button_is_hidden_once_it_is_pressed():
+    """Pressing it twice is harmless, but a button still offering itself reads
+    as "it did not work"."""
+    src = _app_src()
+    at = src.index("def _bob_section")
+    end = src.index("def _bgc_section", at)
+    body = src[at:end]
+    assert "already" in body and "return" in body
+
+
+def test_a_failed_read_does_not_offer_the_button_as_though_it_were_fresh():
+    """"Could not check" and "not pressed yet" are different answers, and
+    pressing on the second when it is really the first is how a day gets
+    marked twice or not at all."""
+    src = _app_src()
+    at = src.index("def _bob_section")
+    end = src.index("def _bgc_section", at)
+    body = src[at:end]
+    assert "Could not check" in body
+    assert body.index("Could not check") < body.index("st.button")

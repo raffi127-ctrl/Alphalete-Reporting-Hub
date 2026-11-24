@@ -143,6 +143,45 @@ def _press(admin, action, details=None) -> None:
 
 # ------------------------------------------------------------------ pages --
 
+def _bob_section(admin) -> None:
+    """"I've made today's BOB calls" -- the press that releases the update.
+
+    Megan, 2026-11-24: "there should be some button that says, I've made the
+    brought on board calls for today, after they've already marked them in
+    applicant stream and scheduled them. And that will trigger the daily update
+    being ran."
+
+    IT IS A STATEMENT, NOT A SEND. Pressing it records the day; the office's
+    own daily update run is what posts, and it may be minutes later. A button
+    that posted directly would mean one mis-press sends the office its day's
+    record with the answers still missing -- which is the thing the gate exists
+    to stop, so the button must not be the way round it.
+    """
+    from automations.office_admin import bob_calls as BOB
+    office = C.office(admin["office"])
+    st.subheader("📞 Brought-on-board calls")
+    try:
+        already = BOB.done(office.key)
+    except Exception as e:                      # noqa: BLE001
+        st.warning("Could not check today's calls (%s). Try ↻ Check again."
+                   % type(e).__name__)
+        return
+    if already:
+        st.success("Today's calls are marked done. Your daily update can post.")
+        return
+    st.caption("Mark this once the calls are made AND everyone is marked and "
+               "scheduled in ApplicantStream. Your daily update waits for it, "
+               "so it is never posted with the answers missing.")
+    if st.button("✅ I've made today's BOB calls", type="primary",
+                 use_container_width=True):
+        try:
+            BOB.mark(office.key, by=admin.get("name") or admin["username"])
+        except Exception as e:                  # noqa: BLE001
+            st.error("That did not save (%s) — press it again." % type(e).__name__)
+            return
+        st.rerun()
+
+
 def _bgc_section(admin, reqs, ws) -> None:
     from automations.office_admin import actions, relay_client
     office = C.office(admin["office"])
@@ -272,6 +311,8 @@ def main() -> None:
     st.button("↻ Check again", on_click=lambda: None)
     st.divider()
     _bgc_section(admin, reqs, ws)
+    st.divider()
+    _bob_section(admin)
 
 
 main()
