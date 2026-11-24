@@ -90,6 +90,12 @@ def _read_tab(sh, tab: str) -> List[Dict[str, str]]:
     from automations.recruiting_report.fill import _retry
     rows = _retry(lambda: sh.worksheet(tab).get_all_values())
     head = [h.strip() for h in rows[0]]
+    # Match our headers case-insensitively: 11/23 someone typed "full name"
+    # (lowercase) into Jairo's blank name header and every nightly post died
+    # on "no 'Full Name' header". Same column, same meaning.
+    _canon = {c.lower(): c for c in (config.COL_DATE, config.COL_NAME,
+                                      config.COL_TITLE, config.COL_INTERVIEWER)}
+    head = [_canon.get(h.lower(), h) for h in head]
     # Jairo Ruiz's tab (10/8) has the names in the column after "1st Round
     # Interviewer" -- where every other South Shore tab says "Full Name" --
     # with its header left blank. Read a blank header there as Full Name
