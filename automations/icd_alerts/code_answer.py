@@ -845,7 +845,11 @@ SCOPE_EVERY_MIN = 60
 # for their own reports), so "forwards more than its codes" is expected, not a
 # fault. Matched on the key before any "-" (carlos-b2batt -> carlos). Still
 # logged; just never told (Megan, 2026-11-08).
-SCOPE_WIDE_OK = frozenset({"raf", "rafael", "carlos"})
+SCOPE_WIDE_OK = frozenset({"raf", "rafael", "carlos",
+                           # Luke forwards his whole Gmail; Eve set up her own
+                           # stopgap and asked for the alert to stop
+                           # (Eve, 2026-11-24).
+                           "luke"})
 
 
 def scope_query(address: str) -> str:

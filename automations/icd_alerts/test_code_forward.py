@@ -1057,7 +1057,7 @@ class RafAndCarlosForwardOnPurpose(unittest.TestCase):
         sheet = Sheet([CA.MAIL_HEADER,
                        ["raf", "r@gmail.com", NOW.isoformat(), ""],
                        ["carlos-b2batt", "c@gmail.com", NOW.isoformat(), ""],
-                       ["Luke", "l@gmail.com", NOW.isoformat(), ""]])
+                       ["Dana", "d@gmail.com", NOW.isoformat(), ""]])
         told = []
         wide = CA.check_forward_scope(
             Book({CA.MAIL_TAB: sheet}), send=True, now=NOW,
@@ -1065,5 +1065,18 @@ class RafAndCarlosForwardOnPurpose(unittest.TestCase):
             stamp_path=Path(tmp.name) / "s.txt", tell=told.append,
             log=lambda *_: None)
         self.assertEqual(len(told), 1)
-        self.assertIn("Luke", told[0])
-        self.assertEqual({o for o, _ in wide}, {"raf", "carlos-b2batt", "Luke"})
+        self.assertIn("Dana", told[0])
+        self.assertEqual({o for o, _ in wide}, {"raf", "carlos-b2batt", "Dana"})
+
+    def test_luke_is_not_told_either(self):
+        # Eve 2026-11-24: Luke forwards his whole Gmail; she has her own fix.
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        sheet = Sheet([CA.MAIL_HEADER, ["luke", "l@gmail.com", NOW.isoformat(), ""]])
+        told = []
+        CA.check_forward_scope(
+            Book({CA.MAIL_TAB: sheet}), send=True, now=NOW,
+            counts=lambda addrs: {a: 10 for a in addrs},
+            stamp_path=Path(tmp.name) / "s.txt", tell=told.append,
+            log=lambda *_: None)
+        self.assertEqual(told, [])
