@@ -116,7 +116,7 @@ CHANNELS: Dict[str, str] = {
     # grade.OFFICES on purpose: no script of their own yet -> Rafael's (Eve),
     # and script_watch leaves them alone until they get an OFFICES entry.
     "Algemar Kennel": "C0CFLK9MK4H",          # #aglemar-kennel-recruiting (Se7en Summit, El Paso)
-    "Vincent Dodson": "C0CDETE7Z61",          # Relevant Specialized Connections (Lubbock)
+    "Vincent Dodson": "C0CGSERGH9T",          # #24332-relevant-specialized-connections-inc-vincent-dodson (was C0CDETE7Z61, gone 11/23)
 }
 # Several ZOOMS INFO owners, one office: one post, under this name
 SAME_OFFICE = {"Raf Hidalgo 2nd funnel": "Rafael Hidalgo",

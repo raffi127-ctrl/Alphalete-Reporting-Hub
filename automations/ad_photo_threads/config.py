@@ -568,7 +568,9 @@ _MORE = [
     # "Vincent's Funnel" until his own 24332 is used. Photos channel created by
     # Eve 11/11.
     ("vincent", "Vincent Dodson", ARS_R_TO_Z, "Vincent Dodson", "24290", "Relevant Specialized Connections",
-     "C0CDETE7Z61", "C0CGVRSGKMX", r"^(?!.*\beod\b).*relevant\s*specialized.*1st\s*round"),
+     # Recruiting room moved 11/23 to #24332-relevant-specialized-connections-
+     # inc-vincent-dodson (Eve 11/24); the old C0CDETE7Z61 is gone.
+     "C0CGSERGH9T", "C0CGVRSGKMX", r"^(?!.*\beod\b).*relevant\s*specialized.*1st\s*round"),
 ]
 
 # Zones the office_tz table (knocks, by owner name) can't place, cross-checked
