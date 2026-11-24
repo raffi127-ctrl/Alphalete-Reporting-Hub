@@ -52,24 +52,26 @@ Aptel requests live separately (`resources/aptel/`).
 
 **The I-9's date-of-birth field keeps the current year.** Measured
 2026-11-23 across 116 signed packets on `UNIVERSAL I9 MASTER FORM`:
-**11 of them -- about one in ten -- carry a date of birth in the current
+**12 of them -- about one in ten -- carry a date of birth in the current
 year.** Field key `dat010-QaqD0`.
 
-Four of the eleven are the day the person signed; the other seven have a
-plausible month and day with the year left at the current one. That is the
-signature of a date picker that opens on today: a signer who sets month
-and day but not the year saves this year, and one who does not touch it at
-all saves the signing date.
+EVERY ONE OF THEM HAS THE CURRENT YEAR, and that is the only thing they
+share. The month and day vary and look like real birthdays -- 02-01,
+08-08, 05-27, 07-21, 08-24. Only 3 of the 12 match the day that person
+signed, and 9 match neither their signing date nor their start date, so
+this is not a picker saving "today": the year alone is being lost and
+replaced with the current one while the signer's own month and day
+survive.
 
-NOT A MAPPING PROBLEM. The field holds real birth years for the other 105
-people, off the same field on the same form.
+NOT A MAPPING PROBLEM. The field holds real birth years for everybody
+else, off the same field on the same form.
 
 **The ask:** the date-of-birth field should not accept a year that makes
 the signer younger than about 14, and should not silently default to the
 current one.
 
 **Why it matters:** a wrong date of birth goes onto a payroll record. Two
-of the eleven are already in Apex, typed in by hand from these packets.
+of the twelve are already in Apex, typed in by hand from these packets.
 
 **What we do meanwhile:** `blueink_data._impossible_dob` rejects them, so
 the Apex fill holds those people rather than typing a birth date that
