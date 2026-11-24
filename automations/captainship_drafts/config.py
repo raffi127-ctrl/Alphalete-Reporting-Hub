@@ -916,7 +916,8 @@ RECIPIENTS["blake"] = [
     "blakew.mobility@gmail.com",        # Blake Welle
     "elldeemusic@gmail.com",            # Ellen Dent
     "pacnorthbestinc@gmail.com",        # Elijah Golston
-    "robertsalexc14@gmail.com",         # Alex Roberts
+    # OUT 2026-11-24 (Blake, por mail): Alex Roberts (robertsalexc14@) sale de
+    # su capitania y de estos mails. Salio tambien del grupo vivo.
     "jamisgaray18@gmail.com",           # Jamis Garay
     "luna.leung@gmail.com",             # Luna Leung
     "amanip.business@gmail.com",        # Amani Pittman

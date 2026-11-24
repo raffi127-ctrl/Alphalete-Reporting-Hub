@@ -134,6 +134,12 @@ REMOVALS: dict = {
         # "ATT Fiber Owners" + fiber_owners_distro/excludes.json.
         ("Ja Mosley", "jamosleybiz@gmail.com"),
     ],
+    # 2026-11-24 (Blake, por mail): "Can Alex Roberts be removed from my
+    # captainship and from these emails?" Sale de config.RECIPIENTS["blake"]
+    # tambien. Sus otros grupos quedan: sigue siendo ICD (oficina 17274).
+    "Blake's Captainship": [
+        ("Alex Roberts", "robertsalexc14@gmail.com"),
+    ],
     # 2026-09-14 (Eve): Eric Martinez, ver "Chan's Captainship". Su segunda
     # tarjeta (sin nombre, la misma direccion) no esta en ningun grupo.
     "Aug Owner Showdown": [

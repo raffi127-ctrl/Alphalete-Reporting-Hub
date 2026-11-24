@@ -146,6 +146,9 @@ NOT_ON_TEAM: Dict[str, tuple] = {
     # vista de churn de Luis (B2BLuis_Churn) lo sigue trayendo mientras
     # SmartCircle no lo mueva; sin el pin su fila vuelve a la tab de Luis.
     "Luis": ("Cruz Venegas",),
+    # 2026-11-24 (Blake, por mail): Alex Roberts sale de su capitania. Sin el
+    # pin, si Tableau lo sigue filando en "Blake's Team", el gate lo reofrece.
+    "Blake": ("Alex Roberts",),
 }
 
 

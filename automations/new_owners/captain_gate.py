@@ -146,6 +146,9 @@ EXCLUDE: Dict[str, tuple] = {
     # en NDS no hay "Atef's Team" ni aparece el. Las dos grafias: el board dice
     # "Dhey", Tableau "Dhyey".
     "Atef":   ("Dhey Patel", "Dhyey Patel"),             # 2026-10-20
+    # 2026-11-24 (Blake, por mail): "Can Alex Roberts be removed from my
+    # captainship and from these emails?" Sigue siendo ICD (oficina 17274).
+    "Blake":  ("Alex Roberts",),                         # 2026-11-24
 }
 
 
