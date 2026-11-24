@@ -461,10 +461,12 @@ def labeled_slack_rows(text: str, day: dt.date) -> List[Dict[str, str]]:
     return out
 
 
-def slack_rows(cl=None) -> List[Dict[str, str]]:
+def slack_rows(cl=None, multi_only: bool = False) -> List[Dict[str, str]]:
     """Every candidate in the office's daily threads since THREADS_SINCE, as
-    sheet rows. Read once per process per office."""
-    memo = (tuple(source_channels()), tuple(s["thread_re"].pattern for s in config.SOURCES))
+    sheet rows. Read once per process per office. `multi_only`: just the
+    "Name//job//..." lines (config.SLACK_ROWS_TOO), never a guessed row."""
+    memo = (tuple(source_channels()), tuple(s["thread_re"].pattern for s in config.SOURCES),
+            multi_only)
     if memo in _SLACK_ROWS:
         return _SLACK_ROWS[memo]
     cl = cl or _client()
@@ -481,9 +483,10 @@ def slack_rows(cl=None) -> List[Dict[str, str]]:
                     continue
                 day = dt.datetime.fromtimestamp(float(m["ts"]), CENTRAL).date()
                 for reply in _replies(cl, m["ts"], ch):
-                    many = (multi_slack_rows(reply.get("text") or "", day)
-                            or labeled_slack_rows(reply.get("text") or "", day))
-                    row = None if many else slack_row(reply.get("text") or "", day)
+                    many = multi_slack_rows(reply.get("text") or "", day)
+                    if not multi_only:
+                        many = many or labeled_slack_rows(reply.get("text") or "", day)
+                    row = None if many or multi_only else slack_row(reply.get("text") or "", day)
                     rows += many or ([row] if row else [])
             cursor = (resp.get("response_metadata") or {}).get("next_cursor")
             if not cursor:
@@ -512,6 +515,11 @@ def read_tabs(sh, cache: Optional[dict] = None) -> Dict[str, List[Dict[str, str]
         return tabs
     have = {w.title for w in sh.worksheets()}
     tabs = {s["tab"]: _read_tab(sh, s["tab"]) for s in config.SOURCES if s["tab"] in have}
+    if getattr(config, "SLACK_ROWS_TOO", False):
+        for tab, rows in tabs.items():
+            seen = {(_parse_date(r[config.COL_DATE]), _fold(r[config.COL_NAME])) for r in rows}
+            rows += [r for r in slack_rows(multi_only=True)
+                     if (_parse_date(r[config.COL_DATE]), _fold(r[config.COL_NAME])) not in seen]
     if cache is not None:
         cache["_tabs"] = tabs
     return tabs

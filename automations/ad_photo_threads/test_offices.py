@@ -169,5 +169,18 @@ class OfficesTest(unittest.TestCase):
         self.assertEqual(op.call_args[1]["key"], "ad_photo_threads:carlos")
 
 
+
+class JacobThreadTitle(unittest.TestCase):
+    """Maddie 11/24: from 11/23 Jacob's 1st rounds come in a thread titled
+    "*1st Round Thread 11/23*"; Lucy's scorecard posts must still not match."""
+
+    def test_new_and_old_titles_match_scorecards_dont(self):
+        rx = next(o for o in config.OFFICES if o["key"] == "jacob")["sources"][0]["thread_re"]
+        self.assertTrue(rx.search("*1st Round Thread 11/23*"))
+        self.assertTrue(rx.search(":star:*ROCKSTARWORLD INCORPORATED - 1st Rounds - 11/20*:star:"))
+        self.assertFalse(rx.search(":clipboard: *1st Round Scorecards - Jacob Dover's office - Mon 11/16*"))
+        self.assertFalse(rx.search("*1st Round Interviews*"))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -432,7 +432,10 @@ _MORE = [
      # 11/13 on the thread is just "First rounds 11/23" (no "Horizon Edge").
      "C0AUUSCSEV7", "C0C4S176UQG", r"horizon\s*edge.*1st\s*round|^\W*first\s*rounds?\s+\d"),
     ("jacob", "Jacob Dover", ARS_J_TO_L, "Jacob Dover", "23607", "Rockstarworld Incorporated",
-     "C0B9N1WDBB8", "C0C3VMKLZGE", r"rockstarworld.*1st\s*round"),
+     # Maddie 11/24: from 11/23 a new interviewer runs Jacob's 1st rounds as
+     # "*1st Round Thread 11/23*" (no company name). Anchored at the start so
+     # Lucy's "1st Round Scorecards" posts never match.
+     "C0B9N1WDBB8", "C0C3VMKLZGE", r"rockstarworld.*1st\s*round|^\W*1st\s*round\s*thread"),
     ("khalil", "Khalil Mansour", ARS_J_TO_L, "Khalil Mansour", "11901", "Ever Forward Marketing",
      "C0AUKHN120L", "C0C4S17G62U", r"ever\s*forward.*1st\s*round"),
     ("isaiah", "Isaiah Revelle", ARS_D_TO_I, "Isaiah Revelle", "19717", "Legacy Acquisitions Inc",
@@ -798,7 +801,14 @@ _ROWS_FROM_SLACK = {"valeria", "salik", "aya", "haytham"}
 # from the sheet already, and read as Slack rows they're junk ("ASAP" ads).
 _SLACK_ROWS_SINCE = {"salik": "2026-10-23", "aya": "2026-11-02",
                      # 11/12-11/13 lines have no "Job Title:" label.
-                     "haytham": "2026-11-16"}
+                     "haytham": "2026-11-16", "jacob": "2026-11-23"}
+# Sheet rows PLUS the "Name//job//:star:3//ASAP//schedule yes" lines of the
+# Slack thread (collect.multi_slack_rows) from _SLACK_ROWS_SINCE on, for people
+# the sheet doesn't have that day. Jacob 11/24 (Maddie): a new interviewer took
+# his 1st rounds 11/23 ("*1st Round Thread 11/23*") and types nobody in his ARS
+# tab -- the lines carry no ad, so the Call List / AppStream fill it; the sheet
+# stays the source for the ads his threads already run.
+_SLACK_ROWS_TOO = {"jacob"}
 
 # Colten 10/10 asked for the Ad Scorecard for his funnel and Eveliz's; Raf
 # 10/11: "put it in his all in one". One tab each in Maud's "All In One -
@@ -858,6 +868,7 @@ OFFICES += [
         "paused_before": _PAUSED_BEFORE.get(key, ""),
         "rows_from_slack": key in _ROWS_FROM_SLACK,
         "slack_rows_since": _SLACK_ROWS_SINCE.get(key, ""),
+        "slack_rows_too": key in _SLACK_ROWS_TOO,
         "sources": [{"office_id": oid, "stream": company, "label": company,
                      "tab": tab, "thread_re": re.compile(rx, re.I)}],
         **_SCORECARD_TABS.get(key, {}),
@@ -886,6 +897,7 @@ TITLE_ALIASES: dict = {}
 TITLE_ONLY: dict = {}
 ROWS_FROM_SLACK = False     # set by use(); 1st rounds from the Slack thread, not the sheet
 SLACK_ROWS_SINCE = ""         # set by use(); "" = THREADS_SINCE
+SLACK_ROWS_TOO = False        # set by use(); sheet rows + the "//" lines of the Slack thread
 SECOND_ROUNDS_OWNER = ""      # set by use(); "" = no 2nd-round lines
 SCORECARD_SECONDS_FROM_SHEET = False   # set by use()
 SCORECARD_TAG = ""            # set by use(); Slack user tagged on the post
@@ -928,7 +940,7 @@ def use(o: dict) -> None:
         next((s["office_id"] for s in o.get("sources") or [] if s.get("office_id")), "")
         if o.get("scorecard") else "")
     SCORECARD_FUNNEL_OFFERS = o.get("scorecard_funnel_offers", True)
-    global SLACK_ROWS_SINCE
+    global SLACK_ROWS_SINCE, SLACK_ROWS_TOO
     SECOND_ROUNDS_OWNER = o.get("second_rounds_owner") or ""
     SCORECARD_SECONDS_FROM_SHEET = bool(o.get("scorecard_seconds_from_sheet"))
     SCORECARD_TAG = o.get("scorecard_tag") or ""
@@ -938,6 +950,7 @@ def use(o: dict) -> None:
     TITLE_ONLY = o.get("title_only") or {}
     ROWS_FROM_SLACK = bool(o.get("rows_from_slack"))
     SLACK_ROWS_SINCE = o.get("slack_rows_since") or ""
+    SLACK_ROWS_TOO = bool(o.get("slack_rows_too"))
     SHEET_ID = o["sheet_id"]
     SOURCE_CHANNEL_ID = o["source_channel"]
     LIVE_CHANNEL_ID = o["live_channel"]
