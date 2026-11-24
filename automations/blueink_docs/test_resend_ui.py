@@ -23,7 +23,7 @@ class FakeEl:
     def inner_text(self):
         return self.page.rows_text
 
-    def click(self):
+    def click(self, timeout=None):
         self.page.clicked.append(self.pk)
         self.page.on_click(self.pk)
 
@@ -32,11 +32,13 @@ class FakePage:
     """One bundle, its signers, and an event log that only grows on a click."""
 
     def __init__(self, signers, *, rows_text=SENT_ROW, receipt_on_click=True,
-                 detail=True):
+                 detail=True, has_trigger=True):
         self.signers = signers              # [{pk, text, resend}]
         self.rows_text = rows_text
         self.receipt_on_click = receipt_on_click
         self.detail = detail
+        self.has_trigger = has_trigger
+        self.menus_open = set()
         self.clicked, self.keys = [], []
         self.log_lines = ["11/20/26 Signing link <aaa> sent via email to %s at %s"
                           % (s.get("who", ""), s.get("addr", ""))
@@ -57,7 +59,13 @@ class FakePage:
         if sel == RU.DETAIL_SEL:
             return FakeEl(self, "detail") if self.detail else None
         for s in self.signers:
-            if s["pk"] in sel and s.get("resend", True):
+            if s["pk"] not in sel:
+                continue
+            # The ... trigger that opens this signer's Resend/Edit dropdown.
+            if any(t in sel for t in RU.TRIGGER_SELS):
+                return (FakeEl(self, "menu:" + s["pk"])
+                        if self.has_trigger else None)
+            if RU.RESEND_SEL in sel and s.get("resend", True):
                 return FakeEl(self, s["pk"])
         return None
 
@@ -67,6 +75,10 @@ class FakePage:
         return []
 
     def evaluate(self, js, arg=None):
+        # `_menu_open` asks with [pk, MENU_SEL]; `signers` asks with the two
+        # selectors. Told apart by what the second item is.
+        if isinstance(arg, list) and len(arg) == 2 and arg[1] == RU.MENU_SEL:
+            return arg[0] in self.menus_open
         return [{"pk": s["pk"], "text": s["text"], "resend": s.get("resend", True)}
                 for s in self.signers]
 
@@ -83,6 +95,9 @@ class FakePage:
         return K()
 
     def on_click(self, pk):
+        if pk.startswith("menu:"):
+            self.menus_open.add(pk.split(":", 1)[1])
+            return
         if pk == "row" or not self.receipt_on_click:
             return
         who = [s for s in self.signers if s["pk"] == pk]
@@ -385,3 +400,51 @@ class TestTheSecondSearchDoesNotOverwriteABetterAnswer:
             "morning-of", dt.date(2026, 11, 23), send=False,
             log=lambda *a: None) is True
         assert seen == ["wrong@example.com", "Nina Vale"]
+
+
+class TestTheResendMenuIsOpenedFirst:
+    """Resend sits in a dropdown at `display: none`. `query_selector` does not
+    care about visibility, so clicking it without opening the menu waits
+    thirty seconds for a 0x0 element and then raises -- which on a real chase
+    would take every person after it down too (proved on a test bundle,
+    2026-11-24)."""
+
+    def _one(self, **kw):
+        return FakePage([_signer("nub-signerPk-1", "Nina Vale",
+                                 "nvale@example.net")], **kw)
+
+    def test_the_menu_opens_before_the_resend_is_clicked(self):
+        page = self._one()
+        assert RU.resend(page, "nvale@example.net", "nvale@example.net",
+                         dry_run=False, log=lambda *a: None) is True
+        assert page.clicked.index("menu:nub-signerPk-1") < \
+            page.clicked.index("nub-signerPk-1")
+
+    def test_a_menu_that_will_not_open_refuses_instead_of_clicking(self):
+        page = self._one(has_trigger=False)
+        said = []
+        assert RU.resend(page, "nvale@example.net", "nvale@example.net",
+                         dry_run=False, log=said.append) is False
+        assert "nub-signerPk-1" not in page.clicked
+        assert any("could not open the signer's menu" in s for s in said), said
+        assert "Escape" in page.keys
+
+    def test_a_click_that_times_out_is_a_refusal_not_a_crash(self, monkeypatch):
+        page = self._one()
+
+        class Boom(FakeEl):
+            def click(self, timeout=None):
+                if self.pk.startswith("menu:"):
+                    return FakeEl.click(self, timeout)
+                raise TimeoutError("ElementHandle.click: Timeout")
+
+        real = page.query_selector
+
+        def patched(sel):
+            el = real(sel)
+            return Boom(page, el.pk) if el else None
+        monkeypatch.setattr(page, "query_selector", patched)
+        said = []
+        assert RU.resend(page, "nvale@example.net", "nvale@example.net",
+                         dry_run=False, log=said.append) is False
+        assert any("did not land" in s for s in said), said

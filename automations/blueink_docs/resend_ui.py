@@ -57,6 +57,19 @@ from automations.blueink_docs import recent_ui as U
 from automations.blueink_docs import session as S
 
 DETAIL_SEL = "[data-tid='nub-bundleDetail']"
+# THE RESEND IS INSIDE A CLOSED DROPDOWN. Its container is `.menu transition
+# left` at `display: none`, holding Resend and Edit, and the only thing that
+# opens it is the ellipsis (...) button in that signer's row. Clicking Resend
+# without opening it first finds the element -- `query_selector` does not care
+# about visibility -- and then waits thirty seconds for something 0x0 to
+# become clickable before raising (proved on a test bundle 2026-11-24, which
+# is the whole reason that bundle was worth sending).
+#
+# No data-tid on the trigger, so it is found by class within the signer's own
+# row, ellipsis icon first. Whether it worked is read off the menu's computed
+# style rather than assumed.
+MENU_SEL = ".menu"
+TRIGGER_SELS = ("i.ellipsis", ".dropdown")
 BUNDLE_SEL = "[data-tid='nub-bundle']"
 SIGNER_SEL = "[data-tid^='nub-signerPk-']"
 RESEND_SEL = "[data-tid='nub-sendText']"
@@ -149,6 +162,38 @@ def signers(page) -> List[Dict]:
                     "text": text,
                     "resend": bool(s.get("resend"))})
     return out
+
+
+def _menu_open(page, pk: str) -> bool:
+    """Is this signer's action dropdown showing?"""
+    try:
+        return page.evaluate(
+            """(a) => {
+                 const m = document.querySelector("[data-tid='" + a[0] + "'] " + a[1]);
+                 return !!m && getComputedStyle(m).display !== 'none';
+               }""", [pk, MENU_SEL])
+    except Exception:                                   # noqa: BLE001
+        return False
+
+
+def open_signer_menu(page, pk: str, log=print) -> bool:
+    """Open that signer's ... dropdown, so Resend is a real, clickable thing."""
+    if _menu_open(page, pk):
+        return True
+    for which in TRIGGER_SELS:
+        el = page.query_selector("[data-tid='%s'] %s" % (pk, which))
+        if el is None:
+            continue
+        try:
+            el.click(timeout=8000)
+        except Exception as exc:                        # noqa: BLE001
+            log("    the signer's menu would not open (%s on %s)"
+                % (type(exc).__name__, which))
+            continue
+        page.wait_for_timeout(700)
+        if _menu_open(page, pk):
+            return True
+    return False
 
 
 def _receipts(page, email: str) -> int:
@@ -283,6 +328,10 @@ def resend(page, term: str, email: str, *, dry_run: bool = True,
             % (term, s["status"], before))
         close_detail(page)
         return False
+    if not open_signer_menu(page, s["pk"], log=log):
+        log("    %s: could not open the signer's menu — not re-sent" % term)
+        close_detail(page)
+        return False
     # Scoped to THIS signer's block. A bare RESEND_SEL would take whichever
     # signer the app rendered first, which on a multi-signer bundle is the
     # wrong person.
@@ -291,7 +340,16 @@ def resend(page, term: str, email: str, *, dry_run: bool = True,
         log("    %s: the Resend control went away — not re-sent" % term)
         close_detail(page)
         return False
-    btn.click()
+    try:
+        btn.click(timeout=15000)
+    except Exception as exc:                            # noqa: BLE001
+        # NEVER RAISES PAST HERE. A chase runs through a handful of people in
+        # one browser, and a click that timed out on one must not take the
+        # rest of them with it.
+        log("    %s: the Resend click did not land (%s) — not re-sent"
+            % (term, type(exc).__name__))
+        close_detail(page)
+        return False
     # WAIT FOR THE RECEIPT, not for a fixed moment. The click is a request;
     # the Event Log line is the app saying it happened.
     for _ in range(15):
