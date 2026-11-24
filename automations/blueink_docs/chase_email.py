@@ -75,7 +75,26 @@ def first_name(name: str) -> str:
     return parts[0] if parts else "there"
 
 
+def kind_key(kind: str) -> str:
+    """One reminder kind, however the caller spells it.
+
+    `chase.py` names the two chases "day-before" and "morning-of"; the
+    templates here are keyed "day_before" and "morning_of". Nothing reconciled
+    them, and `send` turns an unknown kind into a WORD FOR THE LOG rather than
+    an error -- so the chase printed "reminded ... + unknown reminder kind:
+    'morning-of'" and counted the person as done. The email half could never
+    have gone out, for either chase, since the day it was written
+    (found by a dry run against the live app, 2026-11-24).
+
+    Normalised rather than renamed: the ledger's own note carries the hyphen
+    spelling, and `already_chased` matches on that text, so changing it would
+    make everybody chased before today eligible for a second reminder.
+    """
+    return str(kind or "").strip().lower().replace("-", "_")
+
+
 def build(name: str, email: str, kind: str) -> EmailMessage:
+    kind = kind_key(kind)
     if kind not in _BODY:
         raise ValueError("unknown reminder kind: %r" % kind)
     msg = EmailMessage()

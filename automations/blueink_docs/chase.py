@@ -133,12 +133,117 @@ def plan(people, sent_rows: List[list], starts: Dict[str, dt.date],
     return out
 
 
+def _remind_by_api(bundle: str, email: str, name: str, kind: str,
+                   start: dt.date, *, send: bool, log=log) -> bool:
+    """The KEY route. Only for an office that has its own Blue Ink API key.
+
+    True when a reminder went, or would have in a dry run. False when this
+    person must be left alone -- already signed, unreadable, or the remind
+    failed. Every refusal says why, because a chase that quietly does nothing
+    reads the same as a chase with nobody due.
+    """
+    from automations.blueink_docs import blueink as BI
+    from automations.blueink_docs import chase_email as CE
+
+    # ASKED PER PACKET, AT THE MOMENT OF SENDING. The ledger says what we
+    # sent; only Blue Ink knows whether they have signed since, and a reminder
+    # to somebody who already did is the one thing this must never do.
+    try:
+        open_packets = BI.unsigned_packets(bundle)
+    except Exception as e:                               # noqa: BLE001
+        log("    %-28s SKIPPED — Blue Ink would not say (%s)"
+            % (name, type(e).__name__))
+        return False
+    mine = [q for q in open_packets
+            if str(q.get("email", "")).strip().lower() == email.lower()]
+    if not mine:
+        log("    %-28s already signed — no reminder" % name)
+        return False
+    # THE `id`, NEVER THE `key`. A packet carries both, and they are not
+    # interchangeable: `key` is the template's role label ("employee-1", the
+    # same string on every bundle made from that template) while `id` is this
+    # packet's own ("pEBs3Kgr2g"). Reminding by key answers 404 "No Packet
+    # matches the given query" -- proved live 2026-11-20, which is the whole
+    # reason one real reminder was worth sending.
+    packet = str(mine[0].get("id") or "")
+    if not packet:
+        log("    %-28s SKIPPED — packet has no id" % name)
+        return False
+    if not send:
+        said = CE.send(name, email, kind, really=False, log=log)
+        log("    %-28s would remind (%s, starts %s) + %s"
+            % (name, kind, start.strftime("%m/%d"), said))
+        return True
+    try:
+        BI.remind_packet(packet)
+    except Exception as e:                               # noqa: BLE001
+        log("    %-28s FAILED — %s: %s"
+            % (name, type(e).__name__, str(e)[:90]))
+        return False
+    return True
+
+
+def _remind_in_the_app(browser, email: str, name: str, kind: str,
+                       start: dt.date, *, send: bool, log=log) -> bool:
+    """The ROUTE EVERY OFFICE HAS: the web app's own per-signer Resend.
+
+    No API key, because nothing on this plan gives an ICD one. `resend_ui`
+    reads the signer's state off the same screen before it clicks and refuses
+    anybody already signed, so the "never remind somebody who has signed"
+    rule lives there rather than being restated here.
+
+    THE DRY RUN READS THE SAME SCREEN. It used to answer from the plan, and on
+    2026-11-24 it reported "would remind" for eleven people who had every one
+    of them already signed -- the one thing this chase must never do, reported
+    as though it were about to.
+    """
+    from automations.blueink_docs import chase_email as CE
+    from automations.blueink_docs import resend_ui as RU
+
+    # SEARCHED BY THE ADDRESS, falling back to the name. `recent_ui` makes the
+    # same choice for the same reason: the address on the sheet is not always
+    # the address the packet actually went to.
+    #
+    # The WINNING term is remembered, because the resend searches again and
+    # one that searched the address after the name found it would refuse the
+    # person it had just approved.
+    # ONLY RETRIED WHEN THE FIRST SEARCH DID NOT FIND THEM. A verdict of
+    # "already signed" is a finished answer about this person, and retrying
+    # past it let the second search overwrite it: Haley Paul's address found
+    # `Complete11/23/26 Haley Paul`, her roster name is the corrupt "Haley `",
+    # and the chase reported "no live Blue Ink packet" about a packet she had
+    # signed (2026-11-24). The last verdict was winning rather than the most
+    # informative one.
+    terms = [t for t in (email, name) if str(t or "").strip()]
+    verdict, term = RU.NO_ADDRESS, ""
+    for attempt in terms:
+        verdict, _, _ = RU.inspect(browser.page, attempt, email, log=log)
+        term = attempt
+        if verdict not in (RU.NO_PACKET, RU.NOT_A_SIGNER):
+            break
+    if verdict != RU.WOULD_SEND:
+        log("    %-28s %s" % (name, RU.says(verdict)))
+        return False
+    if not send:
+        said = CE.send(name, email, kind, really=False, log=log)
+        log("    %-28s would remind (%s, starts %s) + %s"
+            % (name, kind, start.strftime("%m/%d"), said))
+        return True
+    if RU.resend(browser.page, term, email, dry_run=False, log=log):
+        return True
+    log("    %-28s not re-sent — see above" % name)
+    return False
+
+
 def run(workbook, people, starts: Dict[str, dt.date], *, today: dt.date,
         send: bool = False, log=log) -> int:
     """Chase everybody due today. Returns how many reminders went (or would)."""
-    from automations.blueink_docs import blueink as BI
+    import contextlib
+
     from automations.blueink_docs import chase_email as CE
+    from automations.blueink_docs import config
     from automations.blueink_docs import ledger
+    from automations.blueink_docs import resend_ui as RU
 
     rows = ledger.read(workbook)
     due = plan(people, rows, starts, today)
@@ -149,64 +254,50 @@ def run(workbook, people, starts: Dict[str, dt.date], *, today: dt.date,
     log("  %d possible chase(s) for %s" % (len(due), today.strftime("%m/%d/%Y")))
     went = 0
     writer = ledger.Writer(workbook) if send else None
-    for person, bundle, kind, start in due:
-        name = ("%s %s" % (getattr(person, "first", ""),
-                           getattr(person, "last", ""))).strip()
-        # ASKED PER PACKET, AT THE MOMENT OF SENDING. The ledger says what we
-        # sent; only Blue Ink knows whether they have signed since, and a
-        # reminder to somebody who already did is the one thing this must
-        # never do.
-        try:
-            open_packets = BI.unsigned_packets(bundle)
-        except Exception as e:                           # noqa: BLE001
-            log("    %-28s SKIPPED — Blue Ink would not say (%s)"
-                % (name, type(e).__name__))
-            continue
-        mine = [q for q in open_packets
-                if str(q.get("email", "")).strip().lower()
-                == str(person.email).strip().lower()]
-        if not mine:
-            log("    %-28s already signed — no reminder" % name)
-            continue
-        # THE `id`, NEVER THE `key`. A packet carries both, and they are not
-        # interchangeable: `key` is the template's role label ("employee-1",
-        # the same string on every bundle made from that template) while `id`
-        # is this packet's own ("pEBs3Kgr2g"). Reminding by key answers
-        # 404 "No Packet matches the given query" -- proved live 2026-11-20,
-        # which is the whole reason one real reminder was worth sending.
-        key = str(mine[0].get("id") or "")
-        if not key:
-            log("    %-28s SKIPPED — packet has no id" % name)
-            continue
-        if not send:
-            said = CE.send(name, getattr(person, "email", ""), kind,
-                           really=False, log=log)
-            log("    %-28s would remind (%s, starts %s) + %s"
-                % (name, kind, start.strftime("%m/%d"), said))
+    # TWO ROUTES TO THE SAME REMIND, and the BROWSER goes first. The API route
+    # needs a private key, and API Access is Enterprise-only on this plan: no
+    # machine in the fleet has ever had one, and the direction since
+    # 2026-11-23 is to assume no ICD will ([[feedback_onboarding_four_sources_only]]).
+    # So the route that works everywhere is the one a person would use, and
+    # the key -- where an office does have one -- is the fallback.
+    #
+    # The browser is opened ONCE for the whole run and only when something is
+    # actually due: signing in is the slow part, and a chase with nobody due
+    # should not start a browser at all.
+    browser = None
+    with contextlib.ExitStack() as stack:
+        for person, bundle, kind, start in due:
+            name = ("%s %s" % (getattr(person, "first", ""),
+                               getattr(person, "last", ""))).strip()
+            email = str(getattr(person, "email", "") or "").strip()
+            if config.using_own_key():
+                ok = _remind_by_api(bundle, email, name, kind, start,
+                                    send=send, log=log)
+            else:
+                if browser is None:
+                    browser = stack.enter_context(RU.Session())
+                ok = _remind_in_the_app(browser, email, name, kind, start,
+                                        send=send, log=log)
+            if not ok:
+                continue
             went += 1
-            continue
-        try:
-            BI.remind_packet(key)
-        except Exception as e:                           # noqa: BLE001
-            log("    %-28s FAILED — %s: %s" % (name, type(e).__name__,
-                                               str(e)[:90]))
-            continue
-        # AND SAY THAT WE DID (Megan, 2026-11-23). Blue Ink's remind carries
-        # no message of ours -- the endpoint takes packet fields and nothing
-        # else -- so its email arrives looking exactly like the first one,
-        # and somebody who has been meaning to get to it reads a duplicate
-        # and ignores it.
-        #
-        # AFTER the remind and only after it SUCCEEDED. Before it, we would
-        # be promising a message that has not been sent; after a failure, we
-        # would be claiming one that never will be, and they go hunting for
-        # an email that is not there.
-        said = CE.send(name, getattr(person, "email", ""), kind,
-                       really=True, log=log)
-        log("    %-28s reminded (%s) + %s" % (name, kind, said))
-        writer.add(ledger.row_for(person, bundle, "reminded",
-                                  note_for(kind, start)))
-        went += 1
+            if not send:
+                continue
+            # AND SAY THAT WE DID (Megan, 2026-11-23). Neither route carries a
+            # message of ours -- the API's remind takes packet fields and
+            # nothing else, and the web app's Resend re-sends the same
+            # invitation -- so Blue Ink's email arrives looking exactly like
+            # the first one, and somebody who has been meaning to get to it
+            # reads a duplicate and ignores it.
+            #
+            # AFTER the remind and only after it SUCCEEDED. Before it, we
+            # would be promising a message that has not been sent; after a
+            # failure, we would be claiming one that never will be, and they
+            # go hunting for an email that is not there.
+            said = CE.send(name, email, kind, really=True, log=log)
+            log("    %-28s reminded (%s) + %s" % (name, kind, said))
+            writer.add(ledger.row_for(person, bundle, "reminded",
+                                      note_for(kind, start)))
     if writer is not None:
         # `finish`, not `flush`: it makes a last attempt and hands back by
         # NAME whatever still would not write. The reminder has already gone

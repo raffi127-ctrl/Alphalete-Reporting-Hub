@@ -85,19 +85,63 @@ class WhenItSends(unittest.TestCase):
 
 
 class WhereTheChaseCallsIt(unittest.TestCase):
+    """The email must never claim a resend that has not happened.
 
-    def test_the_email_goes_after_the_resend_and_only_if_it_worked(self):
+    The guarantee lives in two places since the web-app route was added
+    (2026-11-24): `run` sends the email only past the `if not ok` guard, and
+    each route returns False rather than True on a failure.
+    """
+
+    def test_the_email_goes_only_past_the_did_it_work_guard(self):
         import inspect
         from automations.blueink_docs import chase
         src = inspect.getsource(chase.run)
-        remind = src.index("BI.remind_packet(key)")
-        failed = src.index('log("    %-28s FAILED')
+        guard = src.index("if not ok:")
         emailed = src.index("really=True")
-        self.assertLess(remind, emailed,
-                        "the email claims a resend before it has happened")
-        self.assertLess(failed, emailed,
-                        "a failed resend must return before the email goes")
+        self.assertLess(guard, emailed,
+                        "the email claims a resend before it is known to have "
+                        "happened")
+
+    def test_the_api_route_returns_false_on_a_failure(self):
+        import inspect
+        from automations.blueink_docs import chase
+        src = inspect.getsource(chase._remind_by_api)
+        remind = src.index("BI.remind_packet(packet)")
+        failed = src.index('log("    %-28s FAILED')
+        self.assertLess(remind, failed)
+        self.assertIn("return False", src[failed:])
+
+    def test_the_app_route_only_returns_true_on_a_confirmed_resend(self):
+        """`resend_ui.resend` is True only when the event log gained a receipt,
+        so the route has nothing of its own to decide."""
+        import inspect
+        from automations.blueink_docs import chase
+        src = inspect.getsource(chase._remind_in_the_app)
+        self.assertIn("RU.resend(", src)
+        self.assertIn("return False", src)
 
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TheTwoSpellingsOfAChaseKind(unittest.TestCase):
+    """The test that was missing. `chase` says "morning-of", the templates say
+    "morning_of", and `send` reports an unknown kind as a log word rather than
+    raising -- so the chase read "reminded" while no email could go."""
+
+    def test_chases_own_constants_build_an_email(self):
+        from automations.blueink_docs import chase
+        for kind in (chase.DAY_BEFORE, chase.MORNING_OF):
+            msg = CE.build("Jerry Esebanme", "j@x.com", kind)
+            self.assertTrue(msg["Subject"], kind)
+
+    def test_send_does_not_report_an_unknown_kind_for_them(self):
+        from automations.blueink_docs import chase
+        for kind in (chase.DAY_BEFORE, chase.MORNING_OF):
+            said = CE.send("Jerry", "j@x.com", kind, really=False)
+            self.assertEqual(said, "would email", kind)
+
+    def test_a_kind_nobody_has_a_template_for_still_refuses(self):
+        said = CE.send("Jerry", "j@x.com", "week-after", really=False)
+        self.assertIn("unknown reminder kind", said)
