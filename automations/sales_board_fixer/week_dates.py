@@ -202,12 +202,15 @@ def rolled_this_week(values, today: dt.date) -> bool:
     still to come are empty and an earlier day has sales (Eve 2026-11-11: Frank,
     Drew, Cody, Eveliz had 11/9-11/10 sales under last week's 2-8; checked
     against the ICD Relay). Only Tue-Fri: on Monday nothing has sold yet, and
-    on Sat/Sun a single empty day proves nothing (offices off on Sunday)."""
+    on Sat/Sun a single empty day proves nothing (offices off on Sunday).
+    Sunday never counts as a day still to come (Eve 2026-11-24: Drew's rolled
+    board kept one app under SUN, left from last week, and the dates stayed
+    16-22 with Monday 52 apps)."""
     if not 1 <= today.weekday() <= 4:
         return False
     sold = _day_sales(values)
     before = [sold.get(d, False) for d in range(today.weekday())]
-    after = [sold.get(d) for d in range(today.weekday() + 1, 7)]
+    after = [sold.get(d) for d in range(today.weekday() + 1, 6)]
     return any(before) and all(x is False for x in after)
 
 

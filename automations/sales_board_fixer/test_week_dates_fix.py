@@ -92,6 +92,17 @@ class UndatedTab(unittest.TestCase):
         got = W.findings(v, "Sales Board", wed, chain(v))
         self.assertEqual(cells(got), [("C2", "9"), ("B3", "WE 11/9-11/15")])
 
+    def test_rolled_board_with_a_leftover_sunday_still_gets_dates(self):
+        # Eve 11/24: Drew, Monday sold, one app left under SUN, MON says 16
+        v = sold_on(board("x", [16, 17, 18, 19, 20, 21, 22]), [0, 6])
+        self.assertTrue(W.rolled_this_week(v, TUE))
+        got = W.findings(v, "Sales Board NDS", TUE, chain(v))
+        self.assertTrue(got and all(x.fixable for x in got))
+
+    def test_saturday_sale_still_means_not_rolled(self):
+        v = sold_on(board("x", [16, 17, 18, 19, 20, 21, 22]), [0, 5])
+        self.assertFalse(W.rolled_this_week(v, TUE))
+
     def test_rolled_needs_an_earlier_sale(self):
         # sales only on a day still to come: not rolled (and not empty)
         v = sold_on(board("x", [26, 27, 28, 29, 30, 31, 1]), [4])
