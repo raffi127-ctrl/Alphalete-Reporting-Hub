@@ -4,7 +4,8 @@ Maud 2026-11-24. Every Wednesday morning:
 
   1  download Tableau "ORG DD Detail" (the newest DD week)
   2  build the %-payout workbook from it (pct_payout.py — Edited, payout tab,
-     one tab per rep, Raw)
+     one tab per rep, Raw; % rules from Raf's sales board). Last week's held
+     new starts' sales are carried in from last week's RH sheet.
   3  upload it as a Google Sheet into "Commission Sheets", named
      `RH M.D.YY` — the week-ending SUNDAY (DD week is the Saturday, +1 day)
   4  keep only the 2 newest of THESE workbooks in that folder; MOVE the older
@@ -148,7 +149,12 @@ def run(write: bool, dd_file: Optional[Path], suffix: str) -> int:
     _log(f"   DD week ending Sunday {sunday:%m/%d/%Y} -> {name!r}")
 
     svc = service()
-    already = existing_for_week(our_sheets(svc), sunday)
+    ours = our_sheets(svc)
+    already = existing_for_week(ours, sunday)
+    # Last week's held new starts get paid this week: carry their sales over
+    # from last week's sheet (Maud 2026-11-24).
+    prev = existing_for_week(ours, sunday - dt.timedelta(days=7))
+    carry_from = prev[0]["id"] if prev else None
 
     if already:
         _log(f"3  already in Commission Sheets for this week: "
@@ -156,7 +162,9 @@ def run(write: bool, dd_file: Optional[Path], suffix: str) -> int:
     else:
         xlsx = work / f"{name}.xlsx"
         _log("2  building the workbook…")
-        pct_payout.main(dd, xlsx)
+        if not carry_from:
+            _log("   (no sheet for last week — nothing to carry over)")
+        pct_payout.main(dd, xlsx, carry_from=carry_from)
         if write:
             made = upload(svc, xlsx, name)
             _log(f"3  uploaded {made['name']!r}  {made.get('webViewLink', '')}")
