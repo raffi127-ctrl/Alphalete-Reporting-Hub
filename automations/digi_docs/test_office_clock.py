@@ -102,3 +102,72 @@ def test_an_unreadable_start_time_is_never_sent_on_a_guess():
                                            now=dt.datetime(2026, 11, 24, 23, 0))
     assert due == [] and not_yet == []
     assert [c.name for c in no_time] == ["Ada"]
+
+
+# ------------------------------------------- the form asks for it, 2026-11-24
+
+def test_the_form_asks_the_question():
+    """The zone was read from a column nothing wrote, so every office fell
+    back to Central until somebody filled it in by hand. That was my own loose
+    end from the morning's change."""
+    from automations.eco_onboarding import settings as ES
+    assert ES.COL_TIME_ZONE == C.TZ_COLUMN
+    assert any(q.column == ES.COL_TIME_ZONE for q in ES.ALL)
+    assert ES.COL_TIME_ZONE in ES.columns_needed()
+
+
+def test_the_question_is_required():
+    """A blank zone is the Central fallback, which is the bug -- it looks like
+    an answer and is not one."""
+    from automations.eco_onboarding import settings as ES
+    q = next(q for q in ES.ALL if q.column == ES.COL_TIME_ZONE)
+    assert q.required is True
+
+
+def test_arizona_has_its_own_entry():
+    """It does not change twice a year, so "Mountain" would be wrong for half
+    of it -- and wrong by an hour on every send."""
+    from automations.eco_onboarding import settings as ES
+    assert ES.zone_name("Mountain") == "America/Denver"
+    assert ES.zone_name("Mountain — Arizona (no daylight saving)") \
+        == "America/Phoenix"
+
+
+def test_the_sheet_holds_the_ZONE_not_the_word():
+    """"Pacific" means nothing to a clock; the zone name is what handles its
+    own daylight saving, and storing it means no reader needs the mapping."""
+    from automations.eco_onboarding import settings as ES
+    row = ES.row_for({"time_zone": "Pacific"}, "me", "now")
+    assert row[ES.COL_TIME_ZONE] == "America/Los_Angeles"
+
+
+def test_a_word_nobody_recognises_is_not_silently_dropped():
+    """Left as typed, so it is visible on the tab rather than absent."""
+    from automations.eco_onboarding import settings as ES
+    row = ES.row_for({"time_zone": "somewhere else"}, "me", "now")
+    assert row[ES.COL_TIME_ZONE] == "somewhere else"
+    assert ES.zone_name("somewhere else") == ""
+
+
+def test_the_reader_takes_either_shape(monkeypatch):
+    """A cell filled in by hand before the question existed holds the word; a
+    reader that understood only one of the two would quietly fall back to
+    Central for the other."""
+    from automations.eco_onboarding import store
+    monkeypatch.setattr(store, "read",
+                        lambda k, book=None: {C.TZ_COLUMN: "Pacific"})
+    assert C.office_tz("x") == "America/Los_Angeles"
+    monkeypatch.setattr(store, "read",
+                        lambda k, book=None: {C.TZ_COLUMN: "America/Phoenix"})
+    assert C.office_tz("x") == "America/Phoenix"
+
+
+def test_the_zone_is_not_guessed_from_the_state():
+    """Six states are split across two zones, and the office has already given
+    a state -- so guessing would look reasonable and be wrong for them."""
+    import inspect
+    from automations.eco_onboarding import settings as ES
+    src = inspect.getsource(ES)
+    at = src.index("COL_TIME_ZONE = ")
+    note = src[max(0, at - 1200):at]
+    assert "NOT GUESSED FROM THE STATE" in note

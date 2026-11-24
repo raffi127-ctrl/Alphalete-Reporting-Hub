@@ -51,9 +51,13 @@ class WhatCountsAsAnswered(unittest.TestCase):
     # Ink has to name the bundle Lucy sends, because every ICD's is
     # different and there is no name to fall back to ("no one will be like
     # alphalete's" -- Megan).
+    # A FLORIDA OFFICE, so Eastern -- and the zone is here because it is
+    # REQUIRED (2026-11-24): a blank one is the Central fallback, which looks
+    # like an answer and is not. An office in Tampa getting Central would have
+    # every bundle go an hour early.
     GOOD = {"state": "Florida", "city": "Tampa", "blue_ink": "Yes",
             "bundle": "TAMPA ONBOARDING PACKET",
-            "calendar_view": "Yes",
+            "calendar_view": "Yes", "time_zone": "Eastern",
             "rate": "12.50", "pay_state": "Florida", "tax_state": "Florida"}
 
     def test_a_complete_answer_has_no_problems(self):

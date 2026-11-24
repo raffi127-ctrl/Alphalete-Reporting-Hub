@@ -67,6 +67,48 @@ STERLING: List[Question] = [
              (), "", True),
 ]
 
+# WHAT TIME IT IS WHERE THE OFFICE IS (Megan, 2026-11-24: "we'll need to make
+# sure that we're reading the calendar in the right time zone").
+#
+# EVERY START TIME WAS READ AS CENTRAL. It was one hard-coded line, true since
+# August because the only tab was Raf's and Lucy 3 is Central too -- so an
+# office an hour or three away got its Digi Doc bundle an hour or three wrong,
+# and EARLY on the west coast, which is a contract landing before anybody is in
+# the room.
+#
+# A ZONE, NOT AN OFFSET. An offset is wrong twice a year, and the fortnight
+# either side of a clock change is exactly when a 30-minute lead quietly
+# becomes a 90-minute one. The words are the owner's ("Pacific"), the stored
+# value is the zone name, because that is what handles the change itself.
+#
+# NOT GUESSED FROM THE STATE, even though the office has already given one.
+# Six states are split across two zones, and a guessed zone is
+# indistinguishable from a right one until a send lands an hour out. Asked,
+# with the office's own state as the hint next to it.
+COL_TIME_ZONE = "Time Zone"
+
+_ZONES = (
+    ("Eastern", "America/New_York"),
+    ("Central", "America/Chicago"),
+    ("Mountain", "America/Denver"),
+    ("Mountain — Arizona (no daylight saving)", "America/Phoenix"),
+    ("Pacific", "America/Los_Angeles"),
+    ("Alaska", "America/Anchorage"),
+    ("Hawaii", "Pacific/Honolulu"),
+)
+TIME_ZONE_CHOICES = tuple(label for label, _zone in _ZONES)
+ZONE_BY_LABEL = {label: zone for label, zone in _ZONES}
+LABEL_BY_ZONE = {zone: label for label, zone in _ZONES}
+
+CLOCK: List[Question] = [
+    Question("time_zone", COL_TIME_ZONE, "What time zone is your office in?",
+             "Your new starts' documents go 30 minutes before each person's "
+             "own start time, so this is read off your clock and not ours. "
+             "Arizona has its own entry because it does not change twice a "
+             "year.",
+             TIME_ZONE_CHOICES, "Central", True),
+]
+
 # WHAT THE ONBOARDING BOARD NEEDS. Both columns are read today and neither
 # existed on the tab until this form created it.
 BOARD: List[Question] = [
@@ -252,7 +294,7 @@ JOB: List[Question] = [
              (), STANDARD["security_role"]),
 ]
 
-ALL: List[Question] = (STERLING + CALENDAR + BOARD + BLUE_INK_BUNDLE
+ALL: List[Question] = (STERLING + CLOCK + CALENDAR + BOARD + BLUE_INK_BUNDLE
                        + PAY_STATES + OBCL_UPDATE + DAILY_UPDATE + JOB)
 
 
@@ -343,8 +385,32 @@ def row_for(answers: Dict[str, str], who: str, when: str) -> Dict[str, str]:
             # People paste the whole Slack link as often as the bare id.
             # Store the id, so every reader gets one shape.
             said = normalize_channel_id(said)[0] or said
+        if said and q.column == COL_TIME_ZONE:
+            # THE ZONE, NOT THE WORD. "Pacific" means nothing to a clock, and
+            # `America/Los_Angeles` is what handles its own daylight saving --
+            # so the sheet holds the usable value and no reader needs this
+            # mapping. A word nobody recognises is left as typed rather than
+            # dropped, so it is visible on the tab instead of silently absent.
+            said = zone_name(said) or said
         if said:
             row[q.column] = said
     row[COL_UPDATED_BY] = who
     row[COL_UPDATED_AT] = when
     return row
+
+
+def zone_name(answer: str) -> str:
+    """The stored zone for what the owner picked, or "" for anything else.
+
+    THE LABEL IS NOT THE ANSWER. "Pacific" means nothing to a clock;
+    `America/Los_Angeles` is what handles its own daylight saving. Anything
+    unrecognised returns "" so the reader falls back to Central rather than
+    acting on a word it cannot use ([[feedback_empty_means_proven_zero]] --
+    better the old behaviour than a random hour's drift).
+    """
+    return ZONE_BY_LABEL.get(str(answer or "").strip(), "")
+
+
+def zone_label(zone: str) -> str:
+    """The owner's words for a stored zone -- for showing an answer back."""
+    return LABEL_BY_ZONE.get(str(zone or "").strip(), "")

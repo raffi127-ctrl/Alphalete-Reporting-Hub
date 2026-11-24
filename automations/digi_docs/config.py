@@ -94,7 +94,16 @@ def office_tz(office_key: str = "") -> str:
             from automations.eco_onboarding import store as _store
             said = str((_store.read(key) or {}).get(TZ_COLUMN) or "").strip()
             if said:
-                return said
+                # TOLERANT OF EITHER SHAPE. The form stores the zone name
+                # (`settings.row_for` converts "Pacific" before writing), but
+                # a cell filled in by hand before the question existed may
+                # hold the word -- and a reader that only understood one of
+                # the two would quietly fall back to Central for the other.
+                try:
+                    from automations.eco_onboarding.settings import zone_name
+                    return zone_name(said) or said
+                except Exception:   # noqa: BLE001 -- not reachable here
+                    return said
         except Exception:      # noqa: BLE001 -- no sheet reachable here, or no
             # answer yet. An office that has not been asked keeps Central,
             # which is what it has had all along.
