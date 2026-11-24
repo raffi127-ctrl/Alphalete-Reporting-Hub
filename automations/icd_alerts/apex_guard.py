@@ -170,6 +170,13 @@ def load() -> dict:
         return {}
 
 
+_NOISE = ("/cdn-cgi/rum", "sentry.io", "/shim-tests/")
+
+
+def _noise(k: str) -> bool:
+    return any(n in k for n in _NOISE)
+
+
 def summary(limit: int = 300) -> str:
     """'lock stopped: ...; sign-in window sent: ...' -- '' when nothing yet."""
     d, parts = load(), []
@@ -177,6 +184,10 @@ def summary(limit: int = 300) -> str:
                         ("watch", "sign-in window sent")):
         seen = d.get(mode) or {}
         if seen:
+            # Page noise (analytics, error reports, the browser self-test)
+            # goes LAST: on 11/23 it filled the 300 characters and hid the
+            # sign-in requests the list exists to show.
             parts.append("%s: %s" % (label, ", ".join(
-                "%s x%d" % (k, n) for k, n in sorted(seen.items()))[:limit]))
+                "%s x%d" % (k, n) for k, n in
+                sorted(seen.items(), key=lambda kv: (_noise(kv[0]), kv[0])))[:limit]))
     return "; ".join(parts)

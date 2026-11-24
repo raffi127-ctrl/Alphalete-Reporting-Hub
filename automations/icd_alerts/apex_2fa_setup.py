@@ -203,8 +203,8 @@ def _run(log, ask, end) -> int:
                     browser_banner.show(page, TURN_CODE, TURN_CODE_DETAIL,
                                         browser_banner.GREEN)
                     ask.message(SAY_TEXT_CODE)
-                    end = time.time() + SIGNIN_WAIT_S
-                    while time.time() < end and not L._past_login(page):
+                    deadline = time.time() + SIGNIN_WAIT_S
+                    while time.time() < deadline and not L._past_login(page):
                         time.sleep(3)
                 if not L._past_login(page):
                     log("  Apex setup: nobody finished signing in")
@@ -240,8 +240,8 @@ def _run(log, ask, end) -> int:
                 ask.message(SAY_VERIFY)
 
                 # 3. he presses Verify; a code that went stale is replaced
-                end = time.time() + VERIFY_WAIT_S
-                while time.time() < end and not _verified(page):
+                deadline = time.time() + VERIFY_WAIT_S
+                while time.time() < deadline and not _verified(page):
                     time.sleep(2)
                     if time.time() - filled > 25 and not _verified(page):
                         try:
@@ -279,7 +279,8 @@ def _run(log, ask, end) -> int:
             end[0] = ("DONE -- code app on, login saved, Lucy signed in "
                       "by herself" if ok else
                       "code app on + login saved, but Lucy's own test "
-                      "sign-in did not work yet")
+                      "sign-in did not work yet (%s)"
+                      % (L._state().get("last") or "no step recorded"))
         ask.message(SAY_DONE if ok else SAY_SAVED_NOT_PROVEN)
         return 0
     finally:

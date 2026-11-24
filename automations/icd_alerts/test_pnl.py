@@ -145,6 +145,35 @@ class ApexTests(unittest.TestCase):
         self.assertEqual(AU.SYSTEMS["apex"]["module"],
                          "automations.icd_alerts.apex_signin")
 
+    def test_stopped_sign_in_never_reopens_the_owner_window(self):
+        """Eve 2026-11-23: the owner gave his login once; Lucy failing is
+        ours to fix -- tell Eve + Megan, never ask him again."""
+        import inspect
+        src = inspect.getsource(P)
+        block = src.split("if L.stopped():", 1)[1].split("else:", 1)[0]
+        self.assertNotIn("offer(", block)
+        self.assertIn("_tell_approvers_stopped", block)
+
+    def test_stopped_note_goes_to_the_approver_stage(self):
+        from unittest import mock
+        from automations.icd_alerts import apex_2fa_setup as S
+        from automations.icd_alerts import relay as R
+
+        class L:
+            MAX_FAILS = 2
+
+            @staticmethod
+            def _state():
+                return {"last": "2026-11-24T09:01 failed at after password"}
+
+        with mock.patch.object(R, "report_fault") as rf:
+            P._tell_approvers_stopped(
+                {"office_key": "jairo15", "owner": "Jairo Ruiz"}, L)
+        stage, text = rf.call_args[0][:2]
+        self.assertEqual(stage, S.SETUP_STAGE)
+        self.assertIn("failed at after password", text)
+        self.assertIn("NOT asked again", text)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -489,6 +489,22 @@ def _apex_login_saved() -> bool:
     return bool(L.creds())
 
 
+def _tell_approvers_stopped(rec, L, log=print) -> None:
+    """Once a day, to Eve + Megan only (apex-setup stage, DMed by
+    post.notify_faults). Never raises."""
+    try:
+        from automations.icd_alerts import apex_2fa_setup as S
+        from automations.icd_alerts import relay as R
+        R.report_fault(S.SETUP_STAGE,
+                       "%s: Lucy's own Apex sign-in stopped after %d failed "
+                       "tries (last: %s) -- owner NOT asked again, needs us (%s)"
+                       % (_owner_name(rec), L.MAX_FAILS,
+                          L._state().get("last") or "?", dt.date.today()),
+                       office_key=rec["office_key"], log=log)
+    except Exception:  # noqa: BLE001 -- the telling is never the work
+        pass
+
+
 def setup_still_wanted(key: str) -> bool:
     """The code-app setup is still owed: switched on for this office and no
     login saved yet. Asked on EVERY Apex try, signed in or not -- Jairo
@@ -524,9 +540,11 @@ def run_apex_check(log=print) -> int:
             if L.creds():
                 line = "Apex " + status
                 if L.stopped():
-                    shown = AU.offer("apex_2fa", log=log)
-                    line += " -- setup window %s" % (
-                        "opened" if shown else "not opened: nobody at the Mac")
+                    # The owner already gave his login; when Lucy's own
+                    # sign-in fails it is ours to fix, not his to retype
+                    # (Eve 2026-11-23). No window: Eve + Megan get told.
+                    line += " -- owner NOT asked again; needs us"
+                    _tell_approvers_stopped(rec, L, log=log)
             else:
                 setup = rec["office_key"] in APEX_SETUP_KEYS
                 shown = AU.offer("apex_2fa" if setup else "apex", log=log)

@@ -164,5 +164,27 @@ class WiredIn(unittest.TestCase):
         self.assertIn("automations/icd_alerts/apex_guard.py", files)
 
 
+class SummaryShowsSignInFirst(unittest.TestCase):
+    """11/23: hundreds of analytics posts filled the 300 characters and the
+    sign-in requests Jairo's setup sent were cut off the line."""
+
+    def test_noise_goes_last(self):
+        seen = {"POST apex.herbjoyent.com/cdn-cgi/rum": 1023,
+                "POST o418336.ingest.sentry.io/api/5320796/envelope": 145,
+                "PUT apexapi.herbjoyent.com/services/shim-tests/http-put": 1,
+                "POST apex.herbjoyent.com/identity/account/login": 1}
+        with mock.patch.object(G, "load", return_value={"watch": seen}):
+            line = G.summary(limit=80)
+        self.assertIn("identity/account/login", line)
+        self.assertNotIn("sentry", line)
+
+
+class SetupDeadlinesKeepTheReason(unittest.TestCase):
+    def test_end_list_is_never_rebound(self):
+        from automations.icd_alerts import apex_2fa_setup as S
+        src = inspect.getsource(S._run)
+        self.assertNotIn("end = ", src.replace("end[0] = ", ""))
+
+
 if __name__ == "__main__":
     unittest.main()
