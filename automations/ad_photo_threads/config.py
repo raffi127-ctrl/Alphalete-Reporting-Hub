@@ -270,7 +270,8 @@ SOURCES = [
         "stream": "ALPHALETE MARKETING, INC.",
         "label": "Alphalete (Irving)",
         "tab": "Rafael Hidalgo",
-        "thread_re": re.compile(r"alphalete\s*\(irving\).*1st\s*round", re.I),
+        # 11/12 the thread says "Alphalete (Plano)" instead of "(Irving)".
+        "thread_re": re.compile(r"alphalete\s*\((irving|plano)\).*1st\s*round", re.I),
     },
 ]
 RAF_FUNNEL_2 = [
@@ -428,7 +429,8 @@ _MORE = [
      ["C0APEHLHDD2", "C0BEWHY5KQ9"], "C0C3XGN9K0S",
      r"^\W*elevate\s*specialized.*1st\s*round"),
     ("haytham", "Haytham Nagi", ARS_D_TO_I, "Haytham Nagi", "22524", "Horizon Edge Alliance",
-     "C0AUUSCSEV7", "C0C4S176UQG", r"horizon\s*edge.*1st\s*round"),
+     # 11/13 on the thread is just "First rounds 11/23" (no "Horizon Edge").
+     "C0AUUSCSEV7", "C0C4S176UQG", r"horizon\s*edge.*1st\s*round|^\W*first\s*rounds?\s+\d"),
     ("jacob", "Jacob Dover", ARS_J_TO_L, "Jacob Dover", "23607", "Rockstarworld Incorporated",
      "C0B9N1WDBB8", "C0C3VMKLZGE", r"rockstarworld.*1st\s*round"),
     ("khalil", "Khalil Mansour", ARS_J_TO_L, "Khalil Mansour", "11901", "Ever Forward Marketing",
