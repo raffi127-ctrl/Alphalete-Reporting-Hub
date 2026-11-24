@@ -37,6 +37,7 @@ OWNER_EMAILS: Dict[str, str] = {
     "Cody Cannon":         "codycannon1993@gmail.com",
     "Cyrus Wade":          "cywadeambient@gmail.com",
     "Haytham Nagi":        "haythamnagi1@gmail.com",
+    "Hasan Salame":        "hsalame1124@gmail.com",       # IN 2026-11-24 (Raf)
     "Jacob Dover":         "doverjacob94@gmail.com",
     "Joseph Logan":        "Loganjoseph81@yahoo.com",
     "Kash Rai":            "Palace.kash@gmail.com",

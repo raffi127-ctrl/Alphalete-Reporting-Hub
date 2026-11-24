@@ -563,6 +563,9 @@ RECIPIENTS: dict = {
         # IN 2026-10-27 (Eve): Omar Mohamad (Kalkan, 24153, promoted out of
         # Salik/Hammad) joins Raf's captainship. Live group updated same day.
         "oomohamad98@gmail.com",
+        # IN 2026-11-24 (Raf mail "add him to my captainship report", Eve OK):
+        # Hasan Salame (Ascend Elite, ATT Fiber, promoted out of Haytham).
+        "hsalame1124@gmail.com",
         # OUT 2026-08-20 (Eve): Steve McElwee (mcelwee.steve95@gmail.com) is not
         # in Rafael's captainship. Off the board, off his six metrics tabs and
         # off the live "Raf's Captain Team" group the same day — and since that

@@ -68,6 +68,7 @@ ICD_TIMEZONES: Dict[str, str] = {
     "Aya Al-Khafaji":   "America/Indiana/Indianapolis",  # Indianapolis, IN
     "Cyrus Wade":       "America/Chicago",               # Tyler, TX
     "Haytham Nagi":     "America/Chicago",               # Austin, TX
+    "Hasan Salame":     "America/Chicago",               # Waco, TX (2026-11-24)
     "Jacob Dover":      "America/Chicago",               # Memphis, TN
     "Joseph Logan":     "America/Detroit",               # Grandville, MI
     "Kash Rai":         "America/Chicago",               # Fort Worth, TX
