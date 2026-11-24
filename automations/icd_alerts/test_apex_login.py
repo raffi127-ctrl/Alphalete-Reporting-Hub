@@ -104,6 +104,14 @@ class Saved(unittest.TestCase):
         self.assertNotIn("input_value", src)
         self.assertIn("e.name || e.id || e.type", src)   # boxes by name only
 
+    def test_method_screen_picks_only_the_code_app(self):
+        def ok(t):
+            return bool(L._APP_OPTION.search(t)) and not L._NOT_APP.search(t)
+        self.assertTrue(ok("Authenticator Authenticator"))
+        self.assertTrue(ok("Authenticator app"))
+        for t in ("Phone Phone", "Email Email", "Text message SMS", "Phone call"):
+            self.assertFalse(ok(t), t)
+
     def test_success_resets_the_count(self):
         L._record(False, "x")
         L._record(True, "x")

@@ -45,7 +45,7 @@ MAX_FAILS = 2
 # Bump to give every Mac a clean fail count with the next release (there is no
 # remote "reset"). 2: Jairo stopped 2026-11-24 "failed at code box" with no
 # trace of the screen -- one more round, now saying what the page showed.
-FAIL_ROUND = 2
+FAIL_ROUND = 3     # 3: 11/24 the screen was SendCode 'Select Verification Method'
 PRE_SUBMIT_WAIT_S = 30        # the login standard: the pause IS the fix
 STEP_S = 30
 FRESH_S = 5                   # a code with less life left than this: wait for the next
@@ -159,6 +159,47 @@ _CODE = ('input[name*="code" i]:visible, input[autocomplete="one-time-code"]:vis
 _REMEMBER = 'input[type="checkbox"][name*="remember" i]'
 _SUBMIT = 'button[type="submit"]:visible, input[type="submit"]:visible'
 _PICK_APP = re.compile(r"use authenticator|authenticator app", re.I)
+# Apex's /Identity/Account/SendCode ("Select Verification Method" + Next,
+# Jairo's Mac 2026-11-24): pick the code app, never the text/phone/email one
+# (that would text the owner a code he did not ask for).
+_APP_OPTION = re.compile(r"authenticator|auth app|code app|app|totp", re.I)
+_NOT_APP = re.compile(r"sms|text|phone|email|e-mail|call", re.I)
+
+
+def pick_method(page) -> Optional[str]:
+    """On a choose-the-method screen: choose the code app and press Next.
+    None = not that screen. 'picked' = done. Anything else = why it did not
+    pick (the options seen) -- nothing was pressed then."""
+    opts = page.evaluate(r"""() => {
+      const vis = e => !!(e.offsetWidth || e.offsetHeight || e.getClientRects().length);
+      const out = [];
+      document.querySelectorAll('select').forEach((s, si) => { if (vis(s))
+        Array.from(s.options).forEach(o => out.push({kind: 'select', si: si,
+          value: o.value, text: (o.text || '').trim()})); });
+      document.querySelectorAll('input[type=radio]').forEach((r, ri) => { if (vis(r) || (r.labels && r.labels[0] && vis(r.labels[0]))) {
+        const lab = (r.labels && r.labels[0] ? r.labels[0].innerText : '') || '';
+        out.push({kind: 'radio', ri: ri, value: r.value, text: lab.trim()}); }});
+      return out;
+    }""")
+    if not opts:
+        return None
+    good = [o for o in opts
+            if _APP_OPTION.search("%s %s" % (o["text"], o["value"]))
+            and not _NOT_APP.search("%s %s" % (o["text"], o["value"]))]
+    if not good:
+        return "no code-app option (options: %s)" % ", ".join(
+            (o["text"] or o["value"])[:30] for o in opts)[:150]
+    o = good[0]
+    if o["kind"] == "select":
+        page.locator("select").nth(o["si"]).select_option(value=o["value"])
+    else:
+        page.locator("input[type=radio]").nth(o["ri"]).check(force=True)
+    nxt = page.locator(_SUBMIT)
+    if nxt.count():
+        nxt.first.click()
+    else:
+        page.get_by_role("button", name=re.compile(r"next|send|continue", re.I)).first.click()
+    return "picked"
 
 
 def _past_login(page) -> bool:
@@ -186,6 +227,8 @@ def where(page, limit: int = 220) -> str:
             say: pick('h1,h2,h3,h4,.alert,.validation-summary-errors,[role=alert]', 5),
             btn: pick('button,input[type=submit],a.btn', 5),
             box: pick('input:not([type=hidden])', 5, true),
+            opt: Array.from(document.querySelectorAll('select option'))
+                   .map(o => (o.text || '').trim()).filter(Boolean).slice(0, 5),
           };
         }""")
         out = "page %s" % path
@@ -193,6 +236,8 @@ def where(page, limit: int = 220) -> str:
             out += " says '%s'" % "' / '".join(bits["say"])
         if bits.get("btn"):
             out += "; buttons: %s" % ", ".join(bits["btn"])
+        if bits.get("opt"):
+            out += "; choices: %s" % ", ".join(bits["opt"])
         if bits.get("box"):
             out += "; boxes: %s" % ", ".join(bits["box"])
         return out[:limit]
@@ -235,6 +280,7 @@ def sign_in(page, login: Dict[str, str], *, wait_s: int = PRE_SUBMIT_WAIT_S,
         page.wait_for_timeout(wait_s * 1000)        # Cloudflare clears itself
         _submit(page, pw)
         step = "after password"
+        picked = False
         for _ in range(30):                         # up to ~60s
             page.wait_for_timeout(2000)
             if _past_login(page) or page.locator(_CODE).count():
@@ -243,6 +289,15 @@ def sign_in(page, login: Dict[str, str], *, wait_s: int = PRE_SUBMIT_WAIT_S,
             if pick.count() and pick.first.is_visible():
                 step = "choosing the app code"
                 pick.first.click()
+                continue
+            if not picked:
+                how = pick_method(page)
+                if how == "picked":
+                    picked = True
+                    step = "after choosing the code app"
+                elif how:
+                    step = "choosing the method: " + how
+                    raise RuntimeError(how)
         if not _past_login(page):
             step = "code box"
             code = page.locator(_CODE).first
