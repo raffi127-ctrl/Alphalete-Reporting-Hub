@@ -8537,6 +8537,29 @@
    "verify": null,
    "timeout_minutes": 5
   },
+  "commission_weekly_drop": {
+   "on_scheduler": true,
+   "_note": "Maud 2026-11-24. Wednesday morning: pull Tableau ORG DD Detail (newest week), build Raf's %-payout workbook (commission_sheet/pct_payout.py: Edited, payout tab, one tab per rep, Raw), upload it as a Google Sheet to 'Commission Sheets' named 'RH M.D.YY' (week-ending Sunday), then keep only the 2 newest RH workbooks there and MOVE older ones to 'Rafael/<year>' (never deleted). Stops without uploading if the DD week isn't last week. Skips the upload if this week's RH sheet already exists, so reruns are safe. Needs the one-time full-Drive token on this machine: python -m automations.commission_sheet.drive_auth. No 'machine' key = Lucy 1 (the mini).",
+   "display_name": "Raf Commission Sheet (Wed drop to Drive)",
+   "source_type": "tableau",
+   "data_sources": [],
+   "command": [
+    "automations.commission_sheet.weekly_drop"
+   ],
+   "base_args": [
+    "--write"
+   ],
+   "cadence": {
+    "weekdays": [
+     2
+    ]
+   },
+   "priority": "P2",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 25
+  },
   "raf_captainship_bonus": {
    "on_scheduler": true,
    "_note": "Raf Captainship Bonus — Maud's weekly Tuesday fill of the 'Captainship Bonuses' tab in the *Alphalete Org/Captainship Reports* sheet (each active rep's Total Activations for Raf's team from Tableau CaptainsBonus, current cycle + team New Internet 60-day churn % and Activation % rolling 4 weeks; Total Sales / Money Made / TOTAL MONEY MADE recompute, chart re-points, PDF DM'd to Raf, Dylan + Maud on Slack as Lucy — nothing saved to Downloads). No 'machine' key = Lucy 1 (the mini). cadence.weekdays [] = the 4am orchestrator NEVER auto-runs it — its real schedule is the Tuesday 10:00am launchd job (com.alphalete.raf-captainship-bonus-tue, installed via install_raf_captainship_bonus_agent) on Lucy 1. This handle exists so `lucy rerun raf_captainship_bonus --dry-run` (safe probe) and `lucy rerun raf_captainship_bonus` (LIVE fill) work, and matches the Hub card's run buttons. source_type 'tableau' so rerun runs the chrome-guard + readiness gate. Runs off the mini's warm Tableau session.",
