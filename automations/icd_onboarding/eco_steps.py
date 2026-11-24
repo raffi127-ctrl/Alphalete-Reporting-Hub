@@ -734,6 +734,178 @@ def _walked_in_after_a_no_show(office_key: str, week_start: dt.date,
     return out
 
 
+# --- THE FIVE OWNERVILLE COLUMNS ---------------------------------------------
+#
+# Moved here from `icd_onboarding.run` on 2026-11-24. One read of OwnerVille's
+# View Progress answers five boxes at once, and it is the office's OWN
+# OwnerVille -- their login, their campaign, their roster. The session comes
+# from `sessions.session_anywhere`, so this same body reads the Hub's
+# one-per-box session on a Lucy and the office's own on an office machine,
+# where nothing queues behind another office.
+#
+# `run.from_ownerville` is a delegate now. One body, as with the seed.
+
+def _ov_program(office_key: str) -> str:
+    from automations.office_admin import config as OC
+    o = OC.office(office_key)
+    return (getattr(o, "ov_program", "") if o else "") or ""
+
+
+def _board_names(office_key: str, week_start: dt.date,
+                 columns: Sequence[str] = ()) -> List[str]:
+    """Who on this week's board is still worth looking up.
+
+    Not everybody: the search is one request per person against a slow server
+    (~23s each, measured), so asking about people who cannot gain anything is
+    how a run spends its whole budget and still leaves somebody out.
+
+    Left out:
+      * anybody MARKED OFF — they are never ticked, so an answer about them is
+        thrown away;
+      * anybody who already has every column this source fills — there is
+        nothing left to learn, and each run then has fewer to ask about than
+        the last.
+    """
+    out = []
+    for r in F.rows_anywhere(office_key, week_start):
+        if not (r.get("Name") or r.get("Last Name")):
+            continue
+        if str(r.get(B.TERMINATED_AT) or "").strip():
+            continue
+        if columns and all(str(r.get(c) or "").strip() for c in columns):
+            continue
+        out.append(("%s %s" % (r.get("Name", ""), r.get("Last Name", ""))).strip())
+    return out
+
+
+def from_ownerville(office_key: str, week_start: dt.date, *,
+                    dry_run: bool = True, log=print,
+                    budget_s: Optional[float] = None) -> int:
+    """Five columns off one View Progress read.
+
+    IT USED TO ONLY GIVE PAGE ONE. The table was read as rendered, which
+    served a couple of dozen rows out of a hundred-odd, so the people on the
+    later pages came back unread — on Raf's office that was 24 of 127, and
+    only 3 of the week's 29 got their five columns. Unread is never "not
+    done", so nothing was wrongly ticked; they simply never got an answer.
+    The answer then was to ask the server's own search about each missing
+    person, one at a time.
+
+    Since 2026-11-21 read_table reads the request that fills the table, so one
+    call returns the WHOLE roster and `complete` says so. The per-person
+    search is kept only for the case where that read falls short, because
+    against a complete roster it cannot find anybody the read missed: the
+    search box fires the same request and filters the answer in the browser.
+    Measured here on the week of 11/15 — 22 of 39 missing, 7 searched over
+    203s, 22 still missing afterwards. Those 22 are not unread; they are not
+    enrolled in this programme yet, and no amount of searching changes that.
+    """
+    import time
+
+    from automations.icd_onboarding import sessions as OVA
+    from automations.icd_onboarding import ov_misses as OVM
+    from automations.obcl_ov_sweep import config as OVC
+    from automations.obcl_ov_sweep import ov_table
+    # `config`, NOT `run`: the path moved there on 2026-11-24 precisely so
+    # that wanting it does not import the sweep and gspread with it -- which
+    # an office machine has neither of. The shipped-closure test caught this
+    # line on the first pass.
+    from automations.obcl_ov_sweep.config import PROFILE_DIR
+
+    programme = _ov_program(office_key)
+    if not programme:
+        # A guess here reads an empty table, which looks exactly like nobody
+        # having done anything ([[reference_campaign_picks_the_workbook]]).
+        log("  ownerville: %s has no ov_program set — skipped rather than "
+            "guessing at Alphalete's" % office_key)
+        return 0
+
+    wanted = _board_names(office_key, week_start,
+                          columns=F.columns_for("ownerville"))
+    budget = OVC.SEARCH_BUDGET_S if budget_s is None else budget_s
+
+    # WHICHEVER SESSION THIS MACHINE HAS (`sessions`). On a Lucy that is the
+    # Hub's one-per-box OwnerVille, which every office's read queues behind --
+    # the 8am sweep waited its whole 30 minutes behind three other jobs on
+    # 2026-11-24 and refused rather than guess whose rows it had. On the
+    # office's own computer it is THEIR OwnerVille, with their login, and
+    # nothing queues at all (Megan, same day: "the OV sweep would happen on
+    # the ECO machine").
+    with OVA.session_anywhere(office_key, campaign=programme,
+                              profile_dir=PROFILE_DIR, log=log) as page:
+        heads, reps, complete = ov_table.read_table(page, verbose=False,
+                                                    campaign=programme)
+        found = {B._fold(n) for n in reps}
+        missing = [n for n in wanted if B._fold(n) not in found]
+        if missing and complete:
+            # STILL SAID OUT LOUD, just not searched for. These people have
+            # been looked for in the whole roster and are not in it, which is
+            # a real answer and the one somebody acts on -- they have not been
+            # added to this programme yet. Their columns stay untouched.
+            log("  ownerville: %d of this week's %d are not in the %s roster "
+                "(read was complete, so the search cannot find them): %s"
+                % (len(missing), len(wanted), programme,
+                   ", ".join(missing[:8])
+                   + (" ..." if len(missing) > 8 else "")))
+        if missing and not complete:
+            # DON'T ASK AGAIN ABOUT SOMEBODY OWNERVILLE ALREADY SAID IT HAS
+            # NOT GOT. Measured 2026-11-19: 21 of 29 were not there, each
+            # search costs ~27s, and the budget then ran out with 10 names
+            # never asked about -- so the wasted time was also crowding out
+            # the searches that would have found somebody. A miss goes stale
+            # after ov_misses.COOLDOWN_MIN, so anyone added during the day is
+            # still picked up; until then the budget goes to new names.
+            ask = OVM.fresh(office_key, week_start, missing)
+            skipped = len(missing) - len(ask)
+            log("  ownerville: the read fell short — %d of this week's %d "
+                "unanswered, asking the search for them"
+                % (len(missing), len(wanted)))
+            if skipped:
+                log("    skipping %d OwnerVille said it has not got in the "
+                    "last %d min — they are re-asked after that, not ticked"
+                    % (skipped, OVM.COOLDOWN_MIN))
+            t0 = time.monotonic()
+            got = 0
+            for name in ask:
+                if time.monotonic() - t0 >= budget:
+                    log("    time budget reached; %d not searched this run"
+                        % (len(ask) - got))
+                    break
+                try:
+                    ov_table.lookup_person(page, name, heads, reps)
+                except Exception as e:      # noqa: BLE001 — one name, not the run
+                    log("    %s: search failed (%s)" % (name, type(e).__name__))
+                got += 1
+            seen = {B._fold(x) for x in reps}
+            still = [n for n in wanted if B._fold(n) not in seen]
+            # Remember only the ones we ACTUALLY asked about and did not find;
+            # a name the budget never reached has not been answered, and
+            # recording it would stop it being asked next time either.
+            asked = ask[:got]
+            OVM.remember(office_key, week_start,
+                         [n for n in asked if B._fold(n) not in seen])
+            # And a name that DID turn up stops being treated as absent the
+            # moment it appears, however it appeared.
+            OVM.forget(office_key, week_start,
+                       [n for n in wanted if B._fold(n) in seen])
+            log("    searched %d in %.0fs — %d still not found in OwnerVille"
+                % (got, time.monotonic() - t0, len(still)))
+
+    verdicts = {}
+    for name, cells in reps.items():
+        v = ov_table.done_columns(heads, cells)
+        # WHAT OWNERVILLE SAYS ABOUT THE BACKGROUND CHECK, beside what
+        # Sterling says (Megan, 2026-11-11: "the BGstatus is the BG check
+        # column and what it says"). A STATE, not a tick: it advances, and a
+        # blank means the cell could not be read -- never "nothing happened".
+        said = ov_table.bg_status_text(heads, cells)
+        if said:
+            v["OV BG Status"] = said
+        verdicts[name] = v
+    return F.apply_anywhere(office_key, week_start, "ownerville",
+                            verdicts, dry_run=dry_run, log=log)
+
+
 # THE STEPS THIS MACHINE CAN DO ITSELF, in the order a pass runs them.
 #
 # A STEP EARNS ITS PLACE HERE by being able to run on an office Mac at all --
@@ -744,6 +916,11 @@ def _walked_in_after_a_no_show(office_key: str, week_start: dt.date,
 #              reads ApplicantStream's Retention Report for who is SCHEDULED
 #              to start this week, through `sessions.appstream_anywhere` --
 #              the office's own Chrome here, the warm console on a Lucy.
+#   ownerville five boxes from ONE read of OwnerVille's View Progress -- Digi
+#              Docs, the quizzes, the headshot, the UID and the BG status,
+#              plus the three gates that hold Owner Submit. The office's own
+#              OwnerVille, their login and their campaign, through
+#              `sessions.session_anywhere`.
 #   contacts   Contact Added, off the office's OWN reception Google Contacts
 #              (Megan, 2026-11-11: "each ICD will have their own reception
 #              email"). The first step that ever ran here.
@@ -752,16 +929,16 @@ def _walked_in_after_a_no_show(office_key: str, week_start: dt.date,
 #              the seven-page calendar walk and it must land before the next
 #              morning's Blue Ink send.
 #
-# STILL TO COME, each waiting on its Hub reader being rebuilt the ECO way: the
-# five OwnerVille columns and the Owner Submit press (the session is built --
-# `sessions.session_anywhere` -- but the step bodies still live in `run` and
-# `presses`, which do not ship), Blue Ink, Sterling, and Apex.
+# STILL TO COME: the Owner Submit press (its body is in `presses`, which does
+# not ship), Blue Ink, Sterling and Apex. The press is the one that ACTS rather
+# than reads, so it moves last and deliberately.
 #
 # NOTHING HERE IS SWITCHED ON BY BEING LISTED. `eco_job` runs nothing until a
 # machine is armed (`eco_job.switch_on`), and no machine is
 # ([[feedback_onboarding_nothing_live_till_built]]).
 STEPS: Sequence[Tuple[str, object]] = (
     ("seed", seed),
+    ("ownerville", from_ownerville),
     ("contacts", contacts),
     ("no_shows", from_no_shows),
 )

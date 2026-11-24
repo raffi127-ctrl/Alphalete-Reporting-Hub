@@ -6,6 +6,15 @@ read must leave its column alone rather than reporting everyone as behind.
 """
 from __future__ import annotations
 
+
+# The body lives in `eco_steps` since 2026-11-24 so it can run on the
+# office's own computer; `R.from_ownerville` is a delegate. Read the
+# real body, or this passes on a two-line delegation.
+def _ES():
+    from automations.icd_onboarding import eco_steps
+    return eco_steps
+
+
 import datetime as dt
 
 from automations.icd_onboarding import board as B
@@ -129,7 +138,7 @@ def test_the_search_is_only_asked_about_this_weeks_people():
     """The page gives one page of a hundred-odd; searching the whole roster
     one at a time would never finish. The board is a couple of dozen."""
     import inspect
-    src = inspect.getsource(R.from_ownerville)
+    src = inspect.getsource(_ES().from_ownerville)
     assert "_board_names" in src
     assert "lookup_person" in src
 
@@ -138,9 +147,9 @@ def test_the_search_has_a_time_budget():
     """It is one request per person against a slow server; without a budget a
     bad morning turns into an hour."""
     import inspect
-    sig = inspect.signature(R.from_ownerville)
+    sig = inspect.signature(_ES().from_ownerville)
     assert "budget_s" in sig.parameters
-    src = inspect.getsource(R.from_ownerville)
+    src = inspect.getsource(_ES().from_ownerville)
     assert "SEARCH_BUDGET_S" in src
     assert "time budget reached" in src
 
@@ -157,7 +166,7 @@ def test_one_name_failing_the_search_does_not_stop_the_others():
     """
     import inspect
     import re
-    src = inspect.getsource(R.from_ownerville)
+    src = inspect.getsource(_ES().from_ownerville)
     m = re.search(r"^\s*for name in (\w+):", src, re.M)
     assert m, "no per-name search loop in from_ownerville any more"
     body = src[m.start():]
@@ -171,7 +180,7 @@ def test_somebody_the_search_never_finds_is_reported_not_ticked():
     """They get no verdict at all, which leaves their columns alone — unread
     is never 'not done'."""
     import inspect
-    src = inspect.getsource(R.from_ownerville)
+    src = inspect.getsource(_ES().from_ownerville)
     assert "still not found in OwnerVille" in src
 
 

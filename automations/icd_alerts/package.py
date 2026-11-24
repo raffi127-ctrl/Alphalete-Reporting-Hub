@@ -250,6 +250,25 @@ AGENT_FILES = [
     "automations/shared/names.py",
     "automations/bg_check_sync/__init__.py",
     "automations/bg_check_sync/parse.py",
+    # THE FIVE OWNERVILLE COLUMNS, on the office's own machine
+    # (2026-11-24). ONE read of View Progress answers Digi Docs, the six
+    # quizzes, the headshot, the UID and the BG status, plus the three
+    # gates that hold Owner Submit -- with the office's OWN login and
+    # campaign, so nothing queues behind another office's read.
+    #
+    # Measured before building rather than guessed: seven files, not a
+    # cascade, because `headshots/ov_upload.py` already ships and that is
+    # where most of the page-driving lives. `config.PROFILE_DIR` moved out
+    # of `obcl_ov_sweep/run.py` in the same change -- it is a path, and
+    # reaching for it used to drag the whole sweep and gspread with it.
+    "automations/obcl_ov_sweep/__init__.py",
+    "automations/obcl_ov_sweep/config.py",
+    "automations/obcl_ov_sweep/ov_table.py",
+    "automations/icd_onboarding/ov_misses.py",
+    "automations/shared/new_start_steps.py",
+    "automations/b2b_dispositions/__init__.py",
+    "automations/b2b_dispositions/capture.py",
+    "automations/digi_docs/__init__.py",
     # NEW STARTS -> APEX, DELIVERED AT LAST (2026-11-24). Declared on
     # 2026-11-08 and held back ever since -- the reasons are kept in full under
     # APEX_WEEK_FILES below, and every one of them is now closed:

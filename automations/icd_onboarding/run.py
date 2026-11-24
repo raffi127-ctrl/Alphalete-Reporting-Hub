@@ -69,8 +69,9 @@ from automations.icd_onboarding import fillers as F
 # side and the tests reach for, and one definition is the whole point of the
 # move -- the same thing `book` does for `tab_name`.
 from automations.icd_onboarding.eco_steps import (    # noqa: E402,F401
-    _appstream_id, _appstream_ids, _funnel_labels, _id_and_label, _name_key,
-    _person_key, _tick_showed_up, _walked_in_after_a_no_show)
+    _appstream_id, _appstream_ids, _board_names, _funnel_labels,
+    _id_and_label, _name_key, _ov_program, _person_key, _tick_showed_up,
+    _walked_in_after_a_no_show)
 
 
 
@@ -85,10 +86,6 @@ from automations.icd_onboarding.eco_steps import (    # noqa: E402,F401
 
 
 
-def _ov_program(office_key: str) -> str:
-    from automations.office_admin import config as OC
-    o = OC.office(office_key)
-    return (getattr(o, "ov_program", "") if o else "") or ""
 
 
 def seed(office_key: str, week_start: dt.date, *, dry_run: bool = True,
@@ -123,157 +120,17 @@ def from_no_shows(office_key: str, week_start: dt.date, *, dry_run: bool = True,
 
 
 
-def _board_names(office_key: str, week_start: dt.date,
-                 columns: Sequence[str] = ()) -> List[str]:
-    """Who on this week's board is still worth looking up.
-
-    Not everybody: the search is one request per person against a slow server
-    (~23s each, measured), so asking about people who cannot gain anything is
-    how a run spends its whole budget and still leaves somebody out.
-
-    Left out:
-      * anybody MARKED OFF — they are never ticked, so an answer about them is
-        thrown away;
-      * anybody who already has every column this source fills — there is
-        nothing left to learn, and each run then has fewer to ask about than
-        the last.
-    """
-    from automations.icd_onboarding import sheet as S
-
-    out = []
-    for r in F.rows_anywhere(office_key, week_start):
-        if not (r.get("Name") or r.get("Last Name")):
-            continue
-        if str(r.get(B.TERMINATED_AT) or "").strip():
-            continue
-        if columns and all(str(r.get(c) or "").strip() for c in columns):
-            continue
-        out.append(("%s %s" % (r.get("Name", ""), r.get("Last Name", ""))).strip())
-    return out
 
 
 def from_ownerville(office_key: str, week_start: dt.date, *,
                     dry_run: bool = True, log=print,
-                    budget_s: Optional[float] = None) -> int:
-    """Five columns off one View Progress read.
-
-    IT USED TO ONLY GIVE PAGE ONE. The table was read as rendered, which
-    served a couple of dozen rows out of a hundred-odd, so the people on the
-    later pages came back unread — on Raf's office that was 24 of 127, and
-    only 3 of the week's 29 got their five columns. Unread is never "not
-    done", so nothing was wrongly ticked; they simply never got an answer.
-    The answer then was to ask the server's own search about each missing
-    person, one at a time.
-
-    Since 2026-11-21 read_table reads the request that fills the table, so one
-    call returns the WHOLE roster and `complete` says so. The per-person
-    search is kept only for the case where that read falls short, because
-    against a complete roster it cannot find anybody the read missed: the
-    search box fires the same request and filters the answer in the browser.
-    Measured here on the week of 11/15 — 22 of 39 missing, 7 searched over
-    203s, 22 still missing afterwards. Those 22 are not unread; they are not
-    enrolled in this programme yet, and no amount of searching changes that.
-    """
-    import time
-
-    from automations.icd_onboarding import sessions as OVA
-    from automations.icd_onboarding import ov_misses as OVM
-    from automations.obcl_ov_sweep import config as OVC
-    from automations.obcl_ov_sweep import ov_table
-    from automations.obcl_ov_sweep.run import PROFILE_DIR
-
-    programme = _ov_program(office_key)
-    if not programme:
-        # A guess here reads an empty table, which looks exactly like nobody
-        # having done anything ([[reference_campaign_picks_the_workbook]]).
-        log("  ownerville: %s has no ov_program set — skipped rather than "
-            "guessing at Alphalete's" % office_key)
-        return 0
-
-    wanted = _board_names(office_key, week_start,
-                          columns=F.columns_for("ownerville"))
-    budget = OVC.SEARCH_BUDGET_S if budget_s is None else budget_s
-
-    # WHICHEVER SESSION THIS MACHINE HAS (`sessions`). On a Lucy that is the
-    # Hub's one-per-box OwnerVille, which every office's read queues behind --
-    # the 8am sweep waited its whole 30 minutes behind three other jobs on
-    # 2026-11-24 and refused rather than guess whose rows it had. On the
-    # office's own computer it is THEIR OwnerVille, with their login, and
-    # nothing queues at all (Megan, same day: "the OV sweep would happen on
-    # the ECO machine").
-    with OVA.session_anywhere(office_key, campaign=programme,
-                              profile_dir=PROFILE_DIR, log=log) as page:
-        heads, reps, complete = ov_table.read_table(page, verbose=False,
-                                                    campaign=programme)
-        found = {B._fold(n) for n in reps}
-        missing = [n for n in wanted if B._fold(n) not in found]
-        if missing and complete:
-            # STILL SAID OUT LOUD, just not searched for. These people have
-            # been looked for in the whole roster and are not in it, which is
-            # a real answer and the one somebody acts on -- they have not been
-            # added to this programme yet. Their columns stay untouched.
-            log("  ownerville: %d of this week's %d are not in the %s roster "
-                "(read was complete, so the search cannot find them): %s"
-                % (len(missing), len(wanted), programme,
-                   ", ".join(missing[:8])
-                   + (" ..." if len(missing) > 8 else "")))
-        if missing and not complete:
-            # DON'T ASK AGAIN ABOUT SOMEBODY OWNERVILLE ALREADY SAID IT HAS
-            # NOT GOT. Measured 2026-11-19: 21 of 29 were not there, each
-            # search costs ~27s, and the budget then ran out with 10 names
-            # never asked about -- so the wasted time was also crowding out
-            # the searches that would have found somebody. A miss goes stale
-            # after ov_misses.COOLDOWN_MIN, so anyone added during the day is
-            # still picked up; until then the budget goes to new names.
-            ask = OVM.fresh(office_key, week_start, missing)
-            skipped = len(missing) - len(ask)
-            log("  ownerville: the read fell short — %d of this week's %d "
-                "unanswered, asking the search for them"
-                % (len(missing), len(wanted)))
-            if skipped:
-                log("    skipping %d OwnerVille said it has not got in the "
-                    "last %d min — they are re-asked after that, not ticked"
-                    % (skipped, OVM.COOLDOWN_MIN))
-            t0 = time.monotonic()
-            got = 0
-            for name in ask:
-                if time.monotonic() - t0 >= budget:
-                    log("    time budget reached; %d not searched this run"
-                        % (len(ask) - got))
-                    break
-                try:
-                    ov_table.lookup_person(page, name, heads, reps)
-                except Exception as e:      # noqa: BLE001 — one name, not the run
-                    log("    %s: search failed (%s)" % (name, type(e).__name__))
-                got += 1
-            seen = {B._fold(x) for x in reps}
-            still = [n for n in wanted if B._fold(n) not in seen]
-            # Remember only the ones we ACTUALLY asked about and did not find;
-            # a name the budget never reached has not been answered, and
-            # recording it would stop it being asked next time either.
-            asked = ask[:got]
-            OVM.remember(office_key, week_start,
-                         [n for n in asked if B._fold(n) not in seen])
-            # And a name that DID turn up stops being treated as absent the
-            # moment it appears, however it appeared.
-            OVM.forget(office_key, week_start,
-                       [n for n in wanted if B._fold(n) in seen])
-            log("    searched %d in %.0fs — %d still not found in OwnerVille"
-                % (got, time.monotonic() - t0, len(still)))
-
-    verdicts = {}
-    for name, cells in reps.items():
-        v = ov_table.done_columns(heads, cells)
-        # WHAT OWNERVILLE SAYS ABOUT THE BACKGROUND CHECK, beside what
-        # Sterling says (Megan, 2026-11-11: "the BGstatus is the BG check
-        # column and what it says"). A STATE, not a tick: it advances, and a
-        # blank means the cell could not be read -- never "nothing happened".
-        said = ov_table.bg_status_text(heads, cells)
-        if said:
-            v["OV BG Status"] = said
-        verdicts[name] = v
-    return F.apply_anywhere(office_key, week_start, "ownerville",
-                            verdicts, dry_run=dry_run, log=log)
+                    budget_s=None) -> int:
+    """Moved to `eco_steps` on 2026-11-24 so the five OwnerVille columns can be
+    read on the office's own computer, with the office's own login. This name
+    is what the Hub and the tests reach for; there is one body."""
+    from automations.icd_onboarding import eco_steps as ES
+    return ES.from_ownerville(office_key, week_start, dry_run=dry_run,
+                              log=log, budget_s=budget_s)
 
 
 def from_blueink(office_key: str, week_start: dt.date, *,

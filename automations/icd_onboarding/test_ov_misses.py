@@ -14,6 +14,15 @@ import tempfile
 import unittest
 from pathlib import Path
 
+
+# The body lives in `eco_steps` since 2026-11-24 so it can run on the
+# office's own computer; `R.from_ownerville` is a delegate. Read the
+# real body, or this passes on a two-line delegation.
+def _ES():
+    from automations.icd_onboarding import eco_steps
+    return eco_steps
+
+
 from automations.icd_onboarding import ov_misses as M
 
 WEEK = dt.date(2026, 11, 15)
@@ -90,13 +99,13 @@ class WhatTheRunDoesWithIt(unittest.TestCase):
         # made permanent.
         import inspect
         from automations.icd_onboarding import run as R
-        src = inspect.getsource(R.from_ownerville)
+        src = inspect.getsource(_ES().from_ownerville)
         self.assertIn("asked = ask[:got]", src)
 
     def test_a_remembered_miss_never_ticks_anything(self):
         import inspect
         from automations.icd_onboarding import run as R
-        src = inspect.getsource(R.from_ownerville)
+        src = inspect.getsource(_ES().from_ownerville)
         self.assertIn("not ticked", src)
 
 

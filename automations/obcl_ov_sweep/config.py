@@ -115,3 +115,14 @@ OWNER_SUBMIT_LIVE = True
 #                     for SaraPlus. ATTUID may take up to 30 days to return"
 # The rep submits the form themselves and the send fires off SaraPlus
 # activation. uid_request.py is a READER of whose move it is, nothing more.
+
+
+# WHERE THE BROWSER PROFILE LIVES. Moved here from `run.py` on 2026-11-24: it
+# is a path, and it was the only thing several callers wanted out of the
+# heaviest module in this package -- `run` imports gspread, so reaching for
+# this constant dragged the whole sweep (and Google) onto an office machine
+# that has neither. `run` re-exports it, so every existing caller is unchanged.
+import pathlib as _pathlib                                  # noqa: E402
+
+PROFILE_DIR = (_pathlib.Path(__file__).resolve().parents[2]
+               / "automations" / "uploaded" / BROWSER_PROFILE_DIRNAME)

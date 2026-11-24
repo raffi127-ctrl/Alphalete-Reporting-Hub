@@ -30,7 +30,9 @@ import gspread
 from automations.obcl_ov_sweep import config, ov_table, sweep
 
 ROOT = Path(__file__).resolve().parents[2]
-PROFILE_DIR = ROOT / "automations" / "uploaded" / config.BROWSER_PROFILE_DIRNAME
+# RE-EXPORTED from config, where it moved on 2026-11-24 so that wanting this
+# path does not mean importing this module (and gspread with it).
+PROFILE_DIR = config.PROFILE_DIR
 LOG_DIR = ROOT / "output" / "obcl_ov_sweep"
 
 
