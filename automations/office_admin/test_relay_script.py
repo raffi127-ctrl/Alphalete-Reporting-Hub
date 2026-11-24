@@ -91,15 +91,47 @@ def test_the_board_calls_are_wired_end_to_end():
         assert "function %s(" % fn in src, "%s has no handler" % fn
 
 
+def _fn(src: str, name: str) -> str:
+    """One function's body out of the Apps Script source.
+
+    Sliced by hand in three tests already; named once here so a function that
+    gets split in two is a one-line fix instead of three silent passes.
+    """
+    at = src.index("function %s(" % name)
+    rest = src[at:]
+    end = rest.index("\nfunction ", 1)
+    return rest[:end]
+
+
 def test_the_board_is_read_from_the_offices_own_workbook():
     """Each office sees its own people and nobody else's. The sheet id comes
-    from the office's settings row, never from the caller."""
+    from the office's settings row, never from the caller.
+
+    THE PROTECTION MOVED, so this test did too (2026-11-24). It used to look
+    for `_admSettings(office)` inside `_boardTab`; the per-week book split that
+    function in two, and the settings read now lives in `_boardBook`, which
+    `_boardTab` calls. The test went red for days while the rule it guards was
+    never broken -- and a suite with permanent reds is one people stop reading,
+    which is how a real failure hides.
+
+    So it asks the question of the chain rather than of one function: the book
+    comes from the office's settings, `_boardTab` gets its book only from
+    there, and NEITHER lets the caller name a workbook.
+    """
     src = _source()
     assert "'Onboarding Sheet'" in src
-    body = src[src.index("function _boardTab("):]
-    body = body[:body.index("\nfunction ")]
-    assert "_admSettings(office)" in body
-    assert "a.sheet" not in body, "the caller does not get to name the workbook"
+
+    book = _fn(src, "_boardBook")
+    assert "_admSettings(office)" in book, \
+        "the workbook comes from the office's own settings row"
+    assert "openById(set.sheet)" in book
+
+    tab = _fn(src, "_boardTab")
+    assert "_boardBook(office)" in tab, \
+        "and _boardTab gets its book only from there"
+    for body, where in ((book, "_boardBook"), (tab, "_boardTab")):
+        assert "a.sheet" not in body, \
+            "the caller does not get to name the workbook (%s)" % where
 
 
 def test_marking_somebody_off_never_deletes_their_row():
