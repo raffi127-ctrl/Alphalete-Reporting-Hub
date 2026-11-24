@@ -171,3 +171,16 @@ class WhenIsLocalAndPortable(unittest.TestCase):
     def test_junk_stamp_is_a_question_mark(self):
         for junk in (None, "", "not a date", 17):
             self.assertEqual(FR._when(junk), "?")
+
+
+class TheFileListCarriesTheSameRelease(unittest.TestCase):
+    """2026-11-23: agent_release.txt went to .23.2/.23.3 while the list
+    still said .23.1, so every office refused both updates for hours."""
+
+    def test_list_release_equals_agent_release(self):
+        from pathlib import Path
+        from automations.icd_alerts import selfupdate as SU
+        here = Path(__file__).resolve().parent
+        release = (here / "agent_release.txt").read_text().strip()
+        listed = SU.list_release((here / "agent_files.txt").read_text())
+        self.assertEqual(listed, release)

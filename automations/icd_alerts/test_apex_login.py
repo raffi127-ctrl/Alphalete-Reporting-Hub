@@ -118,7 +118,7 @@ class Wiring(unittest.TestCase):
 
     def test_setup_saves_only_after_verify_and_owner_presses_it(self):
         from automations.icd_alerts import apex_2fa_setup as S
-        src = inspect.getsource(S.run)
+        src = inspect.getsource(S._run)
         self.assertLess(src.index("_verified(page)"), src.index("L.save_creds("))
         self.assertLess(src.index('G.install(ctx, "watch")'), src.index("page.goto"))
         self.assertNotIn("Verify\").click", src)
@@ -152,3 +152,51 @@ class Wiring(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SetupTellsUsHowItEnded(unittest.TestCase):
+    """Every setup try sends one line to Eve + Megan (Eve 2026-11-23)."""
+
+    class Ask:
+        class Cancelled(Exception):
+            pass
+
+        def __init__(self, user="", cancel=False):
+            self.user, self.cancel = user, cancel
+
+        def text(self, _):
+            if self.cancel:
+                raise self.Cancelled()
+            return self.user
+
+        def password(self, _):
+            return ""
+
+        def message(self, *a, **k):
+            pass
+
+    def _said(self, ask):
+        from automations.icd_alerts import apex_2fa_setup as S
+        with mock.patch.object(S, "tell_us") as t:
+            self.assertEqual(S.run(log=lambda *_: None, ask=ask), 1)
+        return t.call_args[0][0]
+
+    def test_closed_box(self):
+        self.assertIn("closed or timed out", self._said(self.Ask(cancel=True)))
+
+    def test_empty_password(self):
+        self.assertIn("left empty", self._said(self.Ask(user="a@b.com")))
+
+    def test_line_is_its_own_stage_with_the_time(self):
+        from automations.icd_alerts import apex_2fa_setup as S
+        with mock.patch("automations.icd_alerts.relay.report_fault") as rf:
+            S.tell_us("x")
+        self.assertEqual(rf.call_args[0][0], "apex-setup")
+        self.assertRegex(rf.call_args[0][1], r"^Apex setup \d\d:\d\d: x$")
+
+    def test_server_dms_only_the_approvers(self):
+        from automations.icd_alerts import post as P
+        src = inspect.getsource(P.notify_faults)
+        i = src.index('f["stage"] == "apex-setup"')
+        self.assertIn("_group_dm(list(O.APPROVERS)", src[i:i + 600])
+        self.assertLess(i, src.index('startswith("probe-")'))

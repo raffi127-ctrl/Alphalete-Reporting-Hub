@@ -114,7 +114,50 @@ def prove(p, login, log=print) -> bool:
         browser.close()
 
 
+# HOW EACH TRY ENDED, to Eve + Megan (Eve 2026-11-23: two setup windows
+# opened for Jairo, nothing got done, and from here nobody could tell why --
+# the answer sat in a log on his Mac). One line per try, as fault stage
+# SETUP_STAGE; post.notify_faults DMs it to the approvers only, never the
+# owner or a channel. The time is in the line so each try is its own row
+# (the relay folds identical lines into one, already-posted row).
+SETUP_STAGE = "apex-setup"
+
+
+def _office_key() -> str:
+    try:
+        from automations.icd_alerts import config as C
+        from automations.icd_alerts import pnl
+        for rec in C.active_enrollments():
+            if rec.get("office_key") in pnl.APEX_SETUP_KEYS:
+                return rec["office_key"]
+    except Exception:  # noqa: BLE001
+        pass
+    return ""
+
+
+def tell_us(what: str, log=print) -> None:
+    """Best effort, never raises: the telling is never the work."""
+    try:
+        from automations.icd_alerts import relay as R
+        R.report_fault(SETUP_STAGE, "Apex setup %s: %s"
+                       % (dt.datetime.now().strftime("%H:%M"), what),
+                       office_key=_office_key(), log=log)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def run(log=print, ask=None) -> int:
+    end = ["stopped before the end, no reason recorded"]
+    try:
+        return _run(log, ask, end)
+    except BaseException as e:  # noqa: BLE001 -- said, then raised as before
+        end[0] = "Lucy's setup crashed (%s)" % type(e).__name__
+        raise
+    finally:
+        tell_us(end[0], log=log)
+
+
+def _run(log, ask, end) -> int:
     from patchright.sync_api import sync_playwright
     from automations.carlos_payroll_pull import run as AP
     from automations.icd_alerts import apex_guard as G
@@ -128,9 +171,12 @@ def run(log=print, ask=None) -> int:
         pwd = ask.password(ASK_PASSWORD) if user else ""
     except ask.Cancelled:
         log("  Apex setup: skipped for now")
+        end[0] = ("the email/password box was closed or timed out -- "
+                  "nothing typed")
         return 1
     if not (user and pwd):
         log("  Apex setup: skipped -- no user name or password")
+        end[0] = "the email or password box was left empty"
         return 1
 
     AS.APEX_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
@@ -162,6 +208,9 @@ def run(log=print, ask=None) -> int:
                         time.sleep(3)
                 if not L._past_login(page):
                     log("  Apex setup: nobody finished signing in")
+                    end[0] = ("email + password typed, but Apex sign-in was "
+                              "not finished in 5 min (text code not entered, "
+                              "or wrong password)")
                     ask.message("Nobody signed in, so nothing changed. "
                                 "Lucy will ask again another day.")
                     return 1
@@ -176,6 +225,9 @@ def run(log=print, ask=None) -> int:
                 except ValueError:
                     log("  Apex setup: no key on the configure page (%s)"
                         % page.url.split("?")[0])
+                    end[0] = ("signed in, but Lucy found no setup key on "
+                              "Apex's page (%s) -- needs us"
+                              % page.url.split("?")[0])
                     ask.message("Lucy could not find the setup key on that page, "
                                 "so nothing changed. Lucy's team will look at it.",
                                 error=True)
@@ -199,6 +251,8 @@ def run(log=print, ask=None) -> int:
                             pass
                 if not _verified(page):
                     log("  Apex setup: Verify was not pressed")
+                    end[0] = ("signed in, code typed by Lucy, but Verify was "
+                              "not pressed in 5 min")
                     ask.message("Verify was not pressed, so nothing changed. "
                                 "Lucy will ask again another day.")
                     return 1
@@ -222,6 +276,10 @@ def run(log=print, ask=None) -> int:
 
             # 5. the proof, in an empty browser
             ok = prove(p, L.creds(), log=log)
+            end[0] = ("DONE -- code app on, login saved, Lucy signed in "
+                      "by herself" if ok else
+                      "code app on + login saved, but Lucy's own test "
+                      "sign-in did not work yet")
         ask.message(SAY_DONE if ok else SAY_SAVED_NOT_PROVEN)
         return 0
     finally:

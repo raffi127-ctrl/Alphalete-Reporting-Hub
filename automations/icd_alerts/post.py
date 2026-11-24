@@ -3623,6 +3623,17 @@ def notify_faults(day: Optional[dt.date] = None, *, send: bool = False,
         # (box_read.probe_accounts_schema) files its answer through this pipe
         # because it is the only road home. Marked as handled, never posted:
         # the answer is read off the ICD Faults tab by whoever asked.
+        # HOW AN APEX SETUP TRY ENDED (apex_2fa_setup.SETUP_STAGE): to Eve +
+        # Megan only (Eve 2026-11-23). Not the owner, who was sitting there.
+        if f["stage"] == "apex-setup":
+            office = O.get(f["office"])
+            label = office.label if office else f["office"]
+            try:
+                _group_dm(list(O.APPROVERS), "%s -- %s" % (label, f["summary"]))
+                tab.update_cell(f["rownum"], F_POSTED + 1, stamp)
+            except Exception as e:  # noqa: BLE001 -- one must not stop the rest
+                log("could not DM the apex setup line: %s" % type(e).__name__)
+            continue
         if str(f["stage"] or "").startswith("probe-"):
             # A CODE REQUEST is closed by code_answer when it is answered or
             # runs out -- marking it here would hide it from the one step
