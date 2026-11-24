@@ -1497,6 +1497,13 @@ def _snapshot_commission(week: dt.date, *, write: bool, sheet_id: str,
     if grid["rowCount"] > len(mat):  # clear any stray formulas below
         nws.batch_clear([f"A{len(mat) + 1}:{grid['rowCount']}"])
     _mark_moved_lines(nws, mat, _transfer_rules(sh, log=log), log=log)
+    # Carlos 11/24: first/second-week order counts + training bonuses, and no
+    # leftover borders under the TOTAL row. Cosmetic -- never kills payroll.
+    try:
+        from automations.vantura_payroll.cs_tidy import finish_cs
+        finish_cs(sh, nws, mat, week, log=log)
+    except Exception as e:  # noqa: BLE001
+        log(f"commission sheet: finish SKIPPED ({type(e).__name__}: {e})")
     log(f"commission sheet: snapped {name} on the board ({len(mat)}x{width} cells)")
     return name
 
