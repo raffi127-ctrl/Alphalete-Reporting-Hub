@@ -90,6 +90,20 @@ class Saved(unittest.TestCase):
         L.save_creds("jruiz", "pw", RFC_KEY)
         self.assertFalse(L.stopped())
 
+    def test_an_older_rounds_count_is_void(self):
+        L._save_state({"fails": 2, "last": "x"})          # round 1, before FAIL_ROUND
+        self.assertFalse(L.stopped())
+        L._record(False, "code box")
+        self.assertFalse(L.stopped())
+        L._record(False, "code box")
+        self.assertTrue(L.stopped())
+
+    def test_where_never_reads_what_is_typed(self):
+        import inspect
+        src = inspect.getsource(L.where)
+        self.assertNotIn("input_value", src)
+        self.assertIn("e.name || e.id || e.type", src)   # boxes by name only
+
     def test_success_resets_the_count(self):
         L._record(False, "x")
         L._record(True, "x")

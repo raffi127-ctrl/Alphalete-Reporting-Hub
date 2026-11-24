@@ -42,6 +42,10 @@ from automations.icd_alerts import config as C
 CREDS_PATH = C.APP_DIR / "apex-login.json"
 STATE_PATH = C.APP_DIR / "apex-login-state.json"
 MAX_FAILS = 2
+# Bump to give every Mac a clean fail count with the next release (there is no
+# remote "reset"). 2: Jairo stopped 2026-11-24 "failed at code box" with no
+# trace of the screen -- one more round, now saying what the page showed.
+FAIL_ROUND = 2
 PRE_SUBMIT_WAIT_S = 30        # the login standard: the pause IS the fix
 STEP_S = 30
 FRESH_S = 5                   # a code with less life left than this: wait for the next
@@ -125,14 +129,22 @@ def _save_state(s: Dict) -> None:
         pass
 
 
+def _fails(s: Dict) -> int:
+    """Failures counted in THIS round; an older round's count is void."""
+    if int(s.get("round") or 1) != FAIL_ROUND:
+        return 0
+    return int(s.get("fails") or 0)
+
+
 def stopped() -> bool:
     """Too many failed sign-ins in a row: wait for a person."""
-    return int(_state().get("fails") or 0) >= MAX_FAILS
+    return _fails(_state()) >= MAX_FAILS
 
 
 def _record(ok: bool, step: str) -> None:
     s = _state()
-    s["fails"] = 0 if ok else int(s.get("fails") or 0) + 1
+    s["fails"] = 0 if ok else _fails(s) + 1
+    s["round"] = FAIL_ROUND
     s["last"] = "%s %s" % (dt.datetime.now().isoformat(timespec="minutes"),
                            "ok" if ok else "failed at " + step)
     _save_state(s)
@@ -154,6 +166,38 @@ def _past_login(page) -> bool:
         return page.locator('a[href="/payrolls"]').count() > 0
     except Exception:  # noqa: BLE001 -- mid-navigation
         return False
+
+
+def where(page, limit: int = 220) -> str:
+    """What screen the sign-in is on -- path, headings, buttons. Never what is
+    typed in a box (no input values are read), so it can go in a fault line."""
+    try:
+        from urllib.parse import urlparse
+        path = urlparse(page.url).path or "/"
+        bits = page.evaluate(r"""() => {
+          const vis = e => !!(e.offsetWidth || e.offsetHeight || e.getClientRects().length);
+          const t = e => (e.innerText || e.value || e.getAttribute('aria-label') || '')
+                           .replace(/\s+/g, ' ').trim().slice(0, 50);
+          const pick = (sel, n, val) => Array.from(document.querySelectorAll(sel))
+             .filter(vis).map(e => val && e.tagName === 'INPUT' && e.type !== 'submit'
+                                    ? (e.name || e.id || e.type) : t(e))
+             .filter(Boolean).slice(0, n);
+          return {
+            say: pick('h1,h2,h3,h4,.alert,.validation-summary-errors,[role=alert]', 5),
+            btn: pick('button,input[type=submit],a.btn', 5),
+            box: pick('input:not([type=hidden])', 5, true),
+          };
+        }""")
+        out = "page %s" % path
+        if bits.get("say"):
+            out += " says '%s'" % "' / '".join(bits["say"])
+        if bits.get("btn"):
+            out += "; buttons: %s" % ", ".join(bits["btn"])
+        if bits.get("box"):
+            out += "; boxes: %s" % ", ".join(bits["box"])
+        return out[:limit]
+    except Exception as e:  # noqa: BLE001 -- best effort, never blocks
+        return "page unknown (%s)" % type(e).__name__
 
 
 def _submit(page, field) -> None:
@@ -220,5 +264,7 @@ def sign_in(page, login: Dict[str, str], *, wait_s: int = PRE_SUBMIT_WAIT_S,
     except Exception as e:  # noqa: BLE001
         log("apex sign-in: stopped at %s (%s)" % (step, type(e).__name__))
         ok = False
+    if not ok:
+        step = "%s [%s]" % (step, where(page))
     _record(ok, step)
     return ok, ("signed in" if ok else "failed at " + step)
