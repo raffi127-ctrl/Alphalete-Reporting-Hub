@@ -38,7 +38,8 @@ def layout(values) -> Optional[dict]:
     for r, row in enumerate(values, 1):
         labels = [_label(x) for x in row]
         zips = [c for c, x in enumerate(labels, 1) if x == "zip code"]
-        cities = [c for c, x in enumerate(labels, 1) if x == "city"]
+        # the zip table's may say "City, State" (Maud 2026-11-24: "Addison, TX")
+        cities = [c for c, x in enumerate(labels, 1) if x in ("city", "city, state")]
         if _label(row[0] if row else "") != "#" or len(zips) < 2 or len(cities) < 2:
             continue
         first = r + 1

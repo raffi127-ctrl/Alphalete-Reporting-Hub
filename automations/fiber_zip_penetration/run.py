@@ -57,6 +57,10 @@ def fill_owner(owner: str, sheet_id: str, data: dict, today: dt.date,
             continue
         formulas = ws.get_all_values(value_render_option="FORMULA")
         writes, s = core.plan(values, formulas, lay, data)
+        # Maud 2026-11-24: Raf's table says "Addison, TX" in its City, State column.
+        from automations.fiber_zip_penetration import block
+        writes += block.city_writes(values, lay["header_row"], lay["zip"],
+                                    {z: r.get("state", "") for z, r in data.items()})
         print("  [%s] '%s': %d zips on the tab, %d matched Tableau, %d not in Tableau %s"
               % (owner, title, len(s["matched"]) + len(s["missing"]), len(s["matched"]),
                  len(s["missing"]), s["missing"][:10]))

@@ -276,14 +276,46 @@ def table_title_span(values: List[List[str]], header_row0: int, zip_col: int,
     if header_row0 < 1 or header_row0 >= len(values):
         return None
     hdr = values[header_row0]
+    start = city_col(values, header_row0, zip_col)
+    start = zip_col if start is None else start
     end = zip_col
     while end < len(hdr) and str(hdr[end]).strip():
         end += 1
     above = values[header_row0 - 1]
-    cells = [str(above[c]).strip() if c < len(above) else "" for c in range(zip_col, end)]
+    cells = [str(above[c]).strip() if c < len(above) else "" for c in range(start, end)]
     if end <= zip_col or any(x and norm(x) != norm(title(owner)) for x in cells):
         return None
-    return zip_col, end
+    return start, end
+
+
+CITY_STATE = "city, state"
+
+
+def city_col(values: List[List[str]], header_row0: int, zip_col: int) -> Optional[int]:
+    """Raf's table: the 'City, State' column right before 'Zip Code', else None."""
+    hdr = values[header_row0] if header_row0 < len(values) else []
+    c = zip_col - 1
+    return c if 0 <= c < len(hdr) and norm(hdr[c]) == CITY_STATE else None
+
+
+def city_writes(values: List[List[str]], header_row0: int, zip_col: int,
+                states: Optional[Dict[str, str]] = None) -> List[dict]:
+    """Raf's table: 'Roseville, MI' in the City, State cell of every zip row
+    that doesn't say it yet (a zip the lookup doesn't know is left alone)."""
+    c = city_col(values, header_row0, zip_col)
+    if c is None:
+        return []
+    out = []
+    for r in range(header_row0 + 1, len(values)):
+        row = values[r]
+        z = str(row[zip_col]).strip() if zip_col < len(row) else ""
+        if not z.isdigit():
+            continue
+        want = city_state(z.zfill(5), (states or {}).get(z.zfill(5), ""))
+        have = row[c] if c < len(row) else ""
+        if want and str(have).strip() != want:
+            out.append({"range": a1(r, c), "values": [[want]]})
+    return out
 
 
 def title_requests(sheet_id: int, row0: int, c1: int, c2: int) -> List[dict]:

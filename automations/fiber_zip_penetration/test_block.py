@@ -106,6 +106,20 @@ class BlockTest(unittest.TestCase):
         self.assertIsNone(block.table_title_span(vals, 1, 1, "Rafael Hidalgo"))
         self.assertIsNone(block.table_title_span(vals, 0, 1, "Rafael Hidalgo"))
 
+    def test_raf_city_state_column(self):
+        vals = [["", "", "", ""],
+                ["#", "City, State", "Zip Code", "Days"],
+                ["", "Addison", "75001", "2"],
+                ["", "Allen, TX", "75002", "1"],
+                ["", "-", "Total", "1"]]
+        self.assertEqual(block.city_col(vals, 1, 2), 1)
+        self.assertEqual(block.city_writes(vals, 1, 2),
+                         [{"range": "B3", "values": [["Addison, TX"]]}])
+        self.assertEqual(block.table_title_span(vals, 1, 2, "Rafael Hidalgo"), (1, 4))
+        vals[1][1] = "City"                                      # old layout: untouched
+        self.assertEqual(block.city_writes(vals, 1, 2), [])
+        self.assertEqual(block.table_title_span(vals, 1, 2, "Rafael Hidalgo"), (2, 4))
+
     def test_outside_changed(self):
         before = [["a", "b", ""], ["c", "", ""]]
         after = [["a", "b", "NEW"], ["c", "", "x"]]
