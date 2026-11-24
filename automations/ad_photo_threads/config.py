@@ -188,6 +188,10 @@ NO_AD_ANSWERS = {
     # thread) is AppStream's "Kimberly Thurmond" -- the one Kimberly that day,
     # ad "AT&T Retail Sales Associate" (spelling is why the lookup missed).
     "2026-11-19|kimberly thurman": "AT&T Retail Sales Associate",
+    # Jamis, Camila 11/24: the 11/6 1st rounds (Perla, tab `Jamis Garay new`
+    # rows 1637/1641) with Ad Title "?".
+    "2026-11-06|trinity scott": "Other(NLR Indeed)",
+    "2026-11-06|stephany martinez": "Other(NLR Indeed)",
 }
 # Eve 11/5: a person said this row is someone already on an ad thread under
 # another name: it only comes off the no-ad list, never posted twice.
@@ -644,6 +648,12 @@ _ALIASES = {
     # "(Bilingual Spanish Required)" thread, never a thread of its own.
     "haytham": {
         "AT&T Retail Associate (Bilingual/Spanish)": "AT&T Retail Associate (Bilingual Spanish Required)",
+    },
+    # Jamis, Camila 11/24: Andrew Emerson (11/19, row 1855) came from Handshake
+    # ("Marketing & Sales Assistant" = the office's one Handshake marketing
+    # ad), not the "B2B Sales Associate Evanston IL" typed in his row later.
+    "jamis": {
+        "B2B Sales Associate Evanston IL": "Handshake / Marketing Assistant",
     },
     # Eve 10/19: every Omar ad gets its thread, even one seen 1-2 times (an
     # alias target counts as a confirmed ad). Broken pastes shown fixed.
