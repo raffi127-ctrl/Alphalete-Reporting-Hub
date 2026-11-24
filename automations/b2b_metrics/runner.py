@@ -199,6 +199,20 @@ class NoKnocksLogged(Exception):
     proven zero, not a failure. Posts one line instead of an image."""
 
 
+def _eco_sent_nothing(relay_notes) -> bool:
+    """The relay's own words: an ACTIVE ECO office whose machine relayed no
+    row for the day (knocks_relay.relayed_rows logs exactly 'relayed nothing
+    for'). Any other reason — not enrolled, unreadable workbook, unfinished
+    day — is not evidence of a quiet day."""
+    return any("relayed nothing for" in n for n in relay_notes)
+
+
+def _no_office_access(exc) -> bool:
+    """The scrape died because this login isn't on the office's Office Access
+    list ('not on this login's ownerville Office Access list')."""
+    return "office access list" in str(exc).lower()
+
+
 def _knocks(o: B2BOffice, out_dir: Path, log, today=None):
     """🚪 Total Knocks — YESTERDAY'S complete day, the same board the D2D
     metrics threads post (Megan 2026-11-13, Midspire: "show the complete
@@ -213,11 +227,32 @@ def _knocks(o: B2BOffice, out_dir: Path, log, today=None):
     from automations.rashad_metrics.knocks_pull import pull_office_knocks
     from automations.total_knocks import render as knocks_render
     target = (today or dt.date.today()) - dt.timedelta(days=1)
-    rows = knocks_relay.relayed_rows(o.key, o.knocks_office, target, log=log)
+    relay_notes = []
+
+    def _relay_log(msg):
+        relay_notes.append(str(msg))
+        log(msg)
+
+    rows = knocks_relay.relayed_rows(o.key, o.knocks_office, target,
+                                     log=_relay_log)
     if rows is None:
         log("  [knocks] relay can't vouch for {} — scraping ownerville "
             "as {}".format(target, o.knocks_office))
-        target, rows = pull_office_knocks(o.knocks_office, target)
+        try:
+            target, rows = pull_office_knocks(o.knocks_office, target)
+        except Exception as e:  # noqa: BLE001
+            if _eco_sent_nothing(relay_notes) and _no_office_access(e):
+                # Eve 2026-11-23: Lucy 2's ownerville login lost Office Access
+                # to the B2B offices when Carlos moved to NDS (11/22), so the
+                # scrape can't be the fallback any more. The office's own ECO
+                # machine relays every day it knocks (Luke/Eveliz/Valeria, all
+                # week); a day it relayed nothing — Sunday — is "no knocks
+                # logged", not a failure that pages every Monday.
+                log("  [knocks] ECO relayed nothing for {} and this login has "
+                    "no Office Access to {} — posting it as no knocks".format(
+                        target, o.knocks_office))
+                raise NoKnocksLogged(target)
+            raise
     knocks_run._log_day(target, o.knocks_office, rows)
     if not rows:
         raise NoKnocksLogged(target)
