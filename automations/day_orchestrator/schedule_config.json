@@ -10051,7 +10051,8 @@
    "priority": "P3",
    "freshness_target": null,
    "depends_on": [
-    "recruiter_retention_weekly"
+    "recruiter_retention_weekly",
+    "att_focus_raf"
    ],
    "verify": null,
    "timeout_minutes": 20
