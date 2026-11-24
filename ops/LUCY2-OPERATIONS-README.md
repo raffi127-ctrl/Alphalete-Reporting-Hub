@@ -34,6 +34,6 @@ never fires. The seven timed Lucy 2 cards on 11/19, none of which has ever run o
 Last real runs found: daily_plan_text = the 11/11 hand send; nico_roster_check = an 11/04 rerun; nds_tnc_check =
 an 11/06 rerun; daily_update_fill = an 11/02 rerun. **Rule until this is settled: an exact-time Lucy 2 job gets
 its own launchd agent** (`deploy/com.alphalete.<name>.plist` + a wrapper .sh + an `install_<name>_agent` entry,
-installed with `rerun install_<name>_agent`) — e.g. `com.alphalete.week-one-text` (11/19) and
-`com.alphalete.verizon-texts`. Turning the scheduler live would start all seven at once (including car rides'
+installed with `rerun install_<name>_agent`) — e.g. `com.alphalete.week-one-text` (11/19),
+`com.alphalete.nds-rep-dms` (11/23, the 9am rep order-log DMs) and `com.alphalete.verizon-texts`. Turning the scheduler live would start all seven at once (including car rides'
 live OwnerVille edits) — Carlos's call, not done. Check: `logtail card-scheduler-<date> WOULD 20`.
