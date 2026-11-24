@@ -98,7 +98,11 @@ def main() -> int:
                 seg = _seg(v)
                 print(f"VIEW: {v.get('name')} -> {repo}/{seg}", flush=True)
             for v in views:
-                seg = _seg(v)
+                # The record's url segment comes back EMPTY on this site
+                # (2026-11-24); the segment is the name with spaces and
+                # punctuation dropped ('Order Log' -> 'OrderLog').
+                seg = _seg(v) or "".join(
+                    ch for ch in str(v.get("name") or "") if ch.isalnum())
                 if seg:
                     _csv_peek(page, repo, seg)
     return 0
