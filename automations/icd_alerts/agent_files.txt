@@ -1,6 +1,6 @@
 # The files that make up the Lucy Reports agent, one per line.
 # Generated from package.AGENT_FILES -- see test_knocks.UpdateScriptTests.
-# release: 2026.11.24.7   <- must equal agent_release.txt (selfupdate refuses a stale list)
+# release: 2026.11.24.8   <- must equal agent_release.txt (selfupdate refuses a stale list)
 automations/icd_alerts/__init__.py
 automations/icd_alerts/config.py
 automations/icd_alerts/relay.py
@@ -120,3 +120,18 @@ automations/office_admin/__init__.py
 automations/office_admin/cal_nav.py
 automations/office_admin/retention.py
 automations/office_admin/fdot.py
+automations/apex_new_starts/__init__.py
+automations/apex_new_starts/apex.py
+automations/apex_new_starts/values.py
+automations/apex_new_starts/fieldmap.py
+automations/apex_new_starts/field_map.json
+automations/apex_new_starts/blueink_data.py
+automations/apex_new_starts/ssn_prompt.py
+automations/apex_new_starts/eco_run.py
+automations/blueink_docs/__init__.py
+automations/blueink_docs/blueink.py
+automations/blueink_docs/config.py
+automations/office_admin/config.py
+automations/shared/workbooks.py
+automations/shared/new_start_eligibility.py
+automations/shared/hub_autopublish.py

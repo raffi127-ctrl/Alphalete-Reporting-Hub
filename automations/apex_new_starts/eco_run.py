@@ -436,16 +436,23 @@ def _removed_on_the_board(office_key: str, monday: dt.date,
     no way to pass a key at all until 2026-11-22, so every run of it had this
     gate quietly off -- harmless on a dry run, and on a live one it is how
     somebody the ICD removed gets a payroll record.
+
+    THROUGH `rows_anywhere` SINCE 2026-11-24, which is what lets this whole job
+    ship to the office's own computer: on a Lucy it is a gspread read and on an
+    office Mac it is the relay, and that machine has no Google access at all.
+    It was the last Sheets call on the Apex path, and `package.py` has named it
+    as the blocker since 11/11 -- "the removals have to reach the office another
+    way (in the job, through the relay)". The relay IS that way.
+
+    It also keeps the rule this function is built on: `rows_anywhere` RAISES
+    when a board cannot be read rather than answering "nobody"
+    ([[feedback_empty_means_proven_zero]]).
     """
     from automations.icd_onboarding import board as B
-    from automations.icd_onboarding import sheet as S
+    from automations.icd_onboarding import fillers as F
     if not office_key:
         raise RuntimeError("no office key, so no board to read removals from")
-    ws = S.board_for(office_key, monday, create=False)
-    if ws is None:
-        log("  (no onboarding board for %s yet -- nobody removed)" % office_key)
-        return set()
-    rows = B.for_week(S.rows_of(S._values(ws)), monday)
+    rows = F.rows_anywhere(office_key, monday, log=log)
     gone = set()
     for r in rows:
         if str(r.get(B.TERMINATED_AT) or "").strip():

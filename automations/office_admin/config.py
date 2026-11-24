@@ -160,10 +160,25 @@ def office(key: str) -> Optional[Office]:
 
 
 def sheet_id(override: str = "") -> str:
+    """The workbook the admin page's tabs live in.
+
+    THE LAST RESORT IS A HUB IMPORT, and this file ships to office machines as
+    part of the Apex job -- where `org_sales_board` does not exist. Guarded so
+    that a machine without it gets a sentence naming the environment variable
+    instead of ModuleNotFoundError from three frames down. Nothing on an
+    office's own computer opens this workbook: the job carries what it needs.
+    """
     if override:
         return override
     env = os.environ.get(SHEET_ID_ENV, "").strip()
     if env:
         return env
-    from automations.org_sales_board.run import SHEET_ID
+    try:
+        from automations.org_sales_board.run import SHEET_ID
+    except ImportError:
+        raise RuntimeError(
+            "this machine has no %s set and cannot reach the Hub's copy of "
+            "the id, so there is no admin workbook to open. Set %s if this "
+            "box really is meant to read it."
+            % (SHEET_ID_ENV, SHEET_ID_ENV))
     return SHEET_ID

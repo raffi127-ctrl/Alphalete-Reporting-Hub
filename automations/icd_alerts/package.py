@@ -250,6 +250,47 @@ AGENT_FILES = [
     "automations/shared/names.py",
     "automations/bg_check_sync/__init__.py",
     "automations/bg_check_sync/parse.py",
+    # NEW STARTS -> APEX, DELIVERED AT LAST (2026-11-24). Declared on
+    # 2026-11-08 and held back ever since -- the reasons are kept in full under
+    # APEX_WEEK_FILES below, and every one of them is now closed:
+    #
+    #   the board read      `eco_run._removed_on_the_board` went through
+    #                       gspread; it goes through `fillers.rows_anywhere`,
+    #                       which is the relay on an office machine. It was the
+    #                       last Sheets call on this path, and "the removals
+    #                       have to reach the office another way (in the job,
+    #                       through the relay)" is what that note asked for.
+    #   the gender column   `_genders_from_board` read a Google Sheet; gender
+    #                       is guessed from the first name at the moment Apex
+    #                       is typed and the column has left the board.
+    #   the pure helpers    `week_start_of` and `tab_name` moved into
+    #                       `shared/onboarding_week`, which ships.
+    #   the AppStream       `applicantstream.session` binds to the Hub's warm
+    #     session           console; `eco_steps.appstream_here` drives the
+    #                       office's own Chrome instead.
+    #   three Hub reaches   each now inside its own try with a safe answer on an
+    #                       office machine (HUB_ONLY_IMPORTS above).
+    #
+    # Megan, 2026-11-11, on where it belongs: "apex has to run on the ECO
+    # machine since it's that ICDs independent login." It still presses nothing
+    # unattended -- the typing is behind APEX_FILL_PROVEN, which no scheduled
+    # run can set, and the two state answers hold anybody whose office has not
+    # given them.
+    "automations/apex_new_starts/__init__.py",
+    "automations/apex_new_starts/apex.py",
+    "automations/apex_new_starts/values.py",
+    "automations/apex_new_starts/fieldmap.py",
+    "automations/apex_new_starts/field_map.json",
+    "automations/apex_new_starts/blueink_data.py",
+    "automations/apex_new_starts/ssn_prompt.py",
+    "automations/apex_new_starts/eco_run.py",
+    "automations/blueink_docs/__init__.py",
+    "automations/blueink_docs/blueink.py",
+    "automations/blueink_docs/config.py",
+    "automations/office_admin/config.py",
+    "automations/shared/workbooks.py",
+    "automations/shared/new_start_eligibility.py",
+    "automations/shared/hub_autopublish.py",
     # THE FIRST STEP THE OFFICE DOES FOR ITSELF (Megan, 2026-11-24: "we
     # need it to work like lucy eco does"). `eco_steps` holds the step
     # bodies that reach their source the ECO way -- today Contact Added,
@@ -276,7 +317,18 @@ AGENT_FILES = [
     "automations/office_admin/fdot.py",
 ]
 
-# NEW STARTS -> APEX: DECLARED, NOT DELIVERED. (2026-11-11)
+# NEW STARTS -> APEX: DELIVERED 2026-11-24. The list below is kept because the
+# reasons are worth reading -- it is the record of what "ship it" actually
+# costs when the thing being shipped reads Google Sheets and the destination
+# has no Google access at all. Every file here is now in AGENT_FILES above,
+# which names the five blockers and how each was closed.
+#
+# WHAT HAS NOT CHANGED: no office computer presses anything unattended. The
+# typing is behind APEX_FILL_PROVEN, a flag no scheduled run can set, and an
+# office that has not answered its two state questions holds every person back
+# rather than filing them under Texas.
+#
+# THE ORIGINAL NOTE, 2026-11-11:
 #
 # These went into AGENT_FILES on 2026-11-08 ("apex_week: ship it to the office
 # machines") and were never added to agent_files.txt -- and agent_files.txt is
@@ -379,6 +431,31 @@ HUB_ONLY_IMPORTS = {
     # The import sits inside `session()` and nothing on an office box calls it.
     ("automations/applicant_tracker/applicantstream.py",
      "automations.shared.tableau_patchright", "session"),
+    # THE APEX JOB'S THREE HUB REACHES, each inside its own try and each with a
+    # safe answer on an office machine (2026-11-24, when the job finally
+    # shipped -- see APEX_WEEK_FILES below for the reasons it could not).
+    #
+    #   hub_autopublish          lights a card on the Hub -- `_resolve` finds
+    #                              which card, `_publish` marks it. Both are in
+    #                              their own try: off the Hub the answer is "no
+    #                              pill", which is not an error.
+    #   config.template_name_for   an office's Blue Ink bundle name, off the
+    #                              enrolment. Unreadable answers "" and NOT
+    #                              Alphalete's name, which is the whole point
+    #                              of the guard -- a fallback to ours would
+    #                              send somebody else's documents.
+    #   config.sheet_id            the admin workbook's id. Nothing on an
+    #                              office's computer opens it; guarded above so
+    #                              a box without it gets a sentence instead of
+    #                              ModuleNotFoundError.
+    ("automations/shared/hub_autopublish.py",
+     "automations.day_orchestrator", "_resolve"),
+    ("automations/shared/hub_autopublish.py",
+     "automations.day_orchestrator", "_publish"),
+    ("automations/blueink_docs/config.py",
+     "automations.eco_onboarding", "template_name_for"),
+    ("automations/office_admin/config.py",
+     "automations.org_sales_board.run", "sheet_id"),
     # Best effort, inside try: the walk goes on without them.
     ("automations/oat_processing/run.py", "automations.recruiting_report",
      "_write_walk_diag"),

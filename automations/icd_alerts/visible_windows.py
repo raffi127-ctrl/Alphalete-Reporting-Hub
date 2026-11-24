@@ -116,6 +116,15 @@ ALLOWED: Dict[str, Tuple[str, str]] = {
                  "scheduled path is `eco_steps.appstream_here`, which binds "
                  "the driver to the hidden Chrome `resume_push` already "
                  "holds (shipped 2026-11-24 for the onboarding seed)"),
+    "automations/apex_new_starts/apex.py":
+        (PERSON, "Apex texts a code at EVERY sign-in, so a person always "
+                 "starts it -- `visible` is their window and it is off by "
+                 "default. Nothing unattended can even reach the typing: it "
+                 "is behind APEX_FILL_PROVEN, a flag no scheduled run sets, "
+                 "because no code has ever saved an Apex record with nobody "
+                 "looking (shipped to offices 2026-11-24; Megan, 2026-11-11: "
+                 "\"apex has to run on the ECO machine since it's that ICDs "
+                 "independent login\")"),
     # --- opens by itself, in view. TO BE MOVED. -----------------------------
     "automations/icd_alerts/ov_read.py":
         (OWED, "when the OwnerVille session lapses, Lucy signs in again in a "
