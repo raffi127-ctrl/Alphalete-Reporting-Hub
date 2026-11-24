@@ -26,13 +26,15 @@
          on purpose — the nightly schedule_guard only self-heals jobs with <=2
          StartCalendarInterval entries. The module itself no-ops off-Monday and
          never double-posts, so a guard re-kick is always safe. -->
+    <!-- ANY DAY, not Mondays only (Megan, 2026-11-24: "it should be any day
+         that there's new starts scheduled"). A start can be any day since
+         2026-11-16, and a week whose Monday run did not happen used to have no
+         thread at all with nothing to retry it. The module posts ONE thread
+         per week per office and only when somebody is actually starting, so a
+         daily fire is a no-op on the other four days and on a quiet week. -->
     <key>StartCalendarInterval</key>
     <array>
-        <dict>
-            <key>Weekday</key><integer>1</integer>
-            <key>Hour</key><integer>8</integer>
-            <key>Minute</key><integer>30</integer>
-        </dict>
+        <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>30</integer></dict>
     </array>
 
     <key>StandardOutPath</key>

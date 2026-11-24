@@ -864,6 +864,9 @@ def main(argv=None) -> int:
                     help="read the day off the real sheet, not ApplicantStream")
     ap.add_argument("--dry-run", action="store_true",
                     help="write and post nothing (the default without flags)")
+    ap.add_argument("--force-post", action="store_true",
+                    help="post even though nobody has marked the BOB calls "
+                         "done for the day (office_admin.bob_calls)")
     args = ap.parse_args(argv)
     try:
         office = OFF.get(args.office)
@@ -897,6 +900,27 @@ def main(argv=None) -> int:
     if day.weekday() == 6 and not args.date:
         log("  Sunday — no 2nd rounds, nothing to do")
         return 0
+
+    # THE BOB CALLS HAVE TO BE DONE FIRST (Megan, 2026-11-24: "the daily
+    # update should be sent out every day, but it can't be sent out until the
+    # BOB calls are done. So that's a manual trigger that has to happen").
+    #
+    # EVERYTHING ELSE STILL RUNS. The sheet is filled and the picture is made
+    # either way -- what is held is the POST, because the thing that would be
+    # wrong is an office reading its day's record with the answers missing.
+    # A recruiter writes the follow-up, who ran it and the BOB during the
+    # calls; posted before they finish, the update is a record of nothing.
+    #
+    # --force-post is the way past it for a day somebody pressed nothing and
+    # the office wants it anyway, and it says so in the log rather than being
+    # silent about having skipped the gate.
+    if args.post and not args.force_post:
+        from automations.office_admin import bob_calls as BOB
+        if not BOB.done(office.key, day):
+            log("  HELD — %s has not marked today's BOB calls done, so the "
+                "update is not posted. The sheet and the picture are still "
+                "made. (--force-post posts anyway.)" % office.key)
+            args.post = False
 
     cands = (seed_from_real(day, office.sheet, office.tab) if args.seed_from_real
              else _harvest_with_retry(day, office.office_id))

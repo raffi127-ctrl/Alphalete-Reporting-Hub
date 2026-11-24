@@ -735,7 +735,10 @@ def _phases(args) -> int:
     no_time = []
     not_yet = []
     if args.due_now and do_send:
-        send, not_yet, no_time = roster.due_now(send)
+        # ON THAT OFFICE'S CLOCK. `--office` is already the ECO office key, so
+        # a bundle for an office outside Central is due at ITS 30-minutes-before,
+        # not a Central Lucy's (Megan, 2026-11-24).
+        send, not_yet, no_time = roster.due_now(send, office_key=args.office)
         print(f"due now: {len(send)} · not yet: {len(not_yet)} · "
               f"no readable start time: {len(no_time)}")
         # See sent_ledger_path. Live only: a dry run sends nobody, so its

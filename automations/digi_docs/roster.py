@@ -217,15 +217,21 @@ def starting_today(cands: List["Candidate"], today=None) -> List["Candidate"]:
     return [c for c in cands if c.chart_date == today]
 
 
-def due_now(cands: List["Candidate"], now=None):
+def due_now(cands: List["Candidate"], now=None, office_key: str = ""):
     """(due, not_yet, no_time) — split by whether it is time to send yet.
 
     `due` is everyone whose send moment has ARRIVED, not just landed on: a tick
     that only fired on the exact minute would drop anyone whose slot was missed
     because the machine was busy, and they would never be sent at all.
+
+    ON THE OFFICE'S CLOCK, not this machine's (Megan, 2026-11-24). A start time
+    is written in the office's own zone; comparing it to a Central Lucy's wall
+    clock is an hour or three of drift for everybody outside Central, and EARLY
+    on the west coast -- a contract landing before anybody is in the room. With
+    no office key it stays machine-local, which is what every caller had
+    before, and on an office's own computer the two are the same thing anyway.
     """
-    import datetime as _dt
-    now = now or _dt.datetime.now()
+    now = config.office_now(office_key, now)
     now_t = now.time()
     due, not_yet, no_time = [], [], []
     for c in cands:

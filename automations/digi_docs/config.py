@@ -51,10 +51,86 @@ COL_QUIZZES = "Onboarding Quizzes"   # reference only -- never written
 COL_START_TIME = "Start Time"
 SEND_LEAD_MINUTES = 30
 
-# All times on this tab are CENTRAL (Megan 2026-08-26). Lucy 3 is Central too,
-# so the tick compares against machine-local time — but naming it here means a
-# machine move is a one-line fix instead of a silent hour's drift.
+# WHOSE CLOCK A START TIME IS ON.
+#
+# All times on Raf's tab are CENTRAL (Megan 2026-08-26) and Lucy 3 is Central
+# too, so "now" was read machine-local and the two agreed by luck. For any
+# office outside Central that is an hour or three of drift, and it drifts
+# EARLY on the west coast -- a contract landing before anybody is in the room
+# (Megan, 2026-11-24: "we'll need to make sure that we're reading the calendar
+# in the right time zone").
+#
+# ALPHALETE'S OWN DEFAULT, not a global one. `office_tz` below answers for a
+# named office and falls back to this; an office's own answer comes off its
+# enrolment, so adding an office never means editing code.
 OFFICE_TZ = "America/Chicago"
+
+# The offices whose clock is NOT Central, by LucyEco office key. One line per
+# office until the enrolment form asks for it -- and the enrolment answer wins
+# the moment it is there, so this list only ever shrinks.
+#
+# A zone and not an offset, on purpose: an offset is wrong twice a year, and
+# the fortnight either side of a clock change is exactly when a 30-minute lead
+# becomes a 90-minute one without anybody touching anything.
+OFFICE_TZ_BY_KEY = {}
+
+# The column the enrolment form writes it to, on the shared Office Settings
+# tab. `eco_onboarding.store` creates a column it does not find, so naming it
+# here is all that is needed for the answer to start winning.
+TZ_COLUMN = "Time Zone"
+
+
+def office_tz(office_key: str = "") -> str:
+    """The zone a given office's start times are written in.
+
+    IN ORDER: the office's own enrolment answer, then the hand list above, then
+    Alphalete's Central. Nothing here guesses from a state or an area code --
+    a guessed zone is indistinguishable from a right one until a send lands an
+    hour out.
+    """
+    key = str(office_key or "").strip().lower()
+    if key:
+        try:
+            from automations.eco_onboarding import store as _store
+            said = str((_store.read(key) or {}).get(TZ_COLUMN) or "").strip()
+            if said:
+                return said
+        except Exception:      # noqa: BLE001 -- no sheet reachable here, or no
+            # answer yet. An office that has not been asked keeps Central,
+            # which is what it has had all along.
+            pass
+        if key in OFFICE_TZ_BY_KEY:
+            return OFFICE_TZ_BY_KEY[key]
+    return OFFICE_TZ
+
+
+def office_now(office_key: str = "", now=None):
+    """`now` on that office's clock, whatever clock this machine keeps.
+
+    ON THE OFFICE'S OWN COMPUTER this is a no-op -- machine-local IS the
+    office's zone, which is the destination every one of these steps is moving
+    to. It matters while a Lucy in Central is deciding when a bundle for an
+    office in Phoenix or Los Angeles is due.
+    """
+    import datetime as _dt
+    try:
+        from zoneinfo import ZoneInfo
+    except ImportError:        # noqa: BLE001 -- 3.8 and earlier
+        return now or _dt.datetime.now()
+    want = office_tz(office_key)
+    try:
+        zone = ZoneInfo(want)
+    except Exception:          # noqa: BLE001 -- an unknown zone name
+        # A typo in a zone must not move every send by a random amount. Fall
+        # back to the machine's own clock, which is at least the behaviour
+        # everybody has had since August.
+        return now or _dt.datetime.now()
+    if now is None:
+        return _dt.datetime.now(zone)
+    if now.tzinfo is None:
+        # A naive `now` is this machine's wall clock; say so before converting.
+        now = now.astimezone()
+    return now.astimezone(zone)
 
 # THE ONE THING THIS COLUMN DOES NOT SAY: AM or PM.
 #

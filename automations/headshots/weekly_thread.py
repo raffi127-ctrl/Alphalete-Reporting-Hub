@@ -79,25 +79,64 @@ def find_week_anchor(client=None, channel: str = CHANNEL_ID,
     return min(matches, key=lambda m: float(m["ts"]))
 
 
+def starts_this_week(monday: Optional[dt.date] = None,
+                     office_key: str = "") -> bool:
+    """Is anybody scheduled to start in this week? True when it cannot be told.
+
+    UNREADABLE MEANS POST. The thread costs a line in a channel; a missing
+    thread costs somebody their headshot on the one morning they are there to
+    have it taken ([[feedback_empty_means_proven_zero]] cuts the other way
+    here, and deliberately -- "I could not look" must not read as "nobody is
+    starting", so it falls back to the old always-post behaviour).
+    """
+    try:
+        from automations.icd_onboarding import board as _B
+        from automations.icd_onboarding import fillers as _F
+        week = _B.week_start_of(monday or week_monday())
+        rows = _F.rows_anywhere(office_key or "raf", week, log=lambda *a: None)
+    except Exception:           # noqa: BLE001 -- see the docstring
+        return True
+    live = [r for r in rows
+            if not str(r.get(_B.TERMINATED_AT) or "").strip()]
+    return bool(live)
+
+
 def post_prompt(*, dry_run: bool = True, channel: str = CHANNEL_ID,
-                force: bool = False) -> Optional[str]:
+                force: bool = False, office_key: str = "") -> Optional[str]:
     """Post this week's thread-starter. Returns its ts (existing or new).
 
+    ANY DAY THERE ARE NEW STARTS, not Mondays only (Megan, 2026-11-24: "right
+    now I think we only have it on Mondays. It should be any day that there's
+    new starts scheduled").
+
+    WHY MONDAY-ONLY WAS WRONG IN BOTH DIRECTIONS. A start can be any day since
+    2026-11-16, so a week whose Monday run did not happen -- the machine asleep,
+    the job failed -- had no thread at all and nothing retried it, leaving a
+    Wednesday starter with nowhere to put a photo. And it posted on Mondays
+    with nobody starting, which is a prompt in a busy channel asking for
+    headshots of no one.
+
+    STILL ONE THREAD PER WEEK, in each office's own channel. The marker says
+    "Week of M/D" and the replies all belong together -- a thread per day would
+    split one week's headshots across five places and the bot reads one
+    thread's replies. So this posts the FIRST day of the week that has
+    somebody, and finds the existing thread every day after.
+
     Safe on any day / any repeat run: only posts if this week's marker post
-    isn't already in the channel. `force` skips only the Monday check, never
+    isn't already in the channel. `force` skips the has-anybody check, never
     the duplicate check.
     """
-    today = dt.date.today()
-    if today.weekday() != 0 and not force:
-        print("Not Monday — nothing to post. (--force posts anyway.)")
-        return None
-
     client = _client()
     existing = find_week_anchor(client, channel)
     if existing:
         print("This week's headshot thread is already up (ts={}) — not "
               "posting again.".format(existing["ts"]))
         return existing["ts"]
+
+    if not force and not starts_this_week(office_key=office_key):
+        print("Nobody is scheduled to start this week — nothing to post. "
+              "(--force posts anyway.)")
+        return None
 
     text = prompt_text()
     if dry_run:
@@ -150,6 +189,9 @@ def main(argv=None) -> int:
     ap.add_argument("--channel", default=None,
                     help="post in just this channel (default: every LIVE "
                          "office in headshots config.OFFICES)")
+    ap.add_argument("--office", default=None,
+                    help="with --channel: whose board decides whether anybody "
+                         "is starting this week")
     args = ap.parse_args(argv)
     started_at = dt.datetime.now()
     ts, ok = None, False
@@ -157,16 +199,19 @@ def main(argv=None) -> int:
         # Every live office gets the same thread, same wording, in its own
         # channel (Megan 2026-10-26: roll it out to the ICDs). One office
         # failing to post never stops the others.
+        # THE OFFICE, not just its channel: whether anybody is starting this
+        # week is a question about THAT office's board, and asking Raf's about
+        # Omar's week is how a thread goes up in the wrong place or not at all.
         if args.channel:
-            channels = [args.channel]
+            targets = [(args.channel, args.office or "")]
         else:
             from automations.headshots import config as _cfg
-            channels = [o.channel for o in _cfg.live_offices()]
+            targets = [(o.channel, o.key) for o in _cfg.live_offices()]
         failed = []
-        for ch in channels:
+        for ch, key in targets:
             try:
                 got = post_prompt(dry_run=args.dry_run, channel=ch,
-                                  force=args.force)
+                                  force=args.force, office_key=key)
                 ts = ts or got
             except Exception as e:  # noqa: BLE001
                 print("could not post in {}: {}: {}".format(
