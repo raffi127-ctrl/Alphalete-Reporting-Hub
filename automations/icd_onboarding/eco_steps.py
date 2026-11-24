@@ -31,6 +31,7 @@ mistaken for an office where nobody has been contacted.
 """
 from __future__ import annotations
 
+import contextlib
 import datetime as dt
 import sys
 from typing import Dict, List, Sequence, Tuple
@@ -180,6 +181,67 @@ def contacts(office_key: str, week_start: dt.date, *,
     return F.apply_anywhere(office_key, week_start, "contacts",
                             verdicts, dry_run=dry_run, log=log)
 
+
+# --- ApplicantStream, on this office's own computer ---------------------------
+@contextlib.contextmanager
+def appstream_here(log=print):
+    """An `ApplicantStream` driver bound to THIS office's own Chrome.
+
+    WHY THIS EXISTS. `applicant_tracker.applicantstream.session` binds to the
+    warm console `shared.tableau_patchright` keeps alive on OUR machines, and
+    that module cannot ship -- it imports `recruiting_report.opt_phase` and
+    the Hub behind it. The DRIVER can: measured 2026-11-24, the only
+    `automations` import in applicantstream.py is inside `session()`, and the
+    class itself needs nothing but a Playwright page.
+
+    THE SAME CHROME THE PUSH USES (`resume_push`), on purpose and for the same
+    reason `as_signin` gives: the session and the security check it passed are
+    exactly what this reuses. A read proven in some other browser would prove
+    nothing about that one -- and this office's AppStream login already lives
+    there, which is the whole point of the step running here.
+
+    BACKGROUND, ALWAYS. A scheduled read on somebody's office computer opens
+    nothing they can see ([[feedback_eco_runs_in_background]]). `_connect`
+    hides the window and keeps focus where it was; this is not in
+    `icd_alerts.visible_windows` and must never be.
+
+    It does NOT close the browser. Lucy's Chrome is shared with the push and
+    the walk, and closing it from under them is how a run that worked takes
+    the next one down.
+    """
+    from automations.applicant_tracker.applicantstream import (
+        ApplicantStream, DEFAULT_TIMEOUT_MS, NAV_TIMEOUT_MS)
+    from automations.icd_alerts import resume_push as RP
+    try:
+        from patchright.sync_api import sync_playwright
+    except ImportError:                 # noqa: F401 -- a box without patchright
+        from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as p:
+        browser, ctx, page = RP._connect(p, background=True, url=RP.AS_BASE)
+        if page is None:
+            raise RuntimeError(
+                "Lucy's Chrome would not open, so ApplicantStream was never "
+                "read. Nothing was seeded.")
+        app = ApplicantStream(headless=True)
+        app.page = page
+        try:
+            page.set_default_timeout(DEFAULT_TIMEOUT_MS)
+            page.set_default_navigation_timeout(NAV_TIMEOUT_MS)
+        except Exception:               # noqa: BLE001 -- still runs without them
+            pass
+        # THE OFFICE SWITCHER IS THE PROOF, not a page that loaded. A logged-out
+        # console answers every office select with a timeout, which reads as a
+        # broken office instead of an expired login (applicantstream.session
+        # checks the same thing, for the same reason).
+        if page.locator("#searchMC").count() == 0:
+            raise RuntimeError(
+                "this computer's ApplicantStream session has gone -- the "
+                "console came back without the office switcher, so no office "
+                "could be selected. Sign in again with "
+                "`python -m automations.icd_alerts.as_signin`.")
+        app._capture_token()
+        yield app
 
 # THE STEPS THIS MACHINE CAN DO ITSELF, in the order a pass runs them.
 #

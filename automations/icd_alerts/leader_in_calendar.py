@@ -48,27 +48,19 @@ POLL_SECONDS = 5
 
 
 def _page_url(token: str) -> str:
-    from automations.shared.tableau_patchright import APPSTREAM_BASE
-    return "%s?rqst=%s&p=%d" % (APPSTREAM_BASE, token,
+    """Office Level Settings, for a live rqst token.
+
+    `resume_push.AS_BASE` and not `tableau_patchright.APPSTREAM_BASE` -- the
+    same URL, out of a module that SHIPS. That import is why this step has
+    never once run on a real office machine: `tableau_patchright` pulls in
+    `recruiting_report.opt_phase` and the Hub behind it, is not in
+    agent_files.txt, and so every office saw this step answer
+    "failed -- ModuleNotFoundError" (found by the shipped-closure test,
+    2026-11-24).
+    """
+    from automations.icd_alerts import resume_push as RP
+    return "%s?rqst=%s&p=%d" % (RP.AS_BASE, token,
                                 OFFICE_LEVEL_SETTINGS_PAGE)
-
-
-def _tokens():
-    """The office's own rqst tokens, newest first. [] when there is no
-    session -- which is not this step's problem to fix: the AppStream
-    sign-in step runs before it."""
-    import json
-    from automations.shared.tableau_patchright import APPSTREAM_STORAGE_STATE
-    try:
-        blob = json.loads(APPSTREAM_STORAGE_STATE.read_text())
-    except Exception:                               # noqa: BLE001
-        return []
-    out = []
-    for c in blob.get("cookies", []):
-        name = str(c.get("name") or "")
-        if name.startswith("rqst_"):
-            out.append((c.get("expires") or 0, name[5:]))
-    return [t for _e, t in sorted(out, reverse=True)]
 
 
 def is_ticked(page) -> bool:
@@ -98,78 +90,71 @@ def is_ticked(page) -> bool:
 
 
 def run(log=print, dialogs=None) -> str:
-    """One line for finish_setup's summary."""
-    tokens = _tokens()
-    if not tokens:
-        return "needs the ApplicantStream sign-in first"
+    """One line for finish_setup's summary.
 
-    from automations.shared.tableau_patchright import (APPSTREAM_PROFILE_DIR,
-                                                       _launch_persistent)
+    THIS OFFICE'S OWN CHROME, the one the push already signs AppStream into
+    (`eco_steps.appstream_here`, and `as_signin` says why a session proven in
+    some other browser proves nothing about that one). It used to drive the
+    Hub's warm console through `tableau_patchright`, which does not exist on
+    an office machine.
+    """
+    from automations.icd_onboarding import eco_steps as ES
+
+    # HIDDEN FIRST. The check costs nothing and opens nothing, so an office
+    # that has already ticked it never sees a browser
+    # ([[feedback_eco_runs_in_background]]).
+    try:
+        with ES.appstream_here(log=log) as app:
+            token = app.token
+            if not token:
+                return "needs the ApplicantStream sign-in first"
+            app.page.goto(_page_url(token), wait_until="domcontentloaded",
+                          timeout=60_000)
+            if not app.page.get_by_text(LABEL, exact=False).count():
+                return "needs the ApplicantStream sign-in first"
+            if is_ticked(app.page):
+                log("  Leader In Calendar is already ticked.")
+                return "already done"
+    except Exception as e:                          # noqa: BLE001
+        first = (str(e).strip().splitlines() or [""])[0]
+        return "could not check it (%s: %s)" % (type(e).__name__, first[:120])
+
+    # NOW the window, because now a person is needed -- which is the one
+    # reason an ECO box may show one (icd_alerts.visible_windows: "person").
+    if dialogs is None:
+        from automations.icd_alerts import dialogs as dialogs
+    dialogs.message(
+        "One box to tick in ApplicantStream.\n\n"
+        "A window is about to open on your Office Level Settings. "
+        "Under Calendar, tick \"Leader In Calendar\".\n\n"
+        "It saves itself -- there is no Save button for that box. "
+        "Close the window when you have ticked it.")
+
+    from automations.icd_alerts import resume_push as RP
     try:
         from patchright.sync_api import sync_playwright
     except ImportError:
         from playwright.sync_api import sync_playwright
 
     with sync_playwright() as p:
-        # HIDDEN FIRST. The check costs nothing and opens nothing, so an
-        # office that already ticked it never sees a browser.
-        ctx = _launch_persistent(p, APPSTREAM_PROFILE_DIR, headless=True,
-                                 label="leader_in_calendar", verbose=False)
-        try:
-            page = ctx.pages[0] if ctx.pages else ctx.new_page()
-            opened = False
-            for tok in tokens:
-                try:
-                    page.goto(_page_url(tok), wait_until="domcontentloaded",
-                              timeout=60_000)
-                    if page.get_by_text(LABEL, exact=False).count():
-                        opened = True
-                        break
-                except Exception:                   # noqa: BLE001
-                    continue
-            if not opened:
-                return "needs the ApplicantStream sign-in first"
-            if is_ticked(page):
-                log("  Leader In Calendar is already ticked.")
-                return "already done"
-        finally:
+        # background=False: they have to see this one.
+        browser, ctx, page = RP._connect(p, background=False,
+                                         url=_page_url(token))
+        if page is None:
+            return "needs Lucy's Chrome to open"
+        page.goto(_page_url(token), wait_until="domcontentloaded",
+                  timeout=60_000)
+        waited = 0
+        while waited < WAIT_SECONDS:
+            page.wait_for_timeout(POLL_SECONDS * 1000)
+            waited += POLL_SECONDS
             try:
-                ctx.close()
+                if is_ticked(page):
+                    log("  Leader In Calendar ticked.")
+                    return "done"
             except Exception:                       # noqa: BLE001
-                pass
-
-        # NOW the window, because now a person is needed.
-        if dialogs is None:
-            from automations.icd_alerts import dialogs as dialogs
-        dialogs.message(
-            "One box to tick in ApplicantStream.\n\n"
-            "A window is about to open on your Office Level Settings. "
-            "Under Calendar, tick \"Leader In Calendar\".\n\n"
-            "It saves itself -- there is no Save button for that box. "
-            "Close the window when you have ticked it.")
-
-        ctx = _launch_persistent(p, APPSTREAM_PROFILE_DIR, headless=False,
-                                 label="leader_in_calendar", verbose=False)
-        try:
-            page = ctx.pages[0] if ctx.pages else ctx.new_page()
-            page.goto(_page_url(tokens[0]), wait_until="domcontentloaded",
-                      timeout=60_000)
-            waited = 0
-            while waited < WAIT_SECONDS:
-                page.wait_for_timeout(POLL_SECONDS * 1000)
-                waited += POLL_SECONDS
-                try:
-                    if is_ticked(page):
-                        log("  Leader In Calendar ticked.")
-                        return "done"
-                except Exception:                   # noqa: BLE001
-                    break                           # they closed the window
-            return "needs Leader In Calendar ticked"
-        finally:
-            try:
-                ctx.close()
-            except Exception:                       # noqa: BLE001
-                pass
+                break                               # they closed the window
+        return "needs Leader In Calendar ticked"
 
 
 def main(argv=None) -> int:

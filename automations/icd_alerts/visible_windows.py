@@ -109,6 +109,13 @@ ALLOWED: Dict[str, Tuple[str, str]] = {
     "automations/icd_alerts/office_reviews.py":
         (PERSON, "the owner signs Lucy into their own Google once, to answer "
                  "their reviews (sent only on the set-up call)"),
+    "automations/applicant_tracker/applicantstream.py":
+        (PERSON, "its `__main__` is the one-time HEADED AppStream login, run "
+                 "by hand with somebody at the keyboard to clear Cloudflare "
+                 "and sign in. Nothing the agent calls opens a window: the "
+                 "scheduled path is `eco_steps.appstream_here`, which binds "
+                 "the driver to the hidden Chrome `resume_push` already "
+                 "holds (shipped 2026-11-24 for the onboarding seed)"),
     # --- opens by itself, in view. TO BE MOVED. -----------------------------
     "automations/icd_alerts/ov_read.py":
         (OWED, "when the OwnerVille session lapses, Lucy signs in again in a "
@@ -149,6 +156,16 @@ def _marks(src: str) -> Set[str]:
                 if kw.arg == "interactive" and isinstance(kw.value, ast.Constant) \
                         and kw.value.value is True:
                     found.add("interactive=True")
+                # `resume_push._connect(background=False)` IS a window: it
+                # opens Lucy's Chrome and deliberately does NOT hide it or
+                # hand focus back. Added 2026-11-24, when leader_in_calendar
+                # stopped saying `headless=False` and started saying this --
+                # and the scanner called the file clean while it still opened
+                # a browser on the owner's screen. A guard with a blind spot
+                # is worse than none: it says "nothing opens" with authority.
+                if kw.arg == "background" and isinstance(kw.value, ast.Constant) \
+                        and kw.value.value is False:
+                    found.add("background=False")
             try:
                 name = ast.unparse(n.func)
             except Exception:  # noqa: BLE001

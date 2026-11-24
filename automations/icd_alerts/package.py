@@ -259,6 +259,21 @@ AGENT_FILES = [
     # implementation and not a Hub copy beside an office copy.
     "automations/icd_onboarding/fillers.py",
     "automations/icd_onboarding/eco_steps.py",
+    # READING APPLICANTSTREAM FROM THE OFFICE'S OWN COMPUTER, which the
+    # seed and the no-shows walk both need. `eco_steps.appstream_here`
+    # binds the DRIVER to the same Chrome the push already signs into
+    # (resume_push), because `applicantstream.session` binds to the warm
+    # console `tableau_patchright` keeps on OUR machines and that module
+    # cannot ship -- it pulls in recruiting_report.opt_phase and the Hub
+    # behind it. Measured 2026-11-24: the driver class needs nothing but a
+    # Playwright page, and the readers below are pure page-scraping --
+    # `retention` and `cal_nav` import no automations module at all.
+    "automations/applicant_tracker/__init__.py",
+    "automations/applicant_tracker/applicantstream.py",
+    "automations/office_admin/__init__.py",
+    "automations/office_admin/cal_nav.py",
+    "automations/office_admin/retention.py",
+    "automations/office_admin/fdot.py",
 ]
 
 # NEW STARTS -> APEX: DECLARED, NOT DELIVERED. (2026-11-11)
@@ -358,6 +373,12 @@ HUB_ONLY_IMPORTS = {
      "automations.icd_onboarding", "reception_account"),
     ("automations/icd_onboarding/eco_steps.py",
      "automations.second_round_contacts", "reception_account"),
+    # THE WARM-CONSOLE SESSION, ours alone. `applicantstream.session` binds to
+    # the console `tableau_patchright` keeps alive on a Lucy; an office machine
+    # calls `eco_steps.appstream_here` instead, which drives its OWN Chrome.
+    # The import sits inside `session()` and nothing on an office box calls it.
+    ("automations/applicant_tracker/applicantstream.py",
+     "automations.shared.tableau_patchright", "session"),
     # Best effort, inside try: the walk goes on without them.
     ("automations/oat_processing/run.py", "automations.recruiting_report",
      "_write_walk_diag"),

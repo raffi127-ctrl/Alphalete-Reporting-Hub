@@ -114,3 +114,9 @@ automations/bg_check_sync/__init__.py
 automations/bg_check_sync/parse.py
 automations/icd_onboarding/fillers.py
 automations/icd_onboarding/eco_steps.py
+automations/applicant_tracker/__init__.py
+automations/applicant_tracker/applicantstream.py
+automations/office_admin/__init__.py
+automations/office_admin/cal_nav.py
+automations/office_admin/retention.py
+automations/office_admin/fdot.py
