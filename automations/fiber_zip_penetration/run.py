@@ -111,10 +111,16 @@ def fill_block(o: dict, data: dict, dry_run: bool) -> bool:
             print("  [%s] tab %r not found -- skipped" % (who, tab))
             return False
         if dry_run:
-            print("  [%s] would create tab %r with %d zips" % (who, tab, len(data)))
+            print("  [%s] would copy the molde's Line Up as %r, then add %d zips"
+                  % (who, tab, len(data)))
             return True
-        ws = sh.add_worksheet(title=tab, rows=max(100, len(data) + 10), cols=block.WIDTH + 2)
-        print("  [%s] created tab %r" % (who, tab))
+        # Same format for everyone: copy the molde's Line Up (never a blank tab).
+        src = open_by_key(config.TEMPLATE_SHEET).worksheet(config.TEMPLATE_LINEUP_TAB)
+        new_id = src.copy_to(o["sheet"])["sheetId"]
+        sh = open_by_key(o["sheet"])
+        ws = next(w for w in sh.worksheets() if w.id == new_id)
+        ws.update_title(tab)
+        print("  [%s] copied the molde's Line Up into %r" % (who, tab))
     values = ws.get_all_values()
     formulas = ws.get_all_values(value_render_option="FORMULA")
     col = block.find_block(values, who)

@@ -31,28 +31,36 @@ VIEW_URL = "%s&%s=%s" % (_BASE_VIEW_URL, quote(PENETRATION_TYPE_FIELD),
 # Line Ups have no zip table, so Lucy adds her own block to the right of
 # everything (block.py). Names = Tableau spelling. 'tab' = the Line Up;
 # 'tab_regex' = weekly Line Ups, the LEFTMOST visible match wins (newest);
-# 'create_tab' = owner has no Line Up -> Lucy makes a 'Zip Penetration' tab.
+# 'create_tab' = owner has no Line Up -> Lucy copies the 'Line Up ' tab of our
+#   molde (Fiber All In One - Template) into their All-in-One, so every owner
+#   has the same Line Up format (Eve 2026-11-23). Kash/Aya/Rashad = their
+#   ALL-IN-ONE books (office_expenses_fixer/books.json), not their sales boards.
 # Omar Mohamad (ORG Fiber Team) has no rows in the by-zip crosstab -> not here.
 BLOCKS: List[Dict] = [
     {"owner": "Haytham Nagi", "sheet": "1le2wVPAeYsclQyP212IY9K92a9BAfoUWGd7n1DgIj8Y",
      "tab": "Territory Line Up"},
     {"owner": "Cyrus Wade", "sheet": "1boVLrvhqKVFHgUdGeQWTSFywlLSAoHh0X8b-MT1ZCrA",
      "tab_regex": r"^\s*\d{1,2}\.\d{1,2}\s*Line\s*up\s*$"},
-    {"owner": "Kash Rai", "sheet": "1WJLw5WpSJfvvDsVQlNwu5yyof1WRom8yK87MQCCyC_0",
-     "tab": "Zip Penetration", "create_tab": True},
-    {"owner": "Aya Al-Khafaji", "sheet": "1D7Gf8E6eFEYj6Md8uRozdFKUSD4XGxUt85WuY9quEIE",
-     "tab": "Zip Penetration", "create_tab": True},
+    {"owner": "Kash Rai", "sheet": "1deXnrN1uHmiSD_P31qjCuS60-kKRlZ7vv7-SOlvyYk8",
+     "tab": "Territory Line Up"},                      # All In One - Kash
+    {"owner": "Aya Al-Khafaji", "sheet": "1t8dCKc5NX6zkBPzRFzD5hWFL3d8ll27XoMgY2PoRALE",
+     "tab": "Line Up ", "create_tab": True},           # All In One - Aya (had none)
     {"owner": "Hammad Haque", "sheet": "1HywODqAFpXP_Vn2uRAenie8nnvRPx90yBB6-KqJqq7U",
      "tab": "Line Up "},
     {"owner": "Salik Mallick", "sheet": "1HywODqAFpXP_Vn2uRAenie8nnvRPx90yBB6-KqJqq7U",
      "tab": "Line Up "},
-    {"owner": "Rashad Reed", "sheet": "1MitP5ZgVlCQhH5tzjZ0ltfaqSW_l9zholzTz0AUSUl0",
-     "tab": "Zip Penetration", "create_tab": True},
+    {"owner": "Rashad Reed", "sheet": "1uaR15Qf_Q1SzA6hStnczkMba2NQmkbvR4VvR-g_3zpw",
+     "tab": "Line Up "},                               # All In One - Rashad Reed
     {"owner": "Jacob Dover", "sheet": "10ISMTZxmg4fp96tehPGmAIm_VheFhDa_D4yc0Ojnbcs",
      "tab": "Line Up "},
     {"owner": "Cody Cannon", "sheet": "1Emdb7DfQ40Xd262gVDZwAB1LAIi1rPicsr7nYmCnNRk",
      "tab": "Line Up"},
 ]
+
+# The molde every owner's All-in-One comes from; its 'Line Up ' tab is what a
+# missing Line Up gets copied from (create_tab).
+TEMPLATE_SHEET = "1D7WTd-rAJuxcorIPHqQFNoH7lDD33ZJqPosxNtg1TLo"   # Fiber All In One - Template
+TEMPLATE_LINEUP_TAB = "Line Up "
 
 OWNERS: List[Dict[str, str]] = [
     {"owner": "Rafael Hidalgo",
