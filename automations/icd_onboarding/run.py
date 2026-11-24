@@ -183,8 +183,7 @@ def seed(office_key: str, week_start: dt.date, *, dry_run: bool = True,
     asked for 15 minutes on 2026-11-22. Showed Up is not, and it stays on the
     hourly run, where nothing about it got slower.
     """
-    from automations.applicant_tracker.applicantstream import session
-    from automations.icd_onboarding import sheet as S
+    from automations.icd_onboarding import sessions as SES
     from automations.office_admin import fdot
 
     from automations.office_admin import retention
@@ -201,7 +200,12 @@ def seed(office_key: str, week_start: dt.date, *, dry_run: bool = True,
     seen = set()
     by_name: Dict[str, str] = {}
     labels = _funnel_labels(office_key)
-    with session() as app:
+    # WHICHEVER APPLICANTSTREAM THIS MACHINE HAS (`sessions`). On a Lucy that
+    # is the warm console everybody shares; on the office's own computer it is
+    # the Chrome `resume_push` already signs in, with THEIR login -- which is
+    # the whole point of the seed running there (Megan, 2026-11-23: "I want to
+    # move it to the ECO machines once it's all built out").
+    with SES.appstream_anywhere(office_key, log=log) as app:
         for account in accounts:
             app.select_office(account)
             # WHO IS DUE IN. The Retention Report answers this in TWO page
@@ -414,14 +418,14 @@ def from_no_shows(office_key: str, week_start: dt.date, *,
     ApplicantStream session in front of them; the row labels this reads are
     the calendar's, which are known.
     """
-    from automations.applicant_tracker.applicantstream import session
+    from automations.icd_onboarding import sessions as SES
     from automations.office_admin import fdot
 
     account = _appstream_id(office_key)
     if not account:
         log("  no_shows: %s has no ApplicantStream id" % office_key)
         return 0
-    with session() as app:
+    with SES.appstream_anywhere(office_key, log=log) as app:
         app.select_office(account)
         people = fdot.no_shows_week(app, account, week_start, log=log)
     if not people:
@@ -595,7 +599,7 @@ def from_ownerville(office_key: str, week_start: dt.date, *,
     """
     import time
 
-    from automations.icd_onboarding import ov_anywhere as OVA
+    from automations.icd_onboarding import sessions as OVA
     from automations.icd_onboarding import ov_misses as OVM
     from automations.obcl_ov_sweep import config as OVC
     from automations.obcl_ov_sweep import ov_table
@@ -613,7 +617,7 @@ def from_ownerville(office_key: str, week_start: dt.date, *,
                           columns=F.columns_for("ownerville"))
     budget = OVC.SEARCH_BUDGET_S if budget_s is None else budget_s
 
-    # WHICHEVER SESSION THIS MACHINE HAS (`ov_anywhere`). On a Lucy that is the
+    # WHICHEVER SESSION THIS MACHINE HAS (`sessions`). On a Lucy that is the
     # Hub's one-per-box OwnerVille, which every office's read queues behind --
     # the 8am sweep waited its whole 30 minutes behind three other jobs on
     # 2026-11-24 and refused rather than guess whose rows it had. On the

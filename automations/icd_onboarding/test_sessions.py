@@ -2,14 +2,14 @@
 
 Megan, 2026-11-24: "the OV sweep would happen on the ECO machine."
 
-    python -m pytest automations/icd_onboarding/test_ov_anywhere.py -q
+    python -m pytest automations/icd_onboarding/test_sessions.py -q
 """
 import contextlib
 
 import pytest
 
 from automations.icd_onboarding import fillers as F
-from automations.icd_onboarding import ov_anywhere as OVA
+from automations.icd_onboarding import sessions as OVA
 
 
 @contextlib.contextmanager
@@ -120,7 +120,7 @@ def test_every_ownerville_opening_on_the_board_goes_through_it():
     root = _p.Path(__file__).resolve().parent
     offenders = []
     for path in sorted(root.glob("*.py")):
-        if path.name.startswith("test_") or path.name == "ov_anywhere.py":
+        if path.name.startswith("test_") or path.name == "sessions.py":
             continue
         tree = ast.parse(path.read_text())
         for node in ast.walk(tree):
@@ -131,7 +131,7 @@ def test_every_ownerville_opening_on_the_board_goes_through_it():
                 offenders.append("%s:%d" % (path.name, node.lineno))
     assert not offenders, (
         "these open the Hub's OwnerVille session directly instead of "
-        "ov_anywhere.session_anywhere: " + ", ".join(offenders))
+        "sessions.session_anywhere: " + ", ".join(offenders))
 
 
 def test_a_debugging_flag_cannot_put_a_browser_on_an_owners_screen(monkeypatch):
@@ -181,3 +181,69 @@ def test_the_sweep_opens_no_ownerville_of_its_own():
             raise AssertionError(
                 "obcl_ov_sweep/run.py:%d still opens the Hub session directly"
                 % node.lineno)
+
+
+# ----------------------------------------------- ApplicantStream, same shape
+
+def test_an_office_machine_reads_its_own_applicantstream(monkeypatch):
+    """Their recruiting calendar, their Retention Report, their login -- read
+    in the Chrome the push already signs in, because a sign-in proven in some
+    other browser proves nothing about the one the scheduled reads use."""
+    seen = []
+    monkeypatch.setattr(F, "on_office_machine", lambda k="": True)
+    import automations.icd_onboarding.eco_steps as ES
+    monkeypatch.setattr(ES, "appstream_here", lambda **kw: _fake("office", seen))
+    with OVA.appstream_anywhere("raf", log=lambda *a: None) as app:
+        assert app == "office"
+    assert seen == ["office"]
+
+
+def test_a_lucy_keeps_the_warm_console(monkeypatch):
+    seen = []
+    monkeypatch.setattr(F, "on_office_machine", lambda k="": False)
+    import automations.applicant_tracker.applicantstream as AS
+    monkeypatch.setattr(AS, "session", lambda: _fake("hub", seen))
+    with OVA.appstream_anywhere("raf", log=lambda *a: None) as app:
+        assert app == "hub"
+    assert seen == ["hub"]
+
+
+def test_the_hub_applicantstream_import_is_inside_its_branch():
+    """`shared.tableau_patchright` is what `applicantstream.session` reaches
+    for, and it cannot ship -- so an office machine must never get there."""
+    import inspect
+    src = inspect.getsource(OVA.appstream_anywhere)
+    at_office = src.index("appstream_here")
+    at_hub = src.index("applicant_tracker.applicantstream")
+    assert at_office < at_hub
+    assert "return" in src[at_office:at_hub]
+
+
+def test_the_seed_and_the_no_shows_walk_both_go_through_it():
+    """Both read ApplicantStream, and both are steps whose source is the
+    office's own."""
+    import inspect
+    from automations.icd_onboarding import run as R
+    for fn in (R.seed, R.from_no_shows):
+        src = inspect.getsource(fn)
+        assert "appstream_anywhere" in src, fn.__name__
+
+
+def test_nothing_on_the_board_opens_the_warm_console_directly():
+    """The same invariant the OwnerVille side has: an opening that reaches for
+    the Hub session is a line that breaks outright on an office machine."""
+    import ast
+    import pathlib as _p
+    root = _p.Path(__file__).resolve().parent
+    offenders = []
+    for path in sorted(root.glob("*.py")):
+        if path.name.startswith("test_") or path.name == "sessions.py":
+            continue
+        for node in ast.walk(ast.parse(path.read_text())):
+            if isinstance(node, ast.ImportFrom) and \
+                    node.module == "automations.applicant_tracker.applicantstream" \
+                    and any(a.name == "session" for a in node.names):
+                offenders.append("%s:%d" % (path.name, node.lineno))
+    assert not offenders, (
+        "these open the Hub's ApplicantStream console directly instead of "
+        "sessions.appstream_anywhere: " + ", ".join(offenders))

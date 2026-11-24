@@ -1,4 +1,9 @@
-"""Open OwnerVille whichever way THIS machine can -- the session's `anywhere`.
+"""The logins a step needs, opened whichever way THIS machine can.
+
+Named for the job rather than for one site: it started as OwnerVille only
+(`ov_anywhere`, 2026-11-24) and ApplicantStream arrived the same day with the
+same shape, so a module called after one of the two would have been a small
+lie that cost somebody a search later.
 
 The board already has this shape for the sheet: `fillers.rows_anywhere` reads
 with gspread on a Lucy and through the relay on an office's own computer, and
@@ -84,3 +89,32 @@ def unavailable():
     except Exception:       # noqa: BLE001 -- not on an office machine
         pass
     return tuple(out) or (RuntimeError,)
+
+
+@contextlib.contextmanager
+def appstream_anywhere(office_key: str = "", *, log=print):
+    """Yield an `ApplicantStream` driver, from whichever session this machine
+    has.
+
+    THE SEED AND THE NO-SHOWS WALK both read ApplicantStream, and both are
+    steps whose source is the OFFICE's -- their recruiting calendar, their
+    Retention Report, their login. On a Lucy that is the warm console
+    `tableau_patchright` keeps for everybody; on an office's own computer it is
+    the Chrome `resume_push` already signs in (`eco_steps.appstream_here`), and
+    `as_signin` says why that matters: a sign-in proven in some other browser
+    proves nothing about the one the scheduled reads use.
+
+    Same branch and same reason as `session_anywhere` above, and the Hub import
+    sits inside its own branch because `shared.tableau_patchright` cannot ship.
+    """
+    from automations.icd_onboarding import fillers as F
+
+    if F.on_office_machine(office_key):
+        from automations.icd_onboarding.eco_steps import appstream_here
+        with appstream_here(log=log) as app:
+            yield app
+        return
+
+    from automations.applicant_tracker.applicantstream import session
+    with session() as app:
+        yield app

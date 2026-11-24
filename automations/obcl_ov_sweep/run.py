@@ -68,7 +68,7 @@ ALPHALETE_KEY = "raf"
 #
 # Megan, 2026-11-24: "the OV sweep would happen on the ECO machine." The thing
 # standing in the way was that this job took no office at all, so
-# `ov_anywhere.session_anywhere` had nothing to route on and always landed on
+# `sessions.session_anywhere` had nothing to route on and always landed on
 # the Hub's one-per-box OwnerVille -- the session this job lost its whole
 # 30-minute wait to at 08:00 that morning, behind two other reports and a
 # second copy of itself.
@@ -169,13 +169,13 @@ def _submit(ready, writes, *, live: bool, office_key: str = ALPHALETE_KEY,
     walk up to the confirm box — nobody is submitted and they stay blue. When
     live, only a submit OwnerVille CONFIRMS ("Review in Progress" on a fresh
     re-open) moves someone off blue and ticks the OBCL box."""
-    from automations.icd_onboarding import ov_anywhere as OVA
+    from automations.icd_onboarding import sessions as OVA
     from automations.obcl_ov_sweep import owner_submit
     real = bool(live and config.OWNER_SUBMIT_LIVE)
     if live and not config.OWNER_SUBMIT_LIVE:
         print("  OWNER SUBMIT is GATED (config.OWNER_SUBMIT_LIVE = False) — "
               "dry walk only, nobody submitted", flush=True)
-    # WHICHEVER SESSION THIS MACHINE HAS (`icd_onboarding.ov_anywhere`). This
+    # WHICHEVER SESSION THIS MACHINE HAS (`icd_onboarding.sessions`). This
     # sweep has no --office: it is Alphalete's own OBCL, so the key is blank
     # and on any Lucy that routes to the Hub's one-per-box OwnerVille exactly
     # as before. On an office's own computer it would be THEIR OwnerVille --
@@ -334,7 +334,7 @@ def main(argv=None) -> int:
 
     import time
     t0 = time.monotonic()
-    from automations.icd_onboarding import ov_anywhere as OVA
+    from automations.icd_onboarding import sessions as OVA
     # Same routing as the submit above. `--show` still opens a window on a
     # Lucy; on an office machine it is IGNORED, because a browser on the
     # owner's screen is never a flag's call -- the session opens one only when
