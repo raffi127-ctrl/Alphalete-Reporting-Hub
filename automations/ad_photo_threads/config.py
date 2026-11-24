@@ -184,6 +184,10 @@ NO_AD_ANSWERS = {
     # typed once; the office's one Handshake marketing ad is "Handshake /
     # Marketing Assistant" (33 rows).
     "2026-11-18|zavien ratcliff": "Handshake / Marketing Assistant",
+    # Salik, Camila 11/24: "Kimberly Thurman" (11/19, his Slack 1st round
+    # thread) is AppStream's "Kimberly Thurmond" -- the one Kimberly that day,
+    # ad "AT&T Retail Sales Associate" (spelling is why the lookup missed).
+    "2026-11-19|kimberly thurman": "AT&T Retail Sales Associate",
 }
 # Eve 11/5: a person said this row is someone already on an ad thread under
 # another name: it only comes off the no-ad list, never posted twice.
