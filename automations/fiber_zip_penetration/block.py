@@ -267,6 +267,45 @@ def format_requests(sheet_id: int, col: int, total_row0: int, old_rows: int = 0)
     return out
 
 
+def table_title_span(values: List[List[str]], header_row0: int, zip_col: int,
+                     owner: str) -> Optional[Tuple[int, int]]:
+    """Raf's own zip table (core.plan): the columns its headers cover, from
+    'Zip Code' to the last header in a row. Returns (first, end) only if the
+    row above the headers is free there (or already holds Lucy's title) --
+    Lucy never writes over something somebody typed."""
+    if header_row0 < 1 or header_row0 >= len(values):
+        return None
+    hdr = values[header_row0]
+    end = zip_col
+    while end < len(hdr) and str(hdr[end]).strip():
+        end += 1
+    above = values[header_row0 - 1]
+    cells = [str(above[c]).strip() if c < len(above) else "" for c in range(zip_col, end)]
+    if end <= zip_col or any(x and norm(x) != norm(title(owner)) for x in cells):
+        return None
+    return zip_col, end
+
+
+def title_requests(sheet_id: int, row0: int, c1: int, c2: int) -> List[dict]:
+    """Blue merged title band, same look as the owners' blocks."""
+    r = _rng(sheet_id, row0, row0 + 1, c1, c2)
+    return [
+        {"unmergeCells": {"range": r}},
+        {"mergeCells": {"range": r, "mergeType": "MERGE_ALL"}},
+        {"repeatCell": {"range": r, "cell": {"userEnteredFormat": {
+            "backgroundColor": BLUE, "horizontalAlignment": "CENTER",
+            "verticalAlignment": "MIDDLE", "wrapStrategy": "WRAP",
+            "textFormat": {"fontFamily": "Arial", "fontSize": 12, "bold": True,
+                           "italic": False, "foregroundColor": WHITE}}},
+            "fields": "userEnteredFormat(backgroundColor,horizontalAlignment,"
+                      "verticalAlignment,wrapStrategy,textFormat)"}},
+        {"updateBorders": {"range": r, "top": {"style": "SOLID_MEDIUM", "color": BLACK},
+                           "left": {"style": "SOLID_MEDIUM", "color": BLACK},
+                           "right": {"style": "SOLID_MEDIUM", "color": BLACK},
+                           "bottom": {"style": "SOLID", "color": BLACK}}},
+    ]
+
+
 def outside_changed(before: List[List[str]], after: List[List[str]], col: int,
                     also: range = range(0)) -> List[str]:
     """Cells OUTSIDE the block's columns (and `also`: where it used to sit) whose

@@ -77,6 +77,17 @@ def fill_owner(owner: str, sheet_id: str, data: dict, today: dt.date,
                          if x["properties"]["sheetId"] == ws.id), [])
         color_to = s["total_row"] if s["total_row"] is not None else s["last_row"]
         reqs = core.cf_requests(ws.id, lay, color_to, existing)
+        # Same blue title band as the owners' blocks, over Raf's table, when the
+        # row above its headers is free (the Line Up is remade every Friday).
+        from automations.fiber_zip_penetration import block
+        span = block.table_title_span(values, lay["header_row"], lay["zip"], owner)
+        if span:
+            ws.spreadsheet.values_batch_update({"valueInputOption": "RAW", "data": [
+                {"range": q + core.a1(lay["header_row"] - 1, span[0]),
+                 "values": [[block.title(owner)]]}]})
+            reqs += block.title_requests(ws.id, lay["header_row"] - 1, *span)
+        else:
+            print("      title: row above the zip headers isn't free -- no title")
         if reqs:
             sh.batch_update({"requests": reqs})
         print("      wrote %d cells + colors on rows %d-%d" % (len(writes), s["first_row"] + 1,

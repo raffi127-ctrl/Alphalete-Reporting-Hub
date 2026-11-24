@@ -96,6 +96,16 @@ class BlockTest(unittest.TestCase):
         self.assertEqual((merge["startColumnIndex"], merge["endColumnIndex"]), (10, 19))
         self.assertEqual(reqs[-1]["updateCells"]["range"]["startRowIndex"], 6)  # leftovers reset
 
+    def test_table_title_span(self):
+        vals = [["x", "", "", "", ""],
+                ["#", "Zip Code", "City", "Days", ""]]
+        self.assertEqual(block.table_title_span(vals, 1, 1, "Rafael Hidalgo"), (1, 4))
+        vals[0][2] = block.title("Rafael Hidalgo")               # already there: fine
+        self.assertEqual(block.table_title_span(vals, 1, 1, "Rafael Hidalgo"), (1, 4))
+        vals[0][3] = "Maud's note"                               # somebody typed: hands off
+        self.assertIsNone(block.table_title_span(vals, 1, 1, "Rafael Hidalgo"))
+        self.assertIsNone(block.table_title_span(vals, 0, 1, "Rafael Hidalgo"))
+
     def test_outside_changed(self):
         before = [["a", "b", ""], ["c", "", ""]]
         after = [["a", "b", "NEW"], ["c", "", "x"]]
