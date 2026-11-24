@@ -196,7 +196,9 @@ def _press(office_key: str, week_start: dt.date, *, column: str, what: str,
     from automations.icd_onboarding import sessions as OVA
     from automations.icd_onboarding import ov_misses as OVM
     from automations.obcl_ov_sweep import config as OVC
-    from automations.obcl_ov_sweep.run import PROFILE_DIR
+    # `config`, not `run`: `run` imports gspread, which an office
+    # machine has no use for and no credentials for.
+    from automations.obcl_ov_sweep.config import PROFILE_DIR
 
     programme = _ov_program(office_key)
     if not programme:
@@ -298,7 +300,13 @@ def press_owner_submit(office_key: str, week_start: dt.date, *,
 
     return _press(office_key, week_start, column="Owner Submit",
                   what="owner submit", press=owner_submit.submit_one,
-                  live_gate=OVC.OWNER_SUBMIT_LIVE, dry_run=dry_run, log=log,
+                  # PER OFFICE (2026-11-24). Alphalete keeps September's
+                  # gate; any other office has to be named in
+                  # `config.OWNER_SUBMIT_LIVE_OFFICES`, because the confirm
+                  # box attests that a background check PASSED and there is
+                  # no unsubmit.
+                  live_gate=OVC.owner_submit_live(office_key),
+                  dry_run=dry_run, log=log,
                   budget_s=budget_s)
 
 
@@ -322,7 +330,9 @@ def uid_reasons(office_key: str, week_start: dt.date, *, dry_run: bool = True,
     from automations.icd_onboarding import sessions as OVA
     from automations.obcl_ov_sweep import config as OVC
     from automations.obcl_ov_sweep import uid_request
-    from automations.obcl_ov_sweep.run import PROFILE_DIR
+    # `config`, not `run`: `run` imports gspread, which an office
+    # machine has no use for and no credentials for.
+    from automations.obcl_ov_sweep.config import PROFILE_DIR
 
     programme = _ov_program(office_key)
     if not programme:

@@ -178,3 +178,76 @@ def test_the_cli_is_dry_until_told_otherwise(monkeypatch):
     monkeypatch.setattr(ES, "offices", lambda: ["raf"])
     ES.main(["--week", "2026-11-22"])
     assert seen["dry"] is True
+
+
+# --------------------------------- the one step that ACTS, 2026-11-24
+
+def test_owner_submit_is_last_in_the_pass():
+    """`ownerville` runs before it so the press works off what OwnerVille says
+    this minute, not an hour-old board."""
+    names = [n for n, _ in ES.STEPS]
+    assert names.index("ownerville") < names.index("owner_submit")
+    assert names[-2:] == ["owner_submit", "no_shows"], names
+
+
+def test_no_office_is_armed_to_press():
+    """The confirm box attests a criminal background check was reviewed AND
+    PASSED, and there is no unsubmit. Alphalete keeps the switch it has had
+    since 2026-09-22; everybody else is named one at a time, and nobody is."""
+    from automations.obcl_ov_sweep import config as OVC
+    assert OVC.OWNER_SUBMIT_LIVE_OFFICES == frozenset()
+    assert OVC.owner_submit_live("omar") is False
+    assert OVC.owner_submit_live("raf") is True
+
+
+def test_the_gate_fails_closed_for_an_unknown_office():
+    """The mistake it guards against is unfixable, so the default is no."""
+    from automations.obcl_ov_sweep import config as OVC
+    for key in ("someone", "SOMEONE", " someone ", "jamis10"):
+        assert OVC.owner_submit_live(key) is False, key
+
+
+def test_the_press_asks_the_gate_per_office():
+    """Not the module constant: inheriting September's switch would have armed
+    forty offices at once."""
+    import inspect
+    from automations.icd_onboarding import presses as P
+    src = inspect.getsource(P.press_owner_submit)
+    assert "owner_submit_live(office_key)" in src
+    assert "live_gate=OVC.OWNER_SUBMIT_LIVE," not in src
+
+
+def test_the_press_body_is_not_copied_into_eco_steps():
+    """It is shared with the Hub side and its session is already routed, so a
+    copy here would just be a second place for the press to live."""
+    import ast
+    import inspect
+    # THE CODE, NOT THE PROSE -- and the docstring stripped by AST, not by
+    # `getsource().replace(getdoc())`. getdoc DEDENTS, so that replace never
+    # matches the raw source and the prose stays in: my first two attempts
+    # both failed on this function's own docstring, which names the very
+    # mechanics it is explaining are NOT here. test_fillers' invariant warns
+    # about exactly this and I walked into it anyway.
+    fn = ast.parse(inspect.getsource(ES.owner_submit).lstrip()).body[0]
+    body = fn.body[1:] if isinstance(
+        getattr(fn.body[0], "value", None), ast.Constant) else fn.body
+    code = "\n".join(ast.unparse(n) for n in body)
+    assert "press_owner_submit" in code
+    for mechanic in ("session_anywhere", "submit_one", "candidates("):
+        assert mechanic not in code, mechanic
+
+
+def test_nothing_on_an_office_machine_imports_the_sweeps_runner():
+    """`obcl_ov_sweep/run.py` imports gspread. Three separate reaches for
+    `PROFILE_DIR` -- a PATH -- dragged it in before the constant moved to
+    `config`; the shipped-closure test caught each one."""
+    import ast
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parent
+    for name in ("eco_steps.py", "presses.py", "sessions.py"):
+        tree = ast.parse((root / name).read_text())
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and \
+                    node.module == "automations.obcl_ov_sweep.run":
+                raise AssertionError("%s:%d imports the sweep's runner"
+                                     % (name, node.lineno))

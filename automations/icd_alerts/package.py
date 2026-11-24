@@ -269,6 +269,23 @@ AGENT_FILES = [
     "automations/b2b_dispositions/__init__.py",
     "automations/b2b_dispositions/capture.py",
     "automations/digi_docs/__init__.py",
+    # THE OWNER SUBMIT PRESS (2026-11-24). The only step on an office
+    # machine that ACTS: the confirm box attests a criminal background
+    # check was reviewed AND PASSED, and there is no unsubmit.
+    #
+    # SHIPPED, NOT ARMED. `config.owner_submit_live` answers per office
+    # and `OWNER_SUBMIT_LIVE_OFFICES` is EMPTY -- Alphalete keeps the
+    # gate it has had since 2026-09-22, and every other office walks a
+    # READY person up to the confirm box and submits nobody. Inheriting
+    # September's switch would have armed forty offices at once for the
+    # one action in this chain that cannot be taken back.
+    #
+    # `uid_request` comes with it because `presses` reads it: there is no
+    # UID press (OwnerVille has no button), only a reader of whose move
+    # each outstanding one is.
+    "automations/icd_onboarding/presses.py",
+    "automations/obcl_ov_sweep/owner_submit.py",
+    "automations/obcl_ov_sweep/uid_request.py",
     # NEW STARTS -> APEX, DELIVERED AT LAST (2026-11-24). Declared on
     # 2026-11-08 and held back ever since -- the reasons are kept in full under
     # APEX_WEEK_FILES below, and every one of them is now closed:

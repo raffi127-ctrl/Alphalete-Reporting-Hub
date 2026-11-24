@@ -106,6 +106,35 @@ CAMPAIGN = "RES-AT&T"
 # Megan reviews that first dry run; only on her OK does this flip to True.
 OWNER_SUBMIT_LIVE = True
 
+# AND NOT FOR ANYBODY ELSE WITHOUT BEING SAID (2026-11-24, as the press moved
+# onto the offices' own machines).
+#
+# `OWNER_SUBMIT_LIVE` was turned on for ALPHALETE'S OWN BOARD on 2026-09-22,
+# months before an office machine could press anything. Inheriting it would
+# arm, for forty offices at once, the one action in this whole chain that
+# cannot be taken back: the confirm box is an attestation that a criminal
+# background check was reviewed AND PASSED, and there is no unsubmit.
+#
+# So an office is armed one at a time, by name, here. Empty is the right
+# starting value and a dry walk is the right behaviour: a READY person is
+# walked up to the confirm box, nobody is submitted, they stay blue on the
+# board and the log says WOULD SUBMIT -- which is how anybody checks it is
+# finding the right people before it acts for them.
+OWNER_SUBMIT_LIVE_OFFICES = frozenset()
+
+
+def owner_submit_live(office_key: str = "") -> bool:
+    """May the press really submit for this office?
+
+    Alphalete keeps what it has had since September. Everybody else has to be
+    named above, and the default answer is NO -- the gate fails closed because
+    the mistake it guards against is unfixable.
+    """
+    key = str(office_key or "").strip().lower()
+    if key in ("", "raf", "alphalete"):
+        return OWNER_SUBMIT_LIVE
+    return key in OWNER_SUBMIT_LIVE_OFFICES
+
 # THERE IS NO UID REQUEST GATE, and this note is here so nobody adds one back.
 # A press was written on 2026-11-15 and thrown away the same day: OwnerVille's
 # AT&T UID REQUEST section has NO BUTTON in it. Its own words --

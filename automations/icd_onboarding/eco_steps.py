@@ -906,6 +906,32 @@ def from_ownerville(office_key: str, week_start: dt.date, *,
                             verdicts, dry_run=dry_run, log=log)
 
 
+def owner_submit(office_key: str, week_start: dt.date, *,
+                 dry_run: bool = True, log=print, budget_s=None) -> int:
+    """Owner-submit anyone this week's board says OwnerVille is ready for.
+
+    THE ONE STEP THAT ACTS. Everything else here reads a source and writes a
+    cell; this presses a button on somebody's behalf, and the box it ticks
+    attests that a criminal background check was reviewed AND PASSED. There is
+    no unsubmit.
+
+    SO IT IS ARMED PER OFFICE, by name, in `obcl_ov_sweep.config`
+    (`owner_submit_live`), and not by the switch that turned it on for
+    Alphalete's own board in September. Until an office is named there, a
+    READY person is walked all the way up to the confirm box and NOBODY is
+    submitted -- they stay blue and the log says WOULD SUBMIT, which is how
+    anybody checks it is finding the right people before it acts for them.
+
+    THE BODY IS `presses.press_owner_submit` and stays there: it is shared
+    with the Hub side, the session it opens is already routed by
+    `sessions.session_anywhere`, and moving a hundred lines to gain nothing
+    would just be a second place for the press to live.
+    """
+    from automations.icd_onboarding import presses as P
+    return P.press_owner_submit(office_key, week_start, dry_run=dry_run,
+                                log=log, budget_s=budget_s)
+
+
 # THE STEPS THIS MACHINE CAN DO ITSELF, in the order a pass runs them.
 #
 # A STEP EARNS ITS PLACE HERE by being able to run on an office Mac at all --
@@ -929,9 +955,14 @@ def from_ownerville(office_key: str, week_start: dt.date, *,
 #              the seven-page calendar walk and it must land before the next
 #              morning's Blue Ink send.
 #
-# STILL TO COME: the Owner Submit press (its body is in `presses`, which does
-# not ship), Blue Ink, Sterling and Apex. The press is the one that ACTS rather
-# than reads, so it moves last and deliberately.
+#   owner_submit LAST in the pass, and the only step that ACTS. It presses
+#              nothing for an office that has not been armed BY NAME in
+#              `obcl_ov_sweep.config.OWNER_SUBMIT_LIVE_OFFICES`, which is
+#              empty -- it walks up to the confirm box and stops. `ownerville`
+#              running before it is what makes the press work off what
+#              OwnerVille says this minute rather than an hour-old board.
+#
+# STILL TO COME: Blue Ink, Sterling and Apex.
 #
 # NOTHING HERE IS SWITCHED ON BY BEING LISTED. `eco_job` runs nothing until a
 # machine is armed (`eco_job.switch_on`), and no machine is
@@ -940,6 +971,7 @@ STEPS: Sequence[Tuple[str, object]] = (
     ("seed", seed),
     ("ownerville", from_ownerville),
     ("contacts", contacts),
+    ("owner_submit", owner_submit),
     ("no_shows", from_no_shows),
 )
 
