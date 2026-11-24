@@ -212,7 +212,8 @@ def run(week_start: Optional[dt.date] = None, *, offices: Sequence[str] = (),
         except RuntimeError as e:
             log("  %s: %s" % (office, e))
             continue
-        ws = S.open_board(book, create=False)
+        # Their own week tab where they have a book (sheet.board_for).
+        ws = S.board_for(office, week, create=False)
         if ws is None:
             log("  %s: no board yet" % office)
             continue

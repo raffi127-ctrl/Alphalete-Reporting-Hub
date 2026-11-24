@@ -130,7 +130,10 @@ def candidates(office_key: str, week_start: dt.date, column: str) -> List[str]:
     """
     from automations.icd_onboarding import sheet as S
 
-    ws = S.open_board(F.workbook_for(office_key), create=False)
+    # `board_for`, not `open_board(workbook_for(...))`: an office with a
+    # book of their own has a tab PER WEEK, and the old stacked tab is
+    # empty for them -- so this offered NOBODY to submit (2026-11-24).
+    ws = S.board_for(office_key, week_start, create=False)
     if ws is None:
         return []
     scored = []

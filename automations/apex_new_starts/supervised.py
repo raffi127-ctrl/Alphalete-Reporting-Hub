@@ -79,10 +79,9 @@ def _board_person(office_key: str, name: str, week_start: dt.date,
     machine with Google access instead of only from an AppStream holder.
     """
     from automations.icd_onboarding import board as B
-    from automations.icd_onboarding import fillers as F
     from automations.icd_onboarding import sheet as S
 
-    ws = S.open_board(F.workbook_for(office_key), create=False)
+    ws = S.board_for(office_key, week_start, create=False)
     if ws is None:
         log("  no onboarding board for %s yet." % office_key)
         return None

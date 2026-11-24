@@ -205,14 +205,15 @@ class Candidates(unittest.TestCase):
             def get_all_values(self_inner):
                 return rows
         import automations.icd_onboarding.sheet as S
-        self._real_open, self._real_rows = S.open_board, S.rows_of
-        S.open_board = lambda wb, create=False: WS()
+        # `board_for`, not `open_board`: the candidate list reaches the board
+        # the one way that knows an office may have a tab PER WEEK. Patching
+        # the old name passed here while the real code offered NOBODY to
+        # submit on exactly those offices (2026-11-24).
+        self._real_open, self._real_rows = S.board_for, S.rows_of
+        S.board_for = lambda key, week=None, create=False: WS()
         S.rows_of = lambda values: values
-        F_real = F.workbook_for
-        F.workbook_for = lambda key: object()
-        self.addCleanup(lambda: (setattr(S, "open_board", self._real_open),
-                                 setattr(S, "rows_of", self._real_rows),
-                                 setattr(F, "workbook_for", F_real)))
+        self.addCleanup(lambda: (setattr(S, "board_for", self._real_open),
+                                 setattr(S, "rows_of", self._real_rows)))
 
     def test_marked_off_blank_and_alert_cells(self):
         rows = [

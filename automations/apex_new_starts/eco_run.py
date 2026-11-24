@@ -390,9 +390,8 @@ def _genders_from_board(office_key: str, monday: dt.date, log=print) -> Dict:
         return {}
     try:
         from automations.icd_onboarding import board as B
-        from automations.icd_onboarding import fillers as F
         from automations.icd_onboarding import sheet as S
-        ws = S.open_board(F.workbook_for(office_key), create=False)
+        ws = S.board_for(office_key, monday, create=False)
         if ws is None:
             return {}
         out = {}
@@ -427,11 +426,10 @@ def _removed_on_the_board(office_key: str, monday: dt.date,
     somebody the ICD removed gets a payroll record.
     """
     from automations.icd_onboarding import board as B
-    from automations.icd_onboarding import fillers as F
     from automations.icd_onboarding import sheet as S
     if not office_key:
         raise RuntimeError("no office key, so no board to read removals from")
-    ws = S.open_board(F.workbook_for(office_key), create=False)
+    ws = S.board_for(office_key, monday, create=False)
     if ws is None:
         log("  (no onboarding board for %s yet -- nobody removed)" % office_key)
         return set()

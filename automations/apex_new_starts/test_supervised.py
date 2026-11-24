@@ -116,14 +116,17 @@ def test_the_week_is_normalised_to_the_boards_sunday():
 
 def _board(monkeypatch, rows):
     from automations.icd_onboarding import board as B
-    from automations.icd_onboarding import fillers as F
     from automations.icd_onboarding import sheet as S
 
     class _WS:
         def get_all_values(self):
             return []
-    monkeypatch.setattr(F, "workbook_for", lambda k: "BOOK")
-    monkeypatch.setattr(S, "open_board", lambda book, create=False: _WS())
+    # `board_for`, because that is the one way the code reaches a board now:
+    # patching `open_board` still passed while the real `board_for` ran and
+    # answered None, which is how this read an empty board for an office with
+    # a book of their own (2026-11-24).
+    monkeypatch.setattr(S, "board_for",
+                        lambda key, week=None, create=False: _WS())
     monkeypatch.setattr(S, "rows_of", lambda grid: rows)
     monkeypatch.setattr(B, "for_week", lambda rows, week: rows)
 

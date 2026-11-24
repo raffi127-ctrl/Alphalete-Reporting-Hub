@@ -237,6 +237,19 @@ def board_for(office_key: str, week_start=None, *, create: bool = False):
     return open_board(F.workbook_for(office_key), create=create)
 
 
+def stacked_tab(workbook, *, create: bool = False):
+    """The OLD single `Onboarding` tab, asked for ON PURPOSE.
+
+    `board_for` is how an office's board is reached. This is the one case it
+    cannot answer: a caller holding a workbook and no office key, which
+    `fillers.apply` still allows. It exists so that "I meant the old shape" is
+    distinguishable from "I forgot there is a new one" -- the mistake this
+    module has now paid for twice, and the second time in seven places
+    (test_fillers.test_no_module_still_reaches_for_the_old_stacked_tab).
+    """
+    return open_board(workbook, create=create)
+
+
 def backfill_funnels(ws, week_start: dt.date, fresh: List[Dict],
                      log=print) -> int:
     """Write `Funnel` onto rows that are ALREADY on the board.

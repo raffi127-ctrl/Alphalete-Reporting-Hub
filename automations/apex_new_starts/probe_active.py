@@ -75,12 +75,11 @@ def main() -> int:
     a = ap.parse_args()
 
     from automations.icd_onboarding import board as B
-    from automations.icd_onboarding import fillers as F
     from automations.icd_onboarding import sheet as S
 
     day = dt.date.fromisoformat(a.week) if a.week else dt.date.today()
     monday = B.week_start_of(day)
-    ws = S.open_board(F.workbook_for(a.office), create=False)
+    ws = S.board_for(a.office, monday, create=False)
     want = []
     for r in B.for_week(S.rows_of(S._values(ws)), monday):
         if str(r.get(B.TERMINATED_AT) or "").strip():

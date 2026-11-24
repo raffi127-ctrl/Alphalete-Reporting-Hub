@@ -154,10 +154,19 @@ def check_blueink_wording(key: str) -> Check:
 
 
 def check_board(key: str) -> Check:
+    """This week's tab, reached the one way that knows about a per-week book.
+
+    `open_board(workbook_for(...))` is the OLD stacked tab, and an office with
+    a book of their own has a tab per week -- so this reported "workbook
+    found, no tab yet" about a board with 32 people on it, and a launch check
+    that cannot see the board is worse than no check (2026-11-24).
+    """
+    import datetime as dt
     try:
-        from automations.icd_onboarding import fillers as F
         from automations.icd_onboarding import sheet as S
-        ws = S.open_board(F.workbook_for(key), create=False)
+        from automations.shared.onboarding_week import week_start_of
+        week = week_start_of(dt.date.today())
+        ws = S.board_for(key, week, create=False)
     except Exception as e:                                  # noqa: BLE001
         return Check("Onboarding board", False,
                      "%s: %s" % (type(e).__name__, str(e)[:120]),

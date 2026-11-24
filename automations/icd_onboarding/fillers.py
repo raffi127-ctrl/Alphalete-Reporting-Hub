@@ -169,7 +169,7 @@ def apply(workbook, week_start, source: str,
 
     # Their own week tab where they have a book, the stacked tab otherwise.
     ws = S.board_for(office_key, week_start, create=False) if office_key \
-        else S.open_board(workbook, create=False)
+        else S.stacked_tab(workbook)
     if ws is None:
         log("  no board to tick for %s" % (office_key or "this workbook"))
         return 0

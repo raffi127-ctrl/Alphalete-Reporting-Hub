@@ -439,3 +439,54 @@ def test_rows_anywhere_asks_for_the_week_it_was_given(monkeypatch):
     assert F.rows_anywhere("raf", dt.date(2026, 11, 22),
                            log=lambda *a: None) == []
     assert seen == {"office": "raf", "week": dt.date(2026, 11, 22)}
+
+
+def test_no_module_still_reaches_for_the_old_stacked_tab():
+    """NOBODY resolves a board with `open_board` except `sheet` itself.
+
+    2026-11-24, the second half of the same bug. `rows_anywhere` was fixed and
+    SIX more callers were still on the old path, each of them silent in the
+    same way -- a read that comes back empty is indistinguishable from an
+    office with nothing to do:
+
+      * `presses.press_owner_submit`'s candidate list offered NOBODY to
+        submit on an office with a book of their own;
+      * `apex_new_starts.eco_run._removed_on_the_board` answered "nobody was
+        removed" when it had read nothing, which its own docstring names as
+        the way somebody the ICD took off gets a payroll record;
+      * `eco_run._genders_from_board`, `supervised._board_person`,
+        `probe_active` and `bg_status` likewise;
+      * `launch_check.check_board` -- the LAUNCH CHECK -- said "workbook
+        found, no tab yet" about a board with 32 people on it.
+
+    One fixed caller is a fix; the invariant is what stops the seventh. This
+    reads the AST, so a comment or a docstring naming the old call (several
+    above do, deliberately) can neither satisfy nor fail it.
+
+    `sheet.open_board` stays: it is the old shape, and `sheet.board_for` is
+    the thing that chooses between the two. Only `sheet` may call it.
+    """
+    import ast
+    import pathlib
+
+    root = pathlib.Path(__file__).resolve().parent.parent
+    allowed = {"icd_onboarding/sheet.py"}
+    offenders = []
+    for pkg in ("icd_onboarding", "apex_new_starts"):
+        for path in sorted((root / pkg).rglob("*.py")):
+            rel = "%s/%s" % (pkg, path.name)
+            if rel in allowed or path.name.startswith("test_"):
+                continue
+            tree = ast.parse(path.read_text())
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
+                fn = node.func
+                name = (fn.attr if isinstance(fn, ast.Attribute)
+                        else fn.id if isinstance(fn, ast.Name) else "")
+                if name == "open_board":
+                    offenders.append("%s:%d" % (rel, node.lineno))
+
+    assert not offenders, (
+        "these reach the old stacked tab instead of sheet.board_for, so an "
+        "office with a per-week book reads as empty: " + ", ".join(offenders))
