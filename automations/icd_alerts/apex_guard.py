@@ -55,6 +55,15 @@ ALLOWED_WRITES = frozenset({
     # from the owner's setup (apex_2fa_setup runs in "watch").
     ("apex.herbjoyent.com", "/identity/account/login"),
     ("apex.herbjoyent.com", "/identity/account/loginwith2fa"),
+    # CONFIRMED on Jairo's Mac 2026-11-24 11:11: after the password Apex shows
+    # "Select Verification Method" and its Next posts to /Account/SendCode
+    # (no /Identity) -- the lock stopped it. The code form that follows is
+    # /Account/VerifyCode in this (ASP.NET) flow. Both just pick/enter the
+    # sign-in code; neither can change payroll.
+    ("apex.herbjoyent.com", "/account/sendcode"),
+    ("apex.herbjoyent.com", "/account/verifycode"),
+    ("apex.herbjoyent.com", "/identity/account/sendcode"),
+    ("apex.herbjoyent.com", "/identity/account/verifycode"),
 })
 
 # Cloudflare's "are you human" check in front of Apex. It answers Cloudflare,

@@ -45,7 +45,7 @@ MAX_FAILS = 2
 # Bump to give every Mac a clean fail count with the next release (there is no
 # remote "reset"). 2: Jairo stopped 2026-11-24 "failed at code box" with no
 # trace of the screen -- one more round, now saying what the page showed.
-FAIL_ROUND = 3     # 3: 11/24 the screen was SendCode 'Select Verification Method'
+FAIL_ROUND = 4     # 3: SendCode screen; 4: lock stopped its POST (11/24 11:11)
 PRE_SUBMIT_WAIT_S = 30        # the login standard: the pause IS the fix
 STEP_S = 30
 FRESH_S = 5                   # a code with less life left than this: wait for the next

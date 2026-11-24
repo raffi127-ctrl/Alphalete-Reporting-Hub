@@ -30,6 +30,10 @@ class AllowList(unittest.TestCase):
             # Lucy's own sign-in (apex_login): password form + 2-step form.
             ("apex.herbjoyent.com", "/identity/account/login"),
             ("apex.herbjoyent.com", "/identity/account/loginwith2fa"),
+            ("apex.herbjoyent.com", "/account/sendcode"),
+            ("apex.herbjoyent.com", "/account/verifycode"),
+            ("apex.herbjoyent.com", "/identity/account/sendcode"),
+            ("apex.herbjoyent.com", "/identity/account/verifycode"),
         })
 
     def test_signin_forms_pass_but_not_the_rest_of_identity(self):
@@ -184,6 +188,15 @@ class SetupDeadlinesKeepTheReason(unittest.TestCase):
         from automations.icd_alerts import apex_2fa_setup as S
         src = inspect.getsource(S._run)
         self.assertNotIn("end = ", src.replace("end[0] = ", ""))
+
+
+
+class SendCodeConfirmed(unittest.TestCase):
+    def test_apex_sendcode_post_passes(self):
+        # the exact request the lock stopped on Jairo's Mac 2026-11-24 11:11
+        self.assertTrue(G.allowed("POST", "https://apex.herbjoyent.com/Account/SendCode"))
+        self.assertTrue(G.allowed("POST", "https://apex.herbjoyent.com/Account/VerifyCode?returnUrl=%2F"))
+        self.assertFalse(G.allowed("POST", "https://apex.herbjoyent.com/Account/Manage"))
 
 
 if __name__ == "__main__":
