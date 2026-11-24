@@ -1156,7 +1156,8 @@ def _repoint_pnl(week: dt.date, raw_range: tuple[int, int], *, write: bool,
     # NDS and Fiber are SEPARATE programs on Tableau's PROGRAM SUMMARY
     # (Carlos 10/28, after the first cut lumped them): NDS = the wireless ports
     # funding into his DD; Fiber = the RES-ATT lines Raf's CSV adds.
-    nds = f'(({J}="NDS Wireless")*(1-{_cap}))'
+    # NDS posts as 'RES-ATT-OOF' since WE 11.22; 'NDS Wireless' before that.
+    nds = f'((({J}="NDS Wireless")+({J}="RES-ATT-OOF"))*(1-{_cap}))'
     fiber = f'(({J}="RES-ATT")*(1-{_cap}))'
     rep_c = f"$C{PNL_REP_FIRST}:$C{rep_last}"
     brought_rng = (f"{blk['brought']}{PNL_REP_FIRST}:"
