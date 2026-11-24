@@ -26,6 +26,11 @@ Dry-run by default; --write applies.
 
   python -m automations.nico_roster_check.run            # preview
   python -m automations.nico_roster_check.run --write    # rebuild the tab
+  python -m automations.nico_roster_check.run --write --panels   # + the WE-tab panels
+
+Schedule: launchd com.alphalete.nico-roster on Lucy 2 (deploy/nico_roster.sh),
+since 2026-11-24. The Report Library card never fired it (Lucy 2's card
+scheduler is observe-only): it ran once, on 11/4.
 """
 from __future__ import annotations
 
@@ -299,16 +304,21 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--write", action="store_true",
                     help="rebuild the Active Reps tab (default: preview only)")
+    ap.add_argument("--panels", action="store_true",
+                    help="also the three check panels on the newest WE tab (Carlos 2026-11-24)")
     args = ap.parse_args(argv)
 
     rows, newest = build_rows()
     for r in rows:
         _log(" | ".join(c for c in r))
-    if not args.write:
+    if args.write:
+        write_tab(rows)
+        _log(f"wrote '{OUT_TAB}' ({len(rows)} rows, week {newest})")
+    else:
         _log("dry-run — nothing written (use --write)")
-        return 0
-    write_tab(rows)
-    _log(f"wrote '{OUT_TAB}' ({len(rows)} rows, week {newest})")
+    if args.panels:
+        from automations.nico_roster_check.panels import run as _panels
+        _panels(args.write, _log)
     return 0
 
 

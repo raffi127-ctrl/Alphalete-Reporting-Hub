@@ -15972,6 +15972,28 @@
    "verify": null,
    "machine": "Lucy 2"
   },
+  "install_nico_roster_agent": {
+   "on_scheduler": false,
+   "_note": "One-shot installer for com.alphalete.nico-roster on Lucy 2: deploy/nico_roster.sh -> automations.nico_roster_check.run --write --panels, 7:10 / 13:10 / 18:10 / 21:15 every day. Carlos 2026-11-24: the Report Library card never fired this job (Lucy 2 card scheduler is observe-only; one run on 11/4), and Nico's WE tabs now carry the same three check panels as the Vantura commission sheets. Log: `logtail nico-roster-<YYYY-MM-DD>`. Run `lucy rerun install_nico_roster_agent` after `lucy update`.",
+   "display_name": "Install Nico roster + panels agent (4x daily)",
+   "source_type": "none",
+   "data_sources": [],
+   "command": [
+    "automations.day_orchestrator.install_agent"
+   ],
+   "base_args": [
+    "nico-roster"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 15,
+   "machine": "Lucy 2"
+  },
   "nico_roster_check": {
    "close_on": "exit_zero",
    "_close_on_note": "2026-11-05: writes one Sheet tab and posts nothing, so it has no manifest and no verify; its 11/4 ticket stayed open after the 16:58 clean re-run rebuilt 'Active Reps' (45 rows, WE 11.7) ('nothing can confirm it DELIVERED'). The run raises on a failed Sheet write, so exit 0 IS the write.",

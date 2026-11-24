@@ -70,13 +70,15 @@ def _mdy(s):
         return None
 
 
-def order_counts(order_vals, names, through: dt.date, aliases: dict = None) -> dict:
-    """{name: (orders, apps)} off the NDS Order Log tab's values."""
+def order_counts(order_vals, names, through: dt.date, aliases: dict = None,
+                 order_col: str = "dsi #") -> dict:
+    """{name: (orders, apps)} off an order log tab's values (NDS: 'DSI #';
+    the Verizon Order Log: 'Order #')."""
     out = {n: (0, 0) for n in names}
     if not order_vals:
         return out
     hdr = [str(h).strip().lower() for h in order_vals[0]]
-    need = {k: hdr.index(k) for k in ("rep", "dsi #", "line status", "type", "order date")}
+    need = {k: hdr.index(k) for k in ("rep", order_col, "line status", "type", "order date")}
     by_rep = {}
     for r in order_vals[1:]:
         r = list(r) + [""] * (len(hdr) - len(r))
@@ -90,7 +92,7 @@ def order_counts(order_vals, names, through: dt.date, aliases: dict = None) -> d
         if d and d > through:
             continue
         o = by_rep.setdefault(str(r[need["rep"]]).strip(), {})
-        key = str(r[need["dsi #"]]).strip() or f"row{len(o)}"
+        key = str(r[need[order_col]]).strip() or f"row{len(o)}"
         o[key] = o.get(key, 0) + 1
     for n in names:
         orders = apps = 0
