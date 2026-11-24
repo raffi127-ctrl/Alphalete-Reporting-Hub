@@ -148,6 +148,9 @@ EXTRA_RECIPIENTS: Dict[str, List[str]] = {
     # nightly knocking report of Chan Park?" Blake Welle, B2B captain, office
     # 15623. Only Chan's own office mail, not the rest of Chan's captainship.
     "Chan Park": ["blakew.mobility@gmail.com"],        # Blake Welle
+    # Taylor Nickerson 2026-11-24 (mail "Add someone to mail list", Raf sent
+    # her to Eve): add her assistant manager to the daily knocks mail.
+    "Taylor Nickerson": ["kxmarii@gmail.com"],         # Taylor's asst. manager
 }
 
 
