@@ -31,6 +31,7 @@ T_SALES = "Total Sales"
 T_NEEDED = "Sales Needed"
 T_EXPECTED = "Expected Fiber Sales (copy)"
 T_DAYS = "Days Since Last Sale"
+T_STATE = "Zip State"          # optional: only the block's City, State uses it
 
 # --- sheet headers (lower-cased, spaces collapsed) -------------------------
 H_ZIP = "zip code"
@@ -99,6 +100,7 @@ def parse_zips(text: str) -> Dict[str, Dict[str, dict]]:
     ix = {k: col(v) for k, v in (("owner", T_OWNER), ("zip", T_ZIP), ("leads", T_LEADS),
                                  ("pct", T_PCT), ("sales", T_SALES), ("needed", T_NEEDED),
                                  ("expected", T_EXPECTED), ("days", T_DAYS))}
+    st = head.index(norm(T_STATE)) if norm(T_STATE) in head else None
     out: Dict[str, Dict[str, dict]] = {}
     for r in rows[1:]:
         if len(r) <= max(ix.values()):
@@ -107,6 +109,8 @@ def parse_zips(text: str) -> Dict[str, Dict[str, dict]]:
         if not owner or owner.lower() == "total" or not z.isdigit():
             continue
         rec = {k: _num(r[i]) for k, i in ix.items() if k not in ("owner", "zip")}
+        if st is not None and st < len(r):
+            rec["state"] = r[st].strip()
         cur = out.setdefault(owner, {}).get(z)
         if cur is None or (rec["leads"] or 0) > (cur["leads"] or 0):
             out[owner][z] = rec

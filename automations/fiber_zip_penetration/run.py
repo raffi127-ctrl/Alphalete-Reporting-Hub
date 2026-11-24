@@ -86,7 +86,7 @@ def fill_owner(owner: str, sheet_id: str, data: dict, today: dt.date,
 
 def fill_block(o: dict, data: dict, dry_run: bool) -> bool:
     """Lucy's own block on an owner's Line Up (block.py). Writes ONLY inside the
-    block's 8 columns, then re-reads the tab and checks every other cell's
+    block's columns, then re-reads the tab and checks every other cell's
     formula/value is exactly what it was before."""
     from automations.recruiting_report.fill import open_by_key
     from automations.fiber_zip_penetration import block
@@ -123,17 +123,16 @@ def fill_block(o: dict, data: dict, dry_run: bool) -> bool:
         print("  [%s] copied the molde's Line Up into %r" % (who, tab))
     values = ws.get_all_values()
     formulas = ws.get_all_values(value_render_option="FORMULA")
-    col = block.find_block(values, who)
-    if col is None:
-        last = block.last_used_col(values, formulas)
-        col = 0 if last < 0 else last + 2
-        old_rows = 0
-    else:
-        old_rows = block.block_rows_in_use(values, col)
+    spot = block.place(values, formulas, who)
+    col, old = spot["col"], spot["old_col"]
+    moving = old is not None and old != col
+    old_cols = range(old, old + spot["old_width"]) if moving else range(0)
+    old_rows = spot["old_rows"] if old == col else 0
     g, total = block.grid(who, data, col, old_rows)
     print("  [%s] '%s': block at %s, %d zips, Total on row %d%s"
           % (who, tab, block.a1(0, col), len(data), total + 1,
-             "" if old_rows else " (NEW)"))
+             " (NEW)" if old is None else
+             " (moved from %s)" % block.a1(0, old) if moving else ""))
     if dry_run:
         for r in g[:4]:
             print("      ", r)
@@ -143,23 +142,33 @@ def fill_block(o: dict, data: dict, dry_run: bool) -> bool:
         ws.add_cols(need_cols - ws.col_count)          # appended at the far right
     if ws.row_count < need_rows:
         ws.add_rows(need_rows - ws.row_count)          # appended at the bottom
-    q = "'%s'!" % tab.replace("'", "''")
-    sh.values_batch_update({"valueInputOption": "USER_ENTERED", "data": [
-        {"range": q + block.a1(0, col), "values": g}]})
     meta = sh.fetch_sheet_metadata(params={"fields": "sheets(properties(sheetId),conditionalFormats)"})
     existing = next((x.get("conditionalFormats", []) for x in meta["sheets"]
                      if x["properties"]["sheetId"] == ws.id), [])
+    # Color rules on the old spot and the new one go first (one pass, highest
+    # index first), then the old spot is wiped if the block moves.
+    span = range(min(col, old if moving else col),
+                 max(col + block.WIDTH, old_cols.stop if moving else 0))
+    pre = block.cf_delete_requests(ws.id, existing, span)
+    if moving:
+        pre += block.clear_requests(ws.id, old, spot["old_width"], spot["old_rows"])
+    if pre:
+        sh.batch_update({"requests": pre})
+    q = "'%s'!" % tab.replace("'", "''")
+    sh.values_batch_update({"valueInputOption": "USER_ENTERED", "data": [
+        {"range": q + block.a1(0, col), "values": g}]})
     lay = {"header_row": 1, "cols": {"pct": col + block.PCT_OFFSET}}
-    reqs = block.format_requests(ws.id, col, total) + core.cf_requests(ws.id, lay, total - 1, existing)
+    reqs = (block.format_requests(ws.id, col, total, old_rows)
+            + core.cf_requests(ws.id, lay, total - 1, []))
     sh.batch_update({"requests": reqs})
-    # Safety check: nothing outside the block moved.
+    # Safety check: nothing outside the block (old + new spot) moved.
     after_f = ws.get_all_values(value_render_option="FORMULA")
     after_v = ws.get_all_values()
-    bad = block.outside_changed(formulas, after_f, col)
+    bad = block.outside_changed(formulas, after_f, col, old_cols)
     if bad:
         print("  [%s] !! formulas changed OUTSIDE the block: %s" % (who, bad[:10]))
         return False
-    vbad = block.outside_changed(values, after_v, col)
+    vbad = block.outside_changed(values, after_v, col, old_cols)
     print("      wrote %d rows; outside the block: formulas identical, %d value changes%s"
           % (len(g), len(vbad), (" %s" % vbad[:5]) if vbad else ""))
     return not vbad
