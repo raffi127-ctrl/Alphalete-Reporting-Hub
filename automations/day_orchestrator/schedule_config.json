@@ -13454,6 +13454,24 @@
    "close_on": "exit_zero",
    "_note": "ADDED 2026-11-16 (Eve + Megan, owner PNL on Lucy Eco with auth-app login). READ-ONLY: walks the carlos_payroll_pull read path in Carlos's warm Apex window and prints every request METHOD + path (no bodies, no query values), so the Eco guard can block every non-read request except these. The exported CSV is deleted. Pinned to Lucy 2 because Carlos's Apex session only lives there."
   },
+  "carlos_apex_person_check": {
+   "on_scheduler": false,
+   "machine": "Lucy 2",
+   "display_name": "Apex - one person's pay lines (read-only)",
+   "source_type": "apex",
+   "data_sources": [],
+   "command": [
+    "automations.carlos_payroll_pull.person_check"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": []
+   },
+   "timeout_minutes": 15,
+   "verify": null,
+   "close_on": "exit_zero",
+   "_note": "ADDED 2026-11-24 (Carlos: 'check apex'). READ-ONLY: exports the newest N completed pay periods the way carlos_payroll_pull does, keeps the lines of one person (--who) and writes them to the 'Apex Person Check' tab of Carlos's own P&L book; CSVs deleted, no pay in the log. Pinned to Lucy 2 because Carlos's Apex session only lives there. `lucy rerun carlos_apex_person_check --who <name> --periods 4`."
+  },
   "owner_pnl_apex_2fa_probe": {
    "on_scheduler": false,
    "machine": "Lucy 2",
