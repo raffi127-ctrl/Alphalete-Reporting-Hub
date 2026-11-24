@@ -146,10 +146,10 @@ class WiredIn(unittest.TestCase):
         self.assertIn('G.install(ctx, "block")', src)
         self.assertIn("G.launch_args()", src)
         self.assertLess(src.index('G.install(ctx, "block")'),
-                        src.index("goto_payroll_entry"))
+                        src.index("to_payroll(page)"))
         # A lock that fails to go on means Apex is not opened.
         after = src[src.index('G.install(ctx, "block")'):]
-        self.assertLess(after.index("return"), after.index("goto_payroll_entry"))
+        self.assertLess(after.index("return"), after.index("to_payroll(page)"))
 
     def test_signin_window_watches_before_opening_apex(self):
         from automations.icd_alerts import apex_signin

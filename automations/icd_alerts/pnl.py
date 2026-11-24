@@ -381,6 +381,27 @@ def apex_line(per, pay: Dict[str, float], weeks) -> str:
     return line
 
 
+def to_payroll(page) -> None:
+    """Carlos's route to Payroll Entry, plus one fallback: on Jairo's login Apex
+    lands on its account 2FA page ('Please follow the steps to set up
+    multi-factor', 2026-11-24 15:26) where there is no Payroll link to click.
+    Then: close the box and open /payrolls directly (a read)."""
+    from automations.carlos_payroll_pull import run as AP
+    try:
+        AP.goto_payroll_entry(page)
+        return
+    except RuntimeError:
+        pass
+    AP._dismiss_modal(page)
+    page.goto(AP.APEX_URL.rstrip("/") + "/payrolls", wait_until="domcontentloaded")
+    for _ in range(40):
+        AP._dismiss_modal(page)
+        if AP.period_on_page(page):
+            return
+        time.sleep(1)
+    raise RuntimeError("Payroll Entry did not load, not even at /payrolls")
+
+
 def read_apex(log=print):
     """Export the newest finished pay period in Lucy's Apex profile.
     ('ok', path) / ('signed out', None) / ('busy ...', None) / ('failed ...', None)."""
@@ -412,7 +433,7 @@ def read_apex(log=print):
                 return "failed: lock did not go on (%s)" % type(e).__name__, None
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             try:
-                AP.goto_payroll_entry(page)
+                to_payroll(page)
             except SystemExit:      # its "session expired" -- the login form
                 # Lucy signs in by herself when the owner set the app up with
                 # her (apex_login) -- under the same lock, one try per run.
@@ -425,7 +446,7 @@ def read_apex(log=print):
                 ok, step = L.sign_in(page, login, log=log)
                 if not ok:
                     return "signed out (Lucy's own sign-in %s)" % step, None
-                AP.goto_payroll_entry(page)
+                to_payroll(page)
             today = dt.date.today()
             done = [pp for pp in AP.list_periods(page) if pp[2] < today]
             if not done:
