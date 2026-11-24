@@ -2216,14 +2216,18 @@ function _boardKey(name) {
 // somebody's work.
 
 // The columns an unattended run may write, and no others. Kept in step with
-// board.py TICKS (the nine steps plus Showed Up); test_relay_board.py fails if
-// the two lists drift. Classroom, Gender and Location are deliberately absent:
-// nothing we read holds them, so a machine writing one would be inventing a
-// fact that lands on a payroll record. Terminated and Removed Because are
-// absent too -- taking somebody off the board is a person's call.
+// board.py TICKS -- the ten steps, Showed Up, and the three OwnerVille gates;
+// test_relay_board.py fails if the two lists drift. NOT the same as "the
+// steps": Showed Up and the gates are machine-written facts about a row that
+// nobody works through, so they are writable without being counted in "4 of
+// 10 done". Classroom, Gender and Location are deliberately absent: nothing we
+// read holds them, so a machine writing one would be inventing a fact that
+// lands on a payroll record. Terminated and Removed Because are absent too --
+// taking somebody off the board is a person's call.
 var BOARD_MACHINE_COLUMNS = ['Contact Added', 'BG Status', 'Digi Docs',
   'Onboarding Quizzes', 'Blue Ink', 'Headshot Photo', 'UID Request',
-  'OV BG Status', 'Owner Submit', 'Added to APEX', 'Showed Up'];
+  'OV BG Status', 'Login Created', 'Drug Test', 'Service',
+  'Owner Submit', 'Added to APEX', 'Showed Up'];
 
 // The two columns that carry an ANSWER rather than a tick, and how far along
 // each answer is. Mirrors bg_check_sync parse.RANK through board.status_rank;

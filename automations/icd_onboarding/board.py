@@ -135,9 +135,39 @@ STEPS: Sequence[str] = (
     "Added to APEX",
 )
 
+# WHAT OWNERVILLE IS HOLDING OWNER SUBMIT ON, and nobody could see.
+#
+# Megan, 2026-11-24, choosing all of them over just the drug test. Four of
+# OwnerVille's gates had no column anywhere on the board -- login created,
+# background check, drug test, service -- so a row whose every visible tick
+# was green could be correctly stuck with nothing on screen saying why, and
+# the only way to answer "why hasn't this person been owner submitted?" was to
+# open OwnerVille by hand. `ov_table.missing_for_owner_submit` has known the
+# answer since 2026-09-28; it just had nowhere to put it.
+#
+# THREE, NOT FOUR. "background check" is already on the board as
+# `OV BG Status`, read verbatim off that same cell by
+# `ov_table.bg_status_text`. A second column for it would be one OwnerVille
+# cell under two names, which is worse than the gap it closes.
+#
+# NOT STEPS, deliberately, for the same reason SHOWED_UP is not one: nobody
+# works through these. They are OwnerVille reporting on itself. In STEPS they
+# would change every office's "4 of 10 done" to a denominator of 13 overnight
+# and put three columns on the PRINTED chase sheet, whose key reads "a blank
+# cell is one to tick off here" -- and nobody ticks a drug test on paper.
+OV_GATES: Sequence[str] = ("Login Created", "Drug Test", "Service")
+
+# Spliced in just BEFORE Owner Submit, which is the thing they gate, so the
+# row reads in the order the hold happens. `sheet.ensure_columns` appends to
+# the right on a board that already exists, so an existing office gets them at
+# the far end instead -- the same way `Funnel` arrived. Position never matters:
+# everything here is found by label ([[feedback_no_hardcoded_columns]]).
+_BEFORE = tuple(STEPS[:STEPS.index("Owner Submit")])
+_FROM = tuple(STEPS[STEPS.index("Owner Submit"):])
+
 COLUMNS: Sequence[str] = (tuple(IDENTITY) + (FUNNEL, CLASSROOM, GENDER,
                                               LOCATION)
-                          + (SHOWED_UP,) + tuple(STEPS))
+                          + (SHOWED_UP,) + _BEFORE + tuple(OV_GATES) + _FROM)
 
 # The columns a PERSON owns. No system we read holds any of them, so whatever
 # ends up here is somebody's own answer rather than a fact we fetched.
@@ -151,8 +181,15 @@ COLUMNS: Sequence[str] = (tuple(IDENTITY) + (FUNNEL, CLASSROOM, GENDER,
 BY_HAND: Sequence[str] = (CLASSROOM, GENDER, LOCATION)
 
 # Which columns a machine may write. Classroom and Gender are the ICD's;
-# identity is the seed's; everything else is a step.
-TICKS: Sequence[str] = tuple(STEPS) + (SHOWED_UP,)
+# identity is the seed's.
+#
+# NOT the same list as STEPS, and the difference is the point: `SHOWED_UP` and
+# the `OV_GATES` are written by a machine and are not work anybody does, so
+# they are writable without being counted in "4 of 10 done" or printed on the
+# chase sheet. Reading this as "the steps" is what broke when the gates were
+# added -- `fillers` checks every source column against THIS, because the
+# question it asks is "may a machine write here", not "is this a step".
+TICKS: Sequence[str] = tuple(STEPS) + (SHOWED_UP,) + tuple(OV_GATES)
 
 # MOST steps are a TICK: written once, never changed, because the date is
 # evidence that something happened and nothing is entitled to say it did not.
@@ -602,6 +639,10 @@ def sheets(rows: List[Dict], *, show_terminated: bool = False) -> List[Dict]:
             # leader reading down a column wants to see the ticks as well as
             # the gaps.
             "steps": {c: str(r.get(c) or "").strip() for c in STEPS},
+            # OwnerVille's own gates, apart from the steps so that nothing
+            # counting `steps` starts counting these: they are the answer to
+            # "why is Owner Submit still grey", not work anybody does.
+            "gates": {c: str(r.get(c) or "").strip() for c in OV_GATES},
         })
     nokey = room_key(UNASSIGNED)
     named = sorted((k for k in out if k != nokey), key=lambda k: shown[k].lower())

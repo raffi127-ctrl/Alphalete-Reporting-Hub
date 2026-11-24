@@ -63,19 +63,65 @@ def test_a_source_cannot_tick_somebody_elses_column():
         F.plan(rows, "blueink", {"Ada Fournier": {"Owner Submit": True}})
 
 
-def test_the_ownerville_columns_are_the_sweeps_own_five_plus_the_bg_state():
-    """The sweep's own tick columns, and nothing else except OV BG Status.
+def test_the_ownerville_columns_are_all_ones_the_sweep_actually_fills():
+    """Every column the ownerville source claims, the sweep really writes.
 
-    That one is read off the same View Progress table but is a STATE, not a
-    tick -- it says what OwnerVille thinks of the background check, which is
-    the thing the Owner Submit button waits on (Megan, 2026-11-11). Anything
-    ELSE appearing here means the two lists have drifted, and a column the
-    sweep does not fill is a column everybody learns to ignore."""
+    A column the sweep does not fill is a column everybody learns to ignore,
+    so this is the drift check -- but it is measured against
+    `ov_table.TABLE_COLUMNS`, which is what the sweep READS the View Progress
+    table into, rather than `config.COLUMNS`, which is only the tick columns
+    on Alphalete's own OBCL tab.
+
+    Two kinds sit outside that tab and still come off the same read:
+      * OV BG Status -- a STATE, not a tick: what OwnerVille thinks of the
+        background check, which is what the Owner Submit button waits on
+        (Megan, 2026-11-11);
+      * the OV_GATES -- login created, drug test, service: gates that held
+        Owner Submit with no column anywhere to say so (Megan, 2026-11-24).
+    """
     from automations.obcl_ov_sweep import config as OV
-    extra = set(F.SOURCES["ownerville"]) - set(OV.COLUMNS)
-    assert extra == {"OV BG Status"}
-    assert set(OV.COLUMNS) <= set(F.SOURCES["ownerville"])
+    from automations.obcl_ov_sweep import ov_table
+
+    claimed = set(F.SOURCES["ownerville"])
+    assert set(OV.COLUMNS) <= claimed
+    outside = claimed - set(OV.COLUMNS)
+    assert outside == {"OV BG Status", *B.OV_GATES}
     assert "OV BG Status" in B.STATUS_STEPS, "it advances, it is not ticked"
+    # The gates are read by the sweep, not just named here.
+    for gate in B.OV_GATES:
+        assert gate in ov_table.TABLE_COLUMNS, \
+            "%s is claimed but the sweep reads no OwnerVille header for it" % gate
+
+
+def test_the_gates_are_writable_without_being_steps():
+    """Megan, 2026-11-24, asked for the columns so the board explains a hold.
+
+    In STEPS they would change every office's "4 of 10 done" to a denominator
+    of 13 and put three columns on the PRINTED chase sheet, whose key reads "a
+    blank cell is one to tick off here" -- and nobody ticks a drug test on
+    paper."""
+    assert len(B.STEPS) == 10
+    for gate in B.OV_GATES:
+        assert gate not in B.STEPS, "%s must not be counted as a step" % gate
+        assert gate in B.TICKS, "%s is written by the sweep" % gate
+        assert gate in B.COLUMNS, "%s needs a column on the board" % gate
+        assert gate not in B.BY_HAND
+
+
+def test_the_gates_sit_before_the_thing_they_gate():
+    before = B.COLUMNS.index(B.OV_GATES[0])
+    assert before > B.COLUMNS.index("OV BG Status")
+    assert B.COLUMNS.index(B.OV_GATES[-1]) < B.COLUMNS.index("Owner Submit")
+
+
+def test_the_background_check_is_not_added_a_second_time():
+    """It is already on the board as OV BG Status, read off that same cell.
+    Two names for one OwnerVille cell is worse than the gap it would close."""
+    from automations.obcl_ov_sweep import ov_table
+    assert "Background Check" not in B.COLUMNS
+    assert ov_table.TABLE_COLUMNS["Login Created"] == ("login created",)
+    assert "background check" not in [
+        h for g in B.OV_GATES for h in ov_table.TABLE_COLUMNS[g]]
 
 
 def test_every_source_column_is_one_a_machine_may_WRITE():

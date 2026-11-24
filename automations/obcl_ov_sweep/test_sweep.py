@@ -221,10 +221,27 @@ class TableRead(unittest.TestCase):
     def test_megans_screenshot_row(self):
         # UID reads "Requested" with a date -- submitted to the portal, no
         # number back from AT&T. RQ, not a tick (Megan 2026-11-20).
+        #
+        # And the three GATES are the reason this row is the case that made
+        # the columns worth adding (2026-11-24): docs and all six courses are
+        # green, and Login Created, Drug Test and Service are blank. Owner
+        # Submit cannot go, and before these columns existed the board showed
+        # nothing at all about why.
         self.assertEqual(ov_table.done_columns(VP_HEADS, _marqoun()),
                          {"Digi Docs": True, "Onboarding Quizzes": True,
                           "UID Request": ov_table.UID_REQUESTED,
-                          "Owner Submit": False, "Headshot Photo": False})
+                          "Owner Submit": False, "Headshot Photo": False,
+                          "Login Created": False, "Drug Test": False,
+                          "Service": False})
+
+    def test_a_blank_gate_is_false_and_a_missing_header_is_none(self):
+        """False is "read it, not green". None is "could not read it" -- never
+        the same answer ([[feedback_empty_means_proven_zero]])."""
+        got = ov_table.done_columns(VP_HEADS, _marqoun())
+        self.assertIs(got["Drug Test"], False)
+        short = [h for h in VP_HEADS if h != "Drug Test"]
+        cells = _marqoun()[:len(short)]
+        self.assertIsNone(ov_table.done_columns(short, cells)["Drug Test"])
 
     def test_a_granted_uid_number_is_a_tick(self):
         # Alexandria Mccrobie, 2026-11-20: "AN9948" is the UID itself
@@ -434,9 +451,16 @@ class FullyOnboarded(unittest.TestCase):
         # APPROVED without the number, because the request only goes to AT&T
         # after SaraPlus activation and can take 30 days (uid_request). So the
         # finished shape is every column ticked EXCEPT a UID still outstanding.
+        # `config.COLUMNS` is the OBCL TAB's tick columns; `done_columns`
+        # answers for everything the View Progress read covers, which since
+        # 2026-11-24 includes the three gates that have no column on that tab.
         want = {c: True for c in config.COLUMNS}
+        want.update({g: True for g in ov_table.TABLE_COLUMNS
+                     if g not in config.COLUMNS})
         want["UID Request"] = ov_table.UID_REQUESTED
         self.assertEqual(ov_table.done_columns(VP_HEADS, self._row()), want)
+        for gate in ("Login Created", "Drug Test", "Service"):
+            self.assertIs(want[gate], True, gate)
 
     def test_ready_too_but_run_ticks_green_instead_of_blue(self):
         # ready is True; run.py only paints blue when Owner Submit is NOT

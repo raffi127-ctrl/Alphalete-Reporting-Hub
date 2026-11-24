@@ -41,6 +41,15 @@ TABLE_COLUMNS = {
     # Megan 2026-09-21: catch headshots uploaded BY HAND too. Upload Documents
     # shows a "✓ Photo" pill, green when uploaded — judged by photo_uploaded.
     "Headshot Photo": ("upload documents",),
+    # THE GATES THAT HELD OWNER SUBMIT WITH NO COLUMN TO SAY SO (Megan,
+    # 2026-11-24). Each is already in READY_FOR_OWNER_SUBMIT below, so the
+    # sweep has always read them -- it just had nowhere on the board to put
+    # the answer. "background check" is NOT here: the board carries it as
+    # `OV BG Status` via `bg_status_text`, and a second column for one cell is
+    # worse than the gap.
+    "Login Created": ("login created",),
+    "Drug Test": ("drug test",),
+    "Service": ("service",),
 }
 
 # Everything OwnerVille needs before an owner can submit (Megan 2026-09-21:
