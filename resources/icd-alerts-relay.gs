@@ -23,7 +23,9 @@
  * spreadsheet.
  *
  * TABS (plus 'Headshot Jobs', 'Office Jobs' and 'Phone Lookups', documented
- * with their calls at the bottom):
+ * with their calls at the bottom; 'BOB Calls Owed' and 'BOB Calls Done' are
+ * the one pair that live in the ORG workbook, documented with the 6pm pop-up
+ * at the very bottom):
  *   'Relay Keys'      Office | Key | Active | Note      <- we control this
  *   'ICD Relay'       Office | Day | Records JSON | Received At | Local Time |
  *                     Agent | Last Posted JSON | Posted At |
@@ -1539,6 +1541,8 @@ function _officeAdminCall(a) {
   if (what === 'board_gender') return _boardGender(office, a);
   if (what === 'board_location') return _boardLocation(office, a);
   if (what === 'board_digi_docs') return _boardDigiDocs(office, a);
+  if (what === 'bob_nudge') return _bobNudge(office);
+  if (what === 'bob_done') return _bobDone(sess, office, a);
   if (what === 'status') return _officeJobStatus(office, String(a.job_id || ''));
   if (what === 'already') return _admAlready(office);
   if (what === 'bg_status') return _admBgStatus(office);
@@ -2509,4 +2513,211 @@ function _officeJobLog(q) {
               queued_at: r[OJ.QUEUED].toISOString(), people: payload.people || [], result: res});
   }
   return {ok: true, jobs: out};
+}
+
+
+// ------------------------------------------------ the 6pm BOB-call pop-up
+//
+// Megan, 2026-11-18: "we want to build a daily nudge / alert if BOB calls
+// aren't made by 6pm local time -- should pop up on app stream and send DM in
+// slack". The DM half is automations/second_round_contacts/bob_nudge.py. This
+// is what the POP-UP half asks: the card the Chrome extension draws on the
+// admin's own ApplicantStream page (extension/office-admin/bob.js).
+//
+// TWO READS OF THE SAME CALENDAR WOULD BE TWO ANSWERS. bob_nudge reads the
+// calendar's SECOND INTERVIEWS table through a real login, with rules that
+// took a day of probing -- which rows turned up, which four marks count as
+// answered, which of the calendar's same-headed tables is the right one. The
+// extension could do all that again in JavaScript; the day the two disagree,
+// the pop-up tells an office it owes calls the DM says are made, and both get
+// ignored. So the nudge publishes what it read and this hands it over.
+//
+// IT IS THE OTHER WORKBOOK. Both tabs belong to the Org workbook, where
+// office_admin keeps its own tabs -- 'BOB Calls Done' is written by the
+// button on the admin page (office_admin/bob_calls.py) and read by every
+// office's daily update, so it cannot be copied here without becoming two
+// answers to the other question. Opened by id, the way _boardBook opens an
+// office's own book and _ddControlTab opens the mini's.
+//
+// FAIL QUIET, NEVER LOUD. Every answer below is "say nothing" unless it is
+// certain: no snapshot, a stale snapshot, a snapshot from before the office's
+// own 6pm, a press already on the day, or any error at all -> nudge: false.
+// A card that appears when the calls ARE made, or when the read failed, is
+// worse than no card, because it is the one that teaches people to dismiss
+// the real ones.
+var ORG_SHEET_ID = '1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E';
+var BOB_OWED_TAB = 'BOB Calls Owed';
+var BOB_OWED_HEAD = ['Office Key', 'Day', 'Outstanding', 'Names JSON', 'Nudge',
+                     'Read At', 'Read By'];
+var BOB_DONE_TAB = 'BOB Calls Done';
+var BOB_DONE_HEAD = ['Office Key', 'Day', 'Marked At', 'By', 'Note'];
+// Matches office_admin.bob_owed.STALE_MINUTES, and the test holds them equal.
+// The nudge ticks hourly, so a healthy snapshot is under an hour old; three
+// hours means two ticks have failed, which is a read that is not working and
+// so not something to put on somebody's screen.
+var BOB_STALE_MINUTES = 180;
+
+function _bobBook() {
+  return SpreadsheetApp.openById(ORG_SHEET_ID);
+}
+
+// Never creates the tab. A missing tab means nothing has ever published or
+// pressed, and inventing one here would write OUR idea of the headers over
+// the half of the pair that Python owns.
+function _bobTab(name) {
+  return _bobBook().getSheetByName(name);
+}
+
+// The LAST row this office published, or null. By header name, because two
+// tabs in this workbook have had a column added mid-life and a read by
+// position returns the wrong cell silently.
+//
+// THE NEWEST ROW, AND NO DATE MATCHING. Which day it is for comes off the row
+// itself, and whether it still counts is decided by how old it is -- a
+// snapshot under three hours old is today's by definition. Comparing the
+// row's day against THIS script's clock would put a second timezone in the
+// path (the publishing Lucy's is the first), and a disagreement there would
+// drop a real 6pm nudge or keep a dead one, with nothing on screen to say so.
+function _bobOwedRow(office) {
+  var sh = _bobTab(BOB_OWED_TAB);
+  if (!sh) return null;
+  var rows = sh.getDataRange().getValues();
+  if (!rows.length) return null;
+  var at = {}, head = rows[0], i;
+  for (i = 0; i < head.length; i++) {
+    var name = String(head[i] || '').trim();
+    if (name) at[name] = i;
+  }
+  var cell = function (r, name) {
+    return (name in at && at[name] < r.length) ? r[at[name]] : '';
+  };
+  for (i = rows.length - 1; i >= 1; i--) {
+    if (String(cell(rows[i], 'Office Key')).trim().toLowerCase() !== office) continue;
+    return {cols: at, cell: cell, r: rows[i]};
+  }
+  return null;
+}
+
+// Has this office pressed "I've made today's BOB calls" for that day?
+// TRUE ONLY ON A ROW WE ACTUALLY FOUND -- an unreadable tab answers false
+// here, which means the pop-up may show for an office that did press. That
+// is the right way round for THIS call: nothing is sent either way, and the
+// card's own button is idempotent. (The daily update's gate reads the same
+// tab from Python and fails the other way, because posting is not.)
+function _bobPressed(office, day) {
+  var sh = _bobTab(BOB_DONE_TAB);
+  if (!sh) return false;
+  var rows = sh.getDataRange().getValues();
+  for (var i = 1; i < rows.length; i++) {
+    if (String(rows[i][0]).trim().toLowerCase() !== office) continue;
+    if (_dayKey(rows[i][1]) === day) return true;
+  }
+  return false;
+}
+
+// 'Read At' is written as an ISO instant WITH its offset, on purpose: a naive
+// stamp would be the writing Lucy's own clock and this script's timezone is
+// not that Lucy's, so the freshness check would be hours out, silently, in
+// the direction that shows stale cards.
+function _bobMinutesOld(v) {
+  var when = (v instanceof Date) ? v : new Date(String(v || ''));
+  if (!when || isNaN(when.getTime())) return null;
+  return (Date.now() - when.getTime()) / 60000;
+}
+
+function _bobNudge(office) {
+  var out = {ok: true, nudge: false, office: office};
+  var got;
+  try {
+    got = _bobOwedRow(office);
+  } catch (err) {
+    // Say why in the log, say nothing on the screen.
+    return {ok: false, nudge: false, error: 'could not read the snapshot: ' + err};
+  }
+  // NO SNAPSHOT IS NOT ZERO, and it is not "they owe nothing" either: it is
+  // "nobody has read that calendar today". An office with nothing on and an
+  // office whose read failed look identical from here, and a card on the
+  // second is what teaches people to dismiss the first.
+  if (!got) { out.why = 'nothing has ever read that office\'s calendar'; return out; }
+  out.day = _dayKey(got.cell(got.r, 'Day'));
+  out.count = Number(got.cell(got.r, 'Outstanding') || 0) || 0;
+  try {
+    var names = JSON.parse(String(got.cell(got.r, 'Names JSON') || '[]'));
+    out.names = Object.prototype.toString.call(names) === '[object Array]' ? names : [];
+  } catch (err) { out.names = []; }
+  out.read_at = String(got.cell(got.r, 'Read At') || '');
+  var old = _bobMinutesOld(got.cell(got.r, 'Read At'));
+  out.minutes_old = old === null ? null : Math.round(old);
+  // Every remaining reason to stay quiet, each one its own sentence so the
+  // extension's console says which it was.
+  if (old === null || old > BOB_STALE_MINUTES) {
+    out.why = 'the snapshot is ' + (old === null ? 'undated' : Math.round(old) + ' min old');
+    return out;
+  }
+  if (!out.count) { out.why = 'nothing outstanding'; return out; }
+  // The office's OWN 6pm, decided by the nudge off the office's own timezone
+  // and carried on the row. Nothing here works out what time it is there.
+  if (String(got.cell(got.r, 'Nudge')).trim().toUpperCase() !== 'TRUE') {
+    out.why = 'not yet 6pm for this office';
+    return out;
+  }
+  var pressed;
+  // THE SNAPSHOT'S DAY *OR* THIS SCRIPT'S -- either one being pressed is
+  // enough to stay quiet. The two are the same day all evening; they can
+  // differ only for a run either side of midnight, and when they do, the
+  // answer that says nothing is the one to take.
+  try {
+    pressed = _bobPressed(office, out.day) || _bobPressed(office,
+        Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd'));
+  }
+  catch (err) { return {ok: false, nudge: false, error: 'could not read the press: ' + err}; }
+  if (pressed) { out.done = true; out.why = 'they have pressed it today'; return out; }
+  out.done = false;
+  out.nudge = true;
+  return out;
+}
+
+// The SAME press as the button on the admin page -- one row per office per
+// day on the one tab, so an admin who sees the card can answer it where they
+// are instead of being sent to another page to say the same thing.
+//
+// IT RECORDS, IT DOES NOT SEND. The office's own daily update is what posts,
+// and it may be minutes later; a press that posted directly would mean one
+// mis-press sends an office its day's record with the answers still missing.
+function _bobDone(sess, office, a) {
+  var sh = _bobTab(BOB_DONE_TAB);
+  if (!sh) {
+    // THE ONE PLACE ALLOWED TO CREATE A TAB, and only because a press has to
+    // land somewhere: an admin pressing on a day nothing has written yet
+    // would otherwise be told it did not save. BOB_DONE_HEAD is held equal to
+    // bob_calls.HEADERS by a test, so this cannot invent a shape Python then
+    // fails to read. The READ path still never creates anything.
+    sh = _bobBook().insertSheet(BOB_DONE_TAB);
+    sh.appendRow(BOB_DONE_HEAD);
+  }
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var day = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+    // IDEMPOTENT BY DAY, inside the lock: two clicks because nothing visibly
+    // happened must not be two rows, and the admin page's own press must not
+    // become a second one either.
+    if (_bobPressed(office, day)) return {ok: true, already: true, day: day};
+    var row = sh.getLastRow() + 1;
+    sh.getRange(row, 1, 1, BOB_DONE_HEAD.length).setValues([[
+      office, '', Utilities.formatDate(new Date(), Session.getScriptTimeZone(),
+                                       'yyyy-MM-dd HH:mm:ss'),
+      String(sess.name || sess.username || ''),
+      'extension' + (a && a.note ? ': ' + String(a.note) : '')]]);
+    // THE DAY MUST STAY TEXT. Sheets parses '2026-11-24' into a Date given
+    // the chance, and bob_calls.done compares strings -- so a coerced cell
+    // reads back as '11/24/2026' and the daily update's gate never opens.
+    // Format first, then write: the other way round converts it anyway.
+    var cell = sh.getRange(row, 2);
+    cell.setNumberFormat('@');
+    cell.setValue(day);
+    return {ok: true, already: false, day: day};
+  } finally {
+    lock.releaseLock();
+  }
 }

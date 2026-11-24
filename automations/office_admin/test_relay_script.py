@@ -99,8 +99,14 @@ def _fn(src: str, name: str) -> str:
     """
     at = src.index("function %s(" % name)
     rest = src[at:]
-    end = rest.index("\nfunction ", 1)
-    return rest[:end]
+    # The LAST function in the file has nothing after it, and asking for a
+    # slice that is not there raised ValueError rather than failing the test
+    # that was actually being asked -- which reads as a broken test instead of
+    # a broken rule (2026-11-24, _bobDone).
+    try:
+        return rest[:rest.index("\nfunction ", 1)]
+    except ValueError:
+        return rest
 
 
 def test_the_board_is_read_from_the_offices_own_workbook():
@@ -190,3 +196,106 @@ def test_the_phone_lookups_road_is_wired_end_to_end():
     # Nothing on this road removes a row or an applicant.
     section = src[src.index("// --- PHONE LOOKUPS"):src.index("// --- OFFICE ADMINS")]
     assert "deleteRow" not in section and ".clear(" not in section
+
+
+def test_the_bob_popup_calls_are_wired_end_to_end():
+    """The 6pm nudge's pop-up half (Megan 2026-11-18: "should pop up on app
+    stream and send DM in slack"). Two calls, each with its function: the
+    read the extension asks for, and the press it offers."""
+    src = _source()
+    for call, fn in (("bob_nudge", "_bobNudge"), ("bob_done", "_bobDone")):
+        assert "what === '%s'" % call in src, "nothing dispatches %s" % call
+        assert "function %s(" % fn in src, "%s has no handler" % fn
+
+
+def test_the_popup_says_nothing_unless_it_is_certain():
+    """A card that appears when the calls ARE made, or when the read failed,
+    is worse than no card: it is the one that teaches people to dismiss the
+    real ones. So every branch out of the read is nudge:false, and only the
+    last line sets it true."""
+    src = _source()
+    body = _fn(src, "_bobNudge")
+    assert body.count("out.nudge = true") == 1, \
+        "exactly one place may decide to show the card"
+    assert body.rindex("out.nudge = true") > body.rindex("out.why ="), \
+        "every reason to stay quiet comes first"
+    # Each quiet branch, named, so a missing one is a test failure and not a
+    # card on somebody's screen.
+    for why in ("nothing has ever read", "the snapshot is ",
+                "nothing outstanding", "not yet 6pm for this office",
+                "they have pressed it today"):
+        assert why in body, "nothing covers %r" % why
+    # An error anywhere answers ok:false, which the extension draws nothing for.
+    assert body.count("ok: false") == 2, "both reads must fail quiet"
+
+
+def test_the_popup_never_derives_who_is_outstanding_itself():
+    """bob_nudge reads the calendar, through a login, with rules that took a
+    day of probing. A second answer to that question is how the two halves
+    come to disagree, and the day they do, both get ignored."""
+    src = _source()
+    body = _fn(src, "_bobNudge")
+    assert "_bobOwedRow(office)" in body, "it reads the snapshot the nudge left"
+    for bad in ("SECOND INTERVIEW", "Offer Position", "applicantstream"):
+        assert bad not in body, "it should read the snapshot, not the calendar"
+
+
+def test_the_popups_press_is_the_same_press_as_the_admin_pages():
+    """One row per office per day on the one tab. A second place to say "the
+    calls are made" would be a second answer to the gate's question."""
+    src = _source()
+    body = _fn(src, "_bobDone")
+    assert "BOB_DONE_TAB" in body
+    assert "_bobPressed(office, day)" in body, "it must be idempotent by day"
+    assert "waitLock" in body, "two clicks must not be two rows"
+    # It records; it does not post. The office's own daily update is what
+    # posts, and a press that posted directly would mean one mis-press sends
+    # an office its day's record with the answers still missing.
+    for bad in ("UrlFetchApp", "chat.postMessage", "_slack"):
+        assert bad not in body, bad
+
+
+def test_the_press_day_cannot_be_coerced_into_a_date():
+    """Sheets parses '2026-11-24' into a Date given the chance, and
+    bob_calls.done compares strings -- so a coerced cell reads back as
+    '11/24/2026' and the daily update's gate never opens. Format the cell as
+    text FIRST, then write it."""
+    src = _source()
+    body = _fn(src, "_bobDone")
+    assert "setNumberFormat('@')" in body
+    assert body.index("setNumberFormat('@')") < body.rindex("cell.setValue(day)")
+    assert "appendRow([" not in body, \
+        "appendRow uses USER_ENTERED semantics, which is what converts it"
+
+
+def test_the_bob_tabs_are_never_created_with_our_idea_of_the_headers():
+    """Python owns both tabs (office_admin.bob_owed / bob_calls). A missing
+    tab means nothing has published or pressed yet; writing headers over it
+    from here would be the relay guessing at the other half's columns."""
+    src = _source()
+    body = _fn(src, "_bobTab")
+    assert "insertSheet" not in body, "the read path must never create a tab"
+
+
+def test_the_bob_tabs_are_read_by_header_not_by_position():
+    """The press tab has had a column added before. A read by number returns
+    the wrong cell silently, which is the worst kind."""
+    src = _source()
+    body = _fn(src, "_bobOwedRow")
+    assert "'Office Key'" in body, "the office should be looked up by header"
+    assert "at[name]" in body
+    # And it takes the NEWEST row rather than matching the day against this
+    # script's clock: the publishing Lucy's timezone is already in the path,
+    # and a second one disagreeing would drop a real 6pm nudge with nothing
+    # on screen to say so. Freshness is what decides instead.
+    assert "for (i = rows.length - 1; i >= 1; i--)" in body
+
+
+def test_a_stale_snapshot_is_not_a_nudge():
+    """The nudge ticks hourly, so a snapshot older than a few ticks means the
+    read is not working -- which is not something to pop a window about."""
+    src = _source()
+    assert "var BOB_STALE_MINUTES = " in src
+    body = _fn(src, "_bobNudge")
+    assert "BOB_STALE_MINUTES" in body
+    assert "_bobMinutesOld" in body
