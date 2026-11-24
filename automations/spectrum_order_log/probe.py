@@ -105,8 +105,31 @@ def main() -> int:
                     ch for ch in str(v.get("name") or "") if ch.isalnum())
                 if seg:
                     _csv_peek(page, repo, seg)
-        _crosstab_peek(page)
+        _viewdata_peek(page)
     return 0
+
+
+def _viewdata_peek(page) -> None:
+    """Crosstab offers ONLY 'Last Update' on this dashboard (2026-11-24), but
+    the order table is there (Eve's screenshot: one row per line, Raf's rows,
+    Sale Week 11/21/2026). So read it through Download -> Data -> View Data,
+    clicking inside the table first so Data is enabled. 'VDCOLS:' header,
+    'VDROW:' first rows, 'VDROWS:' count."""
+    from automations.recruiting_report.opt_phase import scrape_view_data
+    print("=" * 64, flush=True)
+    for xy in ((0.55, 0.30), (0.40, 0.45)):
+        try:
+            fields, recs = scrape_view_data(ORDERLOG_URL, verbose=True,
+                                            activate_xy=xy, page=page)
+        except Exception as e:  # noqa: BLE001
+            print(f"VDERR: {xy}: {type(e).__name__}: {str(e)[:200]}", flush=True)
+            continue
+        print(f"VDCOLS: {xy} | " + " | ".join(fields), flush=True)
+        for r in recs[:3]:
+            print(f"VDROW: " + " | ".join(str(c) for c in r)[:600], flush=True)
+        print(f"VDROWS: {len(recs)}", flush=True)
+        if len(fields) > 3:
+            return
 
 
 ORDERLOG_URL = BASE + "/#/site/sci/views/CharterD2DSalesMetrics/OrderLog"
