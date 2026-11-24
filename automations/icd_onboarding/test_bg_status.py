@@ -169,3 +169,79 @@ def test_the_address_map_comes_from_the_RESULTS_tab_not_the_codes_one():
 def test_the_results_inbox_matches_the_one_the_installer_sets_up():
     from automations.icd_alerts import sterling_forward as SF
     assert BG.INBOX == SF.RESULTS_INBOX
+
+
+# ---------------------------------- every week the extension spans, not one
+
+def test_the_weeks_it_reads_go_back_and_one_forward():
+    """Megan, 2026-11-24: the extension has previous, current and coming
+    weeks, and statuses should fill in as they come.
+
+    IT USED TO BE ONE WEEK, which was the bug: thirty days of Sterling mail
+    matched against a single week's board, so a result for somebody on last
+    week's tab had no row and was quietly not ticked -- the late check being
+    exactly the one somebody is waiting on.
+    """
+    import datetime as _dt
+    from automations.icd_onboarding import bg_status as BGS
+    weeks = BGS.weeks_to_read(_dt.date(2026, 11, 24))
+    assert len(weeks) == BGS.WEEKS_BACK + BGS.WEEKS_FORWARD + 1
+    assert weeks == sorted(weeks), "oldest first"
+    # every one is a Sunday, like the Week of column
+    assert all(w.weekday() == 6 for w in weeks), weeks
+    # this week is in there, and so is the next one
+    assert _dt.date(2026, 11, 22) in weeks
+    assert _dt.date(2026, 11, 29) in weeks
+
+
+def test_a_window_long_enough_for_a_check_to_come_back():
+    """A check can sit "Sent" for a fortnight, and the person started weeks
+    before that. One or two weeks back would re-open the same gap."""
+    from automations.icd_onboarding import bg_status as BGS
+    assert BGS.WEEKS_BACK >= 4
+
+
+def test_a_result_is_filed_on_the_week_the_person_is_on(monkeypatch):
+    """Not on the week the run was centred on."""
+    import datetime as _dt
+    from automations.icd_onboarding import bg_status as BGS
+    from automations.icd_onboarding import board as _B
+    from automations.icd_onboarding import fillers as _F
+    from automations.icd_onboarding import sheet as _S
+
+    last_week = _dt.date(2026, 11, 15)
+    head = ["Week of", "Name", "Last Name", "BG Status"]
+
+    class _WS:
+        def __init__(self, week):
+            self.week = week
+
+        def get_all_values(self):
+            if self.week != last_week:
+                return [head]
+            return [head, [_B.week_label(last_week), "Ada", "Lovelace", ""]]
+
+    monkeypatch.setattr(_S, "board_for",
+                        lambda key, week=None, create=False: _WS(week))
+    monkeypatch.setattr(_F, "workbook_for", lambda key: "BOOK")
+    monkeypatch.setattr(BGS, "office_by_address", lambda: {})
+
+    class _Ev:
+        first = "Ada"
+        last = "Lovelace"
+        status = "Passed"
+        forwarded_to = ""
+    monkeypatch.setattr(BGS, "events",
+                        lambda since_days=30, verbose=False: [_Ev()])
+
+    seen = []
+
+    def fake_apply(book, week, source, verdicts, **kw):
+        seen.append((week, dict(verdicts)))
+        return len(verdicts)
+    monkeypatch.setattr(_F, "apply", fake_apply)
+
+    BGS.run(_dt.date(2026, 11, 24), offices=["raf"], dry_run=False,
+            log=lambda *a: None)
+    assert [w for w, _ in seen] == [last_week], seen
+    assert seen[0][1] == {"Ada Lovelace": {"BG Status": "Passed"}}

@@ -531,18 +531,28 @@ def test_the_seed_reads_the_scheduled_row_and_has_no_fallback_for_it():
 
 def test_showing_up_ticks_the_row_and_never_takes_anybody_off():
     """ON ONLY, like every other tick. Somebody absent on Monday may walk in
-    on Tuesday; marking them off is a person's call, and "No Show" is one of
-    the reasons the panel offers."""
+    on Tuesday.
+
+    SINCE 2026-11-24 IT ALSO PUTS A WALK-IN BACK, which is the opposite of
+    taking somebody off -- so this no longer asks whether the word "remove"
+    appears, it asks that every removal call here is a RESTORE. A ticked No
+    lands the row in the removed section (from_no_shows) and this is the pass
+    that has to undo it when they turn up.
+    """
     import inspect
+    import re
     from automations.icd_onboarding import board as B
 
     src = inspect.getsource(R._tick_showed_up)
     code = [l for l in src.splitlines() if not l.strip().startswith("#")]
     joined = "\n".join(code)
-    assert "True" in joined and "False" not in joined, \
-        "it only ever says yes"
-    assert "terminat" not in joined.lower() and "remove" not in joined.lower()
+    assert "True" in joined, "it only ever says yes about Showed Up"
     assert B.SHOWED_UP in joined or "SHOWED_UP" in joined
+    calls = re.findall(r"mark_removed_anywhere\((.*?)\)", joined, re.S)
+    assert calls, "it is the pass that puts a walk-in back"
+    for args in calls:
+        assert "restore=True" in args, \
+            "this function may only ever RESTORE, never remove: %r" % args
 
 
 def test_an_unread_showed_up_row_ticks_nobody_rather_than_emptying_it():

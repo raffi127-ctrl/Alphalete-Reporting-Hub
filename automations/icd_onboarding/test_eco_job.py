@@ -74,20 +74,42 @@ def test_a_stale_lock_is_a_crash_not_a_run():
     assert J._lock_held() is False
 
 
-def test_the_board_keeps_the_lucys_hours():
-    """Hourly 6am-8pm. An office board on a different clock from Alphalete's
-    would give two answers to 'is this current'."""
-    assert J.board_due(dt.datetime(2026, 11, 24, 5, 0), {}) is False
-    assert J.board_due(dt.datetime(2026, 11, 24, 6, 30), {}) is True
-    assert J.board_due(dt.datetime(2026, 11, 24, 20, 30), {}) is True
-    assert J.board_due(dt.datetime(2026, 11, 24, 21, 30), {}) is False
+def test_a_board_that_has_never_run_is_due():
+    """Nothing has run yet is not "it ran 0 seconds ago"."""
+    assert J.board_due(dt.datetime(2026, 11, 24, 3, 0), {}) is True
 
 
-def test_an_hour_has_to_pass_between_passes():
-    just_now = {"board": time.time()}
-    assert J.board_due(dt.datetime(2026, 11, 24, 12, 0), just_now) is False
-    an_hour_ago = {"board": time.time() - (J.EVERY_MINUTES + 1) * 60}
-    assert J.board_due(dt.datetime(2026, 11, 24, 12, 0), an_hour_ago) is True
+def test_the_board_follows_the_banded_clock(monkeypatch):
+    """15 minutes 8-noon, 30 noon-3, hourly the rest (Megan, 2026-11-24).
+    One definition, in `cadence` -- this holds the clock to it rather than
+    keeping a second copy of the numbers."""
+    from automations.icd_onboarding import cadence as CAD
+
+    def ran(minutes_ago, at):
+        return J.board_due(at, {"board": at.timestamp() - minutes_ago * 60})
+
+    morning = dt.datetime(2026, 11, 24, 9, 0)
+    assert CAD.every_minutes(morning) == 15
+    assert ran(10, morning) is False
+    assert ran(16, morning) is True
+
+    afternoon = dt.datetime(2026, 11, 24, 13, 0)
+    assert CAD.every_minutes(afternoon) == 30
+    assert ran(16, afternoon) is False
+    assert ran(31, afternoon) is True
+
+    evening = dt.datetime(2026, 11, 24, 18, 0)
+    assert CAD.every_minutes(evening) == 60
+    assert ran(31, evening) is False
+    assert ran(61, evening) is True
+
+
+def test_it_runs_overnight_now_rather_than_stopping_at_half_eight():
+    """The old 6:30am-8:30pm window existed because every pass cost the same.
+    Banded, an overnight pass is one hourly read -- and a 7am answer is on the
+    board by 8 instead of waiting for the half hour."""
+    night = dt.datetime(2026, 11, 24, 2, 0)
+    assert J.board_due(night, {"board": night.timestamp() - 61 * 60}) is True
 
 
 def test_the_no_shows_walk_fires_at_or_after_its_slot_not_inside_one_minute():
@@ -130,8 +152,9 @@ def test_a_step_this_copy_does_not_have_is_never_asked_for(monkeypatch):
     monkeypatch.setattr(J, "steps_here", lambda: ["contacts"])
     J.switch_on("test")
     at_night = dt.datetime(2026, 11, 24, 21, 30)
-    assert J.maybe_run(log=lambda *a: None, now=at_night) is False
-    assert started == []
+    J.maybe_run(log=lambda *a: None, now=at_night)
+    assert ["--only", "no_shows", "--write"] not in started, \
+        "a step this copy does not have must never be asked for"
     assert J.no_shows_due(at_night, J._load()) is True, \
         "and the day must NOT have been marked done"
 

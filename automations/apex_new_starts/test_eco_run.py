@@ -139,8 +139,8 @@ def _armed(monkeypatch, *, added=(), blocked=()):
     they arm it deliberately and never touch Apex.
     """
     monkeypatch.setenv("APEX_FILL_PROVEN", "1")
-    monkeypatch.setattr(eco_run, "_genders_from_board",
-                        lambda office_key, monday, log=print: {})
+    monkeypatch.setattr(eco_run, "_genders_for",
+                        lambda people, log=print: {})
 
     class _S:
         page = object()
@@ -241,8 +241,8 @@ def _patch(monkeypatch, *, rows, hires, for_people=None, removed=(),
         genders = {("%s %s" % (r.get("first_name", ""),
                                r.get("last_name", ""))).strip(): "Female"
                    for r in rows}
-    monkeypatch.setattr(eco_run, "_genders_from_board",
-                        lambda office_key, monday, log=print: dict(genders))
+    monkeypatch.setattr(eco_run, "_genders_for",
+                        lambda people, log=print: dict(genders))
 
 
 # ------------------------------------- the control map, read off the real form
@@ -624,12 +624,14 @@ def test_the_boards_gender_reaches_the_plan(monkeypatch):
     assert "gender" in held["Bruno Castell"].lower(), held["Bruno Castell"]
 
 
-def test_the_gender_board_is_read_once_not_twice():
-    """It was read a second time further down, after the gate, for the engine
-    path -- the same Sheets call for the same answer."""
+def test_the_gender_is_worked_out_once_not_twice():
+    """It was worked out a second time further down, after the gate, for the
+    engine path -- the same answer twice. Off the board since 2026-11-24, so
+    it is no longer a Sheets call, but doing it twice would still mean two
+    different lists of "names it would not call" in one run's log."""
     import inspect
     src = inspect.getsource(eco_run.run_week)
-    assert src.count("_genders_from_board(") == 1, src.count("_genders_from_board(")
+    assert src.count("_genders_for(") == 1, src.count("_genders_for(")
 
 
 def _answered(monkeypatch):
@@ -839,15 +841,30 @@ def test_a_removal_read_that_fails_stops_the_run(monkeypatch):
     assert res["status"] == "error" and "removed is unknown" in res["error"]
 
 
-def test_no_office_key_does_not_report_a_blank_gender_column(monkeypatch):
-    """Nothing was read, so nothing is claimed about the column. Saying "no
-    gender on the board" for everybody sends somebody to fill a column that is
-    already filled (26 people, 2026-11-22)."""
+def test_a_name_it_will_not_call_is_left_out_and_said_out_loud():
+    """Gender is guessed from the first name at the moment Apex is typed
+    (Megan, 2026-11-24). A name the guesser will not call is LEFT OUT, exactly
+    as a blank column was -- the engine then leaves that box alone and says it
+    missed it, rather than picking one. The unsure list is the load-bearing
+    half: a guess here lands on a payroll record, so "no idea" has to look
+    different from an answer.
+    """
+    class _P:
+        def __init__(self, first, last):
+            self.first_name, self.last_name = first, last
+
     said = []
-    assert eco_run._genders_from_board("", MONDAY, log=said.append) == {}
+    got = eco_run._genders_for([_P("Jessica", "Hale"), _P("Xyzzy", "Quine")],
+                               log=said.append)
     told = " ".join(said)
-    assert "no office key" in told
-    assert "no gender on the board" not in told
+    assert got.get("Jessica Hale"), got
+    assert "Xyzzy Quine" not in got
+    assert "would not call" in told and "Xyzzy Quine" in told, told
+
+
+def test_nobody_to_guess_for_is_not_an_error():
+    said = []
+    assert eco_run._genders_for([], log=said.append) == {}
 
 
 # ------------------------------------- the two answers that land on a tax record

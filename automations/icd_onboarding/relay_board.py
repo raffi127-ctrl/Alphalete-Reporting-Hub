@@ -222,3 +222,40 @@ def is_not_deployed(err: Exception) -> bool:
     not take the write and somebody should hear about it.
     """
     return NOT_DEPLOYED in str(err).lower()
+
+
+def mark(office_key: str, week_start: dt.date, names: Iterable[str],
+         *, reason: str = "", restore: bool = False,
+         dry_run: bool = True, log=print) -> Dict:
+    """Put people in the board's REMOVED section, or take them back out of it.
+
+    THE ROW STAYS EITHER WAY. This is not a delete and not a hide-forever: the
+    removed section is part of the board, and the row is still there to answer
+    what happened to somebody months later (the relay's `_boardMark` says the
+    same, and the panel has used it since 2026-11-11).
+
+    `restore=True` puts them back and CLEARS the reason, so a row that came
+    back does not keep the reason for a removal that was undone.
+
+    The relay leaves a row that is already how you want it alone, so sending
+    the same names twice changes nothing -- which is what makes this safe on a
+    pass that runs again every night.
+    """
+    want = [str(n).strip() for n in (names or []) if str(n).strip()]
+    if not want:
+        log("  removal: nobody to mark")
+        return {"ok": True, "changed": 0}
+    week = B.week_label(week_start)
+    if dry_run:
+        log("  (dry run — would %s %d on week %s%s)"
+            % ("restore" if restore else "mark removed", len(want), week,
+               "" if restore else ": %s" % reason))
+        return {"ok": True, "changed": 0, "dry_run": True}
+    out = _call(office_key, "board_mark",
+                {"week": week, "weekTab": K.tab_name(week_start),
+                 "names": want, "reason": reason,
+                 "action": "restore" if restore else "terminate"})
+    log("  %s: %d row(s) changed"
+        % ("restored" if restore else "marked removed",
+           int(out.get("changed") or 0)))
+    return out

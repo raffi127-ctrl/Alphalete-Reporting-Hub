@@ -262,16 +262,24 @@ class _FakeWS:
         self.updates.append((range_name, values))
 
 
+# A column that IS on the board, to stand in for "one this tab has not got".
+# It was Gender until 2026-11-24, when Gender left the board entirely -- which
+# made these two tests pass by removing nothing and assert that nothing was
+# appended. Any column from B.COLUMNS does the job; Location is hand-owned and
+# nothing else in this file depends on it.
+_A_REAL_COLUMN = B.LOCATION
+
+
 def test_a_missing_column_is_appended(monkeypatch):
     """open_board never re-lays an existing tab, so a column added to
     B.COLUMNS would only ever reach boards made afterwards."""
-    head = ([c for c in B.COLUMNS if c != B.GENDER]
+    head = ([c for c in B.COLUMNS if c != _A_REAL_COLUMN]
             + list(S.PAST_THE_CHART))
     ws = _FakeWS(head)
     got = S.ensure_columns(ws, log=lambda *a: None)
-    assert got == [B.GENDER]
+    assert got == [_A_REAL_COLUMN]
     (where, values), = ws.updates
-    assert values == [[B.GENDER]]
+    assert values == [[_A_REAL_COLUMN]]
     # appended to the RIGHT of everything already there, row 1
     assert where == "%s%d" % (S._a1(len(head) + 1), S.HEADER_ROW)
 
@@ -295,9 +303,9 @@ def test_the_grid_is_widened_before_the_header_is_written():
     Both callers swallow that into a one-line log of the exception type, so
     for every board already at its limit the column silently never appeared
     (2026-11-20, `Funnel`)."""
-    head = [c for c in B.COLUMNS if c != B.GENDER] + list(S.PAST_THE_CHART)
+    head = [c for c in B.COLUMNS if c != _A_REAL_COLUMN] + list(S.PAST_THE_CHART)
     ws = _NarrowWS(head)
-    assert S.ensure_columns(ws, log=lambda *a: None) == [B.GENDER]
+    assert S.ensure_columns(ws, log=lambda *a: None) == [_A_REAL_COLUMN]
     assert ws.grown == [1], "the grid has to grow by exactly what is missing"
     assert ws.col_count == len(head) + 1
     # and only then is the header written
@@ -306,7 +314,7 @@ def test_the_grid_is_widened_before_the_header_is_written():
 
 
 def test_a_wide_enough_grid_is_not_grown():
-    head = [c for c in B.COLUMNS if c != B.GENDER] + list(S.PAST_THE_CHART)
+    head = [c for c in B.COLUMNS if c != _A_REAL_COLUMN] + list(S.PAST_THE_CHART)
     ws = _NarrowWS(head, col_count=len(head) + 10)
     S.ensure_columns(ws, log=lambda *a: None)
     assert ws.grown == []

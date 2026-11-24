@@ -39,23 +39,53 @@
          fires on the hour and drives the same OwnerVille. Two runs sharing a
          browser profile wedge it (obcl_ov_sweep keeps its own profile for
          exactly that reason), so the two are kept half an hour apart. -->
+    <!-- GENERATED FROM automations/icd_onboarding/cadence.BANDS -- do not
+         hand-edit. 15 minutes 8am-noon, 30 noon-3pm, hourly the rest
+         (Megan, 2026-11-24). The agent fires on the band's own minutes
+         and the MODULE decides whether a pass is due, because launchd
+         has no "every N minutes between these hours". Re-generate with
+         `python -m automations.icd_onboarding.cadence --plist`. -->
     <key>StartCalendarInterval</key>
     <array>
-        <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>30</integer></dict>
-        <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>0</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>1</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>2</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>3</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>4</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>5</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>15</integer></dict>
         <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>45</integer></dict>
+        <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>15</integer></dict>
         <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>45</integer></dict>
+        <dict><key>Hour</key><integer>10</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>10</integer><key>Minute</key><integer>15</integer></dict>
         <dict><key>Hour</key><integer>10</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>10</integer><key>Minute</key><integer>45</integer></dict>
+        <dict><key>Hour</key><integer>11</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>11</integer><key>Minute</key><integer>15</integer></dict>
         <dict><key>Hour</key><integer>11</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>11</integer><key>Minute</key><integer>45</integer></dict>
+        <dict><key>Hour</key><integer>12</integer><key>Minute</key><integer>0</integer></dict>
         <dict><key>Hour</key><integer>12</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>13</integer><key>Minute</key><integer>0</integer></dict>
         <dict><key>Hour</key><integer>13</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>14</integer><key>Minute</key><integer>0</integer></dict>
         <dict><key>Hour</key><integer>14</integer><key>Minute</key><integer>30</integer></dict>
-        <dict><key>Hour</key><integer>15</integer><key>Minute</key><integer>30</integer></dict>
-        <dict><key>Hour</key><integer>16</integer><key>Minute</key><integer>30</integer></dict>
-        <dict><key>Hour</key><integer>17</integer><key>Minute</key><integer>30</integer></dict>
-        <dict><key>Hour</key><integer>18</integer><key>Minute</key><integer>30</integer></dict>
-        <dict><key>Hour</key><integer>19</integer><key>Minute</key><integer>30</integer></dict>
-        <dict><key>Hour</key><integer>20</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>15</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>16</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>17</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>18</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>19</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>20</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>21</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>22</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>23</integer><key>Minute</key><integer>0</integer></dict>
     </array>
 
     <key>StandardOutPath</key>

@@ -189,36 +189,89 @@ def route(events_in: Iterable, boards: Dict[str, List[Dict]],
     return out, ambiguous
 
 
+# HOW MANY WEEKS BACK A RESULT CAN STILL BE FILED.
+#
+# Megan, 2026-11-24: "because the OBCL extension will be ongoing and have
+# previous, current, and past weeks, we'll be able to fill in the statuses as
+# they come because we should be able to match the names."
+#
+# IT USED TO BE ONE WEEK, and that was the bug: the run read THIRTY DAYS of
+# Sterling mail and then matched it against a single week's board, so a result
+# landing for somebody on last week's tab had no row to match and was quietly
+# not ticked -- which is exactly the late check somebody is waiting on. A check
+# can sit "Sent" for a fortnight before it comes back, and the person started
+# weeks before that.
+#
+# FORWARD TOO, by one: somebody BOB'd for next week has their check sent now,
+# so their row is on a tab that has not started yet.
+WEEKS_BACK = 6
+WEEKS_FORWARD = 1
+
+
+def weeks_to_read(today: Optional[dt.date] = None) -> List[dt.date]:
+    """The Sundays whose tabs a result could belong to, oldest first."""
+    today = today or dt.date.today()
+    this = B.week_start_of(today)
+    return [this + dt.timedelta(days=7 * n)
+            for n in range(-WEEKS_BACK, WEEKS_FORWARD + 1)]
+
+
 def run(week_start: Optional[dt.date] = None, *, offices: Sequence[str] = (),
         since_days: int = 30, dry_run: bool = True, log=print) -> int:
     """Read the inbox and tick BG Status on each office's board.
 
     DRY BY DEFAULT. Ticks only a finished check, only where the person is on
-    exactly one board, and never un-ticks.
+    exactly one office's boards, and never un-ticks.
+
+    EVERY WEEK THE EXTENSION SPANS, not just one (`weeks_to_read`). A result
+    is a fact about a PERSON, so it is filed against whichever week their row
+    is on -- and if their row is on two (a start day that moved), both get it,
+    because the answer is the same for both and leaving one blank is the gap
+    this exists to close.
+
+    `week_start` is now only the week the search is CENTRED on; it is kept so
+    every caller and the --week flag still work.
     """
     from automations.icd_onboarding import fillers as F
     from automations.icd_onboarding import sheet as S
 
-    week = week_start or dt.date.today()
+    centre = week_start or dt.date.today()
+    weeks = weeks_to_read(centre)
     got = events(since_days=since_days, verbose=False)
     log("%s: %d Sterling event(s) in the last %d days"
         % (INBOX, len(got), since_days))
+    log("  looking at %d week(s): %s"
+        % (len(weeks), ", ".join(B.week_label(w) for w in weeks)))
 
     boards: Dict[str, List[Dict]] = {}
     books = {}
+    # (office, folded name) -> the weeks their row is on
+    where: Dict[tuple, List[dt.date]] = {}
     for office in offices:
         try:
             book = F.workbook_for(office)
         except RuntimeError as e:
             log("  %s: %s" % (office, e))
             continue
-        # Their own week tab where they have a book (sheet.board_for).
-        ws = S.board_for(office, week, create=False)
-        if ws is None:
-            log("  %s: no board yet" % office)
+        rows: List[Dict] = []
+        for week in weeks:
+            # Their own week tab where they have a book (sheet.board_for). A
+            # week with no tab is not an error -- it simply has nobody on it.
+            ws = S.board_for(office, week, create=False)
+            if ws is None:
+                continue
+            mine = B.for_week(S.rows_of(ws.get_all_values()), week)
+            for r in mine:
+                who = B._fold("%s%s" % (r.get("Name", ""),
+                                        r.get("Last Name", "")))
+                if who:
+                    where.setdefault((office, who), []).append(week)
+            rows += mine
+        if not rows:
+            log("  %s: nobody on any of those weeks" % office)
             continue
         books[office] = book
-        boards[office] = B.for_week(S.rows_of(ws.get_all_values()), week)
+        boards[office] = rows
 
     routed, ambiguous = route(got, boards, office_by_address())
     for a in ambiguous:
@@ -229,15 +282,30 @@ def run(week_start: Optional[dt.date] = None, *, offices: Sequence[str] = (),
     for office, people in routed.items():
         log("  %s: %d check(s) with a status" % (office, len(people)))
         if office not in books:
-            # The address says whose it is, but that office has no board for
-            # this week. Said out loud rather than dropped: a result nobody
-            # can file is exactly the thing this report exists to surface.
-            log("    held — %s has no board for this week (%s)"
+            # The address says whose it is, but that office has nobody on any
+            # of these weeks. Said out loud rather than dropped: a result
+            # nobody can file is exactly what this report exists to surface.
+            log("    held — %s has nobody on those weeks (%s)"
                 % (office, ", ".join(sorted(people))))
             continue
-        total += F.apply(books[office], week, "sterling",
-                         {n: {"BG Status": s} for n, s in people.items()},
-                         dry_run=dry_run, log=log, office_key=office)
+        # One apply per WEEK, because each week is its own tab.
+        by_week: Dict[dt.date, Dict[str, str]] = {}
+        for name, status in people.items():
+            mine = where.get((office, B._fold(name.replace(" ", ""))), [])
+            if not mine:
+                log("    held — %s is not on any week's rows" % name)
+                continue
+            if len(mine) > 1:
+                log("    %s is on %d weeks (%s) — filing the result on each"
+                    % (name, len(mine),
+                       ", ".join(B.week_label(w) for w in mine)))
+            for week in mine:
+                by_week.setdefault(week, {})[name] = status
+        for week, want in sorted(by_week.items()):
+            log("    week of %s: %d" % (B.week_label(week), len(want)))
+            total += F.apply(books[office], week, "sterling",
+                             {n: {"BG Status": s} for n, s in want.items()},
+                             dry_run=dry_run, log=log, office_key=office)
     if not routed:
         log("  nothing to tick")
     return total

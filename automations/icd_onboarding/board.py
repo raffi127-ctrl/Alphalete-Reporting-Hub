@@ -165,20 +165,35 @@ OV_GATES: Sequence[str] = ("Login Created", "Drug Test", "Service")
 _BEFORE = tuple(STEPS[:STEPS.index("Owner Submit")])
 _FROM = tuple(STEPS[STEPS.index("Owner Submit"):])
 
-COLUMNS: Sequence[str] = (tuple(IDENTITY) + (FUNNEL, CLASSROOM, GENDER,
-                                              LOCATION)
+# GENDER IS NOT ON THE BOARD (Megan, 2026-11-24: "gender now is just assumed
+# based on name and does not belong on the OBCL. It'll only come into play on
+# the Apex fill"). It is the one column here nobody in the office needs to
+# look at: it is not a step, nothing waits on it, and the only thing that ever
+# reads it is the Apex record. So it is guessed from the first name AT THE
+# MOMENT IT IS TYPED into Apex, where somebody is sitting there and can fix it,
+# instead of being a column that has to be checked on a board.
+#
+# THE NAME STAYS, and so does `gender_suggest`: Apex calls the same guesser.
+# What goes is the column, the pre-fill and the two-colour "how sure is it"
+# tinting -- all of which existed to make the answer confirmable on the board,
+# which is the part that is no longer wanted.
+#
+# NOTHING IS DELETED. `ensure_columns` only ever appends, so a board that
+# already has a filled-in Gender column keeps it and its answers; it simply
+# stops being written and stops being read
+# ([[feedback_dont_touch_user_data]]).
+COLUMNS: Sequence[str] = (tuple(IDENTITY) + (FUNNEL, CLASSROOM, LOCATION)
                           + (SHOWED_UP,) + _BEFORE + tuple(OV_GATES) + _FROM)
 
 # The columns a PERSON owns. No system we read holds any of them, so whatever
 # ends up here is somebody's own answer rather than a fact we fetched.
 #
-# "No automation may write them" was true until 2026-11-18 and is not quite
-# true now: `gender_suggest` pre-fills Gender where the first name is
-# unambiguous, leaves every other cell blank, tints what it filled, and never
-# overwrites a typed answer. Classroom and Location have no such source and
-# stay hand-only. Anything that writes one of these still goes through
-# `by_hand.write`, which is where the guards live.
-BY_HAND: Sequence[str] = (CLASSROOM, GENDER, LOCATION)
+# No automation writes them, and since 2026-11-24 that is true again: Gender
+# was the one exception (pre-filled from the first name) and it has left the
+# board entirely, so Classroom and Location are back to being the only two,
+# both hand-only with no source to read. Anything that writes one of these
+# still goes through `by_hand.write`, which is where the guards live.
+BY_HAND: Sequence[str] = (CLASSROOM, LOCATION)
 
 # Which columns a machine may write. Classroom and Gender are the ICD's;
 # identity is the seed's.
@@ -302,6 +317,28 @@ REMOVED_WHY = "Removed Because"
 REMOVAL_REASONS: Sequence[str] = ("Terminated", "Failed BG", "No Show",
                                   "Did not show to day 1 Classroom",
                                   "Left Classroom")
+
+# THE ONE REASON A MACHINE WRITES, and the only one (Megan, 2026-11-24: "if
+# they're checked no, it'll still appear on the OBCL, but it'll be in the show
+# removal section, and then it should just say no show to first day").
+#
+# WHY A MACHINE MAY WRITE THIS WHEN IT MAY WRITE NO OTHER REASON. The relay's
+# own rule is that taking somebody off the board is a PERSON'S call, and this
+# does not break it: a recruiter ticking No on the ApplicantStream radio IS a
+# person saying they did not come. The machine only carries that answer across
+# so nobody has to click the same fact in twice. A BLANK still means nobody has
+# said yet and marks nobody off, which is the rule the whole board lives by.
+#
+# AND IT LIFTS ITSELF. A date arriving later outranks No Show (showed_up_rank),
+# because somebody marked absent on Monday who walks in on Tuesday is the case
+# this board exists to survive -- so the removal is undone on the same pass
+# that writes their day. Nothing a PERSON typed is ever overwritten or cleared.
+#
+# NOT one of REMOVAL_REASONS on purpose: that list is what a person is OFFERED
+# in the panel, and it already carries "Did not show to day 1 Classroom" for
+# somebody picking by hand. Two near-identical options in one pick list is how
+# a count stops meaning anything.
+NO_SHOW_REASON = "No show to first day"
 
 GREEN = {"red": 0.71, "green": 0.87, "blue": 0.66}
 

@@ -678,3 +678,55 @@ def write_step(workbook, week_start: dt.date, column: str,
     ws.batch_update(writes)
     ws.format(greens, {"backgroundColor": B.GREEN})
     return len(writes)
+
+
+def mark_removed(ws, week_start: dt.date, names: Sequence[str], *,
+                 reason: str = "", restore: bool = False,
+                 dry_run: bool = False, log=print) -> int:
+    """The gspread twin of `relay_board.mark` -- the removed section, on a tab
+    this machine can open directly.
+
+    `terminate` above is the panel's older path and takes a WORKBOOK, so it
+    reaches the old stacked tab; this one takes the worksheet the caller has
+    already resolved with `board_for`, which is the only way that is right for
+    an office with a book of their own.
+
+    A ROW ALREADY HOW YOU WANT IT IS LEFT ALONE, matching the relay, so a pass
+    that runs again every night writes nothing the second time. Restoring
+    clears the reason, so a row that came back does not keep the reason for a
+    removal that was undone.
+    """
+    grid = _values(ws)
+    cols = layout(grid)
+    if B.TERMINATED_AT not in cols:
+        log("  the board has no %r column -- nothing marked" % B.TERMINATED_AT)
+        return 0
+    want = {B._fold(n) for n in names}
+    off = not restore
+    hit = []
+    for r in B.for_week(rows_of(grid), week_start):
+        who = B._fold("%s%s" % (r.get("Name", ""), r.get("Last Name", "")))
+        if who not in want:
+            continue
+        already = bool(str(r.get(B.TERMINATED_AT) or "").strip())
+        if already == off:
+            continue
+        hit.append(row_number(r))
+    if not hit:
+        log("  removal: nothing to change")
+        return 0
+    if dry_run:
+        log("  (dry run — would %s %d row(s))"
+            % ("restore" if restore else "mark removed", len(hit)))
+        return 0
+    stamp = dt.date.today().strftime("%m/%d/%Y") if off else ""
+    a1 = _a1(cols[B.TERMINATED_AT] + 1)
+    writes = [{"range": "%s%d" % (a1, n), "values": [[stamp]]} for n in hit]
+    if B.REMOVED_WHY in cols:
+        w1 = _a1(cols[B.REMOVED_WHY] + 1)
+        why = reason if off else ""
+        writes += [{"range": "%s%d" % (w1, n), "values": [[why]]} for n in hit]
+    ws.batch_update(writes)
+    log("  %s %d row(s)" % ("restored" if restore else "marked removed",
+                            len(hit)))
+    return len(hit)

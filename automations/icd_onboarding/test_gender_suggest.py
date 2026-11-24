@@ -143,8 +143,14 @@ class TheTint(unittest.TestCase):
         # Green means a step is finished; a guess nobody has checked is not.
         self.assertNotEqual(B.SUGGESTED, B.GREEN)
 
-    def test_gender_is_still_a_column_a_person_owns(self):
-        self.assertIn(B.GENDER, B.BY_HAND)
+    def test_gender_is_no_longer_a_column_at_all(self):
+        """Off the board 2026-11-24 (Megan). The guesser stays -- Apex calls
+        `suggest` at the moment it types the record -- but there is no column
+        for a person to own, so Classroom and Location are BY_HAND's only two.
+        """
+        self.assertNotIn(B.GENDER, B.BY_HAND)
+        self.assertNotIn(B.GENDER, B.COLUMNS)
+        self.assertEqual(list(B.BY_HAND), [B.CLASSROOM, B.LOCATION])
 
 
 if __name__ == "__main__":

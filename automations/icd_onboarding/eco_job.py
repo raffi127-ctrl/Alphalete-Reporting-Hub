@@ -45,12 +45,14 @@ import time
 from pathlib import Path
 from typing import Dict, Optional
 
-# The Lucys' hours, kept the same on purpose (deploy/com.alphalete.icd-onboarding
-# .plist): 6:30am to 8:30pm machine-local, hourly. An office board that updated
-# on a different clock from Alphalete's would have two answers to "is it current".
-FIRST_HOUR = 6
-LAST_HOUR = 20
-EVERY_MINUTES = 60
+# HOW OFTEN IS `cadence`, NOT A NUMBER HERE. Megan, 2026-11-24: 15 minutes from
+# 8 to noon, 30 from noon to 3, hourly the rest of the day. One definition, so
+# an office's own machine and the Lucys cannot end up on two clocks
+# (icd_onboarding.cadence says why the day is banded).
+#
+# ALL DAY NOW, not 6:30am to 8:30pm. The old window existed because every pass
+# cost the same; banded, an overnight pass is one hourly read, and the first
+# fast pass of the morning is ready at 8 instead of waiting for the half hour.
 
 # The no-shows walk keeps its own daily slot, for the reason its schedule entry
 # gives: it is the SEVEN-page calendar walk, the answer only changes when a
@@ -172,11 +174,12 @@ def steps_here() -> list:
 
 def board_due(now: Optional[dt.datetime] = None,
               state: Optional[Dict] = None) -> bool:
+    """Is a board pass due, on this hour's band (`cadence`)?"""
+    from automations.icd_onboarding import cadence as CAD
     now = now or dt.datetime.now()
-    if not (FIRST_HOUR <= now.hour <= LAST_HOUR):
-        return False
     last = float((state if state is not None else _load()).get("board", 0) or 0)
-    return (time.time() - last) >= EVERY_MINUTES * 60
+    when = dt.datetime.fromtimestamp(last) if last else None
+    return CAD.due(when, now)
 
 
 def no_shows_due(now: Optional[dt.datetime] = None,

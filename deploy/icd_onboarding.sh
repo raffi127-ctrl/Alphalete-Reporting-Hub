@@ -1,6 +1,13 @@
 #!/bin/bash
-# Hourly 6am-8pm (machine-local) — keep THIS office's onboarding board up to
-# date for the CURRENT week. launchd: com.alphalete.icd-onboarding.
+# Keep THIS office's onboarding board up to date for the CURRENT week.
+# launchd: com.alphalete.icd-onboarding.
+#
+# THE CLOCK IS BANDED (Megan, 2026-11-24): every 15 minutes 8am-noon, every 30
+# noon-3pm, hourly the rest of the day, machine-local. The agent fires on the
+# band's own minutes and `--if-due` below decides -- launchd has no "every N
+# minutes between these hours". One definition of the bands, in
+# automations/icd_onboarding/cadence.py; both this and an office's own machine
+# (icd_onboarding.eco_job) ask it.
 #
 # Megan, 2026-11-09: "OBCL should just always be active for that current week -
 # updating every hour 6am-8pm." So it takes no arguments: the week is today's,
@@ -43,7 +50,7 @@ if pgrep -f "automations.icd_onboarding.run" > /dev/null 2>&1; then
     exit 0
 fi
 
-ARGS=()
+ARGS=(--if-due)
 [ "$MODE" = "write" ] && ARGS+=(--write)
 
 LOG_FILE="output/logs/icd-onboarding-$(date +%Y-%m-%d-%H%M%S).log"

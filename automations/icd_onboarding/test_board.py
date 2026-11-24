@@ -325,11 +325,26 @@ def test_the_unassigned_pile_is_still_last():
 
 # ------------------------------ Gender: the other column only a person fills
 
-def test_gender_is_on_the_board():
-    """Apex wants one and an ECO machine has nowhere to read it from -- on
-    Raf's office it comes off the sales board, and an ICD has no sales board
-    (Megan, 2026-11-10)."""
-    assert B.GENDER in B.COLUMNS
+def test_gender_is_NOT_on_the_board():
+    """Megan, 2026-11-24: "gender now is just assumed based on name and does
+    not belong on the OBCL. It'll only come into play on the Apex fill."
+
+    It was the one column here nobody in the office needed to look at -- not a
+    step, nothing waiting on it, and the only reader was ever the Apex record.
+    So it is guessed from the first name AT THE MOMENT IT IS TYPED into Apex
+    (apex_new_starts.eco_run._genders_for), where somebody is sitting there and
+    can fix it, rather than sitting pre-filled on a board nobody was prompted
+    to check.
+    """
+    assert B.GENDER not in B.COLUMNS
+    assert B.GENDER not in B.BY_HAND
+
+
+def test_the_gender_name_is_kept_even_though_the_column_is_gone():
+    """Apex still asks `gender_suggest` the same question; only the place the
+    answer is produced changed. A board that already has the column keeps its
+    answers -- `ensure_columns` only ever appends, so nothing is deleted."""
+    assert B.GENDER == "Gender"
 
 
 def test_gender_is_not_something_an_automation_may_write():

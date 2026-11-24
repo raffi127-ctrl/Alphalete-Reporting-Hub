@@ -412,3 +412,34 @@ def tick(office_key: str, week_start, source: str, names: Iterable[str],
         log("  board: %s" % e)
         return 0
     return apply(book, week_start, source, verdicts, dry_run=dry_run, log=log)
+
+
+def mark_removed_anywhere(office_key: str, week_start, names, *,
+                          reason: str = "", restore: bool = False,
+                          dry_run: bool = True, log=print) -> int:
+    """Put people in the board's REMOVED section, whichever way this machine
+    can reach the board -- the relay on an office's own computer, gspread on a
+    Lucy. Returns how many rows changed.
+
+    THE ROW STAYS. The removed section is part of the board; this is where a
+    row goes, not something that happens to it (Megan, 2026-11-24: "we're not
+    taking anyone off of the board. They're still on the board. They're just
+    on the removed section").
+    """
+    from automations.icd_onboarding import relay_board as RB
+    from automations.icd_onboarding import sheet as S
+
+    want = [str(n).strip() for n in (names or []) if str(n).strip()]
+    if not want:
+        return 0
+    if on_office_machine(office_key):
+        out = RB.mark(office_key, week_start, want, reason=reason,
+                      restore=restore, dry_run=dry_run, log=log)
+        return int((out or {}).get("changed") or 0)
+    ws = S.board_for(office_key, week_start, create=False)
+    if ws is None:
+        log("  no board for %s on the week of %s"
+            % (office_key, B.week_label(week_start)))
+        return 0
+    return S.mark_removed(ws, week_start, want, reason=reason,
+                          restore=restore, dry_run=dry_run, log=log)

@@ -278,12 +278,13 @@ def run_week(week_start: dt.date, *, office_appstream: str, office_key: str = ""
         return _result(monday, status="error", live=live, counted=len(people),
                        error="Blue Ink: %s: %s" % (type(e).__name__, str(e)[:200]))
 
-    # THE BOARD'S GENDER, BEFORE THE PLAN. It lives on the board, and
-    # `starters()` builds people from the training calendar, which has no
-    # such column -- so without this every single person would be held for
-    # "no gender" even when the board has one. `plan` holds anybody still
-    # without one, which is the point (Megan, 2026-11-13).
-    genders = _genders_from_board(office_key, monday, log=log)
+    # GENDER, BEFORE THE PLAN. `starters()` builds people from the training
+    # calendar, which has no such column, so without this every single person
+    # would be held for "no gender". It is guessed from the first name here
+    # rather than read off the board (Megan, 2026-11-24) -- `plan` still holds
+    # anybody it would not call, which is the point (Megan, 2026-11-13), and a
+    # value somebody has already typed is never overwritten.
+    genders = _genders_for(people, log=log)
     if genders:
         from automations.icd_onboarding import board as _B
         byk = {_B._fold(k): v for k, v in genders.items()}
@@ -374,39 +375,50 @@ def _apex_state(ready, log=print) -> Dict:
     return out
 
 
-def _genders_from_board(office_key: str, monday: dt.date, log=print) -> Dict:
-    """{name: Gender} off the office's onboarding board.
+def _genders_for(people, log=print) -> Dict:
+    """{name: Gender}, guessed from each FIRST NAME.
 
-    Apex requires one and an ICD has no sales board to read it from (Megan,
-    2026-11-10), so it is a column a person fills. Nothing guesses it: a name
-    with no gender on the board simply is not in here, and the engine leaves
-    that box alone and says it missed it.
+    NOT OFF THE BOARD ANY MORE (Megan, 2026-11-24: "gender now is just assumed
+    based on name and does not belong on the OBCL. It'll only come into play on
+    the Apex fill"). It was a column somebody had to check on a board where
+    nothing waited on it; the only reader was ever this record.
+
+    HERE IS THE RIGHT PLACE FOR A GUESS, and that is the point. Apex is typed
+    with a person sitting at it, so a wrong guess is in front of the one human
+    who can fix it before the record saves. On the board it was a quiet
+    pre-filled cell on a payroll answer that nobody was prompted to look at.
+
+    A NAME IT CANNOT CALL IS LEFT OUT, exactly as a blank column was: the
+    engine then leaves that box alone and SAYS it missed it, rather than
+    picking one. `gender_suggest` is the same guesser that used to pre-fill the
+    column, so the answers do not change -- only where they are produced.
     """
-    if not office_key:
-        # Not "the board has no gender for them" -- no board was opened. Said
-        # plainly, because the alternative reads as 26 people with a blank
-        # column and sends somebody to fill one that is already filled.
-        log("  (no office key, so no gender column was read)")
-        return {}
     try:
-        from automations.icd_onboarding import board as B
-        from automations.icd_onboarding import sheet as S
-        ws = S.board_for(office_key, monday, create=False)
-        if ws is None:
-            return {}
-        out = {}
-        for r in B.for_week(S.rows_of(S._values(ws)), monday):
-            name = ("%s %s" % (r.get("Name", ""), r.get("Last Name", ""))).strip()
-            g = str(r.get(B.GENDER) or "").strip()
-            if name and g:
-                out[name] = g
-        log("  %d gender(s) off the board" % len(out))
-        return out
+        from automations.icd_onboarding import gender_suggest as GS
     except Exception as e:      # noqa: BLE001
         # Not fatal: the engine fills everything else and names the box it
         # could not set, which is visible on the record.
-        log("  (no genders read: %s)" % type(e).__name__)
+        log("  (no genders guessed: %s)" % type(e).__name__)
         return {}
+    out, unsure = {}, []
+    for p in people or []:
+        first = str(getattr(p, "first_name", "") or "").strip()
+        name = ("%s %s" % (first, getattr(p, "last_name", "") or "")).strip()
+        if not name:
+            continue
+        said = GS.suggest(first)
+        if said:
+            out[name] = said
+        else:
+            unsure.append(name)
+    log("  %d gender(s) from the first name" % len(out))
+    if unsure:
+        # THE UNSURE LIST IS THE LOAD-BEARING HALF, same as it was on the
+        # board: a guess here lands on a payroll record, so "no idea" has to
+        # look different from an answer.
+        log("  %d name(s) it would not call: %s"
+            % (len(unsure), ", ".join(sorted(unsure))))
+    return out
 
 
 def _removed_on_the_board(office_key: str, monday: dt.date,

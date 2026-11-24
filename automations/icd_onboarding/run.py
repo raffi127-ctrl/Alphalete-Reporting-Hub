@@ -352,20 +352,12 @@ def seed(office_key: str, week_start: dt.date, *, dry_run: bool = True,
     # and so we would skip that part").
     from automations.icd_onboarding import office_steps as OS
     OS.mark_not_applicable(office_key, week_start, dry_run=dry_run, log=log)
-    # A GENDER SUGGESTION ON THE NEW ROWS, where the first name makes it clear
-    # (Megan, 2026-11-18). At seed time and not on a clock of its own: the
-    # admin should find the column already part-filled when the row appears,
-    # rather than meeting a blank column and then having it change under them.
-    #
-    # Guarded, because this is a convenience and the seed is not. A board that
-    # was seeded with no suggestions is a week somebody types by hand; a seed
-    # that died trying to suggest is a week with no rows at all.
-    try:
-        from automations.icd_onboarding import gender_suggest as GS
-        GS.fill(office_key, week_start, dry_run=dry_run, log=log)
-    except Exception as exc:                                # noqa: BLE001
-        log("  (no gender suggestions this time: %s: %s)"
-            % (type(exc).__name__, str(exc)[:120]))
+    # NO GENDER SUGGESTION ANY MORE (Megan, 2026-11-24: "gender now is just
+    # assumed based on name and does not belong on the OBCL. It'll only come
+    # into play on the Apex fill"). The guess still happens -- at the moment it
+    # is typed into Apex, where a person is sitting there and can correct it --
+    # so `gender_suggest` is still the one guesser, just called from there
+    # rather than written onto a column the office had to check.
     return len(got.get("add") or [])
 
 
@@ -441,8 +433,34 @@ def from_no_shows(office_key: str, week_start: dt.date, *,
                            p.get("last_name") or "")).strip()
         if name:
             verdicts[name] = {B.SHOWED_UP: B.NO_SHOW}
-    return F.apply_anywhere(office_key, week_start, "appstream", verdicts,
-                            dry_run=dry_run, log=log)
+    wrote = F.apply_anywhere(office_key, week_start, "appstream", verdicts,
+                             dry_run=dry_run, log=log)
+
+    # AND INTO THE REMOVED SECTION, with the reason filled in for them (Megan,
+    # 2026-11-24: "if they're checked no, it'll still appear on the OBCL, but
+    # it'll be in the show removal section, and then it should just say no show
+    # to first day").
+    #
+    # THE ROW STAYS ON THE BOARD. The removed section is part of it; this is
+    # where the row goes, not something that happens to it. The office could
+    # already click somebody in there and pick a reason by hand -- all that is
+    # new is that a No they have already ticked in ApplicantStream does it, so
+    # nobody enters the same fact twice.
+    #
+    # EVERY NAME, EVERY PASS, on purpose: both the relay and the gspread twin
+    # leave a row that is already removed alone, so this writes nothing the
+    # second night and cannot pile stamps up on one row.
+    try:
+        F.mark_removed_anywhere(office_key, week_start, list(verdicts),
+                                reason=B.NO_SHOW_REASON, dry_run=dry_run,
+                                log=log)
+    except Exception as e:      # noqa: BLE001 -- the column still matters more
+        # The Showed Up answer is the load-bearing half and it is already
+        # written. A removal that could not be made is said out loud rather
+        # than losing the pass that recorded who did not come.
+        log("  (could not mark the no-shows removed: %s: %s)"
+            % (type(e).__name__, str(e)[:140]))
+    return wrote
 
 
 def _tick_showed_up(office_key: str, week_start: dt.date, showed,
@@ -450,10 +468,20 @@ def _tick_showed_up(office_key: str, week_start: dt.date, showed,
     """Tick `Showed Up` for the scheduled people who turned up.
 
     ON ONLY, like every other tick: an absence is not a tick off and is never
-    a removal -- somebody missing on Monday may walk in on the Tuesday, and
-    marking them off is a person's call ("No Show" is one of the reasons the
-    panel offers). An unread showed-up row ticks nobody rather than emptying
-    the column.
+    a removal -- somebody missing on Monday may walk in on the Tuesday. An
+    unread showed-up row ticks nobody rather than emptying the column.
+
+    AND THE TUESDAY WALK-IN IS PUT BACK. Since 2026-11-24 a No ticked in
+    ApplicantStream also lands the row in the board's removed section, so this
+    is the pass that has to undo it: somebody who turns up after being marked
+    absent is exactly the case the board exists to survive, and a removal left
+    standing would keep them out of every step below it. The date already
+    outranks No Show in the column (`showed_up_rank`); this makes the removed
+    section agree with the column instead of contradicting it.
+
+    ONLY A REMOVAL THE MACHINE MADE IS LIFTED. A person who clicked somebody
+    off and typed their own reason has decided something this does not know
+    about, and a walk-in does not undo it ([[feedback_dont_touch_user_data]]).
 
     Never fails the seed: the rows are already on the board, and a column that
     did not tick is a visible gap in the right place.
@@ -471,12 +499,47 @@ def _tick_showed_up(office_key: str, week_start: dt.date, showed,
         log("  showed up: nobody yet this week")
         return 0
     try:
-        return F.apply_anywhere(office_key, week_start, "appstream",
-                                verdicts, dry_run=dry_run, log=log)
+        wrote = F.apply_anywhere(office_key, week_start, "appstream",
+                                 verdicts, dry_run=dry_run, log=log)
     except Exception as e:      # noqa: BLE001
         log("  (Showed Up was not ticked: %s: %s)"
             % (type(e).__name__, str(e)[:120]))
         return 0
+    try:
+        back = _walked_in_after_a_no_show(office_key, week_start,
+                                          list(verdicts), log=log)
+        if back:
+            log("  %d turned up after being marked a no show -- putting them "
+                "back on the board" % len(back))
+            F.mark_removed_anywhere(office_key, week_start, back, restore=True,
+                                    dry_run=dry_run, log=log)
+    except Exception as e:      # noqa: BLE001 -- the tick is the load-bearing half
+        log("  (could not put a walk-in back: %s: %s)"
+            % (type(e).__name__, str(e)[:140]))
+    return wrote
+
+
+def _walked_in_after_a_no_show(office_key: str, week_start: dt.date,
+                               turned_up: Sequence[str], log=print) -> List[str]:
+    """Of the people who turned up, which are sitting in the removed section
+    for OUR no-show reason?
+
+    Read off the board rather than assumed, because the answer has to be both
+    halves: they are removed AND the reason is the one the machine writes. A
+    person's own reason is left exactly where it is.
+    """
+    want = {B._fold(n) for n in turned_up}
+    out = []
+    for r in F.rows_anywhere(office_key, week_start, log=log):
+        who = "%s %s" % (r.get("Name", ""), r.get("Last Name", ""))
+        if B._fold(who) not in want:
+            continue
+        if not str(r.get(B.TERMINATED_AT) or "").strip():
+            continue
+        if str(r.get(B.REMOVED_WHY) or "").strip() != B.NO_SHOW_REASON:
+            continue
+        out.append(who.strip())
+    return out
 
 
 def _board_names(office_key: str, week_start: dt.date,
@@ -1026,7 +1089,23 @@ def main(argv=None) -> int:
                     help="just these steps; repeatable")
     ap.add_argument("--write", action="store_true",
                     help="actually write (default is a dry run)")
+    ap.add_argument("--if-due", action="store_true",
+                    help="do nothing unless this hour's band says a pass is "
+                         "due (icd_onboarding.cadence) -- for the agent")
     a = ap.parse_args(argv)
+    # FOR THE SCHEDULED CALLER ONLY. The agent fires on the band's own minutes
+    # -- 39 times a day since 2026-11-24 -- because launchd cannot say "every
+    # 15 minutes between 8 and noon"; the band is decided here instead. A HAND
+    # RUN never passes this and always runs, which is the whole point of the
+    # flag being opt-in: "it did nothing and said nothing" is a terrible answer
+    # to somebody who typed the command themselves.
+    if a.if_due:
+        from automations.icd_onboarding import cadence as CAD
+        if not CAD.due():
+            print("not due yet (every %d min this hour; last ran %s)"
+                  % (CAD.every_minutes(), CAD.last_run() or "never"))
+            return 0
+        CAD.mark_run()
     # THE CURRENT WEEK, always (Megan, 2026-11-09: "OBCL should just always be
     # active for that current week"). Monday-normalised by week_label, so an
     # hourly run on a Thursday works the same board it worked on Monday.
