@@ -73,9 +73,14 @@ current one.
 **Why it matters:** a wrong date of birth goes onto a payroll record. Two
 of the twelve are already in Apex, typed in by hand from these packets.
 
-**What we do meanwhile:** `blueink_data._impossible_dob` rejects them, so
-the Apex fill holds those people rather than typing a birth date that
-cannot be true.
+**What we do meanwhile:** the date goes into Apex EXACTLY as the employee
+reported it (Megan, 2026-11-23: "we just need to enter in whatever date
+the employee reported on their DOB even if we know it's incorrect. They
+are filling out the document legally"). `blueink_data._impossible_dob`
+flags it so the run says out loud that it cannot be true, and a person can
+go and ask them -- it does not hold anybody back. It is not our date to
+correct, and keeping somebody out of payroll over a year typed into a date
+picker costs them, not us.
 
 **Who they are is deliberately not written here.** This file is in a
 PUBLIC repo, and a name beside a date of birth is exactly the pairing that

@@ -418,6 +418,13 @@ def run(office_key: str, name: str, week_start: dt.date, log=print,
     # keep_ssn=True: the tax tab cannot be saved without it -- see the note
     # at the top of this file.
     hires = BID.for_people([person], keep_ssn=True)
+    # ANYTHING TYPED THAT WE DOUBT IS SAID BEFORE IT IS TYPED. A date of
+    # birth the employee signed for goes in as they reported it (Megan,
+    # 2026-11-23) -- but the person watching should know it cannot be true,
+    # because they are the one who can ask.
+    for _p, _h in (hires or {}).items():
+        for _sem, _why in getattr(_h, "flagged", ()):
+            log("  NOTE: %s" % _why)
     got = ECO.plan([person], hires, log=log, office_key=office_key)
     if not got["ready"]:
         why = (got["blocked"] or [{}])[0].get("why", "unknown")

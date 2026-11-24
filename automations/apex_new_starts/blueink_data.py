@@ -96,6 +96,10 @@ class NewHire:
     packet_name: str = ""          # as Blue Ink spells it
     values: Dict[str, str] = dfield(default_factory=dict)
     rejected: List[tuple] = dfield(default_factory=list)   # (name, why)
+    # SAID OUT LOUD, STILL TYPED. A value we doubt but have no right to
+    # change -- a date of birth the employee signed for. `rejected` holds it
+    # back; this does not.
+    flagged: List[tuple] = dfield(default_factory=list)    # (name, why)
     missing_packet: bool = False
     has_ssn: bool = False          # their packet HAS one; see `ssn` below
     matched_on: str = ""           # 'email' (proof) or 'name' (judgement)
@@ -346,10 +350,22 @@ def extract(bundle: dict, mapping: Dict[str, Dict[str, str]],
         if sem == "dob":
             why = _impossible_dob(val)
             if why:
-                hire.rejected.append((sem, f"{doc} field "
-                                           f"{f.get('field_key')} reads "
-                                           f"{val!r}, which {why}"))
-                continue
+                # FLAGGED, NOT WITHHELD (Megan, 2026-11-23): "we just need to
+                # enter in whatever date the employee reported on their DOB
+                # even if we know it's incorrect. They are filling out the
+                # document legally."
+                #
+                # The first cut of this held the person back instead, which
+                # was the wrong call twice over: it is not our date to
+                # correct -- they signed it -- and holding somebody out of
+                # payroll over a year typed into a date picker costs them,
+                # not us. The house rule is fill and flag, and this is the
+                # same thing: the value goes in as given, and the run says
+                # out loud that it cannot be true so a person can ask them.
+                hire.flagged.append((sem, f"{doc} field "
+                                          f"{f.get('field_key')} reads "
+                                          f"{val!r}, which {why} — entered as "
+                                          f"the employee reported it"))
         rank = _doc_rank(doc)
         if sem not in best or rank < best[sem][0]:
             best[sem] = (rank, val)

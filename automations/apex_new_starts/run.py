@@ -207,6 +207,10 @@ def _person_line(c: BRD.Candidate, hire: BID.NewHire) -> str:
         body += f"\n       missing: {', '.join(missing)}"
     for _sem, why in hire.rejected:
         body += f"\n       ⚠️ {why}"
+    # FLAGGED VALUES ARE TYPED, so they must still be SAID -- a doubt nobody
+    # is told about is the same as no doubt at all.
+    for _sem, why in getattr(hire, "flagged", ()):
+        body += f"\n       ⚠️ {why}"
     return body
 
 

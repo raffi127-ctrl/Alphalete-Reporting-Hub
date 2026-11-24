@@ -55,11 +55,51 @@ class ADateOfBirthHasToBePossible(unittest.TestCase):
 class ItIsOnlyAskedOfTheBirthDate(unittest.TestCase):
 
     def test_the_check_is_wired_to_dob_alone(self):
-        import inspect
         from automations.apex_new_starts import blueink_data as BID
-        src = inspect.getsource(BID.one_hire) if hasattr(BID, "one_hire") \
-            else open(BID.__file__).read()
+        with open(BID.__file__) as fh:
+            src = fh.read()
         self.assertIn('if sem == "dob":', src)
+
+
+class ItFlagsRatherThanWithholds(unittest.TestCase):
+    """Megan, 2026-11-23: "we just need to enter in whatever date the
+    employee reported on their DOB even if we know it's incorrect. They are
+    filling out the document legally."
+
+    It is not our date to correct -- they signed it -- and holding somebody
+    out of payroll over a year typed into a date picker costs them, not us.
+    The house rule is fill and flag.
+    """
+
+    def _source(self):
+        from automations.apex_new_starts import blueink_data as BID
+        with open(BID.__file__) as fh:
+            return fh.read()
+
+    def test_a_doubtful_date_is_not_dropped(self):
+        src = self._source()
+        i = src.index('if sem == "dob":')
+        block = src[i:i + 1400]
+        self.assertIn("hire.flagged.append", block)
+        self.assertNotIn("hire.rejected.append", block)
+
+    def test_the_value_is_still_kept(self):
+        """No `continue`: the date has to reach `values` and be typed."""
+        src = self._source()
+        i = src.index('if sem == "dob":')
+        j = src.index("rank = _doc_rank(doc)", i)
+        self.assertNotIn("continue", src[i:j])
+
+    def test_the_flag_says_it_was_entered_anyway(self):
+        """Somebody reading it must not think the value was withheld."""
+        src = self._source()
+        self.assertIn("entered as ", src)
+        self.assertIn("the employee reported it", src)
+
+    def test_the_flag_reaches_the_report(self):
+        import inspect
+        from automations.apex_new_starts import run as R
+        self.assertIn("flagged", inspect.getsource(R))
 
 
 if __name__ == "__main__":
