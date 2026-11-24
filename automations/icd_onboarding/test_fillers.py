@@ -387,3 +387,55 @@ def test_apply_anywhere_tells_apply_which_office_it_is(monkeypatch):
     F.apply_anywhere("raf", MONDAY, "ownerville", {}, dry_run=False)
     assert seen.get("office_key") == "raf", (
         "apply was not told the office, so it writes to the stacked tab")
+
+
+def test_reading_and_writing_reach_the_same_sheet(monkeypatch):
+    """THE INVARIANT THAT WAS MISSING, 2026-11-24.
+
+    `apply` resolved the board with `sheet.board_for`, which knows about an
+    office's own per-week book; `rows_anywhere` used
+    `open_board(workbook_for(...))`, the old stacked tab. So the writes landed
+    on the right tab and the reads came back empty, and every step that reads
+    before it writes quietly did nothing -- Blue Ink, Contact Added and Added
+    to APEX all read 0 of 32 on a week with 32 people on it.
+
+    Silence, not an error, which is why it survived: a step with nobody to
+    write about looks exactly like a step with nothing to do.
+    """
+    import inspect
+    import re
+
+    def code(fn):
+        """The source with comments and docstring removed, so prose in either
+        cannot satisfy -- or fail -- this test. The first version of this
+        check failed on the comment explaining the bug it was pinning."""
+        src = inspect.getsource(fn)
+        src = src.replace(inspect.getdoc(fn) or "\0", "")
+        return "\n".join(re.sub(r"#.*$", "", ln) for ln in src.splitlines())
+
+    for fn in (F.rows_anywhere, F.apply):
+        src = code(fn)
+        assert "board_for" in src, \
+            "%s must reach the board the one way that knows about a per-week " \
+            "book" % fn.__name__
+        assert "open_board(workbook_for(" not in src, \
+            "%s still reaches for the old stacked tab" % fn.__name__
+
+
+def test_rows_anywhere_asks_for_the_week_it_was_given(monkeypatch):
+    """A per-week book has a tab PER WEEK, so the week has to reach
+    `board_for` -- passing only the office key silently gets the old tab."""
+    import datetime as dt
+    from automations.icd_onboarding import sheet as S
+
+    seen = {}
+
+    def fake_board_for(office_key, week_start=None, *, create=False):
+        seen["office"], seen["week"] = office_key, week_start
+        return None
+
+    monkeypatch.setattr(S, "board_for", fake_board_for)
+    monkeypatch.setattr(F, "on_office_machine", lambda k: False)
+    assert F.rows_anywhere("raf", dt.date(2026, 11, 22),
+                           log=lambda *a: None) == []
+    assert seen == {"office": "raf", "week": dt.date(2026, 11, 22)}

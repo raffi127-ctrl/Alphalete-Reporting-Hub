@@ -268,9 +268,22 @@ def rows_anywhere(office_key: str, week_start, *, log=print) -> List[Dict]:
 
     if on_office_machine(office_key):
         return B.for_week(RB.week(office_key, week_start), week_start)
-    ws = S.open_board(workbook_for(office_key), create=False)
+    # `board_for`, NOT `open_board(workbook_for(...))`. The second reads the
+    # old stacked `Onboarding` tab, and every office with a book of their own
+    # -- a tab per week, Megan 2026-11-21 -- has their people somewhere else
+    # entirely. It answered "nobody on the board for that week" about a week
+    # with 32 people on it, and every step that reads before it writes then
+    # did nothing at all: Blue Ink, Contact Added and Added to APEX all read
+    # 0 of 32 on Raf's 11/22 board (found 2026-11-24).
+    #
+    # `apply` has always used `board_for`. So the writes were aimed at the
+    # right tab while the reads were aimed at the old one, which is why this
+    # failed as silence rather than as an error -- the steps had nobody to
+    # write about. `test_fillers` now holds the two to the same sheet.
+    ws = S.board_for(office_key, week_start, create=False)
     if ws is None:
-        log("  no %s tab on this workbook yet" % B.TAB)
+        log("  no board for %s on the week of %s yet"
+            % (office_key, B.week_label(week_start)))
         return []
     return B.for_week(S.rows_of(ws.get_all_values()), week_start)
 
