@@ -101,7 +101,10 @@ def test_contacts_is_a_LOOKUP_even_though_the_sync_could_tick_as_it_adds():
     import inspect
     names = [n for n, _ in R.STEPS]
     assert "contacts" in names
-    src = inspect.getsource(R.from_contacts)
+    # `eco_steps.contacts` IS the step; `R.from_contacts` is the Hub's
+    # name for it, so the body is read where the body lives.
+    from automations.icd_onboarding import eco_steps as ES
+    src = inspect.getsource(ES.contacts)
     # THE ACCOUNT ITSELF, not the sync's notes about what it did. The state
     # file read 98 contacts and matched 0 of Raf's 21 (2026-11-08), and could
     # not say whether the sync had run or had been about other offices.
@@ -113,7 +116,8 @@ def test_no_token_for_the_account_ticks_nothing_rather_than_claiming_nobody():
     """It runs where that account's token is. Anywhere else it is unread --
     never 'nobody has been contacted'."""
     import inspect
-    src = inspect.getsource(R.from_contacts)
+    from automations.icd_onboarding import eco_steps as ES
+    src = inspect.getsource(ES.contacts)
     assert "has_token" in src and "return 0" in src
     # and a read that THROWS is unread too, not an empty account
     assert "could not read" in src
@@ -362,20 +366,21 @@ def _contacts_board(monkeypatch, rows, phones=(), emails=()):
     """One board and one reception account, and no network."""
     from automations.icd_onboarding import sheet as S
     from automations.second_round_contacts import contacts as K
-    monkeypatch.setattr(R, "reception_account", lambda key: "recep@example.com")
+    from automations.icd_onboarding import eco_steps as ES
+    monkeypatch.setattr(ES, "reception_account", lambda key: "recep@example.com")
     monkeypatch.setattr(K, "has_token", lambda a: True)
     monkeypatch.setattr(K, "token_file", lambda a: "tok.json")
     monkeypatch.setattr(K, "service", lambda a: object())
     monkeypatch.setattr(K, "existing_index",
                         lambda svc: ({p: "x" for p in phones},
                                      {e: "x" for e in emails}))
-    monkeypatch.setattr(R.F, "workbook_for", lambda key: "BOOK")
+    monkeypatch.setattr(ES.F, "workbook_for", lambda key: "BOOK")
     class _WS:
         def get_all_values(self):
             return []
     monkeypatch.setattr(S, "open_board", lambda book, create=False: _WS())
     monkeypatch.setattr(S, "rows_of", lambda grid: rows)
-    monkeypatch.setattr(R.B, "for_week", lambda rows, week: rows)
+    monkeypatch.setattr(ES.B, "for_week", lambda rows, week: rows)
     seen = {}
     monkeypatch.setattr(R.F, "apply",
                         lambda book, week, step, verdicts, **k:
@@ -427,7 +432,8 @@ def test_a_matching_NAME_alone_never_ticks(monkeypatch):
 def test_an_office_with_no_reception_account_is_said_not_ticked(monkeypatch):
     """Every ICD gets their own reception Gmail (Megan, 2026-11-11). One that
     has not been given one yet is UNREAD, not a week where nobody was rung."""
-    monkeypatch.setattr(R, "reception_account", lambda key: "")
+    from automations.icd_onboarding import eco_steps as ES
+    monkeypatch.setattr(ES, "reception_account", lambda key: "")
     said = []
     assert R.from_contacts("raf", MONDAY, dry_run=True,
                            log=lambda *a: said.append(" ".join(map(str, a)))) == 0
@@ -436,7 +442,8 @@ def test_an_office_with_no_reception_account_is_said_not_ticked(monkeypatch):
 
 def test_an_account_this_machine_has_no_token_for_is_skipped(monkeypatch):
     from automations.second_round_contacts import contacts as K
-    monkeypatch.setattr(R, "reception_account", lambda key: "recep@example.com")
+    from automations.icd_onboarding import eco_steps as ES
+    monkeypatch.setattr(ES, "reception_account", lambda key: "recep@example.com")
     monkeypatch.setattr(K, "has_token", lambda a: False)
     monkeypatch.setattr(K, "token_file", lambda a: "tok.json")
     said = []

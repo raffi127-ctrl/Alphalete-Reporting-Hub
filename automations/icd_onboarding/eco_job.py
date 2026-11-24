@@ -145,11 +145,28 @@ def _take_lock() -> None:
 
 
 def offices() -> list:
-    """The offices this machine works, as the board itself decides it."""
+    """The offices this machine works.
+
+    ASKED OF `eco_steps`, which SHIPS, not of `icd_onboarding.run`, which
+    cannot: that module is the Hub's runner and reaches OwnerVille and gspread
+    through its siblings. Both answer off the same enrolment through
+    `config.base_office_key`, so there is one answer to whose board this is.
+    """
     try:
-        from automations.icd_onboarding import run as R
-        return list(R.offices_here())
+        from automations.icd_onboarding import eco_steps as ES
+        return list(ES.offices())
     except Exception:       # noqa: BLE001 -- not an enrolled machine
+        return []
+
+
+def steps_here() -> list:
+    """The step names this machine can do for itself, newest first in the list
+    they are added to. Empty means there is nothing to run, which is the
+    correct answer on a box whose copy is older than the step."""
+    try:
+        from automations.icd_onboarding import eco_steps as ES
+        return [n for n, _ in ES.STEPS]
+    except Exception:       # noqa: BLE001
         return []
 
 
@@ -198,8 +215,12 @@ def _start(args: list, log) -> bool:
         out.write("\n[%s] %s\n" % (dt.datetime.now().isoformat(timespec="seconds"),
                                    " ".join(args)))
         out.flush()
+        # `eco_steps`, not `icd_onboarding.run`: the second is the Hub's
+        # runner and its steps reach Google Sheets and the Hub's OwnerVille
+        # session. This machine runs the steps that reach their source the
+        # ECO way, with its own logins, and writes through the relay.
         subprocess.Popen([sys.executable, "-u", "-m",
-                          "automations.icd_onboarding.run"] + args,
+                          "automations.icd_onboarding.eco_steps"] + args,
                          stdout=out, stderr=subprocess.STDOUT, **kw)
     except Exception as e:  # noqa: BLE001 -- never lose a tick to this
         log("onboarding board could not start: %s" % type(e).__name__)
@@ -234,7 +255,13 @@ def maybe_run(log=print, now: Optional[dt.datetime] = None) -> bool:
     # starts per tick. They drive the SAME ApplicantStream profile, and the
     # walk is the one with a deadline on it: the Blue Ink send at 7:30 the next
     # morning is what must not mail documents to somebody who did not come.
-    if no_shows_due(now, state):
+    #
+    # ONLY IF THIS MACHINE HAS THAT STEP. The walk is a seven-page
+    # ApplicantStream read and its ECO reader is not built yet, so asking for
+    # it here would start a pass with nothing to do every night and mark the
+    # day done. A step this copy does not have is simply not run.
+    can = steps_here()
+    if "no_shows" in can and no_shows_due(now, state):
         if not _start(["--only", "no_shows", "--write"], log):
             return False
         state["no_shows_day"] = now.date().isoformat()
@@ -243,7 +270,7 @@ def maybe_run(log=print, now: Optional[dt.datetime] = None) -> bool:
         log("onboarding: no-shows walk started in the background")
         return True
 
-    if not board_due(now, state):
+    if not can or not board_due(now, state):
         return False
     if not _start(["--write"], log):
         return False

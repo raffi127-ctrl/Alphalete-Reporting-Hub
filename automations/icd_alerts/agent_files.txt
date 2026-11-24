@@ -1,6 +1,6 @@
 # The files that make up the Lucy Reports agent, one per line.
 # Generated from package.AGENT_FILES -- see test_knocks.UpdateScriptTests.
-# release: 2026.11.24.4   <- must equal agent_release.txt (selfupdate refuses a stale list)
+# release: 2026.11.24.5   <- must equal agent_release.txt (selfupdate refuses a stale list)
 automations/icd_alerts/__init__.py
 automations/icd_alerts/config.py
 automations/icd_alerts/relay.py
@@ -112,3 +112,5 @@ automations/brand_audit/credentials.py
 automations/shared/names.py
 automations/bg_check_sync/__init__.py
 automations/bg_check_sync/parse.py
+automations/icd_onboarding/fillers.py
+automations/icd_onboarding/eco_steps.py

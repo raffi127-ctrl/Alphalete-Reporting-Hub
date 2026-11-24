@@ -250,6 +250,15 @@ AGENT_FILES = [
     "automations/shared/names.py",
     "automations/bg_check_sync/__init__.py",
     "automations/bg_check_sync/parse.py",
+    # THE FIRST STEP THE OFFICE DOES FOR ITSELF (Megan, 2026-11-24: "we
+    # need it to work like lucy eco does"). `eco_steps` holds the step
+    # bodies that reach their source the ECO way -- today Contact Added,
+    # read off the office's OWN reception Google Contacts -- and `fillers`
+    # is what routes every read and write through the relay on a machine
+    # with no Google access. `run.py` delegates to it, so a step has one
+    # implementation and not a Hub copy beside an office copy.
+    "automations/icd_onboarding/fillers.py",
+    "automations/icd_onboarding/eco_steps.py",
 ]
 
 # NEW STARTS -> APEX: DECLARED, NOT DELIVERED. (2026-11-11)
@@ -327,6 +336,28 @@ APEX_WEEK_FILES = [
 # push never calls. test_resume_walk_ships pins both, so an entry here cannot
 # quietly become a crash.
 HUB_ONLY_IMPORTS = {
+    # THE GSPREAD HALF OF THE BOARD, never reached on an office machine.
+    # `fillers` chooses its route with `on_office_machine` (relay_board): on an
+    # office Mac every read and write goes through the relay, and
+    # `workbook_for` -- the only thing in this file that opens a Sheet -- is
+    # not called at all. Pinned by test_fillers, which holds every board
+    # resolver to `sheet.board_for`, and by the relay path's own tests.
+    ("automations/icd_onboarding/fillers.py",
+     "automations.recruiting_report.fill", "workbook_for"),
+    ("automations/icd_onboarding/fillers.py",
+     "automations.office_metrics", "workbook_for"),
+    ("automations/icd_onboarding/fillers.py",
+     "automations.shared.workbooks", "workbook_for"),
+    # The second-round ROSTER is ours: a Google Sheet. An office machine
+    # answers from what the ICD told the installer
+    # (onboarding_setup.reception_email) and never reaches this; the whole
+    # fallback sits in one try, and an unreachable roster answers "" rather
+    # than raising -- which is why a box without it skips the step instead of
+    # claiming nobody has been contacted.
+    ("automations/icd_onboarding/eco_steps.py",
+     "automations.icd_onboarding", "reception_account"),
+    ("automations/icd_onboarding/eco_steps.py",
+     "automations.second_round_contacts", "reception_account"),
     # Best effort, inside try: the walk goes on without them.
     ("automations/oat_processing/run.py", "automations.recruiting_report",
      "_write_walk_diag"),

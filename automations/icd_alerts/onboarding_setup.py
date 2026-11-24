@@ -271,8 +271,11 @@ def _the_switch(log) -> str:
         from automations.icd_onboarding import eco_job as J
     except Exception:       # noqa: BLE001
         return "not available yet"
+    can = ", ".join(J.steps_here()) or "no steps yet on this copy"
+    log("")
+    log("  Steps this computer can do for itself: %s" % can)
     if J.switched_on():
-        return "ON -- the board runs hourly on this computer"
+        return "ON -- runs hourly on this computer (%s)" % can
     return ("ready, switched OFF on purpose (turn it on with "
             "`python -m automations.icd_onboarding.eco_job --on`)")
 

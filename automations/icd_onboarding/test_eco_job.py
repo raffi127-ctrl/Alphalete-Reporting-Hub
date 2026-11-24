@@ -112,10 +112,46 @@ def test_the_no_shows_walk_goes_first_when_both_are_due(monkeypatch):
     started = []
     monkeypatch.setattr(J, "_start", lambda a, log: started.append(a) or True)
     monkeypatch.setattr(J, "offices", lambda: ["raf"])
+    monkeypatch.setattr(J, "steps_here", lambda: ["contacts", "no_shows"])
     J.switch_on("test")
     at_night = dt.datetime(2026, 11, 24, 21, 30)
     assert J.maybe_run(log=lambda *a: None, now=at_night) is True
     assert started == [["--only", "no_shows", "--write"]]
+
+
+def test_a_step_this_copy_does_not_have_is_never_asked_for(monkeypatch):
+    """The no-shows walk is a seven-page ApplicantStream read whose ECO reader
+    is not built yet. Asking for it anyway would start a pass with nothing to
+    do every night AND mark the day done, so the walk would be skipped for
+    real on the day it finally lands."""
+    started = []
+    monkeypatch.setattr(J, "_start", lambda a, log: started.append(a) or True)
+    monkeypatch.setattr(J, "offices", lambda: ["raf"])
+    monkeypatch.setattr(J, "steps_here", lambda: ["contacts"])
+    J.switch_on("test")
+    at_night = dt.datetime(2026, 11, 24, 21, 30)
+    assert J.maybe_run(log=lambda *a: None, now=at_night) is False
+    assert started == []
+    assert J.no_shows_due(at_night, J._load()) is True, \
+        "and the day must NOT have been marked done"
+
+
+def test_nothing_runs_on_a_copy_with_no_steps_at_all(monkeypatch):
+    started = []
+    monkeypatch.setattr(J, "_start", lambda a, log: started.append(a) or True)
+    monkeypatch.setattr(J, "offices", lambda: ["raf"])
+    monkeypatch.setattr(J, "steps_here", lambda: [])
+    J.switch_on("test")
+    assert J.maybe_run(log=lambda *a: None,
+                       now=dt.datetime(2026, 11, 24, 12, 0)) is False
+    assert started == []
+
+
+def test_what_it_can_do_comes_from_eco_steps():
+    """`icd_onboarding.run` is the Hub's runner and cannot ship, so the clock
+    asks the module that CAN -- and both answer off the same enrolment."""
+    from automations.icd_onboarding import eco_steps as ES
+    assert J.steps_here() == [n for n, _ in ES.STEPS]
 
 
 def test_the_write_flag_is_on_the_scheduled_pass():
