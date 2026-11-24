@@ -30,6 +30,12 @@ person is on exactly one office's week. Somebody on two boards is REPORTED and
 ticked on neither — the OwnerVille sweep's rule — because a background check
 recorded against the wrong person at the wrong office is worse than one that
 needs a human to place.
+
+WHEN THIS GOES TO SLACK (onboarding rollout): each office's "BG Status — New
+Starts" thread must post the same way Raf's does (bg_check_sync.slack_post),
+AND gets the daily 5 PM office-local owner tag (Raf, 2026-11-24). That tag is
+bg_check_sync/owner_tag.py: add the office's channel id → owner Slack id + time
+zone to its OWNERS, and pass `people=` to post_or_update. Nothing else.
 """
 from __future__ import annotations
 

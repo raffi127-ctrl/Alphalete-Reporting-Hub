@@ -505,7 +505,8 @@ def process_week(sh, monday, events, *, dry_run, do_post, repost, now,
         body = slack_post.render(week, slack_people, needs_confirm, updated_str,
                                  unbacked=unbacked)
         slack_post.post_or_update(week, body, dry_run=not do_post,
-                                  repost=repost, today=now.date().isoformat())
+                                  repost=repost, today=now.date().isoformat(),
+                                  people=slack_people)
 
     if far_unbacked is not None and not do_slack:
         # No thread this week to carry them, so hand them up to ride the

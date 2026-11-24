@@ -20,7 +20,7 @@ import os
 from pathlib import Path
 
 from automations.shared import slack_metrics_post as smp
-from automations.bg_check_sync import parse
+from automations.bg_check_sync import owner_tag, parse
 from automations.shared.new_start_steps import SLACK_CHANNEL_ID
 
 # 2026-08-22: Raf is retiring #rafs-office-recruiting (C06881A7WLV), so the post
@@ -130,7 +130,8 @@ def _week_channels(state: dict, week_date: str) -> dict:
 
 
 def post_or_update(week_date: str, body: str, *, dry_run: bool = True,
-                   repost: bool = False, today: str | None = None) -> dict:
+                   repost: bool = False, today: str | None = None,
+                   people: list | None = None) -> dict:
     """Post the weekly parent+reply if new; otherwise edit the existing reply.
 
     Runs once PER CHANNEL in CHANNELS — each room keeps its own parent/reply ts,
@@ -141,7 +142,11 @@ def post_or_update(week_date: str, body: str, *, dry_run: bool = True,
     FRESH parent+reply at the bottom of the channel with the same current content
     so it's visible going into the start week — but only once per day (guarded by
     `reposted_on` so the 3x/day runs don't stack copies). `today` is an ISO date
-    string used for that once-a-day guard. Returns {channel_id: entry}."""
+    string used for that once-a-day guard. Returns {channel_id: entry}.
+
+    `people` ([(name, status)]) turns on the daily 5 PM owner tag
+    (owner_tag.py): a separate reply mentioning the office owner with what
+    changed since yesterday. Omitted -> no tag, exactly as before."""
     state = _load_state()
     chans = _week_channels(state, week_date)
 
@@ -157,6 +162,8 @@ def post_or_update(week_date: str, body: str, *, dry_run: bool = True,
             print(f"[slack dry-run] {name} ({cid}) · week {week_date} · {action}")
         print()
         print(body)
+        if people is not None:
+            owner_tag.maybe_tag(week_date, people, chans, dry_run=True)
         return chans or {"dry_run": True}
 
     # The USER token (_client) is 'Lucy' on the mini and is what every live
@@ -182,7 +189,13 @@ def post_or_update(week_date: str, body: str, *, dry_run: bool = True,
         do_repost = bool(entry) and repost and entry.get("reposted_on") != today
         try:
             if not entry or do_repost:
+                old = entry or {}
                 entry = _post_fresh(cid)
+                # The Friday repost is a new parent, not a new day: keep the
+                # owner tag's memory so the next 5 PM still diffs correctly.
+                for k in ("tagged_on", "tag_snapshot"):
+                    if k in old:
+                        entry[k] = old[k]
                 chans[cid] = entry
                 print(f"[slack] {'REPOSTED' if do_repost else 'POSTED new'} "
                       f"{name} week {week_date} parent={entry['parent_ts']} "
@@ -196,6 +209,10 @@ def post_or_update(week_date: str, body: str, *, dry_run: bool = True,
             # cost the other room its update — the sheet write already happened.
             failures.append((name, cid, e))
             print(f"[slack] !! {name} ({cid}) FAILED: {e}")
+
+    if people is not None:
+        owner_tag.maybe_tag(week_date, people, chans, client=client,
+                            dry_run=False)
 
     # Save whatever landed, so a later run edits instead of double-posting.
     state[week_date] = {"channels": chans}
