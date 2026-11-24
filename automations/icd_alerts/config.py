@@ -532,6 +532,41 @@ def active_enrollments() -> "List[Dict]":
             if str(r.get("office_key", "")).strip().lower() not in PAUSED_KEYS]
 
 
+def base_office_key(key: str) -> str:
+    """The OFFICE an enrolment key belongs to, whichever way its campaign is
+    spelt. "" when there is nothing to reduce.
+
+    AN OFFICE CAN RUN MORE THAN ONE CAMPAIGN and each is its own enrolment
+    key, but some things belong to the OFFICE and not to the campaign -- the
+    onboarding board most of all: one office, one board, whichever campaign a
+    new start is hired under.
+
+    THE SUFFIX IS SPELT TWO WAYS, and that is the whole reason this exists:
+
+        carlos-b2batt   jennifer-att   khalil-nds      a dash
+        jamis10                                        trailing digits
+
+    `key.split("-")[0]` was the rule, which handles the first shape and not
+    the second -- so a machine enrolled for `jamis10` asked for an onboarding
+    board under that name, there is no workbook by it, and the board read as
+    EMPTY. Silence, not an error: a board with nobody on it looks exactly like
+    an office with nothing to do, which is how this package has already lost
+    three columns for a week ([[feedback_empty_means_proven_zero]]).
+
+    THE BASE IS ALWAYS LETTERS. `enroll.office_key_for` mints it as
+    `re.sub(r"[^a-z]", "", first.lower())` -- the owner's first name, letters
+    only -- so the leading run of lowercase letters IS the office, and nothing
+    legitimate is a bare number. A key that starts with something else is left
+    alone rather than guessed at: reducing it to "" would read some other
+    office's board, and the one thing worse than no answer is a confident
+    wrong one.
+    """
+    import re
+    said = str(key or "").strip().lower()
+    m = re.match(r"[a-z]+", said)
+    return m.group(0) if m else said
+
+
 def enrollments() -> "List[Dict]":
     """Every campaign this machine relays, one record each.
 

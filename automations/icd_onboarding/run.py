@@ -706,7 +706,20 @@ def reception_account(office_key: str) -> str:
     Megan, 2026-11-11: "each ICD will have their own reception email" -- so
     this is a per-office login like OwnerVille or Blue Ink, not one account
     every office would have to be given a key to.
+
+    ON THIS OFFICE'S OWN COMPUTER the roster is unreachable -- it is a Google
+    Sheet -- so the address the ICD gave the installer
+    (`icd_alerts.onboarding_setup.reception_email`) is the answer there. Asked
+    of the machine FIRST, because a machine that has been told is never wrong
+    about its own office, and the roster read costs a Sheets call.
     """
+    try:
+        from automations.icd_alerts import onboarding_setup as OS
+        said = OS.reception_email()
+        if said:
+            return said
+    except Exception:      # noqa: BLE001 -- not an ECO machine
+        pass
     from automations.second_round_contacts import roster as SR
     want = str(_appstream_id(office_key) or "").strip()
     if not want:
@@ -1093,10 +1106,13 @@ def offices_here() -> List[str]:
     out = []
     for r in rows:
         key = str(r.get("office_key") or "").strip().lower()
-        # A second campaign's key hangs off the same office (jamis / jamis10);
-        # the board is the office's, so the first one wins.
-        base = key.split("-")[0]
-        if key and base not in out:
+        # A second campaign's key hangs off the same office and the board is
+        # the OFFICE's, so every campaign reduces to one key. ONE DEFINITION,
+        # in config: the suffix is spelt two ways (carlos-b2batt, jamis10) and
+        # the rule here handled only the dash -- so `jamis10` asked for a
+        # board nothing owns and read as empty (2026-11-24).
+        base = AC.base_office_key(key)
+        if key and base and base not in out:
             out.append(base)
     return out
 

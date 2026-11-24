@@ -45,7 +45,11 @@ from automations.icd_onboarding import board as B
 # the Week of value to filter by on the old stacked tab. An office part-way
 # through the move needs whichever one its book actually has, and the relay
 # picks -- sending only one would break the other shape.
-from automations.icd_onboarding import book as K
+# The one name this needs from the per-week book, out of the module that
+# SHIPS: `book`'s siblings open Google Sheets, which an office's own
+# computer has no access to -- and this file is that machine's only way
+# to reach its board.
+from automations.shared import onboarding_week as K
 
 
 class RelayBoardError(RuntimeError):

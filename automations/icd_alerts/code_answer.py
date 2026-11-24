@@ -843,8 +843,10 @@ SCOPE_STAMP_NAME = "code-forward-scope.txt"
 SCOPE_EVERY_MIN = 60
 # Offices whose WHOLE inbox forwards here on purpose (several forwards set up
 # for their own reports), so "forwards more than its codes" is expected, not a
-# fault. Matched on the key before any "-" (carlos-b2batt -> carlos). Still
-# logged; just never told (Megan, 2026-11-08).
+# fault. Matched on the OFFICE the key belongs to (config.base_office_key:
+# carlos-b2batt -> carlos, jamis10 -> jamis), so a second campaign cannot
+# make an expected forward read as a fault. Still logged; just never told
+# (Megan, 2026-11-08).
 SCOPE_WIDE_OK = frozenset({"raf", "rafael", "carlos",
                            # Luke forwards his whole Gmail; Eve set up her own
                            # stopgap and asked for the alert to stop
@@ -919,7 +921,7 @@ def check_forward_scope(book=None, *, send: bool = False,
             at, office, note = where[address]
             wide.append((office, n))
             log("FWD    %-10s forwarded %d mails that are not login codes" % (office, n))
-            if office.lower().split("-")[0] in SCOPE_WIDE_OK:
+            if C.base_office_key(office) in SCOPE_WIDE_OK:
                 continue
             if send and word not in note:
                 sheet.update_cell(at, 4, ("%s; %s" % (note, word)).strip("; "))

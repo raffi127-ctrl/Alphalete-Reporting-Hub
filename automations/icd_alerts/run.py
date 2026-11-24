@@ -1094,6 +1094,19 @@ def _main(argv=None) -> int:
         except Exception as e:  # noqa: BLE001 — never lose a sweep to this
             _log("office jobs skipped: %s" % type(e).__name__)
 
+        # THIS OFFICE'S ONBOARDING BOARD, hourly 6am-8pm, plus the no-shows
+        # walk once a night. Ahead of the gate like headshots and the push:
+        # onboarding keeps OFFICE hours, not selling hours, and the people it
+        # is about start in the morning. Detached, so a walk through
+        # ApplicantStream and OwnerVille never holds the next tick's
+        # credit-check read (icd_onboarding.eco_job). Does nothing at all
+        # until the board is switched on for this machine.
+        try:
+            from automations.icd_onboarding import eco_job
+            eco_job.maybe_run(log=_log)
+        except Exception as e:  # noqa: BLE001 — never lose a sweep to this
+            _log("onboarding board skipped: %s" % type(e).__name__)
+
         # THE OWNER'S PNL, for an office that asked for it. Office hours, its
         # own state file; today only the one-time DD check (see pnl.py).
         try:

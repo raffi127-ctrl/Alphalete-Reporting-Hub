@@ -1,6 +1,6 @@
 # The files that make up the Lucy Reports agent, one per line.
 # Generated from package.AGENT_FILES -- see test_knocks.UpdateScriptTests.
-# release: 2026.11.24.3   <- must equal agent_release.txt (selfupdate refuses a stale list)
+# release: 2026.11.24.4   <- must equal agent_release.txt (selfupdate refuses a stale list)
 automations/icd_alerts/__init__.py
 automations/icd_alerts/config.py
 automations/icd_alerts/relay.py
@@ -92,3 +92,23 @@ automations/icd_alerts/sealed.py
 automations/brand_audit/__init__.py
 automations/brand_audit/config.py
 automations/brand_audit/zoho_draft.py
+automations/shared/onboarding_week.py
+automations/icd_onboarding/__init__.py
+automations/icd_onboarding/board.py
+automations/icd_onboarding/relay_board.py
+automations/icd_onboarding/eco_job.py
+automations/icd_alerts/onboarding_setup.py
+automations/second_round_contacts/__init__.py
+automations/second_round_contacts/config.py
+automations/second_round_contacts/state.py
+automations/second_round_contacts/contacts.py
+automations/applicant_contacts/__init__.py
+automations/applicant_contacts/extract.py
+automations/applicant_contacts/contacts.py
+automations/fiber_owners_distro/__init__.py
+automations/fiber_owners_distro/roster.py
+automations/fiber_owners_distro/contacts_write.py
+automations/brand_audit/credentials.py
+automations/shared/names.py
+automations/bg_check_sync/__init__.py
+automations/bg_check_sync/parse.py

@@ -394,6 +394,37 @@ def _leader_in_calendar(log) -> str:
     return LIC.run(log)
 
 
+def _onboarding_board(log) -> str:
+    """Set this machine up to run its own onboarding board, if it does onboarding.
+
+    ONLY FOR AN OFFICE THAT HAS TAKEN IT ON. Megan, 2026-11-13, on George's
+    install summary: "the main eco installer shouldn't ask for blue ink -
+    that's for a sterling/bg enrollment anyways". A Sterling login on file is
+    what says this office does onboarding, so an office that does not is never
+    asked any of it and sees one skipped line.
+
+    IT IS HERE AND NOT ONLY A SECOND LINK because this file is the only link
+    an office is ever sent, and a step the installer never offers is a step
+    that will not be tested on Raf's machine and will not reach anybody else
+    ([[project_eco_onboarding_pilot]]). The sub-installer prints its own
+    steps; this folds them into one word for the summary below.
+
+    IT SWITCHES NOTHING ON. `onboarding_setup` leaves the hourly run off, and
+    says so ([[feedback_onboarding_nothing_live_till_built]]).
+    """
+    try:
+        if not C.sterling_creds():
+            return "not needed for this office"
+    except Exception:  # noqa: BLE001
+        return "not needed for this office"
+    try:
+        from automations.icd_alerts import onboarding_setup as OS
+    except Exception:  # noqa: BLE001 — older copy, update failed
+        return "not available yet"
+    return "done" if OS.run(log=log) == 0 \
+        else "some of it still needs doing (see above)"
+
+
 def run(log=print, skip_box: bool = False) -> int:
     log("")
     log("  Getting this computer fully set up. Anything already done is")
@@ -408,7 +439,8 @@ def run(log=print, skip_box: bool = False) -> int:
                     _service_cloud_deferred if skip_box else _service_cloud),
                    ("OwnerVille sign-in", _ownerville),
                    ("Resume pushing", _resume_push),
-                   ("Leader In Calendar", _leader_in_calendar)]
+                   ("Leader In Calendar", _leader_in_calendar),
+                   ("Onboarding board", _onboarding_board)]
     # NOT HERE: Blue Ink and the onboarding-documents question. Both belong
     # to the Sterling / background-check enrolment (`sterling_setup`), which
     # an office runs when it takes on onboarding -- not to the main ECO

@@ -203,6 +203,53 @@ AGENT_FILES = [
     "automations/icd_alerts/messages_probe.py",
     # SaraPlus's code read off the owner's texts in Messages (Eve 2026-10-31).
     "automations/icd_alerts/sms_code.py",
+    # THE ONBOARDING BOARD ON THE OFFICE'S OWN COMPUTER (Megan, 2026-11-24:
+    # "build an installer now like we have for Lucy Eco to run on the ICDs
+    # machine to fully launch all of these steps on an eco machine").
+    #
+    # THE INSTALLER AND THE CLOCK, NOT THE STEPS. `onboarding_setup` puts every
+    # per-office login on the machine and PROVES each one; `eco_job` is the
+    # clock the board will run on, and it is inert here on purpose -- what it
+    # would start is `icd_onboarding.run`, which cannot ship (see
+    # ONBOARDING_STEP_FILES below for the measurement and what is in the way).
+    # So an office machine can be got READY now, which is the half that needs
+    # somebody sitting at it, and the steps follow without another visit.
+    #
+    # `relay_board` is this machine's ONLY way to the board: the board is a
+    # Google Sheet and an office Mac has no Google access at all. `board` is
+    # pure (column names, week maths) and `shared/onboarding_week` is what
+    # `tab_name` moved into so this set would close.
+    #
+    # The contacts chain is here for ONE step, Contact Added: Megan, 2026-11-11,
+    # "each ICD will have their own reception email", so the account it reads is
+    # the office's own and the token belongs on the office's own computer. It
+    # has been running on Lucy 1 against Alphalete's account, which is the right
+    # answer for exactly one office.
+    "automations/shared/onboarding_week.py",
+    "automations/icd_onboarding/__init__.py",
+    "automations/icd_onboarding/board.py",
+    "automations/icd_onboarding/relay_board.py",
+    "automations/icd_onboarding/eco_job.py",
+    "automations/icd_alerts/onboarding_setup.py",
+    "automations/second_round_contacts/__init__.py",
+    "automations/second_round_contacts/config.py",
+    "automations/second_round_contacts/state.py",
+    "automations/second_round_contacts/contacts.py",
+    "automations/applicant_contacts/__init__.py",
+    "automations/applicant_contacts/extract.py",
+    "automations/applicant_contacts/contacts.py",
+    "automations/fiber_owners_distro/__init__.py",
+    "automations/fiber_owners_distro/roster.py",
+    "automations/fiber_owners_distro/contacts_write.py",
+    "automations/brand_audit/credentials.py",
+    # `board.status_rank` ranks the two background-check columns with
+    # bg_check_sync's OWN table, so the board and the OBCL agree about
+    # what counts as further along -- and that ranking IS the on-only
+    # rule, so it has to work on an office machine rather than be
+    # guarded away. Both files are pure parsing (stdlib + shared.names).
+    "automations/shared/names.py",
+    "automations/bg_check_sync/__init__.py",
+    "automations/bg_check_sync/parse.py",
 ]
 
 # NEW STARTS -> APEX: DECLARED, NOT DELIVERED. (2026-11-11)

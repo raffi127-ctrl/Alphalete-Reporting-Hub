@@ -65,22 +65,11 @@ import os as _os
 RELAY_ACCOUNT = _os.environ.get("LUCY_RELAY_ACCOUNT", "raffi127@gmail.com")
 
 
-def tab_name(week_start: dt.date) -> str:
-    """The tab for a week, named for its MONDAY the way the OBCL names its.
-
-    TWO CONVENTIONS MEET HERE AND THEY ARE A DAY APART. The board's `Week of`
-    column holds the SUNDAY (`board.week_label`), because the week runs
-    Sunday to Saturday to match ApplicantStream's Retention Report. The OBCL
-    names its tabs for the MONDAY -- "D2D OBCL 11.23" is the week those
-    people start. So the tab is the Sunday PLUS one, not the calendar Monday
-    on or before the date.
-
-    Subtracting `weekday()` is the obvious thing and it is wrong: a Sunday
-    has weekday 6, so 11/15 would land on OBCL 11.9 -- a week early, and
-    every row filed against the wrong week.
-    """
-    monday = B.week_start_of(week_start) + dt.timedelta(days=1)
-    return "OBCL %d.%d" % (monday.month, monday.day)
+# MOVED to automations/shared/onboarding_week.py on 2026-11-24 so it can ship
+# to an office's own computer (relay_board is that machine's only way to the
+# board and needs this one name). Re-exported, so every caller here is
+# unchanged -- the same move week_start_of made on 2026-11-11.
+from automations.shared.onboarding_week import tab_name    # noqa: E402,F401
 
 
 def week_of(title: str, year: int) -> Optional[dt.date]:

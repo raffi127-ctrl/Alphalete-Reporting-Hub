@@ -34,3 +34,29 @@ def week_start_of(day: dt.date) -> dt.date:
 def week_label(week_start: dt.date) -> str:
     """'11/08/2026' -- the Sunday, which is what the Week of column holds."""
     return week_start_of(week_start).strftime("%m/%d/%Y")
+
+
+def tab_name(week_start: dt.date) -> str:
+    """The per-week tab for a week, named for its MONDAY the way the OBCL names
+    its own -- 'OBCL 11.23'.
+
+    MOVED HERE 2026-11-24 so it can SHIP, for the same reason `week_start_of`
+    was. `icd_onboarding.relay_board` is the only way an office's own computer
+    reaches its board, and it needs this one name; it was reaching into
+    `icd_onboarding.book`, whose siblings open Google Sheets -- which that
+    machine has no access to at all. `book` re-exports it, so every existing
+    caller is unchanged.
+
+    TWO CONVENTIONS MEET HERE AND THEY ARE A DAY APART. The board's `Week of`
+    column holds the SUNDAY (`week_label`), because the week runs Sunday to
+    Saturday to match ApplicantStream's Retention Report. The OBCL names its
+    tabs for the MONDAY -- "D2D OBCL 11.23" is the week those people start. So
+    the tab is the Sunday PLUS one, not the calendar Monday on or before the
+    date.
+
+    Subtracting `weekday()` is the obvious thing and it is wrong: a Sunday has
+    weekday 6, so 11/15 would land on OBCL 11.9 -- a week early, and every row
+    filed against the wrong week.
+    """
+    monday = week_start_of(week_start) + dt.timedelta(days=1)
+    return "OBCL %d.%d" % (monday.month, monday.day)
