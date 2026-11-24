@@ -279,6 +279,57 @@ def backfill_funnels(ws, week_start: dt.date, fresh: List[Dict],
     return len(data)
 
 
+def move_starts(ws, moved: List[Dict], log=print) -> int:
+    """Write a corrected START DAY onto rows already on the board.
+
+    TWO CELLS, `Start` and `Week of`, and nothing else (Megan, 2026-11-23:
+    "update Start and Week only ... every tick, every step column, every note
+    stays exactly as it is"). The alternative -- a second row on the new day --
+    would split one person's finished steps across two rows, and whichever row
+    a later step found first would be the one it ticked.
+
+    This is the ONE place the board overwrites a cell that already says
+    something, which is why `board.merge` decides and this only writes: a
+    start day is a fact about the future that the calendar is the authority on,
+    where every other column records something that already happened.
+
+    Addresses each row by `row_number`, never by counting: the rows between
+    this week's are other weeks' people and a divider line, and arithmetic off
+    the list index wrote two people's columns two rows up on 2026-11-22.
+    """
+    if not moved:
+        return 0
+    cols = layout(_values(ws))
+    if not cols or "Start" not in cols:
+        return 0
+    writes, said = [], []
+    for m in moved:
+        row = m.get("row") or {}
+        try:
+            n = row_number(row)
+        except RuntimeError:
+            # A row that cannot say where it came from is left alone. The
+            # whole point of this function is that it overwrites, so a guess
+            # at the row number would overwrite the wrong person.
+            log("  start day: %s %s has no sheet row — left alone"
+                % (row.get("Name", ""), row.get("Last Name", "")))
+            continue
+        writes.append({"range": "%s%d" % (_a1(cols["Start"] + 1), n),
+                       "values": [[m.get("Start", "")]]})
+        if B.WEEK in cols and m.get(B.WEEK):
+            writes.append({"range": "%s%d" % (_a1(cols[B.WEEK] + 1), n),
+                           "values": [[m[B.WEEK]]]})
+        said.append("%s %s %s -> %s"
+                    % (row.get("Name", ""), row.get("Last Name", ""),
+                       m.get("was") or "(blank)", m.get("Start", "")))
+    if not writes:
+        return 0
+    ws.batch_update(writes, value_input_option="USER_ENTERED")
+    for line in said:
+        log("  start day moved: %s" % line)
+    return len(said)
+
+
 def ensure_dividers(ws, week_start: dt.date, log=print) -> int:
     """Put a labelled divider above each funnel's rows, on ANY week.
 
@@ -363,9 +414,16 @@ def seed(workbook, week_start: dt.date, people: List[Dict],
         existing = B.for_week(all_rows, week_start)
     fresh = B.seed_rows(people, started=week_start)
     plan = B.merge(existing, fresh)
-    log("  week of %s: %d already there, %d to add%s"
+    log("  week of %s: %d already there, %d to add%s%s"
         % (B.week_label(week_start), plan["keep"], len(plan["add"]),
-           ", %d marked off" % len(plan["left"]) if plan["left"] else ""))
+           ", %d marked off" % len(plan["left"]) if plan["left"] else "",
+           ", %d start day(s) moved" % len(plan.get("moved") or [])
+           if plan.get("moved") else ""))
+    for m in (plan.get("moved") or []):
+        log("    %s %s: calendar now says %s, board says %s"
+            % ((m.get("row") or {}).get("Name", ""),
+               (m.get("row") or {}).get("Last Name", ""),
+               m.get("Start", ""), m.get("was") or "(blank)"))
     if dry_run:
         return plan
     # THE SEED CREATES ITS OWN COLUMNS. It used to rely on `fillers.apply`
@@ -379,6 +437,14 @@ def seed(workbook, week_start: dt.date, people: List[Dict],
     except Exception as e:   # noqa: BLE001 — never fail a seed over a header
         log("  (could not add missing columns: %s)" % type(e).__name__)
     backfill_funnels(ws, week_start, fresh, log=log)
+    # A START DAY THE CALENDAR HAS MOVED, onto the row that is already there.
+    # Before the early return below, because a week where nobody is new is
+    # exactly the week a start day slides -- somebody brought on board last
+    # week whose first day the office pushed back.
+    try:
+        move_starts(ws, plan.get("moved") or [], log=log)
+    except Exception as e:   # noqa: BLE001 — never fail a seed over this
+        log("  (start days not moved: %s: %s)" % (type(e).__name__, str(e)[:120]))
     if not plan["add"]:
         # Nobody new, but the week may still be owed its lines -- that is
         # every week seeded before the funnel was known.

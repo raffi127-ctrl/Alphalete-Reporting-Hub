@@ -30,7 +30,7 @@ class FakeWS:
     def update(self, values=None, range_name=None):
         self.updates.append((range_name, values))
 
-    def batch_update(self, items):
+    def batch_update(self, items, **kw):
         self.updates.extend((i["range"], i["values"]) for i in items)
 
     def format(self, ranges, fmt):
@@ -560,3 +560,94 @@ class TestAnAskDoesNotWedgeTheStep:
         from automations.icd_onboarding import fillers as F
         assert F.ALERT_PREFIX is B.ASK_PREFIX
         assert F.is_alert is B.is_ask
+
+
+class TestAMovedStartDayLandsOnTheRowThatIsThere:
+    """Megan, 2026-11-23: "update Start and Week only".
+
+    Somebody already on the board whose first day the office pushed back. The
+    row carries whatever steps have already run for them, so a second row on
+    the new day would split one person in two and every later step would tick
+    whichever it found first. Blue Ink goes two days before the Start and the
+    welcome email names the day in words, so the stale day is not cosmetic.
+    """
+
+    def _board(self):
+        return FakeWS([_person("Ada Fournier", **{"Start": "11/09/2026",
+                                                  "Contact Added": "11/08/2026"})])
+
+    def _grid_row(self, ws):
+        return S.rows_of(ws.get_all_values())[0]
+
+    def test_merge_reports_the_day_the_calendar_now_gives(self):
+        ws = self._board()
+        existing = B.for_week(S.rows_of(ws.get_all_values()), MONDAY)
+        fresh = B.seed_rows(_cal("Ada Fournier"), started=MONDAY)
+        fresh[0]["Start"] = "11/11/2026"
+        fresh[0][B.OWN_DAY] = True
+        plan = B.merge(existing, fresh)
+        assert plan["add"] == []
+        assert [m["Start"] for m in plan["moved"]] == ["11/11/2026"]
+        assert plan["moved"][0]["was"] == "11/09/2026"
+
+    def test_only_start_and_week_are_written(self):
+        ws = self._board()
+        row = self._grid_row(ws)
+        S.move_starts(ws, [{"row": row, "was": "11/09/2026",
+                            "Start": "11/11/2026",
+                            B.WEEK: B.week_label(MONDAY)}],
+                      log=lambda *a: None)
+        touched = {r.rstrip("0123456789") for r, _ in ws.updates}
+        assert touched == {S._a1(HEAD.index("Start") + 1),
+                           S._a1(HEAD.index(B.WEEK) + 1)}, ws.updates
+        assert all(r.endswith("2") for r, _ in ws.updates), ws.updates
+
+    def test_a_tick_on_the_same_row_is_not_touched(self):
+        ws = self._board()
+        row = self._grid_row(ws)
+        S.move_starts(ws, [{"row": row, "Start": "11/11/2026",
+                            B.WEEK: B.week_label(MONDAY)}],
+                      log=lambda *a: None)
+        wrote = {r for r, _ in ws.updates}
+        assert S._a1(HEAD.index("Contact Added") + 1) + "2" not in wrote
+
+    def test_the_weeks_sunday_never_overwrites_a_real_day(self):
+        """The names-only pass carries the Sunday for everybody."""
+        ws = self._board()
+        existing = B.for_week(S.rows_of(ws.get_all_values()), MONDAY)
+        fresh = B.seed_rows(_cal("Ada Fournier"), started=MONDAY)
+        assert fresh[0]["Start"] == B.week_label(MONDAY)
+        assert fresh[0][B.OWN_DAY] is False
+        assert B.merge(existing, fresh)["moved"] == []
+
+    def test_a_terminated_row_is_not_corrected(self):
+        ws = FakeWS([_person("Ada Fournier", **{"Start": "11/09/2026",
+                                                B.TERMINATED_AT: "11/10/2026"})])
+        existing = B.for_week(S.rows_of(ws.get_all_values()), MONDAY)
+        fresh = B.seed_rows(_cal("Ada Fournier"), started=MONDAY)
+        fresh[0]["Start"] = "11/11/2026"
+        fresh[0][B.OWN_DAY] = True
+        assert B.merge(existing, fresh)["moved"] == []
+
+    def test_the_same_day_is_not_rewritten(self):
+        ws = self._board()
+        existing = B.for_week(S.rows_of(ws.get_all_values()), MONDAY)
+        fresh = B.seed_rows(_cal("Ada Fournier"), started=MONDAY)
+        fresh[0]["Start"] = "11/09/2026"
+        fresh[0][B.OWN_DAY] = True
+        assert B.merge(existing, fresh)["moved"] == []
+
+    def test_a_hand_built_row_is_left_alone_not_guessed(self):
+        ws = self._board()
+        n = S.move_starts(ws, [{"row": {"Name": "Ada", "Last Name": "Fournier"},
+                                "Start": "11/11/2026"}], log=lambda *a: None)
+        assert n == 0
+        assert ws.updates == []
+
+    def test_the_marker_never_reaches_a_cell(self):
+        """OWN_DAY is not a board column, and `_line` drops unknown keys."""
+        assert B.OWN_DAY not in B.COLUMNS
+        ws = FakeWS([])
+        S.seed(FakeBook(ws), MONDAY, _cal("Ada Fournier"),
+               dry_run=False, log=lambda *a: None, ws=ws)
+        assert not any(B.OWN_DAY in str(v) for _, v in ws.updates), ws.updates

@@ -123,6 +123,14 @@ def seed(office_key: str, week_start: dt.date, people: Iterable[Dict],
 
     That same rule is what keeps somebody the ICD marked off from coming back:
     their row still exists, so they count as already there and are skipped.
+
+    THE ONE THING THE SHEET SIDE DOES AND THIS DOES NOT: `sheet.move_starts`,
+    a start day the calendar has pushed back, written onto the row already
+    there. It needs a relay op that OVERWRITES a cell, and the only writer
+    here is `board_tick`, which is on-only on purpose. Not built, because no
+    office is served through the relay yet -- every board is read and written
+    from our machines ([[feedback_eco_migration_comes_last]]) -- and it is
+    listed with the rest of that move rather than half-built now.
     """
     rows = B.seed_rows(people, started=week_start)
     week = B.week_label(week_start)

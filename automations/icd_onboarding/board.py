@@ -340,6 +340,9 @@ def name_key(row: Dict) -> str:
                            row.get("last_name") or row.get("Last Name") or ""))
 
 
+OWN_DAY = "_own_day"
+
+
 def seed_rows(people: Iterable[Dict], started: Optional[dt.date] = None) -> List[Dict]:
     """Training-calendar people -> board rows, identity columns only.
 
@@ -362,6 +365,15 @@ def seed_rows(people: Iterable[Dict], started: Optional[dt.date] = None) -> List
             "Phone": str(p.get("phone") or "").strip(),
             "Start": (p.get("started") or started).strftime("%m/%d/%Y")
                      if (p.get("started") or started) else "",
+            # WHOSE DAY THIS IS. True only when the person's OWN start day was
+            # read -- off the training calendar -- and False when it is the
+            # week's Sunday standing in for a day nobody could read. Not a
+            # board column: `_line` drops any key the layout has no column
+            # for, so it never reaches a cell. `merge` needs it, because
+            # correcting a real start day with a placeholder is worse than
+            # leaving it alone, and the names-only pass carries the
+            # placeholder for everybody ([[feedback_empty_means_proven_zero]]).
+            OWN_DAY: bool(p.get("started")),
             # Which funnel brought them. Identity, not a step: it is a fact
             # about where the row came from, and it is what the divider above
             # their block is labelled with.
@@ -391,14 +403,28 @@ def weeks_on(rows: List[Dict]) -> List[str]:
 def merge(existing: List[Dict], fresh: List[Dict]) -> Dict:
     """What a re-seed should do, without touching a sheet.
 
-    Returns {"add": [rows], "keep": n, "left": [keys]} --
+    Returns {"add": [rows], "keep": n, "left": [keys], "moved": [...]} --
       * add  : people on the calendar who are not on the board yet
       * keep : rows already there, which are NOT rewritten
       * left : rows the ICD marked terminated, which stay marked
+      * moved: rows whose START DAY the calendar now gives differently
 
     A person the ICD marked off does NOT come back, even though the calendar
     still says they showed up for training. That is the whole reason the board
     exists: the calendar cannot know they left.
+
+    A MOVED START IS THE ONE CORRECTION THIS MAKES. Everything else about a row
+    already on the board is left alone, but the start day is read by things
+    that act on it: Blue Ink goes out two days before it and the welcome email
+    names the day in words, so a row still carrying last week's day mails a
+    real person a date that has passed (Megan, 2026-11-23, choosing this over
+    a fresh row: "update Start and Week only"). Nothing else on the row is
+    offered -- not a tick, not a step column, not a note.
+
+    Only ever from the person's OWN day (`OWN_DAY`). The scheduled-row read
+    gives no date and falls back to the week's Sunday, which every names-only
+    pass carries for everybody; writing that back would wipe the real day the
+    calendar walk found and replace it with a placeholder.
     """
     seen, by_name = {}, {}
     for r in existing:
@@ -406,12 +432,29 @@ def merge(existing: List[Dict], fresh: List[Dict]) -> Dict:
         nk = name_key(r)
         if nk:
             by_name.setdefault(nk, r)
-    add, left = [], []
+    add, left, moved = [], [], []
     for r in existing:
         if str(r.get(TERMINATED_AT) or "").strip():
             left.append(person_key(r))
+
+    def _moved(held, r):
+        """Record a start day the calendar now gives differently, or nothing."""
+        if not r.get(OWN_DAY):
+            return                      # the week's Sunday, not their day
+        day = str(r.get("Start") or "").strip()
+        if not day or day == str(held.get("Start") or "").strip():
+            return
+        # A terminated row is not corrected: it is a record of somebody who
+        # left, and the calendar is not entitled to edit that.
+        if str(held.get(TERMINATED_AT) or "").strip():
+            return
+        moved.append({"row": held, "was": str(held.get("Start") or "").strip(),
+                      "Start": day, WEEK: week_label(week_start_of(
+                          dt.datetime.strptime(day, "%m/%d/%Y").date()))})
+
     for r in fresh:
         if person_key(r) in seen:
+            _moved(seen[person_key(r)], r)
             continue
         # THE NAME IS A SECOND LOOK, because an email can be mistyped. One
         # new start is on two of Raf's funnels as `...@icloud.co` and
@@ -422,9 +465,10 @@ def merge(existing: List[Dict], fresh: List[Dict]) -> Dict:
         # between the calendar and the rows ALREADY THERE, and this is what
         # decides that (2026-11-21).
         if name_key(r) and name_key(r) in by_name:
+            _moved(by_name[name_key(r)], r)
             continue
         add.append(r)
-    return {"add": add, "keep": len(existing), "left": left}
+    return {"add": add, "keep": len(existing), "left": left, "moved": moved}
 
 
 def visible(rows: List[Dict], *, show_terminated: bool = False) -> List[Dict]:
