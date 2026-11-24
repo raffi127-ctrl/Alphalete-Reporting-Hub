@@ -97,5 +97,44 @@ class MultiSlackRowTest(unittest.TestCase):
             self.assertTrue(rx.search(t), t)
 
 
+
+class LabeledRowsTest(unittest.TestCase):
+    """Aya + Haytham, in-house since November (Camila 11/24)."""
+
+    def test_aya_job_ad(self):
+        rows = collect.labeled_slack_rows(
+            "12:30\nAna lopez :white_check_mark:/marketing/mor4e handson/3 weeks/3 star/"
+            "job ad New application for AT&amp;T Representative, Carmel, IN,\n"
+            "Bea ruiz:x:/different schedule/JOB AD NO AD\n"
+            "Cara Diaz:white_check_mark:/plasma center/2 weeks/3 stars", DAY)
+        self.assertEqual([r[config.COL_NAME] for r in rows],
+                         ["Ana lopez", "Bea ruiz", "Cara Diaz"])
+        self.assertEqual(rows[0][config.COL_TITLE], "AT&T Representative, Carmel, IN")
+        self.assertEqual(rows[0][config.COL_STARS], "3")
+        self.assertEqual(rows[0][config.COL_QUALIFY], "Qualify")
+        self.assertEqual(rows[1][config.COL_TITLE], "")
+        self.assertEqual(rows[1][config.COL_QUALIFY], "Disqualify")
+        self.assertEqual(rows[2][config.COL_TITLE], "")
+
+    def test_haytham_job_title(self):
+        rows = collect.labeled_slack_rows(
+            "2:20 pm\n\n"
+            "• Dana Smith-  :x:Commute too far! *Job Title:* Customer Sales Associate (Spanish Required)\n"
+            "• Eli Jones - Owns Moving company, ASAP, Job Title: Event Marketing &amp; Sales "
+            "Assistant:white_check_mark: (5:star:)", DAY)
+        self.assertEqual([r[config.COL_NAME] for r in rows], ["Dana Smith", "Eli Jones"])
+        self.assertEqual(rows[0][config.COL_TITLE], "Customer Sales Associate (Spanish Required)")
+        self.assertEqual(rows[0][config.COL_QUALIFY], "Disqualify")
+        self.assertEqual(rows[1][config.COL_TITLE], "Event Marketing & Sales Assistant")
+        self.assertEqual(rows[1][config.COL_STARS], "5")
+
+    def test_haytham_line_without_job_title_is_blank(self):
+        rows = collect.labeled_slack_rows("1:20 pm\n\n• Fay Brown- :x: was busy doing something else", DAY)
+        self.assertEqual([(r[config.COL_NAME], r[config.COL_TITLE]) for r in rows], [("Fay Brown", "")])
+
+    def test_chat_is_not_a_row(self):
+        self.assertEqual(collect.labeled_slack_rows("<@U0BG6LK4JJH> for tmr", DAY), [])
+
+
 if __name__ == "__main__":
     unittest.main()

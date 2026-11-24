@@ -790,10 +790,15 @@ _PAUSED_BEFORE = {"khalil": "2026-10-03",
 # Salik 11/17 (Maddie): his tab left the R-Z sheet in October (new
 # interviewers, nothing posted since 10/5); the rows are the "//" / "||" lines
 # in his FIRST ROUND (INTERVIEW) THREAD (collect.multi_slack_rows).
-_ROWS_FROM_SLACK = {"valeria", "salik"}
+# Aya + Haytham (Camila 11/24): interviews went in-house, their tabs stopped
+# (Aya 11/2, Haytham 11/12); the ad is on each line after "job ad" / "Job
+# Title:" (collect.labeled_slack_rows).
+_ROWS_FROM_SLACK = {"valeria", "salik", "aya", "haytham"}
 # First day read off Slack: Salik's older threads (another format) went out
 # from the sheet already, and read as Slack rows they're junk ("ASAP" ads).
-_SLACK_ROWS_SINCE = {"salik": "2026-10-23"}
+_SLACK_ROWS_SINCE = {"salik": "2026-10-23", "aya": "2026-11-02",
+                     # 11/12-11/13 lines have no "Job Title:" label.
+                     "haytham": "2026-11-16"}
 
 # Colten 10/10 asked for the Ad Scorecard for his funnel and Eveliz's; Raf
 # 10/11: "put it in his all in one". One tab each in Maud's "All In One -

@@ -415,6 +415,52 @@ def multi_slack_rows(text: str, day: dt.date) -> List[Dict[str, str]]:
     return out
 
 
+# Aya + Haytham (in-house interviews since November; Camila 11/24): one line
+# per candidate with the ad behind a label.
+#   Aya:     "Gus Green:white_check_mark:/retail/new/asap/2 star/job ad New application for AT&amp;T Representative, Carmel, IN,"
+#   Haytham: "• Eli Jones - Owns Moving company, ASAP, Job Title: Event Marketing &amp; Sales Assistant:white_check_mark: (5:star:)"
+# "job ad none" / "JOBAAD NO AD" = no ad (blank title).
+_AD_LABEL = re.compile(r"\bjob\s*a+d\b|\bjob\s*title\b", re.I)
+_LABELED_NAME = re.compile(r"^([A-Za-z][A-Za-z.' ]*?(?:-[A-Z][A-Za-z.']*)?)\s*(?=:[a-z_]+:|[-–:,/(]|$)")
+
+
+def labeled_slack_rows(text: str, day: dt.date) -> List[Dict[str, str]]:
+    """One row per "Name ... job ad <Ad>" / "Name - ... Job Title: <Ad>" line,
+    plus Aya's "Name:emoji:/..." lines that left the ad out (blank title)."""
+    out = []
+    for raw in (text or "").replace("&amp;", "&").splitlines():
+        ln = raw.replace("*", "").strip(" •·_\t")
+        lab = _AD_LABEL.search(ln)
+        aya_shape = re.match(r"[A-Za-z][A-Za-z.' -]*:(?:white_check_mark|x):\s*/", ln)
+        # Haytham's "• Name - notes :x:" with the Job Title left out: a row
+        # with a blank title, so the no-thread alert names them.
+        bullet = (raw.lstrip().startswith("•") and re.match(r"[A-Za-z][A-Za-z.' ]+?\s*-", ln)
+                  and re.search(r":(?:white_check_mark|x):", ln))
+        if not lab and not aya_shape and not bullet:
+            continue
+        m = _LABELED_NAME.match(ln)
+        name = m.group(1).strip() if m else ""
+        if len(name.split()) < 2:
+            continue
+        title = ""
+        if lab:
+            title = ln[lab.end():]
+            title = re.split(r":[a-z_]+:|\(\d|\s/|/", title, 1)[0]
+            title = re.sub(r"^[\s:.\-]*(new application for\s*)?", "", title, flags=re.I)
+            title = title.strip(" ,.:-")
+            if re.fullmatch(r"(no\s*ad|none|n/?a)?", title, re.I):
+                title = ""
+        low = ln.lower()
+        verdict = ("Disqualify" if ":x:" in low else
+                   "Qualify" if ":white_check_mark:" in low or "✅" in ln else "")
+        st = re.search(r"(\d)\s*stars?\b", ln, re.I)
+        out.append({config.COL_DATE: day.strftime("%m/%d/%Y"), config.COL_NAME: name,
+                    config.COL_TITLE: title, config.COL_INTERVIEWER: "",
+                    config.COL_QUALIFY: verdict,
+                    config.COL_STARS: st.group(1) if st else _row_stars(ln)})
+    return out
+
+
 def slack_rows(cl=None) -> List[Dict[str, str]]:
     """Every candidate in the office's daily threads since THREADS_SINCE, as
     sheet rows. Read once per process per office."""
@@ -435,7 +481,8 @@ def slack_rows(cl=None) -> List[Dict[str, str]]:
                     continue
                 day = dt.datetime.fromtimestamp(float(m["ts"]), CENTRAL).date()
                 for reply in _replies(cl, m["ts"], ch):
-                    many = multi_slack_rows(reply.get("text") or "", day)
+                    many = (multi_slack_rows(reply.get("text") or "", day)
+                            or labeled_slack_rows(reply.get("text") or "", day))
                     row = None if many else slack_row(reply.get("text") or "", day)
                     rows += many or ([row] if row else [])
             cursor = (resp.get("response_metadata") or {}).get("next_cursor")
