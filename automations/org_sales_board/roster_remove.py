@@ -370,6 +370,34 @@ def _cascade_all_campaigns(names, remaining, args) -> None:
               f"--names \"{'|'.join(gone)}\" --apply")
 
 
+def _cascade_headcount(names, remaining, args) -> None:
+    """Follow an ORG-board removal through to the 'Org Active Headcount' tab.
+
+    Eve, 2026-11-24: Ana Griffin came off the ORG board and All Campaigns on
+    9/15 and stayed on the Headcount tab at 0 for two months — this cascade did
+    not exist. Same rule as All Campaigns: only a name now COMPLETELY off the
+    ORG board (one Headcount line is the person across every campaign), only
+    from the ORG board itself, never --no-cascade. Independent of the All
+    Campaigns half, so an EXCLUDE abort there does not leave a Headcount row.
+    Best-effort: the ORG rows are already gone, so report, never raise."""
+    if args.no_cascade:
+        return
+    if args.sheet != SHEET_ID or norm(args.tab) != norm(SANDBOX_TAB):
+        return
+    still = {norm(h["asked"]) for h in remaining}
+    gone = [n for n in names if norm(n) not in still]
+    if not gone:
+        return
+    try:
+        from automations.org_active_headcount import roster_remove as _hc
+        print(f"  cascade: → Org Active Headcount para {', '.join(gone)}")
+        _hc.remove(gone, apply=True)
+    except Exception as e:                  # noqa: BLE001 — ORG rows already gone
+        print(f"  cascade: Headcount FALLÓ ({type(e).__name__}: {str(e)[:120]}). "
+              f"Corré a mano: python -m automations.org_active_headcount.roster_remove "
+              f"--names \"{'|'.join(gone)}\" --apply")
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="org_sales_board.roster_remove")
     ap.add_argument("--names", required=True,
@@ -460,6 +488,7 @@ def main(argv=None) -> int:
     print(f"  quedan {len(left)} fila(s) con esos nombres "
           f"{'— revisar' if left else '(ok)'}")
     _cascade_all_campaigns(names, remaining, args)
+    _cascade_headcount(names, remaining, args)
     return 0
 
 
