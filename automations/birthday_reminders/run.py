@@ -216,6 +216,13 @@ def run(*, today: dt.date | None = None, dry_run: bool = True,
                   "as it stands." % (type(e).__name__, str(e)[:150]))
 
     entries = S.load()
+    # Birthday == start date: almost always the hire date typed into the DOB
+    # field. Flag it once so a person fixes it (Milagros Colon, 2026-11-24).
+    try:
+        from automations.birthday_reminders import suspect as SU
+        SU.alert(entries, dry_run=dry_run, logfn=logfn)
+    except Exception as e:  # noqa: BLE001
+        logfn("⚠ birthday check skipped (%s)" % type(e).__name__)
     p = plan(today, logfn=logfn, source=source, entries=entries)
     _report(p, logfn)
     slack_problem = slack_today(today, dry_run=dry_run, logfn=logfn,

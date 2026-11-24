@@ -662,3 +662,35 @@ class SyncNames(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SuspectBirthdays(unittest.TestCase):
+    """Birthday == start date is flagged (Milagros Colon, 2026-11-24)."""
+
+    def test_find(self):
+        from automations.birthday_reminders import suspect as SU
+        rows = [
+            S.Entry(name="Milagros Colon", mmdd="08/17", start="8/17/2026"),
+            S.Entry(name="Ann Lee", mmdd="03/02", start="8/17/2026"),
+            S.Entry(name="Real Same", mmdd="05/05", start="5/5/2026",
+                    notes="Confirmed by Raf"),
+            S.Entry(name="Boss", mmdd="01/01", start="1/1/2020", staff="x"),
+            S.Entry(name="No Start", mmdd="01/01", start=""),
+        ]
+        self.assertEqual([e.name for e in SU.find(rows)], ["Milagros Colon"])
+
+    def test_alert_posts_once(self):
+        import tempfile
+        from pathlib import Path
+        from automations.birthday_reminders import suspect as SU
+        rows = [S.Entry(name="Milagros Colon", mmdd="08/17", start="8/17/2026")]
+        client = mock.MagicMock()
+        with tempfile.TemporaryDirectory() as d, \
+                mock.patch.object(SU, "STATE", Path(d) / "s.txt"), \
+                mock.patch("automations.shared.slack_metrics_post._client",
+                           return_value=client):
+            self.assertEqual(len(SU.alert(rows, dry_run=False, logfn=lambda *a: 0)), 1)
+            self.assertEqual(SU.alert(rows, dry_run=False, logfn=lambda *a: 0), [])
+        self.assertEqual(client.chat_postMessage.call_count, 1)
+        self.assertEqual(client.chat_postMessage.call_args.kwargs["channel"], SU.CHANNEL)
+        self.assertIn("<@U088E2KJEV8>", client.chat_postMessage.call_args.kwargs["text"])
