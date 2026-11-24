@@ -7,14 +7,19 @@ Maud 2026-11-24. Every Wednesday morning:
      one tab per rep, Raw)
   3  upload it as a Google Sheet into "Commission Sheets", named
      `RH M.D.YY` — the week-ending SUNDAY (DD week is the Saturday, +1 day)
-  4  keep only the 2 newest RH workbooks in that folder; MOVE the older ones
-     into "Rafael/<year>". Moved, never deleted or trashed.
+  4  keep only the 2 newest of THESE workbooks in that folder; MOVE the older
+     ones into "Rafael/<year>". Moved, never deleted or trashed.
+
+Only this job's own sheets count — named exactly `RH M.D.YY` (or the one-off
+`RH M.D.YY - Maudy`). Alisson's weekly payroll sheets (`RH 11.15- Alisson`)
+and anything else in the folder are left alone (Maud 2026-11-24), and never
+count as "this week's sheet already exists".
 
 Guards:
   * the DD's week must be last week (Sunday on or before today, within 7 days).
     If Tableau hasn't published the new week yet, stop — never upload last
     week's numbers under this week's name.
-  * if an RH workbook for this week already exists, don't make a second one
+  * if one of OUR workbooks for this week already exists, don't make a second one
     (the archive step still runs, so a re-run is safe).
   * a file that can't be moved is reported and skipped; the rest still move.
 
@@ -31,6 +36,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import re
 import sys
 import tempfile
 from pathlib import Path
@@ -40,6 +46,19 @@ from automations.commission_sheet import config as C
 
 XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 SHEET_MIME = "application/vnd.google-apps.spreadsheet"
+#: This job's sheets: "RH 11.29.26", and the first, hand-run "RH 11.22.26 - Maudy".
+OURS = re.compile(r"^RH \d{1,2}\.\d{1,2}\.\d{2}(\s*-\s*Maudy)?$", re.I)
+
+
+def is_ours(name: str) -> bool:
+    return bool(OURS.match((name or "").strip()))
+
+
+def our_sheets(svc):
+    """[(week, file)] newest first — only this job's sheets."""
+    from automations.commission_sheet.newweek import survey
+    live, _ = survey(svc)
+    return [(w, f) for w, f in live if is_ours(f["name"])]
 
 
 def _log(msg: str = "") -> None:
@@ -87,9 +106,9 @@ def upload(svc, xlsx: Path, name: str) -> dict:
 
 
 def archive_old(svc, write: bool) -> dict:
-    """Move every RH workbook past the newest KEEP_RECENT into Rafael/<year>."""
-    from automations.commission_sheet.newweek import _year_folder, survey
-    live, _ = survey(svc)
+    """Move every one of OUR workbooks past the newest KEEP_RECENT into Rafael/<year>."""
+    from automations.commission_sheet.newweek import _year_folder
+    live = our_sheets(svc)
     keep, old = live[:C.KEEP_RECENT], live[C.KEEP_RECENT:]
     for w, f in keep:
         _log(f"  stays     {f['name'].strip()!r}")
@@ -115,7 +134,6 @@ def archive_old(svc, write: bool) -> dict:
 def run(write: bool, dd_file: Optional[Path], suffix: str) -> int:
     from automations.commission_sheet import pct_payout
     from automations.commission_sheet.drive_auth import service
-    from automations.commission_sheet.newweek import survey
 
     work = Path(tempfile.mkdtemp(prefix="commission_drop_"))
     if dd_file:
@@ -130,8 +148,7 @@ def run(write: bool, dd_file: Optional[Path], suffix: str) -> int:
     _log(f"   DD week ending Sunday {sunday:%m/%d/%Y} -> {name!r}")
 
     svc = service()
-    live, _ = survey(svc)
-    already = existing_for_week(live, sunday)
+    already = existing_for_week(our_sheets(svc), sunday)
 
     if already:
         _log(f"3  already in Commission Sheets for this week: "
