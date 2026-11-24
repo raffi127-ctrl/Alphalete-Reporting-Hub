@@ -37,6 +37,7 @@ import sys
 from typing import Dict, List, Sequence, Tuple
 
 from automations.icd_onboarding import board as B
+from automations.icd_onboarding import board as BB          # the moved seed's name for it
 from automations.icd_onboarding import fillers as F
 
 
@@ -243,16 +244,527 @@ def appstream_here(log=print):
         app._capture_token()
         yield app
 
+# --- THE SEED, AND THE WALK THAT SAYS WHO DID NOT COME -----------------------
+#
+# Moved here from `icd_onboarding.run` on 2026-11-24. Both read
+# ApplicantStream, both are the OFFICE's own sources -- their recruiting
+# calendar, their Retention Report, their login -- and `run.py` cannot ship:
+# its siblings reach OwnerVille's Hub session and gspread. `run.seed`,
+# `run.seed_names` and `run.from_no_shows` are thin delegates now, so there is
+# ONE of each body and not a Hub copy drifting from an office copy.
+#
+# THE SESSION IS `sessions.appstream_anywhere`, so the same body reads the warm
+# console on a Lucy and the office's own Chrome on an office machine. The board
+# writes already went through `fillers.seed_anywhere` / `apply_anywhere`, which
+# is gspread on a Lucy and the relay on an office box -- so nothing in here
+# knows or cares which machine it is.
+
+def _appstream_id(office_key: str) -> str:
+    from automations.office_admin import config as OC
+    o = OC.office(office_key)
+    return (o.appstream_id if o else "") or ""
+
+
+def _appstream_ids(office_key: str) -> List[str]:
+    """Every ApplicantStream account whose new starts onboard in this office.
+
+    The office's own first, then any funnel that onboards here -- a new launch
+    recruits on its own account and its people land in the host's OwnerVille
+    (config.Office.extra_appstream_ids). ONLY THE SEED uses this; everything
+    keyed to the office itself still uses `_appstream_id`.
+    """
+    from automations.office_admin import config as OC
+    o = OC.office(office_key)
+    if not o:
+        return []
+    ids = [str(o.appstream_id or "").strip()]
+    for extra in (getattr(o, "extra_appstream_ids", ()) or ()):
+        got = _id_and_label(extra)[0]
+        if got and got not in ids:
+            ids.append(got)
+    return [i for i in ids if i]
+
+
+def _id_and_label(entry) -> tuple:
+    """An extra-funnel entry -> (id, label). Accepts a bare id or a pair."""
+    if isinstance(entry, (tuple, list)):
+        got = list(entry) + ["", ""]
+        return str(got[0] or "").strip(), str(got[1] or "").strip()
+    return str(entry or "").strip(), ""
+
+
+def _funnel_labels(office_key: str) -> dict:
+    """{account id: what to call it on the board}. The office's own account
+    gets no label -- its people are the board's default, and a divider over
+    everybody says nothing."""
+    from automations.office_admin import config as OC
+    o = OC.office(office_key)
+    out = {}
+    if not o:
+        return out
+    for extra in (getattr(o, "extra_appstream_ids", ()) or ()):
+        got, label = _id_and_label(extra)
+        if got:
+            out[got] = label or got
+    return out
+
+
+def _person_key(person) -> str:
+    """Who this row is, for de-duping across funnels: email if there is one,
+    else the folded name. Email first because two funnels spell a name two
+    ways far more often than they hold two addresses."""
+    get = person.get if hasattr(person, "get") else (lambda k, d="": d)
+    email = str(get("email", "") or "").strip().lower()
+    if email:
+        return email
+    return _name_key(person)
+
+
+def _name_key(person) -> str:
+    """The folded name, as a SECOND way to recognise the same person.
+
+    AN EMAIL CAN BE MISTYPED AND AN ADDRESS IS NOT AN IDENTITY. Carmen Lopez
+    is on both of Raf's funnels as `Carmenlopezcr@icloud.co` and
+    `carmenlopezcr@icloud.com` -- one letter apart -- so keying on the
+    address alone made her two people and put her on the board twice, one
+    row carrying eight finished steps and the other none (2026-11-20).
+
+    Used as a fallback, never instead of the email: two different people
+    genuinely sharing a name is rarer than a typo, but it is not impossible,
+    so a name-only match is reported rather than taken quietly.
+    """
+    get = person.get if hasattr(person, "get") else (lambda k, d="": d)
+    name = ("%s %s" % (get("first_name", "") or "",
+                       get("last_name", "") or "")).strip()
+    return B._fold(name) if name else ""
+
+
+def seed(office_key: str, week_start: dt.date, *, dry_run: bool = True,
+         log=print, names_only: bool = False) -> int:
+    """Everybody SCHEDULED to start in the office that week, onto the board.
+
+    Megan, 2026-11-15: *"we would want this extension to live off of the
+    applicant stream for that current week that are scheduled to start ... when
+    they're brought on board, even though they're brought on board Monday, they
+    could have a 2 week out start date. So we want to actually see the new
+    starts on our onboarding list because those are the ones that are actually
+    starting in the office that week that we're going to be onboarded."*
+
+    So the WEEK A ROW LANDS ON IS THE WEEK THEY START, never the week they were
+    brought on board, and the row is there before Monday rather than appearing
+    the morning they walk in.
+
+    TWO READS, ONE SESSION. The scheduled row makes the rows; the showed-up row
+    then ticks `Showed Up` on them. Opening the session is the slow part, so the
+    second read is two more page loads rather than another job.
+
+    names_only=True IS THE 15-MINUTE PASS (`seed_names`, step 7). It does the
+    first read and nothing else. Measured on Raf's two funnels 2026-11-22: the
+    whole step took 7m01s, and the Showed Up half is where it goes -- the
+    scheduled row is 2 page loads per account, the showed-up row 2 more, and
+    the training calendar walk SEVEN, which this function's own comment below
+    already prices. 22 page loads for two funnels, 18 of them about a column
+    that changes when somebody ticks a radio once a day.
+
+    So the two halves get the clocks they deserve. A NAME is urgent: until the
+    row is there the office cannot see the person at all, which is why Megan
+    asked for 15 minutes on 2026-11-22. Showed Up is not, and it stays on the
+    hourly run, where nothing about it got slower.
+    """
+    from automations.icd_onboarding import sessions as SES
+    from automations.office_admin import fdot
+
+    from automations.office_admin import retention
+
+    accounts = _appstream_ids(office_key)
+    if not accounts:
+        log("  seed: %s has no ApplicantStream id" % office_key)
+        return 0
+    if len(accounts) > 1:
+        log("  seed: %d funnels onboard here -- %s"
+            % (len(accounts), ", ".join(accounts)))
+    people: List[dict] = []
+    showed = None
+    seen = set()
+    by_name: Dict[str, str] = {}
+    labels = _funnel_labels(office_key)
+    # WHICHEVER APPLICANTSTREAM THIS MACHINE HAS (`sessions`). On a Lucy that
+    # is the warm console everybody shares; on the office's own computer it is
+    # the Chrome `resume_push` already signs in, with THEIR login -- which is
+    # the whole point of the seed running there (Megan, 2026-11-23: "I want to
+    # move it to the ECO machines once it's all built out").
+    with SES.appstream_anywhere(office_key, log=log) as app:
+        for account in accounts:
+            app.select_office(account)
+            # WHO IS DUE IN. The Retention Report answers this in TWO page
+            # loads where the calendar walk takes seven (Megan, 2026-11-09:
+            # "you should just look at the retention details report and not
+            # walk the calendar as this would be faster").
+            #
+            # NO FALLBACK HERE, on purpose. The calendar walk answers who
+            # SHOWED UP, which is a different question -- standing in for this
+            # one it would quietly seed a different set of people, and a week
+            # that could not be read must never be seeded from the nearest
+            # thing to hand ([[feedback_empty_means_proven_zero]]).
+            mine = retention.read_scheduled_week(app, account, week_start,
+                                                 log=log)
+            # ONE PERSON, ONE ROW. Two funnels can hold the same candidate --
+            # a rep re-entered on the new launch's account is still one new
+            # start -- and seeding them twice puts two rows on the board for
+            # one human, which every later tick then has to choose between.
+            label = labels.get(account, "")
+            for person in (mine or []):
+                key = _person_key(person)
+                nkey = _name_key(person)
+                # A name we already hold under a DIFFERENT address is the
+                # typo case: same person, one row. Said out loud, because
+                # the alternative reading -- two people of one name -- is
+                # rare but real, and this is the line that would be wrong.
+                if key and key not in seen and nkey and nkey in by_name:
+                    log("    %s: already here as %s — treating the two "
+                        "addresses as one person" % (nkey, by_name[nkey]))
+                    key = by_name[nkey]
+                if key and key in seen:
+                    # ALREADY HELD FROM ANOTHER FUNNEL -- keep the LABELLED
+                    # one. The office's own account is read first and carries
+                    # no label, so first-wins quietly threw away the only copy
+                    # that said where the person came from: Aalya Vasquez and
+                    # Zachary Murphy are on 11280 AND 23965, landed as Raf's,
+                    # and ended up on the board with a blank Funnel
+                    # (2026-11-20). A funnel that names itself beats one that
+                    # does not; two that both name themselves keep the first,
+                    # because then it is a real ambiguity and not a default.
+                    if label:
+                        for held in people:
+                            if _person_key(held) == key and not str(
+                                    held.get(B.FUNNEL) or "").strip():
+                                try:
+                                    held[B.FUNNEL] = label
+                                except TypeError:
+                                    pass
+                                break
+                    continue
+                if key:
+                    seen.add(key)
+                if nkey:
+                    by_name.setdefault(nkey, key)
+                # WHICH FUNNEL THIS ROW CAME FROM. The board draws a labelled
+                # divider per funnel because they all land in ONE OwnerVille
+                # and a leader reading the week has no other way to tell whose
+                # new start is whose (Megan 2026-11-20). Blank for the
+                # office's own account: its people are the default and a
+                # divider over everybody says nothing.
+                if label:
+                    try:
+                        person[B.FUNNEL] = label
+                    except TypeError:       # not a dict -- leave it alone
+                        pass
+                people.append(person)
+            if len(accounts) > 1:
+                log("    %s: %d scheduled" % (account, len(mine or [])))
+
+            # AND WHO TURNED UP, of those. Read in the same session; the walk
+            # IS the fallback for this one, because it answers exactly this.
+            #
+            # Not on the 15-minute pass: see names_only in the docstring. The
+            # rows still land; nothing here adds a row, it only ticks one.
+            if names_only:
+                continue
+            try:
+                got = retention.read_week(app, account, week_start, log=log)
+            except Exception as e:  # noqa: BLE001 — fall back, never give up
+                log("  showed-up row unavailable (%s: %s) — walking the "
+                    "calendar" % (type(e).__name__, str(e)[:120]))
+                try:
+                    got = fdot.read_week(app, account, week_start, log=log)
+                except Exception as e2:  # noqa: BLE001 — the seed still stands
+                    log("  (nobody could be ticked as shown up on %s: %s — "
+                        "the rows ARE on the board)"
+                        % (account, type(e2).__name__))
+                    got = None
+            # None means "could not read", which is NOT the same as "nobody
+            # showed" -- so it must never wipe what another funnel answered.
+            if got is not None:
+                showed = list(showed or []) + list(got)
+
+            # AND THE TRAINING CALENDAR, as well as the Retention row rather
+            # than instead of it (Megan 2026-11-21: "we can mark this yes if
+            # they show up to day one on the applicant stream calendar").
+            #
+            # IT ALSO CARRIES THE ONE THING THE SCHEDULED ROW CANNOT: which
+            # DAY each person starts. The Retention Report's date column is
+            # the apply timestamp, so every seeded row fell back to the
+            # week's Sunday -- all 31 on Raf's OBCL 11.23 read Start = 11/22
+            # (2026-11-22). Blue Ink goes two days before each person's own
+            # start and the welcome email names their day in words, so that
+            # placeholder mails a real person the wrong date. `week_rows`
+            # returns both answers off this same walk rather than a second
+            # one.
+            # The two disagree: on the week of 11/16 the calendar had Jaime
+            # Molina and Carmen Lopez showing up and the board had their
+            # Showed Up empty, so the extension said "not in yet" about two
+            # people who were in. A union, because each only ever ADDS a name
+            # and ticking is on-only anyway.
+            #
+            # It costs seven page loads per account against the Retention
+            # row's two. Worth it for the one column somebody reads to decide
+            # whether a person is actually here.
+            try:
+                turned_up, first_day = fdot.week_rows(app, account,
+                                                      week_start, log=log)
+                showed = list(showed or []) + list(turned_up)
+                # The calendar's day beats the week's Sunday, and ONLY the
+                # Sunday: a day the scheduled row did read is a real answer
+                # off the page we asked, so it is left alone.
+                fixed = 0
+                for person in people:
+                    if person.get("started"):
+                        continue
+                    name = ("%s %s" % (person.get("first_name", ""),
+                                       person.get("last_name", ""))).strip()
+                    day = first_day.get(" ".join(name.lower().split()))
+                    if day:
+                        person["started"] = day
+                        fixed += 1
+                if fixed:
+                    log("    %d start day(s) off the training calendar"
+                        % fixed)
+            except Exception as e:                          # noqa: BLE001
+                log("  calendar for %s unreadable (%s) -- the Retention row "
+                    "stands alone for this funnel, so its people keep the "
+                    "week's Sunday as their Start" % (account,
+                                                      type(e).__name__))
+    got = F.seed_anywhere(office_key, week_start, people,
+                          dry_run=dry_run, log=log)
+    if not names_only:
+        _tick_showed_up(office_key, week_start, showed, dry_run=dry_run, log=log)
+    # A step this office does not do is not an outstanding step. Marked at
+    # seed time so the office never reads as behind on work that does not
+    # exist (Megan, 2026-11-09: "if they don't then they can't enroll in apex
+    # and so we would skip that part").
+    from automations.icd_onboarding import office_steps as OS
+    OS.mark_not_applicable(office_key, week_start, dry_run=dry_run, log=log)
+    # NO GENDER SUGGESTION ANY MORE (Megan, 2026-11-24: "gender now is just
+    # assumed based on name and does not belong on the OBCL. It'll only come
+    # into play on the Apex fill"). The guess still happens -- at the moment it
+    # is typed into Apex, where a person is sitting there and can correct it --
+    # so `gender_suggest` is still the one guesser, just called from there
+    # rather than written onto a column the office had to check.
+    return len(got.get("add") or [])
+
+
+def seed_names(office_key: str, week_start: dt.date, *, dry_run: bool = True,
+               log=print) -> int:
+    """STEP 7, on its own 15-minute clock: the names, and nothing else.
+
+    "Their name appears on the OBCL extension" is the step the office actually
+    waits on -- until the row is there the person does not exist to them --
+    and Megan asked for it every 15 minutes rather than hourly (2026-11-22):
+    somebody brought on board at 2:05 should be on the extension at 2:15.
+
+    It is the same seed with the Showed Up half left off, NOT a second reader
+    of the same thing. One function, one set of de-duplication rules, one
+    place where a funnel label is decided; a copy of this that drifted would
+    put a second row on the board for one person, which is the mistake the
+    rules in `seed` exist to prevent.
+
+    What it still does, because both are Sheets-only and belong with a row the
+    moment it appears: marks the steps this office does not do, and suggests a
+    gender on the new rows. What it does not do is read whether anybody turned
+    up -- 18 of the 22 page loads, and an answer that changes when a recruiter
+    ticks a radio, so it stays on the hourly run.
+
+    Its LaunchAgent is com.alphalete.icd-onboarding-seed (:00, :15, :45).
+    """
+    return seed(office_key, week_start, dry_run=dry_run, log=log,
+                names_only=True)
+
+
+def from_no_shows(office_key: str, week_start: dt.date, *,
+                  dry_run: bool = True, log=print) -> int:
+    """Who ApplicantStream says did NOT turn up, onto `Showed Up`.
+
+    Megan, 2026-11-16, asked what should stop a send off this board: *"1 would
+    be if they are marked no show in app stream"*.
+
+    AN EXPLICIT NO, NEVER AN ABSENCE. The training calendar's Show Up control
+    is a radio; a recruiter checking No is a person stating they did not come.
+    Nothing checked means nobody has said yet, and that is left alone -- the
+    board has never marked anybody off for a blank and must not start.
+
+    A YES ANYWHERE IN THE WEEK WINS. Somebody rescheduled is on the calendar
+    twice, so a later Yes beats an earlier No: the Tuesday walk-in. The column
+    advances (blank -> No Show -> a date) rather than ticking, so a date
+    written later replaces a No Show and never the other way round.
+
+    WHY IT IS ITS OWN STEP and not part of the seed: this is the SEVEN-page
+    calendar walk, which the seed deliberately stopped doing when the two-page
+    Retention Report turned out to answer the seed's question (Megan,
+    2026-11-09). Running it hourly would put that cost back. Whether the
+    Retention Report also carries a no-show row -- which would make this cheap
+    enough for the hourly run -- is a question for somebody with an
+    ApplicantStream session in front of them; the row labels this reads are
+    the calendar's, which are known.
+    """
+    from automations.icd_onboarding import sessions as SES
+    from automations.office_admin import fdot
+
+    account = _appstream_id(office_key)
+    if not account:
+        log("  no_shows: %s has no ApplicantStream id" % office_key)
+        return 0
+    with SES.appstream_anywhere(office_key, log=log) as app:
+        app.select_office(account)
+        people = fdot.no_shows_week(app, account, week_start, log=log)
+    if not people:
+        log("  no_shows: nobody was marked No this week")
+        return 0
+    verdicts = {}
+    for p in people:
+        name = ("%s %s" % (p.get("first_name") or "",
+                           p.get("last_name") or "")).strip()
+        if name:
+            verdicts[name] = {B.SHOWED_UP: B.NO_SHOW}
+    wrote = F.apply_anywhere(office_key, week_start, "appstream", verdicts,
+                             dry_run=dry_run, log=log)
+
+    # AND INTO THE REMOVED SECTION, with the reason filled in for them (Megan,
+    # 2026-11-24: "if they're checked no, it'll still appear on the OBCL, but
+    # it'll be in the show removal section, and then it should just say no show
+    # to first day").
+    #
+    # THE ROW STAYS ON THE BOARD. The removed section is part of it; this is
+    # where the row goes, not something that happens to it. The office could
+    # already click somebody in there and pick a reason by hand -- all that is
+    # new is that a No they have already ticked in ApplicantStream does it, so
+    # nobody enters the same fact twice.
+    #
+    # EVERY NAME, EVERY PASS, on purpose: both the relay and the gspread twin
+    # leave a row that is already removed alone, so this writes nothing the
+    # second night and cannot pile stamps up on one row.
+    try:
+        F.mark_removed_anywhere(office_key, week_start, list(verdicts),
+                                reason=B.NO_SHOW_REASON, dry_run=dry_run,
+                                log=log)
+    except Exception as e:      # noqa: BLE001 -- the column still matters more
+        # The Showed Up answer is the load-bearing half and it is already
+        # written. A removal that could not be made is said out loud rather
+        # than losing the pass that recorded who did not come.
+        log("  (could not mark the no-shows removed: %s: %s)"
+            % (type(e).__name__, str(e)[:140]))
+    return wrote
+
+
+def _tick_showed_up(office_key: str, week_start: dt.date, showed,
+                    *, dry_run: bool, log=print) -> int:
+    """Tick `Showed Up` for the scheduled people who turned up.
+
+    ON ONLY, like every other tick: an absence is not a tick off and is never
+    a removal -- somebody missing on Monday may walk in on the Tuesday. An
+    unread showed-up row ticks nobody rather than emptying the column.
+
+    AND THE TUESDAY WALK-IN IS PUT BACK. Since 2026-11-24 a No ticked in
+    ApplicantStream also lands the row in the board's removed section, so this
+    is the pass that has to undo it: somebody who turns up after being marked
+    absent is exactly the case the board exists to survive, and a removal left
+    standing would keep them out of every step below it. The date already
+    outranks No Show in the column (`showed_up_rank`); this makes the removed
+    section agree with the column instead of contradicting it.
+
+    ONLY A REMOVAL THE MACHINE MADE IS LIFTED. A person who clicked somebody
+    off and typed their own reason has decided something this does not know
+    about, and a walk-in does not undo it ([[feedback_dont_touch_user_data]]).
+
+    Never fails the seed: the rows are already on the board, and a column that
+    did not tick is a visible gap in the right place.
+    """
+    if showed is None:
+        return 0
+    from automations.icd_onboarding import board as BB
+    verdicts = {}
+    for p in showed:
+        name = ("%s %s" % (p.get("first_name") or "",
+                           p.get("last_name") or "")).strip()
+        if name:
+            verdicts[name] = {BB.SHOWED_UP: True}
+    if not verdicts:
+        log("  showed up: nobody yet this week")
+        return 0
+    try:
+        wrote = F.apply_anywhere(office_key, week_start, "appstream",
+                                 verdicts, dry_run=dry_run, log=log)
+    except Exception as e:      # noqa: BLE001
+        log("  (Showed Up was not ticked: %s: %s)"
+            % (type(e).__name__, str(e)[:120]))
+        return 0
+    try:
+        back = _walked_in_after_a_no_show(office_key, week_start,
+                                          list(verdicts), log=log)
+        if back:
+            log("  %d turned up after being marked a no show -- putting them "
+                "back on the board" % len(back))
+            F.mark_removed_anywhere(office_key, week_start, back, restore=True,
+                                    dry_run=dry_run, log=log)
+    except Exception as e:      # noqa: BLE001 -- the tick is the load-bearing half
+        log("  (could not put a walk-in back: %s: %s)"
+            % (type(e).__name__, str(e)[:140]))
+    return wrote
+
+
+def _walked_in_after_a_no_show(office_key: str, week_start: dt.date,
+                               turned_up: Sequence[str], log=print) -> List[str]:
+    """Of the people who turned up, which are sitting in the removed section
+    for OUR no-show reason?
+
+    Read off the board rather than assumed, because the answer has to be both
+    halves: they are removed AND the reason is the one the machine writes. A
+    person's own reason is left exactly where it is.
+    """
+    want = {B._fold(n) for n in turned_up}
+    out = []
+    for r in F.rows_anywhere(office_key, week_start, log=log):
+        who = "%s %s" % (r.get("Name", ""), r.get("Last Name", ""))
+        if B._fold(who) not in want:
+            continue
+        if not str(r.get(B.TERMINATED_AT) or "").strip():
+            continue
+        if str(r.get(B.REMOVED_WHY) or "").strip() != B.NO_SHOW_REASON:
+            continue
+        out.append(who.strip())
+    return out
+
+
 # THE STEPS THIS MACHINE CAN DO ITSELF, in the order a pass runs them.
 #
-# ONE ENTRY, ON PURPOSE. Contact Added is here first because both its halves
-# already ship: the account is read with the office's OWN reception token
-# (second_round_contacts.contacts) and the board is written through the relay.
-# The rest -- the seed, the five OwnerVille columns, Blue Ink, Sterling, the
-# Owner Submit press, the no-shows walk -- each need their Hub reader rebuilt
-# the ECO way before they can join this list, and a step in this tuple that
-# cannot run on an office Mac would be a pass that fails every hour.
-STEPS: Sequence[Tuple[str, object]] = (("contacts", contacts),)
+# A STEP EARNS ITS PLACE HERE by being able to run on an office Mac at all --
+# its source read with the office's own login, its board write through the
+# relay. One in this tuple that cannot is a pass that fails every hour.
+#
+#   seed       first, because nothing below it has anybody to be about. It
+#              reads ApplicantStream's Retention Report for who is SCHEDULED
+#              to start this week, through `sessions.appstream_anywhere` --
+#              the office's own Chrome here, the warm console on a Lucy.
+#   contacts   Contact Added, off the office's OWN reception Google Contacts
+#              (Megan, 2026-11-11: "each ICD will have their own reception
+#              email"). The first step that ever ran here.
+#   no_shows   who was marked No in ApplicantStream. Its own slot at 21:15,
+#              not this list's order -- `eco_job` runs it alone, because it is
+#              the seven-page calendar walk and it must land before the next
+#              morning's Blue Ink send.
+#
+# STILL TO COME, each waiting on its Hub reader being rebuilt the ECO way: the
+# five OwnerVille columns and the Owner Submit press (the session is built --
+# `sessions.session_anywhere` -- but the step bodies still live in `run` and
+# `presses`, which do not ship), Blue Ink, Sterling, and Apex.
+#
+# NOTHING HERE IS SWITCHED ON BY BEING LISTED. `eco_job` runs nothing until a
+# machine is armed (`eco_job.switch_on`), and no machine is
+# ([[feedback_onboarding_nothing_live_till_built]]).
+STEPS: Sequence[Tuple[str, object]] = (
+    ("seed", seed),
+    ("contacts", contacts),
+    ("no_shows", from_no_shows),
+)
 
 
 def run_once(office_key: str, week_start: dt.date, *, dry_run: bool = True,

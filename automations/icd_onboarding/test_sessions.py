@@ -223,8 +223,9 @@ def test_the_seed_and_the_no_shows_walk_both_go_through_it():
     """Both read ApplicantStream, and both are steps whose source is the
     office's own."""
     import inspect
-    from automations.icd_onboarding import run as R
-    for fn in (R.seed, R.from_no_shows):
+    # Both bodies live in `eco_steps` -- `run`'s names are delegates.
+    from automations.icd_onboarding import eco_steps as ES
+    for fn in (ES.seed, ES.from_no_shows):
         src = inspect.getsource(fn)
         assert "appstream_anywhere" in src, fn.__name__
 

@@ -157,7 +157,11 @@ def test_a_blank_marks_nobody_off():
     anybody off for a blank and must not start -- it is the rule the whole
     board lives by."""
     import inspect
-    src = inspect.getsource(R.from_no_shows)
+    # The body moved to `eco_steps` on 2026-11-24 (the walk reads
+    # ApplicantStream, which is the office's own source); `R.from_no_shows`
+    # delegates. Read it where it is.
+    from automations.icd_onboarding import eco_steps as ES
+    src = inspect.getsource(ES.from_no_shows)
     assert "mark_removed_anywhere" in src
     # the names come from what ApplicantStream said NO about, nothing else
     assert "no_shows_week" in src
@@ -168,7 +172,11 @@ def test_the_showed_up_answer_survives_a_failed_removal(monkeypatch):
     is said out loud rather than losing the pass that recorded who did not
     come."""
     import inspect
-    src = inspect.getsource(R.from_no_shows)
+    # The body moved to `eco_steps` on 2026-11-24 (the walk reads
+    # ApplicantStream, which is the office's own source); `R.from_no_shows`
+    # delegates. Read it where it is.
+    from automations.icd_onboarding import eco_steps as ES
+    src = inspect.getsource(ES.from_no_shows)
     at = src.index("mark_removed_anywhere")
     assert "try:" in src[:at], "the removal is guarded"
     assert src.index("apply_anywhere") < at, "and the column is written first"

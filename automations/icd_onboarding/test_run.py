@@ -513,7 +513,11 @@ def test_the_seed_reads_the_scheduled_row_and_has_no_fallback_for_it():
     import ast
     import pathlib
 
-    src = pathlib.Path(R.__file__).read_text()
+    # THE BODY LIVES IN `eco_steps` since 2026-11-24, so the seed can run
+    # on the office's own computer; `R.seed` is a delegate now. Read it
+    # where it is, or this passes on a two-line delegation.
+    from automations.icd_onboarding import eco_steps as ES
+    src = pathlib.Path(ES.__file__).read_text()
     body = ast.get_source_segment(src, next(
         n for n in ast.walk(ast.parse(src))
         if isinstance(n, ast.FunctionDef) and n.name == "seed"))
