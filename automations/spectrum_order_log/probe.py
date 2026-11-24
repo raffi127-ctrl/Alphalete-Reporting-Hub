@@ -105,7 +105,56 @@ def main() -> int:
                     ch for ch in str(v.get("name") or "") if ch.isalnum())
                 if seg:
                     _csv_peek(page, repo, seg)
+        _crosstab_peek(page)
     return 0
+
+
+ORDERLOG_URL = BASE + "/#/site/sci/views/CharterD2DSalesMetrics/OrderLog"
+
+
+def _crosstab_peek(page) -> None:
+    """The OrderLog .csv only returns the dashboard's first sheet ('Last
+    Update', 2026-11-24). The order table is another worksheet inside the
+    dashboard: list the Crosstab dialog's sheets ('XSHEET:') and pull each
+    one ('XCOLS:' header, 'XROW:' first rows, 'XROWS:' count)."""
+    import tempfile
+    from pathlib import Path
+    from automations.recruiting_report.opt_phase import (
+        drive_crosstab_dialog, list_crosstab_sheets)
+    print("=" * 64, flush=True)
+    try:
+        sheets = list_crosstab_sheets(ORDERLOG_URL, page=page, verbose=True)
+    except Exception as e:  # noqa: BLE001
+        print(f"XERR: list sheets: {type(e).__name__}: {str(e)[:200]}", flush=True)
+        return
+    for s in sheets:
+        print(f"XSHEET: {s}", flush=True)
+    tmp = Path(tempfile.mkdtemp(prefix="spectrum_probe_"))
+    for i, s in enumerate(sheets):
+        if s.strip().lower() == "last update":
+            continue
+        out = tmp / f"sheet{i}.csv"
+        try:
+            drive_crosstab_dialog(page, ORDERLOG_URL, s, out, verbose=True)
+            raw = out.read_bytes()
+        except Exception as e:  # noqa: BLE001
+            print(f"XERR: {s}: {type(e).__name__}: {str(e)[:200]}", flush=True)
+            continue
+        # Tableau crosstab CSVs are UTF-16 with a BOM and tab-separated.
+        if raw[:2] in (b"\xff\xfe", b"\xfe\xff"):
+            text = raw.decode("utf-16")
+        else:
+            text = raw.decode("utf-8-sig", errors="replace")
+        first = text.splitlines()[0] if text else ""
+        delim = "\t" if "\t" in first else ","
+        rows = list(csv.reader(io.StringIO(text), delimiter=delim))
+        if not rows:
+            print(f"XERR: {s}: empty", flush=True)
+            continue
+        print(f"XCOLS: {s} | " + " | ".join(rows[0]), flush=True)
+        for r in rows[1:4]:
+            print(f"XROW: {s} | " + " | ".join(r)[:500], flush=True)
+        print(f"XROWS: {s} {len(rows) - 1}", flush=True)
 
 
 if __name__ == "__main__":
