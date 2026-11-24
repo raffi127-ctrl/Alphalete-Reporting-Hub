@@ -8494,6 +8494,27 @@
    "machine": "Lucy 2",
    "timeout_minutes": 30
   },
+  "spectrum_order_log_probe": {
+   "on_scheduler": false,
+   "_off_scheduler_note": "READ-ONLY diagnostic (automations.spectrum_order_log.probe). Maud 2026-11-24 asked for a Spectrum Order Log off the new Charter workbook on Tableau. Finds every sci workbook whose name/url says charter or spectrum, lists its views ('VIEW:') and peeks each view's .csv export ('COLS:' header, 'ROW:' first rows, 'ROWS:' count). Writes no Sheet, posts nothing. `lucy rerun spectrum_order_log_probe`, then `lucy logtail <its log> COLS: 20`.",
+   "display_name": "Spectrum Order Log - probe Charter workbook (read-only)",
+   "source_type": "tableau",
+   "data_sources": [],
+   "command": [
+    "automations.spectrum_order_log.probe"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": {
+    "type": "not_configured"
+   },
+   "timeout_minutes": 20
+  },
   "disable_carlos_captainship_bonus_agent": {
    "on_scheduler": false,
    "_off_scheduler_note": "RETIRE the standalone Tuesday-10am launchd now that Carlos B2B Captainship Bonus runs in the Lucy 2 Tuesday 4am flow (readiness-gated on tableau:captainship_bonus_carlos, 10am fail-open floor). `lucy rerun disable_carlos_captainship_bonus_agent --machine \"Lucy 2\"` boots out + stashes com.alphalete.carlos-captainship-bonus-tue.plist -> .disabled so it doesn't ALSO fire at 10am (which would re-DM a duplicate PDF). REVERSIBLE: re-run install_carlos_captainship_bonus_agent + set cadence.weekdays []. Read-only w.r.t. Sheet data.",
