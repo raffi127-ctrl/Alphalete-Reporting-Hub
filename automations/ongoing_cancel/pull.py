@@ -51,6 +51,9 @@ def parse(path: Path, days: int = 7) -> dict:
           ...
         ],
         "grand_total_per_day": {"05/26/2026": "7.2%", ...},
+        # cancels/sales behind each rate (Dylan 2026-11-24: "1/10" next to 10%)
+        # — {(owner, rep) | "Grand Total": {day: (cancels, sales)}}
+        "counts": {...},
       }
     Per-day color is whichever Green/Yellow row had a value for that date.
     """
@@ -76,6 +79,7 @@ def parse(path: Path, days: int = 7) -> dict:
     by_rep: dict = {}
     office_cancels: dict = {}          # slice: day -> summed cancels
     office_sales: dict = {}            # slice: day -> summed sales
+    counts: dict = {}                  # (owner, rep) | "Grand Total" -> {day: [c, s]}
     for r in rows[1:]:
         if len(r) <= metric_i:
             continue
@@ -105,16 +109,25 @@ def parse(path: Path, days: int = 7) -> dict:
                 if not val:
                     continue
                 slot[day] = (val, color)
-        elif slice_owner and metric in (CANCELS_METRIC, SALES_METRIC):
-            if not rep or rep == "Total":
+        elif metric in (CANCELS_METRIC, SALES_METRIC):
+            slot_i = 0 if metric == CANCELS_METRIC else 1
+            if owner == "Grand Total":
+                ckey = "Grand Total"
+            elif not rep or rep == "Total":
                 continue               # sum only real reps → recompute the total
+            else:
+                ckey = (owner, rep)
+            cslot = counts.setdefault(ckey, {})
             bucket = office_cancels if metric == CANCELS_METRIC else office_sales
             for day in target_days:
                 di = header.index(day)
                 if di >= len(r):
                     continue
                 n = _num(r[di])
-                if n is not None:
+                if n is None:
+                    continue
+                cslot.setdefault(day, [None, None])[slot_i] = n
+                if slice_owner and ckey != "Grand Total":
                     bucket[day] = bucket.get(day, 0.0) + n
 
     if slice_owner:                    # recompute the office total: cancels/sales
@@ -123,6 +136,10 @@ def parse(path: Path, days: int = 7) -> dict:
             sales = office_sales.get(day)
             if sales:
                 grand_totals[day] = f"{office_cancels.get(day, 0.0) / sales * 100:.1f}%"
+        counts["Grand Total"] = {
+            d: [office_cancels.get(d, 0.0), office_sales[d]]
+            for d in target_days if office_sales.get(d)
+        }
 
     sorted_keys = sorted(by_rep.keys(), key=lambda k: (k[0].lower(), k[1].lower()))
     return {
@@ -132,4 +149,5 @@ def parse(path: Path, days: int = 7) -> dict:
             for (o, rep) in sorted_keys
         ],
         "grand_total_per_day": grand_totals,
+        "counts": counts,
     }

@@ -12,7 +12,7 @@ ROW_H = 26
 HEADER_H = 50
 OWNER_COL_W = 160
 REP_COL_W = 220
-DAY_COL_W = 80
+DAY_COL_W = 125     # "10.0%  1/10" — rate + cancels/sales (Dylan 2026-11-24)
 PAD = 10
 
 GREEN = (197, 224, 180)
@@ -31,11 +31,24 @@ def _font(size: int, bold: bool = False):
         return ImageFont.load_default()
 
 
+def _n(v) -> str:
+    return str(int(round(v))) if v is not None else "?"
+
+
+def _with_counts(val: str, counts: dict, key, day) -> str:
+    """'10.0%' -> '10.0%  1/10' when the cancels/sales counts exist for that day."""
+    c = (counts.get(key) or {}).get(day)
+    if not val or not c or c[1] is None:
+        return val
+    return f"{val}  {_n(c[0] if c[0] is not None else 0)}/{_n(c[1])}"
+
+
 def render(parsed: dict, out_path: Path) -> Path:
     """parsed = output of pull.parse()."""
     days = parsed["days"]
     data_rows = parsed["rows"]
     totals = parsed["grand_total_per_day"]
+    counts = parsed.get("counts") or {}
 
     w = OWNER_COL_W + REP_COL_W + DAY_COL_W * len(days) + PAD * 2
     # +1 row for the Grand Total summary at the top.
@@ -70,7 +83,7 @@ def render(parsed: dict, out_path: Path) -> Path:
     draw.text((x + 4, y + 4), "Grand Total", fill="black", font=bold)
     for i, day in enumerate(days):
         cx = x + OWNER_COL_W + REP_COL_W + DAY_COL_W * i
-        val = totals.get(day, "")
+        val = _with_counts(totals.get(day, ""), counts, "Grand Total", day)
         if val:
             draw.text((cx + 6, y + 4), val, fill="black", font=bold)
     draw.line([x, y + ROW_H, x + w - PAD * 2, y + ROW_H], fill=(180, 180, 200))
@@ -87,6 +100,7 @@ def render(parsed: dict, out_path: Path) -> Path:
         for i, day in enumerate(days):
             cx = x + OWNER_COL_W + REP_COL_W + DAY_COL_W * i
             val, color = row["per_day"].get(day, ("", ""))
+            val = _with_counts(val, counts, (owner, rep), day)
             bg = {"Green": GREEN, "Yellow": YELLOW, "Red": RED}.get(color)
             if bg:
                 draw.rectangle([cx, y, cx + DAY_COL_W - 1, y + ROW_H - 1],
