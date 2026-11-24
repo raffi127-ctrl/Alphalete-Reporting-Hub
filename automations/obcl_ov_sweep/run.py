@@ -58,7 +58,64 @@ def _save_searched(last: dict) -> None:
         pass
 
 
-def _open_tab(tab_name: str = ""):
+# WHOSE SWEEP THIS IS BY DEFAULT. The sheet it reads and writes is Alphalete's
+# own D2D OBCL (config.SHEET_ID), which predates the per-office onboarding
+# board -- so this is Raf's office's tool and not a multi-office one.
+ALPHALETE_KEY = "raf"
+
+
+# WHAT --office DOES, AND WHAT IT DOES NOT.
+#
+# Megan, 2026-11-24: "the OV sweep would happen on the ECO machine." The thing
+# standing in the way was that this job took no office at all, so
+# `ov_anywhere.session_anywhere` had nothing to route on and always landed on
+# the Hub's one-per-box OwnerVille -- the session this job lost its whole
+# 30-minute wait to at 08:00 that morning, behind two other reports and a
+# second copy of itself.
+#
+# SO --office PICKS THE SESSION AND THE CAMPAIGN. With `raf` on Raf's own ECO
+# machine it reads HIS OwnerVille with HIS login and queues behind nobody.
+#
+# IT DOES NOT MAKE THIS A MULTI-OFFICE SWEEP, and must not be mistaken for
+# one: the SHEET is still Alphalete's D2D OBCL. Another office's equivalent
+# already exists and is not this -- it is the `ownerville` step on their own
+# onboarding board (`icd_onboarding.run.from_ownerville`), which reads the same
+# five columns through the same `ov_table` and writes the board instead of
+# Raf's tab. Pointing this job at another office's key would read THEIR
+# OwnerVille and tick ALPHALETE'S sheet, so it is refused below.
+def _programme(office_key: str) -> str:
+    """The campaign to read this office's OwnerVille under.
+
+    Alphalete's is `config.CAMPAIGN`; anybody else's comes off their own
+    `ov_program`, never a fallback to ours -- the campaign IS the roster.
+    """
+    key = str(office_key or "").strip().lower()
+    if key in ("", ALPHALETE_KEY, "alphalete"):
+        return config.CAMPAIGN
+    try:
+        from automations.office_admin import config as OC
+        o = OC.office(key)
+        return (getattr(o, "ov_program", "") or "").strip() if o else ""
+    except Exception:          # noqa: BLE001 -- no answer is a refusal, above
+        return ""
+
+
+def _open_tab(tab_name: str = "", office_key: str = ""):
+    """Alphalete's D2D OBCL tab. REFUSED for anybody else -- see the note
+    above: this job's sheet is Raf's, and another office's five columns are
+    filled by the `ownerville` step on their own board."""
+    key = str(office_key or ALPHALETE_KEY).strip().lower()
+    if key not in ("", ALPHALETE_KEY, "alphalete"):
+        raise RuntimeError(
+            "this sweep writes Alphalete's D2D OBCL, so it cannot run for %r. "
+            "That office's five OwnerVille columns are filled by the "
+            "`ownerville` step on their own onboarding board: "
+            "python -m automations.icd_onboarding.run --office %s "
+            "--only ownerville --write" % (key, key))
+    return _open_tab_alphalete(tab_name)
+
+
+def _open_tab_alphalete(tab_name: str = ""):
     from automations.blueink_docs import roster as bir
     from automations.recruiting_report.fill import open_by_key
     ws = bir.current_tab(open_by_key(config.SHEET_ID), tab_name)
@@ -104,7 +161,8 @@ def _picture(ws, args) -> None:
               flush=True)
 
 
-def _submit(ready, writes, *, live: bool) -> None:
+def _submit(ready, writes, *, live: bool, office_key: str = ALPHALETE_KEY,
+            programme: str = "") -> None:
     """Owner-submit each READY person in OwnerVille (Megan 2026-09-22).
 
     GATED by config.OWNER_SUBMIT_LIVE: while it is False this is always a dry
@@ -124,7 +182,9 @@ def _submit(ready, writes, *, live: bool) -> None:
     # which is the point, because the one shared session is what this job lost
     # its whole 30-minute wait to at 08:00 on 2026-11-24, behind
     # focus_office_att, captainship_drafts and a second copy of itself.
-    with OVA.session_anywhere("", profile_dir=PROFILE_DIR,
+    with OVA.session_anywhere(office_key,
+                              campaign=programme or _programme(office_key),
+                              profile_dir=PROFILE_DIR,
                               log=lambda m: print(m, flush=True)) as page:
         for p in list(ready):
             outcome, detail = owner_submit.submit_one(page, p.name,
@@ -234,9 +294,25 @@ def main(argv=None) -> int:
                          "config.OWNER_SUBMIT_LIVE (dry walk while False)")
     ap.add_argument("--paint-only", action="store_true",
                     help="colour the boxes off the sheet alone — no OwnerVille")
+    ap.add_argument("--office", default=ALPHALETE_KEY,
+                    help="whose OwnerVille to read it with, by ECO office key "
+                         "(default %s). It picks the SESSION and the CAMPAIGN, "
+                         "not the sheet -- see WHAT --office DOES in the module "
+                         "note." % ALPHALETE_KEY)
     args = ap.parse_args(argv)
 
-    ws, values = _open_tab(args.tab)
+    office_key = str(args.office or ALPHALETE_KEY).strip().lower()
+    programme = _programme(office_key)
+    if not programme:
+        # THE CAMPAIGN IS THE ROSTER. Falling back to Alphalete's would look an
+        # ICD's new start up on somebody else's campaign, find nobody, and
+        # report "not in OwnerVille" -- the wrong answer to act on. Same
+        # refusal `presses` makes, for the same reason.
+        print("%s has no ov_program set — refusing rather than reading "
+              "Alphalete's campaign" % office_key, flush=True)
+        return 2
+
+    ws, values = _open_tab(args.tab, office_key)
     everyone = sweep.people(values)
     todo = sweep.to_check(everyone)
     if args.only:
@@ -263,10 +339,11 @@ def main(argv=None) -> int:
     # Lucy; on an office machine it is IGNORED, because a browser on the
     # owner's screen is never a flag's call -- the session opens one only when
     # a sign-in needs it ([[feedback_eco_runs_in_background]]).
-    with OVA.session_anywhere("", profile_dir=PROFILE_DIR,
+    with OVA.session_anywhere(office_key, campaign=programme,
+                              profile_dir=PROFILE_DIR,
                               headless=not args.show,
                               log=lambda m: print(m, flush=True)) as page:
-        heads, reps, complete = ov_table.read_table(page)
+        heads, reps, complete = ov_table.read_table(page, campaign=programme)
         matched, missing = match(todo, reps)
         if missing and not complete:
             # ONLY WHEN THE READ FELL SHORT. The search box fires the same
@@ -393,7 +470,8 @@ def main(argv=None) -> int:
         print("\nNo stale ticks: every box on the tab matches OwnerVille.")
 
     if ready and args.submit:
-        _submit(ready, writes, live=args.tick)
+        _submit(ready, writes, live=args.tick, office_key=office_key,
+                programme=programme)
         _alert_failures(args.tick)
     # RE-READ BEFORE WRITING (2026-09-21, 7:22pm). The OwnerVille part takes
     # minutes; someone deleted last week's chart and inserted a Classroom
