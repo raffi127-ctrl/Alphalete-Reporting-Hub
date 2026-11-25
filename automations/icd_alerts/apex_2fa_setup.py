@@ -188,11 +188,13 @@ def _run(log, ask, end) -> int:
         with sync_playwright() as p:
             ctx = p.chromium.launch_persistent_context(
                 str(AS.APEX_PROFILE_DIR), headless=False,
-                args=["--disable-sync"], **G.launch_args())
+                args=["--disable-sync"] + BIG_WINDOW, no_viewport=True,
+                **G.launch_args())
             guard = G.install(ctx, "watch")
             browser_banner.attach(ctx, WAIT, WAIT_DETAIL)
             try:
                 page = ctx.pages[0] if ctx.pages else ctx.new_page()
+                maximize(page)
                 page.goto(AP.APEX_URL, wait_until="domcontentloaded",
                           timeout=60_000)
                 page.wait_for_timeout(4000)
@@ -301,6 +303,25 @@ def _run(log, ask, end) -> int:
 # a key different from the saved one is saved only after Verify.
 TWO_FA_PATH = "Identity/Account/Manage/TwoFactorAuthentication"
 PICK_WAIT_S = 300
+# The owner has to SEE the button: the window fills the screen (maximized,
+# never bigger -- a too-wide window hides the button off the edge) and the
+# page fills the window.
+BIG_WINDOW = ["--start-maximized"]
+
+
+def maximize(page) -> None:
+    """Maximize this browser window and bring it in front. Best effort."""
+    try:
+        cdp = page.context.new_cdp_session(page)
+        wid = cdp.send("Browser.getWindowForTarget")["windowId"]
+        cdp.send("Browser.setWindowBounds",
+                 {"windowId": wid, "bounds": {"windowState": "maximized"}})
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        page.bring_to_front()
+    except Exception:  # noqa: BLE001
+        pass
 TURN_PICK = 'YOUR TURN: PRESS "USE AUTHENTICATOR"'
 TURN_PICK_DETAIL = "Only that button. Then wait -- Lucy does the rest."
 SAY_PICK = ("Apex wants one more click on your account.\n\n"
@@ -360,11 +381,13 @@ def _finish(log, ask, end) -> int:
         with sync_playwright() as p:
             ctx = p.chromium.launch_persistent_context(
                 str(AS.APEX_PROFILE_DIR), headless=False,
-                args=["--disable-sync"], **G.launch_args())
+                args=["--disable-sync"] + BIG_WINDOW, no_viewport=True,
+                **G.launch_args())
             guard = G.install(ctx, "watch")
             browser_banner.attach(ctx, WAIT, WAIT_DETAIL)
             try:
                 page = ctx.pages[0] if ctx.pages else ctx.new_page()
+                maximize(page)
                 # 1. Lucy signs in with the saved login + her own code
                 signed, step = L.sign_in(page, login, log=log)
                 if not signed:
@@ -379,6 +402,7 @@ def _finish(log, ask, end) -> int:
                     page.goto(AP.APEX_URL + TWO_FA_PATH,
                               wait_until="domcontentloaded", timeout=60_000)
                     page.wait_for_timeout(3000)
+                    maximize(page)
                     browser_banner.show(page, TURN_PICK, TURN_PICK_DETAIL,
                                         browser_banner.GREEN)
                     ask.message(SAY_PICK)
