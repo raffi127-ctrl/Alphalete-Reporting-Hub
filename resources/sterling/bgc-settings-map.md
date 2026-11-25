@@ -116,3 +116,83 @@ is why it is a rule rather than a stored string.
 Everything before Send is safe to re-run. A failure *at* Send is the one case
 nobody retries automatically: a second press could invite the same people
 twice, and Sterling will not invite the same email twice anyway.
+
+---
+
+## The drug screen — what Raf's Loom actually shows (2026-11-25)
+
+Loom `ba6bf293febd4e4baf4dbb01c9912ecc`, **"How to Check Drug Test Status"**.
+Raf's own opening line: *"I'm assuming this video is for Megan. Because I
+think we're gonna automate it. But we're gonna automate how to CHECK that the
+drug tests have been done."*
+
+**It does not show sending one.** It is three minutes of looking a rep up in
+First Advantage and reading their status. So nothing in it verifies the send
+mapping, and the send route below is still unwatched.
+
+What it DOES establish:
+
+1. **Drug Screen is a POSITION value.** *"you see the drug screen panel as the
+   position"* (0:51). `sterling_send.pick_drug_screen` picks Position and
+   Screening Package by the word "drug", which matches "Drug Screen Panel".
+   The Position half is confirmed; the Package half is still inferred.
+2. **The portal is the same sign-in.** The address bar reads
+   `auth.sterlingcheck.app`; the dashboard it lands on is First Advantage
+   branded ("Account Dashboard", "ScreeningDirect"). Same road the background
+   check already takes.
+3. **The status word is "clear", not "pass"** (0:51-1:04). *"It won't say
+   pass."*
+4. **"Complete" means the invite completed, not that they passed** (2:18,
+   2:58). Raf: *"it says the same thing as the background check... it doesn't
+   say pass or fail."*
+
+### THE ONE THAT BREAKS SOMETHING WE ALREADY RUN
+
+> *"that's the only email we get when I do their back or their drug tests, so
+> it doesn't actually say drug tests on it."* — Raf, 1:36
+
+**A drug screen result arrives as the SAME email as a background check
+result.** `bg_check_sync/parse.classify` matches on subject phrases —
+"E-Invite for X is Complete", "Background Check for X is complete" — and has
+no way to tell the two apart, because the subject does not say.
+
+So the moment drug sends go live for an office, that office's drug-screen
+result emails will be recorded as BACKGROUND CHECK statuses. For somebody who
+has both, whichever lands second overwrites the first. A rep could read as
+background-check-complete on the strength of a drug screen.
+
+This is why `drug_mode` ships "dry" everywhere and why arming it is not a
+one-word change: `bg_check_sync` has to be able to tell the two apart first.
+The only signal available is correlation — we know who we sent a drug invite
+to and when, from the `send_drug` rows on 'Admin Requests' — because the email
+itself carries nothing.
+
+Raf has not solved this on his side either: *"So I think the only way is you
+check"* (3:07).
+
+### The send route, answered (2026-11-25)
+
+Asked directly, the office's answer: **"it's the exact same as sending the BG,
+you just check drug test instead."**
+
+So the walk does not change at all — Client Hub, Invite Candidate, Position,
+Screening Package, Location, bulk upload, Send Invites — and the only
+difference is which option is picked. That is exactly what
+`sterling_send.picker_for("drug")` does: the same `fill_order`, with
+`pick_drug_screen` in place of `pick_elite` on BOTH dropdowns, because the
+background check picks Elite on both.
+
+NOT A SECOND ROUTE, THEREFORE, AND DELIBERATELY SO. A copy of the sign-in, the
+code mail and the upload would be a second thing to keep working, and the half
+that breaks is always the one nobody is watching.
+
+### Still unseen
+
+Only one thing, and it is smaller than it was: whether the **Drug Screen
+Information** table (Source · Test Type · Registration Method · Reason For
+Test · COC/Site/Kit · App Notify) has to be filled when the package IS a drug
+screen. It has only ever been seen reading "No Records Found", on a
+background-check order. "Exactly the same" implies it is left alone there too,
+but nobody has watched a drug order go through, so the first live one is where
+that is confirmed -- and if it does ask for something, the run stops at that
+step and says which field, rather than guessing at a Reason For Test.

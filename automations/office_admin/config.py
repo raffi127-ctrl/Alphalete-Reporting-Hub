@@ -78,7 +78,16 @@ SEND_BGC = "send_bgc"
 # press carries their answers.
 APEX_LOOK = "apex_look"
 APEX_SEND = "apex_send"
-ACTIONS = (FIND_BGC, SEND_BGC, APEX_LOOK, APEX_SEND)
+# The week-3 drug test, in the same two presses. NOT part of the background
+# check (Rafael Hidalgo, 2026-11-24: "If we send the drug test with the
+# background check, it'll cause confusion, it'll need resent because the
+# applicant won't find it / if they're new and they take it, the owner gets
+# charged more money. we like doing the drug test on WK3 of starting / so I
+# think a button to send it would be great"). FIND reads the training week
+# three weeks back; SEND places the Sterling order for the people ticked.
+FIND_DRUG = "find_drug"
+SEND_DRUG = "send_drug"
+ACTIONS = (FIND_BGC, SEND_BGC, APEX_LOOK, APEX_SEND, FIND_DRUG, SEND_DRUG)
 
 # Request statuses, in the order a row moves through them.
 QUEUED = "queued"
@@ -112,6 +121,12 @@ class Office:
     # "dry": the office computer signs in and reports who it WOULD invite,
     # sends nothing. "live": sends. Set here, never on the office computer.
     bgc_mode: str = "dry"
+    # The week-3 drug test. Its OWN switch, not bgc_mode's: the two orders are
+    # billed separately and go out three weeks apart, so an office can be live
+    # on background checks long before anybody has watched a drug order place.
+    # Sharing one switch would arm this the moment BGC went live, which is
+    # exactly the surprise that makes an owner's first drug bill a mystery.
+    drug_mode: str = "dry"
     # New starts -> Apex. "off" means the office's computer refuses the job
     # outright. Default off, and OFF IS THE POINT: this one creates payroll
     # records, and Megan 2026-11-08: "we should only test on Raf's".

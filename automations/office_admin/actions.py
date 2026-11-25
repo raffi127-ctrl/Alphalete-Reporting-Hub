@@ -111,6 +111,68 @@ def send_bgc(ws, admin: Dict, office: C.Office, people: List[Dict],
     return jid
 
 
+def find_drug(office: C.Office, *, today: Optional[dt.date] = None,
+              session=None, log=print) -> List[Dict]:
+    """The people in WEEK 3 of starting -- who the drug test goes to.
+
+    Raf, 2026-11-24: "we like doing the drug test on WK3 of starting". The
+    week is worked out in `wk3.start_week_for`, and the names come off this
+    office's own training calendar on THIS computer's ApplicantStream login,
+    the same read the background-check button uses.
+    """
+    from automations.office_admin import wk3
+    return wk3.find(office, today=today, session=session, log=log)
+
+
+def log_find_drug(ws, admin: Dict, people: List[Dict]) -> None:
+    rid = S.add_request(ws, username=admin["username"], office_key=admin["office"],
+                        action=C.FIND_DRUG)
+    row = _row_of(ws, rid)
+    if row:
+        S.update_request(ws, row, Status=C.DONE,
+                         Result=json.dumps({"candidates": people}))
+
+
+def send_drug(ws, admin: Dict, office: C.Office, people: List[Dict],
+              location: Optional[Dict[str, str]] = None) -> str:
+    """Queue the WEEK-3 DRUG TEST for the office's ECO computer.
+
+    Deliberately the same shape as `send_bgc` -- logged before it is queued,
+    so a press is never lost; refuses without a city and state, because
+    Sterling's form will not go without them. Two things differ, and both on
+    purpose:
+
+      * the job kind is `drug_send`, which is what picks the Drug Screen
+        package at the far end. The package is NEVER in the payload: a list
+        posted in from outside must not be able to choose what the owner is
+        billed for.
+      * it is gated on `office.drug_mode`, not `bgc_mode`. An office live on
+        background checks is not thereby live on drug orders.
+    """
+    from automations.office_admin import relay_client
+    people = valid_people(people)
+    if not people:
+        raise ValueError("Nobody with a name and email was picked.")
+    if not (location or {}).get("state") or not (location or {}).get("city"):
+        raise ValueError("Set your office's city and state first.")
+    rid = S.add_request(ws, username=admin["username"], office_key=office.key,
+                        action=C.SEND_DRUG, details={"people": people})
+    row = _row_of(ws, rid)
+    try:
+        jid = relay_client.request_job(office.key, "drug_send",
+                                       {"people": people, "request_id": rid,
+                                        "location": location},
+                                       mode=office.drug_mode)
+    except Exception as e:
+        if row:
+            S.update_request(ws, row, Status=C.FAILED, Result=str(e)[:300])
+        raise
+    if row:
+        S.update_request(ws, row, Status=C.AT_OFFICE, Job_ID=jid,
+                         Result="Sent to your office computer.")
+    return jid
+
+
 def refresh_send(ws, req: Dict, *, now: Optional[dt.datetime] = None) -> Dict:
     """Ask the relay about one at-office send; write the verdict to its row
     when there is one. Returns the row's fields as they now stand."""

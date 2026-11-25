@@ -987,7 +987,7 @@ var OJ = {ID: 0, OFFICE: 1, KIND: 2, MODE: 3, PAYLOAD: 4, QUEUED: 5,
 var OJ_HEAD = ['Job ID', 'Office', 'Kind', 'Mode', 'Payload JSON', 'Queued At',
                'Status', 'Offered At', 'Result JSON', 'Result At',
                'Collected At'];
-var OJ_KINDS = {bgc_send: true, apex_week: true,
+var OJ_KINDS = {bgc_send: true, drug_send: true, apex_week: true,
                 // online presence (icd_alerts/social_post.py): the office's own Zoho
                 zoho_signin: true, social_check: true, social_post: true};
 var OJ_ADMIN_ONLY = {zoho_signin: true, social_check: true, social_post: true};
@@ -1533,6 +1533,7 @@ function _officeAdminCall(a) {
   if (what === 'set_office') return _admSetOffice(sess, office, a);
   if (what === 'send') return _admSend(sess, office, a);
   if (what === 'apex_week') return _admApexWeek(sess, office, a);
+  if (what === 'drug_send') return _admDrugSend(sess, office, a);
   if (what === 'board_week') return _boardWeek(office, a);
   if (what === 'board_mark') return _boardMark(office, a);
   if (what === 'board_classroom') return _boardClassroom(office, a);
@@ -1698,12 +1699,18 @@ function _admSetOffice(sess, office, a) {
   }
 }
 
-function _admSend(sess, office, a) {
+// THE GUARD, SHARED BY EVERY STERLING SEND. The calendar's own account number
+// must be approved for this office and switched on by its admin; anything
+// else sends nothing. Several accounts can go in one send ("11280, 11901"):
+// EVERY one must pass.
+//
+// It lives in one function because the background check and the week-3 drug
+// test (Raf, 2026-11-24) both place orders billed to the owner, and a guard
+// copied into two places is a guard that gets fixed in one of them. Returns
+// {ok: false, error} to hand straight back, or {ok: true, o, people}.
+function _admSterlingGuard(sess, office, a) {
   var o = _admOffice(sess, office);
   if (!o.state || !o.city) return {ok: false, error: "Set this office's city and state first."};
-  // THE GUARD: the calendar's own account number must be approved for this
-  // office (and switched on by its admin). Anything else sends nothing.
-  // Several accounts can go in one send ("11280, 11901"): EVERY one must pass.
   var acct = _accounts(a.appstream);
   var approved = String(o.approved || '').split(', ').filter(String);
   var chosen = String(o.appstream || '').split(', ').filter(String);
@@ -1725,6 +1732,13 @@ function _admSend(sess, office, a) {
             email: String(p.email).trim()};
   });
   if (!people.length) return {ok: false, error: 'Nobody with a name and email was picked.'};
+  return {ok: true, o: o, acct: acct, people: people};
+}
+
+function _admSend(sess, office, a) {
+  var guard = _admSterlingGuard(sess, office, a);
+  if (!guard.ok) return guard;
+  var o = guard.o, acct = guard.acct, people = guard.people;
   // Before the duplicate check: the admin answers 'is this many right?' first.
   var usual = _admUsualPerDay(office);
   if (!a.big_ok && people.length > BIG_FLOOR && (usual === 0 || people.length > BIG_TIMES * usual)) {
@@ -1754,6 +1768,47 @@ function _admSend(sess, office, a) {
                             one_at_a_time: true,
                             payload: {people: people, by: sess.username, appstream: acct,
                                       source: source, week_monday: String(a.week_monday || ''),
+                                      location: {country: 'United States', state: o.state, city: o.city}}});
+}
+
+// THE WEEK-3 DRUG TEST (Rafael Hidalgo, 2026-11-24). Its own press, its own
+// order, three weeks after somebody starts -- NOT riding along on the
+// background check: "it'll cause confusion, it'll need resent because the
+// applicant won't find it / if they're new and they take it, the owner gets
+// charged more money".
+//
+// THE SAME GUARD, A DIFFERENT LEDGER. It shares `_admSterlingGuard` with the
+// background check, because the question "is this calendar's account approved
+// for this office" has one answer. It does NOT share the already-sent check:
+// `_admAlready` records BACKGROUND CHECKS, and everybody in week 3 has had
+// one -- running the drug send through it would flag the entire week as a
+// duplicate and ask the admin to confirm something that is not a repeat at
+// all. Sterling refuses a genuine second invite to the same email on its own
+// (portal-map.md), which is the backstop that matters here.
+//
+// The big-send guard is kept: "is this many right?" is worth asking about any
+// order billed to an owner, whichever order it is.
+function _admDrugSend(sess, office, a) {
+  var guard = _admSterlingGuard(sess, office, a);
+  if (!guard.ok) return guard;
+  var o = guard.o, people = guard.people;
+  var usual = _admUsualPerDay(office);
+  if (!a.big_ok && people.length > BIG_FLOOR && (usual === 0 || people.length > BIG_TIMES * usual)) {
+    return {ok: false, needs_big_confirm: true, count: people.length, usual: Math.round(usual),
+            error: 'This is a much bigger drug-test send than usual.'};
+  }
+  // ONE AT A TIME, PER OFFICE. A second press while the first is still
+  // running would place the same order twice and bill the owner twice.
+  // NOT `o.mode`. The background check's switch must never arm this one: an
+  // office that went live on BGC has not thereby had anybody watch a drug
+  // order place, and the first anyone would know is the owner's bill. No
+  // drug_mode on the sheet means DRY, which reports who it would invite and
+  // sends nothing.
+  return _officeJobEnqueue({office: office, kind: 'drug_send',
+                            mode: o.drug_mode || 'dry',
+                            status: 'checking', one_at_a_time: true,
+                            payload: {people: people, by: sess.username,
+                                      start_week: String(a.start_week || ''),
                                       location: {country: 'United States', state: o.state, city: o.city}}});
 }
 

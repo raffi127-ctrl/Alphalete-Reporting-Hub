@@ -73,6 +73,52 @@ def pick_elite(options: List[str]) -> str:
     return hits[0]
 
 
+def pick_drug_screen(options: List[str]) -> str:
+    """The Job Position / Screening Package option that is the DRUG SCREEN.
+
+    The counterpart to `pick_elite`, and the same rule for the same reason.
+    Every ICD's account lists three options -- Drug Screen, NBR, and the Elite
+    one (bgc-settings-map.md) -- so the drug test is this same walk with a
+    different pick, not a different form.
+
+    MATCHED ON THE WORDS, NOT A STORED STRING. "Elite" is spelled two ways
+    across accounts ("Sterling - Elite", "Sterling Elite / Extra"), so the
+    drug one is assumed to vary too; "drug" is the word that cannot be absent
+    from it. NBR is not excluded by name -- it simply does not say "drug", and
+    naming the thing we DON'T want is how a third option nobody told us about
+    gets picked by accident.
+
+    EXACTLY ONE, ELSE STOP. An order billed to an owner is not a place to take
+    the closest match: two hits or none both raise, and the caller turns that
+    into a failure that names the options it saw.
+    """
+    hits = [o.strip() for o in options or []
+            if o and not o.strip().startswith(_PLACEHOLDER_PREFIX)
+            and "drug" in o.lower()]
+    if len(hits) != 1:
+        raise ValueError("expected exactly one Drug Screen option, found %d (%s)"
+                         % (len(hits), ", ".join(hits) or "none"))
+    return hits[0]
+
+
+# Which order a send is placing. The admin page and the relay speak these two
+# words; everything below turns them into a picker. A package nobody has
+# mapped is refused by name rather than falling back to the background check,
+# because a wrong pick here bills the owner for the wrong test.
+PACKAGES = {"elite": pick_elite, "drug": pick_drug_screen}
+DEFAULT_PACKAGE = "elite"
+
+
+def picker_for(package: str):
+    """The option-picker for a package name. Raises ValueError on anything
+    unmapped -- never a silent fallback to Elite."""
+    key = str(package or DEFAULT_PACKAGE).strip().lower()
+    if key not in PACKAGES:
+        raise ValueError("unknown Sterling package %r (known: %s)"
+                         % (package, ", ".join(sorted(PACKAGES))))
+    return PACKAGES[key]
+
+
 def pick_option(options: List[str], want: str) -> str:
     """`want` among the dropdown's options, ignoring case/spacing. Raises
     ValueError when this account doesn't offer it."""
@@ -543,12 +589,18 @@ def _choose(page, label: str, picker, log=print) -> str:
         raise StepFailed(label, "%s: %s" % (type(e).__name__, str(e)[:160]))
 
 
-def fill_order(page, location: Dict, log=print) -> None:
-    """Order Settings: Position + Package = the Elite one, Location by the
-    type-ahead, everything prefilled left alone (Billing Code must show)."""
+def fill_order(page, location: Dict, log=print,
+               package: str = DEFAULT_PACKAGE) -> None:
+    """Order Settings: Position + Package by `package`, Location by the
+    type-ahead, everything prefilled left alone (Billing Code must show).
+
+    `package` is "elite" (the background check) or "drug" (the week-3 drug
+    test, Raf 2026-11-24). Both pick from the SAME two dropdowns -- it is one
+    form with three options on it, not two different forms."""
     _cookie_banner(page)   # Osano shows on Client Hub too
-    _choose(page, "Position", pick_elite, log)
-    _choose(page, "Screening Package", pick_elite, log)
+    pick = picker_for(package)
+    _choose(page, "Position", pick, log)
+    _choose(page, "Screening Package", pick, log)
     # Each office's Billing Code differs (prefilled); only an EMPTY one stops.
     if not any(ch.isdigit() for ch in field_value(page, "billingCode")):
         _snap(page, "billing-code", log)
@@ -668,27 +720,43 @@ def press_send(page, log=print) -> None:
 
 def run_route(page, people: List[Dict], location: Dict, *, live: bool,
               creds: Optional[Dict] = None, office_key: str = "",
-              get_code=None, log=print) -> Dict:
+              get_code=None, log=print,
+              package: str = DEFAULT_PACKAGE) -> Dict:
     """The whole mapped route on one page. live=False stops right before
-    Send Invites."""
+    Send Invites.
+
+    Every result carries `package`, so a row on 'Admin Requests' says WHICH
+    order went out. "sent 6" that does not say what was sent is the shape of
+    record somebody reads a month later and cannot use."""
     if creds:
         sign_in(page, creds, office_key=office_key, get_code=get_code, log=log)
     page = open_hub(page, log)
-    fill_order(page, location, log)
+    fill_order(page, location, log, package=package)
     n = upload(page, people, log)
     names = [_name(p) for p in people]
     if not live:
         return {"status": "dry_run", "would_send": names, "found": n,
                 "location": location_text(location), "signed_in": True,
+                "package": package,
                 "note": "test run -- everything filled, stopped before Send Invites"}
     press_send(page, log)
-    return {"status": "sent", "sent": names, "found": n}
+    return {"status": "sent", "sent": names, "found": n, "package": package}
 
 
 def send_invites(people: List[Dict], *, live: bool, office_key: str = "",
-                 log=print, location: Dict = None) -> Dict:
+                 log=print, location: Dict = None,
+                 package: str = DEFAULT_PACKAGE) -> Dict:
     """-> {'status': 'sent'|'dry_run'|'error', 'sent': [...], 'failed': [...],
-    'would_send': [...], 'error': str}."""
+    'would_send': [...], 'error': str}.
+
+    `package`: "elite" for the background check, "drug" for the week-3 drug
+    test. An unknown one is refused HERE, before a browser opens -- the cost
+    of a wrong pick is an order billed to the owner, so it is not something to
+    discover at the dropdown."""
+    try:
+        picker_for(package)
+    except ValueError as e:
+        return {"status": "error", "error": str(e)}
     people = [p for p in people or [] if _name(p) and "@" in str(p.get("email") or "")]
     if not people:
         return {"status": "error", "error": "nobody to invite"}
@@ -701,7 +769,7 @@ def send_invites(people: List[Dict], *, live: bool, office_key: str = "",
         if not live:
             return {"status": "dry_run", "would_send": [_name(p) for p in people],
                     "location": "%s, %s" % (location["city"], location["state"]),
-                    "signed_in": False,
+                    "signed_in": False, "package": package,
                     "note": "test run -- Sterling sign-in not wired yet, nothing sent"}
         return {"status": "error",
                 "error": "sending from this computer isn't switched on yet -- send these in Sterling by hand",
@@ -722,7 +790,7 @@ def send_invites(people: List[Dict], *, live: bool, office_key: str = "",
         try:
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             return run_route(page, people, location, live=live, creds=creds,
-                             office_key=office_key, log=log)
+                             office_key=office_key, log=log, package=package)
         except StepFailed as e:
             # Before Send nothing went out; at Send it is UNCONFIRMED.
             res = {"status": "error", "error": str(e), "step": e.step}
@@ -763,9 +831,11 @@ def check_login(*, office_key: str = "", log=print) -> Dict:
 
 
 # --- trying it on our own Mac ------------------------------------------------
-def _attempt(page, people, location, log=print) -> Dict:
+def _attempt(page, people, location, log=print,
+             package=DEFAULT_PACKAGE) -> Dict:
     try:
-        return run_route(page, people, location, live=False, log=log)
+        return run_route(page, people, location, live=False, log=log,
+                         package=package)
     except StepFailed as e:
         return {"status": "error", "error": str(e), "step": e.step,
                 "snapshots": str(_snap_dir())}

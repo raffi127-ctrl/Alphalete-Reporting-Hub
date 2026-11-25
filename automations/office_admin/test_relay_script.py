@@ -234,3 +234,62 @@ def test_who_is_in_the_week_is_still_read_at_the_office():
     body = src.split("function _admApexWeek(", 1)[1].split("\nfunction ", 1)[0]
     assert "a.people" not in body
     assert "people:" not in body
+
+
+# --------------------------------------------- the week-3 drug test (11/25)
+
+def _drug_body(code_only: bool = False) -> str:
+    src = _source()
+    body = src[src.index("function _admDrugSend("):]
+    body = body[:body.index("\nfunction ")]
+    if not code_only:
+        return body
+    # CODE ONLY, because a test that reads comments tests its own prose. The
+    # comment above this very function says "NOT `o.mode`" -- asserting on the
+    # raw text made the check pass or fail on how the warning was WORDED
+    # rather than on what the code does.
+    return "\n".join(ln for ln in body.splitlines()
+                     if not ln.strip().startswith("//"))
+
+
+def test_the_drug_send_job_is_wired_end_to_end():
+    """Same three pieces as apex_week. Raf asked for this button on
+    2026-11-24; a kind without a dispatch line does nothing at all."""
+    src = _source()
+    assert "drug_send: true" in src, "drug_send is not an allowed job kind"
+    assert "_admDrugSend(sess, office, a)" in src, "nothing dispatches drug_send"
+    assert "function _admDrugSend(" in src, "drug_send's handler is missing"
+
+
+def test_the_drug_send_never_falls_back_to_the_background_check_switch():
+    """`o.mode` is the BACKGROUND CHECK's switch. If the drug send read it,
+    every office already live on background checks would start placing drug
+    orders the moment this shipped, and the first anybody would know is the
+    owner's bill. No drug_mode on the sheet means dry."""
+    body = _drug_body(code_only=True)
+    assert "o.drug_mode || 'dry'" in body, body[-600:]
+    assert "o.mode" not in body, "the drug send is reading the BGC mode"
+
+
+def test_the_drug_send_does_not_use_the_background_check_duplicate_ledger():
+    """`_admAlready` records background checks, and everybody in week 3 has
+    had one. Running the drug list through it would flag the whole week as a
+    duplicate and ask the admin to confirm a repeat that is not one."""
+    body = _drug_body(code_only=True)
+    assert "_admAlready" not in body, body[-600:]
+
+
+def test_the_drug_send_still_asks_about_a_big_send():
+    """Any order billed to an owner is worth 'is this many right?'."""
+    body = _drug_body(code_only=True)
+    assert "needs_big_confirm" in body
+
+
+def test_both_sterling_sends_share_one_account_guard():
+    """The 'is this calendar's account approved for this office' question has
+    one answer, so it has one implementation. A guard copied in two places is
+    a guard fixed in one of them."""
+    src = _source()
+    assert "function _admSterlingGuard(" in src
+    assert src.count("_admSterlingGuard(sess, office, a)") >= 2, (
+        "both _admSend and _admDrugSend must go through the shared guard")

@@ -134,12 +134,21 @@ def work(job: Dict, office_key: str, log=print) -> Dict:
     kind = job.get("kind")
     live = job.get("mode") == "live"
     try:
-        if kind == "bgc_send":
+        if kind in ("bgc_send", "drug_send"):
+            # ONE WALK, TWO ORDERS. The week-3 drug test (Raf, 2026-11-24) is
+            # the same Sterling bulk upload with a different Position and
+            # Screening Package, so it shares this path rather than growing a
+            # second copy of the sign-in, the code mail and the upload. The
+            # KIND is what picks the package -- never the payload, because a
+            # list posted in from outside must not be able to choose what the
+            # owner is billed for.
             from automations.icd_alerts import sterling_send
             payload = job.get("payload") or {}
+            package = "drug" if kind == "drug_send" else "elite"
             res = sterling_send.send_invites(list(payload.get("people") or []), live=live,
                                              office_key=office_key, log=log,
-                                             location=payload.get("location") or {})
+                                             location=payload.get("location") or {},
+                                             package=package)
         elif kind == "apex_week":
             # OFF unless this office has been switched on by hand. The job
             # creates payroll records, so a machine that was never meant to run

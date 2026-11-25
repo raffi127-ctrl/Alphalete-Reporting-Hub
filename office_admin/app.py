@@ -292,6 +292,112 @@ def _bgc_section(admin, reqs, ws) -> None:
             st.caption(res["error"])
 
 
+def _drug_section(admin, reqs, ws) -> None:
+    """The week-3 drug test.
+
+    Rafael Hidalgo, 2026-11-24, asked whether it could ride along on the
+    background-check press: "If we send the drug test with the background
+    check, it'll cause confusion, it'll need resent because the applicant
+    won't find it / if they're new and they take it, the owner gets charged
+    more money. we like doing the drug test on WK3 of starting / so I think a
+    button to send it would be great."
+
+    So it is its own button, showing its own week. The shape is deliberately
+    the background check's -- read, tick, send -- because it is the same job
+    done to a different list, and an admin who can do one should not have to
+    learn a second way.
+    """
+    from automations.office_admin import actions, relay_client, wk3
+    office = C.office(admin["office"])
+    st.subheader("🧪 Drug tests — week 3")
+    if not relay_client.configured(office.key):
+        st.warning("This computer isn't connected to your office's Lucy yet. "
+                   "Ask Lucy's team to finish setting it up.")
+        return
+
+    # The week is DERIVED, never typed. Megan's rule is one input per concept
+    # and the obvious default -- and "which Sunday was two weeks ago" is
+    # exactly the arithmetic a person should not be asked to do at 8am.
+    start = wk3.start_week_for(_dt.date.today())
+    # "%b %-d" is Mac-only and this page runs on Windows too, so the day is
+    # built from .day rather than a strftime directive.
+    when = "%s %d" % (start.strftime("%b"), start.day)
+    st.caption("Everyone who started training the week of %s — they're in "
+               "their third week now." % when)
+
+    sws = S.settings_tab()
+    location = S.location_of(S.office_settings(sws, office.key))
+    if not location:
+        st.info("Set your office's city and state in Background checks first — "
+                "Sterling needs it on every order.")
+        return
+
+    sends = _mine(reqs, office.key, C.SEND_DRUG)
+    last_send = sends[0] if sends else None
+    if last_send and last_send.get("Status") == C.AT_OFFICE:
+        last_send = actions.refresh_send(ws, last_send)
+    send_open = bool(last_send and last_send.get("Status") in C.OPEN_STATUSES)
+
+    if st.button("🔎 Find week 3", use_container_width=True, disabled=send_open,
+                 key="drug-find"):
+        with st.spinner("Reading ApplicantStream…"):
+            try:
+                people = actions.find_drug(office)
+            except Exception as e:  # noqa: BLE001
+                st.error("Couldn't read ApplicantStream (%s). Is it logged in "
+                         "on this computer?" % type(e).__name__)
+                people = None
+        if people is not None:
+            st.session_state["wk3"] = {"people": people, "at": S.now_str()}
+            try:
+                actions.log_find_drug(ws, admin, people)
+            except Exception:  # noqa: BLE001 -- the record is nice to have
+                pass
+
+    found = st.session_state.get("wk3")
+    if found is not None:
+        people = found["people"]
+        if not people:
+            st.write("Nobody started training that week.")
+        else:
+            st.write("Tick who should get a drug test (read %s):" % found["at"])
+            picked = []
+            for i, p in enumerate(people):
+                name = "%s %s" % (p.get("first_name"), p.get("last_name"))
+                has_email = "@" in (p.get("email") or "")
+                label = name if has_email else \
+                    "%s — no email in ApplicantStream" % name
+                if st.checkbox(label, value=has_email, disabled=not has_email,
+                               key="d-%s-%d" % (found["at"], i)):
+                    picked.append(p)
+            if st.button("🧪 Send drug tests (%d)" % len(picked), type="primary",
+                         use_container_width=True,
+                         disabled=send_open or not picked, key="drug-send"):
+                try:
+                    actions.send_drug(ws, admin, office, picked, location)
+                    st.session_state.pop("wk3", None)
+                except Exception as e:  # noqa: BLE001
+                    st.error(str(e)[:300])
+                st.rerun()
+
+    if last_send:
+        st.markdown("**Last send**")
+        _status_line(last_send)
+        res = S.loads(last_send.get("Result"))
+        if res.get("would_send"):
+            st.caption("Test run — nothing was sent. Would have sent: %s"
+                       % ", ".join(res["would_send"]))
+        if res.get("sent"):
+            st.caption("Sent: %s" % ", ".join(res["sent"]))
+        if res.get("failed"):
+            st.warning("Not sent — please send by hand: %s" % ", ".join(res["failed"]))
+        if res.get("unconfirmed"):
+            st.warning("Not sure these went out — check Sterling before "
+                       "sending again: %s" % ", ".join(res["unconfirmed"]))
+        if res.get("error") and last_send.get("Status") == C.FAILED:
+            st.caption(res["error"])
+
+
 def _apex_section(admin, reqs, ws) -> None:
     """New starts -> Apex, in two presses: look up, then send.
 
@@ -430,6 +536,8 @@ def main() -> None:
     st.divider()
     _bob_section(admin)
     _apex_section(admin, reqs, ws)
+    st.divider()
+    _drug_section(admin, reqs, ws)
 
 
 main()
