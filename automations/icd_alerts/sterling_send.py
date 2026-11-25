@@ -73,6 +73,39 @@ def pick_elite(options: List[str]) -> str:
     return hits[0]
 
 
+def _same_option(a: str, b: str) -> bool:
+    """Two dropdown labels that are the same name written differently.
+
+    Sterling writes "Drug Screen – 4 Panel" with an EN DASH; a person asked
+    which package to use types a hyphen. Case, run-together spaces and the
+    three dash characters are all noise here, and treating them as meaningful
+    is how a correct answer fails to match the option it names.
+    """
+    def norm(t: str) -> str:
+        t = str(t or "")
+        for dash in ("‐", "‑", "‒", "–", "—", "―"):
+            t = t.replace(dash, "-")
+        return " ".join(t.lower().replace("-", " - ").split())
+    return norm(a) == norm(b)
+
+
+# WHICH PACKAGE WHEN TWO OF THEM SAY "DRUG". Raf's Screening Package dropdown
+# lists BOTH "4 Panel Drug Screen" and "Drug Screen – 4 Panel", and the first
+# real order (2026-11-25) stopped on exactly that -- the two differ only in
+# how the same four words are arranged, which is the pair a closest-match rule
+# would have chosen between at random, with the owner billed either way.
+#
+# Megan asked his office and the answer is below. It is a TIE-BREAK, not a
+# replacement for the word rule: an account offering one drug option still
+# matches on the word, so an office whose label we have never seen keeps
+# working. Only an account offering SEVERAL needs to find itself here.
+#
+# Position is unaffected -- that dropdown had exactly one drug option and
+# passed. The two lists are not the same on this account, which is the thing
+# the same-picker-for-both arrangement had assumed.
+DRUG_PACKAGES = ("Drug Screen - 4 Panel",)
+
+
 def pick_drug_screen(options: List[str]) -> str:
     """The Job Position / Screening Package option that is the DRUG SCREEN.
 
@@ -95,10 +128,21 @@ def pick_drug_screen(options: List[str]) -> str:
     hits = [o.strip() for o in options or []
             if o and not o.strip().startswith(_PLACEHOLDER_PREFIX)
             and "drug" in o.lower()]
-    if len(hits) != 1:
-        raise ValueError("expected exactly one Drug Screen option, found %d (%s)"
-                         % (len(hits), ", ".join(hits) or "none"))
-    return hits[0]
+    if len(hits) == 1:
+        return hits[0]
+    if hits:
+        named = [o for o in hits
+                 if any(_same_option(o, w) for w in DRUG_PACKAGES)]
+        if len(named) == 1:
+            return named[0]
+        raise ValueError(
+            "this account offers %d Drug Screen options (%s) and %s matches "
+            "the one we were told to use (%s) -- say which one bills, it is "
+            "not safe to guess"
+            % (len(hits), ", ".join(hits),
+               "none" if not named else "more than one",
+               ", ".join(DRUG_PACKAGES)))
+    raise ValueError("expected exactly one Drug Screen option, found 0 (none)")
 
 
 # Which order a send is placing. The admin page and the relay speak these two

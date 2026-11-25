@@ -145,3 +145,45 @@ class TheJobKindPicksThePackage(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TwoOptionsBothSayingDrug(unittest.TestCase):
+    """Raf's Screening Package dropdown lists BOTH "4 Panel Drug Screen" and
+    "Drug Screen – 4 Panel". The first real order, 2026-11-25, stopped there
+    rather than pick one -- the two differ only in word order, and the owner
+    is billed either way. His office answered: "Drug screen - 4 panel".
+    """
+
+    REAL = ["4 Panel Drug Screen", "Drug Screen – 4 Panel",
+            "Sterling - Elite", "NBR"]
+
+    def test_the_named_package_wins_over_the_other_drug_one(self):
+        self.assertEqual(SS.pick_drug_screen(self.REAL), "Drug Screen – 4 Panel")
+
+    def test_an_en_dash_is_the_same_name_as_a_hyphen(self):
+        """Sterling writes an en dash; a person typing the answer writes a
+        hyphen. Treating them as different is how a correct answer fails to
+        match the option it names."""
+        self.assertTrue(SS._same_option("Drug Screen – 4 Panel",
+                                        "drug screen - 4 panel"))
+        self.assertTrue(SS._same_option("Drug Screen-4 Panel",
+                                        "Drug Screen — 4  Panel"))
+        self.assertFalse(SS._same_option("Drug Screen - 4 Panel",
+                                         "Drug Screen - 10 Panel"))
+
+    def test_one_drug_option_still_matches_on_the_word(self):
+        """The tie-break must not replace the word rule: an office whose
+        label we have never seen keeps working."""
+        self.assertEqual(
+            SS.pick_drug_screen(["Sterling - Elite", "Some Other Drug Panel", "NBR"]),
+            "Some Other Drug Panel")
+
+    def test_several_drug_options_and_none_named_still_refuses(self):
+        """Only Raf's pair is answered. Another account's ambiguity is a new
+        question, not something to resolve with his answer."""
+        with self.assertRaises(ValueError) as cm:
+            SS.pick_drug_screen(["7 Panel Drug Screen", "9 Panel Drug Screen"])
+        self.assertIn("not safe to guess", str(cm.exception))
+
+    def test_the_elite_pick_is_untouched_by_the_tie_break(self):
+        self.assertEqual(SS.pick_elite(self.REAL), "Sterling - Elite")
