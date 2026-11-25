@@ -932,6 +932,106 @@ def owner_submit(office_key: str, week_start: dt.date, *,
                                 log=log, budget_s=budget_s)
 
 
+# --- BLUE INK: WHO HAS SIGNED --------------------------------------------
+#
+# Moved here from `icd_onboarding.run` on 2026-11-24. The packet is in the
+# OFFICE's own Blue Ink account -- each ICD got their own on 2026-11-09,
+# because an office falling back to Alphalete's sends its new starts'
+# documents out of somebody else's account and the send SUCCEEDS.
+#
+# THE WEB APP, NOT THE API. On this Blue Ink plan anything the API creates
+# bills as a Bulk Envelope -- fifty a year, already spent -- so reading is the
+# only thing an API key is good for here, and a machine without one reads the
+# same screens a person does (`recent_ui`). Both routes are kept because a key
+# IS faster where one exists.
+
+def _has_blueink(office_key: str, log=print) -> bool:
+    """Does this office do Blue Ink at all?
+
+    ASKED OF THIS MACHINE FIRST, and that is the point: on the office's own
+    computer the answer is sitting in their home folder -- a Blue Ink login or
+    key saved by their own installer (`icd_alerts.blueink_setup`). No Sheets
+    read, no relay call, and no doubt.
+
+    THE RELAY WORKBOOK IS THE HUB'S ANSWER, and `office_steps._rows` returns
+    [] off the Hub rather than raising -- which reads as "nobody has asked",
+    not as "no". That is right for a Lucy and useless on an office box, where
+    it would have every office read Blue Ink whether they have it or not.
+
+    NONE STILL MEANS NOBODY HAS ASKED, and nobody-has-asked proceeds: an
+    office that has not answered yet is not an office that said no, and
+    skipping them would leave the column blank for ever with nothing saying
+    why.
+    """
+    from automations.icd_onboarding import fillers as F
+
+    if F.on_office_machine(office_key):
+        try:
+            from automations.icd_alerts import blueink_setup as BS
+            if BS.have_login() or BS.have_key():
+                return True
+        except Exception:      # noqa: BLE001 -- older copy: fall through
+            pass
+        from automations.blueink_docs import config as BC
+        if BC.ECO_CREDS_PATH.exists():
+            return True
+        log("  blueink: this computer has no Blue Ink login or key saved, so "
+            "%s does not do Blue Ink -- nothing to read" % office_key)
+        return False
+
+    from automations.icd_onboarding import office_steps as OS
+    if OS.uses_blueink(office_key) is False:
+        log("  blueink: %s has no Blue Ink account — nothing to read"
+            % office_key)
+        return False
+    return True
+
+
+def from_blueink(office_key: str, week_start: dt.date, *,
+                 dry_run: bool = True, log=print) -> int:
+    """Who has a signed packet."""
+    from automations.apex_new_starts import blueink_data as BID
+    from automations.apex_new_starts import eco_run as ECO
+    from automations.icd_onboarding import fillers as _F
+
+    if not _has_blueink(office_key, log=log):
+        return 0
+
+    rows = F.rows_anywhere(office_key, week_start, log=log)
+    if not rows:
+        log("  blueink: nobody on the board for that week")
+        return 0
+    people = [ECO.Starter(name=("%s %s" % (r.get("Name", ""),
+                                           r.get("Last Name", ""))).strip(),
+                          email=r.get("Email", ""))
+              for r in rows if r.get("Name") or r.get("Last Name")]
+    if not people:
+        log("  blueink: nobody on the board for that week")
+        return 0
+    # THE API ONLY IF THIS MACHINE HAS A KEY. API Access is an Enterprise-only
+    # feature on this Blue Ink plan, which is why no machine in the fleet had a
+    # key on 2026-08-24 and recent_ui exists at all. An ICD on a normal plan
+    # may not be able to create one even if asked, so the web session -- the
+    # same screen a person reads -- is the route that always works.
+    from automations.blueink_docs import config as BC
+    verdicts = {}
+    if str(BC._creds().get("blueink_api_key") or "").strip():
+        hires = BID.for_people(people, keep_ssn=False)
+        for p in people:
+            h = hires.get(p.name)
+            if h is not None and not h.missing_packet:
+                verdicts[p.name] = {"Blue Ink": True}
+    else:
+        from automations.blueink_docs import recent_ui as RU
+        log("  blueink: no API key on this machine — reading the web app")
+        done = RU.signed(people, headless=True)
+        for p in people:
+            if (p.email or "").strip().lower() in done:
+                verdicts[p.name] = {"Blue Ink": True}
+    return F.apply_anywhere(office_key, week_start, "blueink", verdicts,
+                            dry_run=dry_run, log=log)
+
+
 # THE STEPS THIS MACHINE CAN DO ITSELF, in the order a pass runs them.
 #
 # A STEP EARNS ITS PLACE HERE by being able to run on an office Mac at all --
@@ -962,7 +1062,12 @@ def owner_submit(office_key: str, week_start: dt.date, *,
 #              running before it is what makes the press work off what
 #              OwnerVille says this minute rather than an hour-old board.
 #
-# STILL TO COME: Blue Ink, Sterling and Apex.
+#   blueink    who has SIGNED, out of the office's own Blue Ink account.
+#              Whether they do Blue Ink at all is answered by this machine --
+#              their own login, saved by their own installer -- and not by a
+#              Sheets read that returns "nobody has asked" off the Hub.
+#
+# STILL TO COME: Sterling and Apex.
 #
 # NOTHING HERE IS SWITCHED ON BY BEING LISTED. `eco_job` runs nothing until a
 # machine is armed (`eco_job.switch_on`), and no machine is
@@ -970,6 +1075,7 @@ def owner_submit(office_key: str, week_start: dt.date, *,
 STEPS: Sequence[Tuple[str, object]] = (
     ("seed", seed),
     ("ownerville", from_ownerville),
+    ("blueink", from_blueink),
     ("contacts", contacts),
     ("owner_submit", owner_submit),
     ("no_shows", from_no_shows),

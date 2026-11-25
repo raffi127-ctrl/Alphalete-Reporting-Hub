@@ -286,6 +286,17 @@ AGENT_FILES = [
     "automations/icd_onboarding/presses.py",
     "automations/obcl_ov_sweep/owner_submit.py",
     "automations/obcl_ov_sweep/uid_request.py",
+    # BLUE INK: WHO HAS SIGNED (2026-11-24). The packet is in the
+    # OFFICE'S OWN account -- each ICD got one on 2026-11-09, because an
+    # office falling back to Alphalete's sends its new starts' documents
+    # out of somebody else's and the send SUCCEEDS.
+    #
+    # `recent_ui` reads the same screens a person does, which is the route
+    # that always works: API Access is Enterprise-only on this plan, so a
+    # normal-plan ICD may not be able to make a key at all.
+    "automations/blueink_docs/recent_ui.py",
+    "automations/blueink_docs/roster.py",
+    "automations/icd_onboarding/office_steps.py",
     # NEW STARTS -> APEX, DELIVERED AT LAST (2026-11-24). Declared on
     # 2026-11-08 and held back ever since -- the reasons are kept in full under
     # APEX_WEEK_FILES below, and every one of them is now closed:
@@ -492,6 +503,22 @@ HUB_ONLY_IMPORTS = {
      "automations.eco_onboarding", "template_name_for"),
     ("automations/office_admin/config.py",
      "automations.org_sales_board.run", "sheet_id"),
+    # WHETHER AN OFFICE DOES BLUE INK, the Hub's way: `office_steps._rows`
+    # reads the relay workbook with gspread, inside a try that returns [] --
+    # which reads as "nobody has asked" off the Hub, not as "no". Right for a
+    # Lucy and useless on an office box, which is why `eco_steps._has_blueink`
+    # asks THAT MACHINE first and only falls through to this on the Hub.
+    ("automations/icd_onboarding/office_steps.py",
+     "automations.recruiting_report.fill", "_rows"),
+    ("automations/icd_onboarding/office_steps.py",
+     "automations.icd_alerts", "_rows"),
+    # `save_blueink` WRITES that same tab, and only the Hub ever does: an
+    # office answers this on its enrolment form, not by Lucy writing a cell
+    # for them.
+    ("automations/icd_onboarding/office_steps.py",
+     "automations.recruiting_report.fill", "save_blueink"),
+    ("automations/icd_onboarding/office_steps.py",
+     "automations.icd_alerts", "save_blueink"),
     # Best effort, inside try: the walk goes on without them.
     ("automations/oat_processing/run.py", "automations.recruiting_report",
      "_write_walk_diag"),
