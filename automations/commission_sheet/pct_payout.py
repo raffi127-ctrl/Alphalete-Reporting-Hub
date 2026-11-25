@@ -70,6 +70,7 @@ import argparse
 import collections
 import colorsys
 import datetime as dt
+import json
 import re
 import unicodedata
 from pathlib import Path
@@ -250,6 +251,34 @@ STD_LABELS = {lab for lab, _c, _f in REP_DETAILS} | {"Rep"}
 NAME_ROW_FONT = ("FFFFFF", 14)
 #: Rep tab: detail rows from row 1 down to the first blank row (only the
 #: details that apply), one blank row, then the sales header.
+
+
+#: Extra Payouts rows a later week's build writes in by itself, keyed by the
+#: sheet's week-ending Sunday (Maud 2026-11-25: WE 11.22 clawbacks for reps
+#: not on that sheet go on next week's). Edit carry_extras.json.
+CARRY_EXTRAS = Path(__file__).with_name("carry_extras.json")
+
+
+def _carry_extras(wx, reps, sunday):
+    """Write this week's carried Extra Payouts rows (rep matched to a payout
+    name: exact, else the one name containing it, else left as typed)."""
+    if not sunday or not CARRY_EXTRAS.exists():
+        return
+    todo = json.loads(CARRY_EXTRAS.read_text()).get(sunday.isoformat(), [])
+    r = 2
+    for e in todo:
+        want = e["rep"].strip()
+        hit = [n for n in reps if _name_key(n) == _name_key(want)] or \
+              [n for n in reps if want.lower() in n.lower()]
+        name = hit[0] if len(hit) == 1 else want
+        if len(hit) != 1:
+            print(f"!! carried {e['type']} for '{want}': "
+                  f"{'not on this sheet' if not hit else 'more than one match'} — check it")
+        while wx.cell(r, 1).value:
+            r += 1
+        for c, v in enumerate((name, e["type"], e["amount"], e.get("note", "")), 1):
+            wx.cell(r, c, v)
+        r += 1
 
 
 def _extra_row(e):
@@ -1318,6 +1347,7 @@ def main(src, out, use_board=True, carry_from=None, run_date=None,
     wx.add_data_validation(dv_typ)
     dv_rep.add(f"A2:A{EXTRA_ROWS + 1}")
     dv_typ.add(f"B2:B{EXTRA_ROWS + 1}")
+    _carry_extras(wx, reps, sunday)
     wx["F1"] = ("Pick the rep and the type (NPA or Clawback). A Clawback shows as a "
                 "negative on the payout tab and rep tab, whichever sign you type. Neither "
                 "is part of Final Pay or the PNL; each shows as its own line with its "
@@ -1497,6 +1527,8 @@ def copy_manual_entries(old_id, new_id):
             else:
                 report.append(f"Extra Payouts: {who!r} is not on this sheet — not counted")
         rows.append([who, typ, r[2], r[3]])
+    if ex_old:   # the old sheet's list wins over the build's carried rows
+        new.worksheet(TAB_EXTRA).batch_clear([f"A2:D{EXTRA_ROWS + 1}"])
     if rows:
         ws = new.worksheet(TAB_EXTRA)
         ws.update(values=rows, range_name=f"A2:D{len(rows) + 1}",
