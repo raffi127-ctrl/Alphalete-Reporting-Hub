@@ -117,6 +117,8 @@ AGENT_FILES = [
     # computer at 5am for the walk's no-number list (Carlos 2026-11-16).
     "automations/oat_processing/octo_lookup.py",
     "automations/oat_processing/octo_profiles.json",
+    # A run-now request for that run, read by every tick (octo_lookup.kick_request).
+    "automations/oat_processing/octo_kick.json",
     # The Await text's interview times, retuned to the clock before each live
     # push (Carlos/Megan 2026-10-28).
     "automations/oat_processing/await_window.py",

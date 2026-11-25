@@ -102,6 +102,8 @@ API_PORT = int(os.environ.get("OCTO_API_PORT", "58888"))
 # once-a-day, before-the-first-walk thing. (name, start, until, with lookups)
 SLOTS = (("am", (5, 0), (7, 0), True),
          ("pm", (13, 0), (15, 0), False))
+KICK_FILE = "octo_kick.json"    # a run-now request that travels with the code (kick_request)
+KICK_MAX_AGE_H = 6              # older than this, the request is history, not an order
 LOCK_STALE_MINUTES = 60
 RUN_BUDGET_MIN = 60             # the whole run: the lookups, then every account's billing
 ACCOUNT_BUDGET_MIN = 12         # one account's names
@@ -1100,7 +1102,8 @@ def run(office_id, *, names: Optional[List[str]] = None, account: str = "",
                      # command, release or computer produced it.
                      "ran": {"argv": sys.argv[1:], "release": _release(),
                              "host": platform.node()[:40], "pid": os.getpid(),
-                             "lookups": bool(lookups), "billing": bool(billing)}}
+                             "lookups": bool(lookups), "billing": bool(billing),
+                             "kick": os.environ.get("OAT_OCTO_KICK", "")}}
     _write_lock()
     launched = False
     guard = None        # set once Octo is up; stopped in the finally
@@ -1385,23 +1388,68 @@ def due(now: Optional[dt.datetime] = None) -> Optional[str]:
     return slot
 
 
+def _kick_path() -> Path:
+    return Path(__file__).resolve().parent / KICK_FILE
+
+
+def kick_request(now: Optional[dt.datetime] = None) -> Optional[Dict]:
+    """A RUN-NOW REQUEST THAT TRAVELS WITH THE CODE (Carlos 2026-11-25, "try
+    now", with Octo's update wall since Monday). The office computer takes no
+    commands; the one thing that reaches it is a release. So an extra run is a
+    new id in octo_kick.json: pulled with the next release, it runs once, and
+    the id is kept so no later tick runs it again. A request older than
+    KICK_MAX_AGE_H (a machine that was off that day) runs nothing -- the
+    slots have covered it by then. Returns {id, lookups, billing} or None."""
+    try:
+        req = json.loads(_kick_path().read_text())
+    except (OSError, ValueError):
+        return None
+    rid = str(req.get("id") or "").strip()
+    if not rid or _state().get("last_kick") == rid:
+        return None
+    try:
+        asked = dt.datetime.fromisoformat(str(req.get("asked") or ""))
+    except ValueError:
+        return None
+    now = now or dt.datetime.now()
+    age = (now - asked).total_seconds()
+    if not (-900 <= age <= KICK_MAX_AGE_H * 3600):        # 15 min of clock slack
+        return None
+    if _lock_held(now.timestamp()):
+        return None                                       # a run is going; the next tick
+    lookups, billing = bool(req.get("lookups", True)), bool(req.get("billing", True))
+    if not (lookups or billing):
+        return None
+    return {"id": rid, "lookups": lookups, "billing": billing}
+
+
 def maybe_kick(log=print) -> bool:
     """Called from every agent tick. Once per slot per day starts the run in
     its OWN process and returns at once -- a run can take half an hour and
     must never hold up a sweep. The morning pass looks numbers up and reads
-    every account's billing; the afternoon pass reads the billing only."""
+    every account's billing; the afternoon pass reads the billing only. A
+    run-now request shipped with the code (kick_request) runs once, outside
+    the slots, with whatever halves it asks for."""
     offices = enabled()
     if not offices:
         return False
     slot = due()
-    if not slot:
+    kick = None if slot else kick_request()
+    if not slot and not kick:
         return False
+    with_lookups = slot_has_lookups(slot) if slot else kick["lookups"]
+    with_billing = True if slot else kick["billing"]
     st = _state()
-    st["last_day_" + slot] = dt.date.today().isoformat()
+    if slot:
+        st["last_day_" + slot] = dt.date.today().isoformat()
+    else:
+        st["last_kick"] = kick["id"]
     st["last_start"] = dt.datetime.now().isoformat(timespec="seconds")
     _save_state(st)                     # before the start: a crash must not retry every 2 min
     root = _root()
     kw = {"cwd": str(root), "stdin": subprocess.DEVNULL}
+    if kick:
+        kw["env"] = dict(os.environ, OAT_OCTO_KICK=kick["id"])    # the tally says a request ran it
     if IS_WINDOWS:
         kw["creationflags"] = (getattr(subprocess, "DETACHED_PROCESS", 0x8)
                                | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x200))
@@ -1411,16 +1459,19 @@ def maybe_kick(log=print) -> bool:
         _app_dir().mkdir(parents=True, exist_ok=True)
         out = open(_log_path(), "a")
         argv = [sys.executable, "-m", "automations.oat_processing.octo_lookup", "--scheduled"]
-        if not slot_has_lookups(slot):
+        if not with_lookups:
             argv.append("--billing-only")
+        if not with_billing:
+            argv.append("--no-billing")
         subprocess.Popen(argv + ["--office"] + offices,
                          stdout=out, stderr=subprocess.STDOUT, **kw)
     except Exception as e:  # noqa: BLE001 -- never lose a sweep to this
         log("octo lookup could not start: %s" % type(e).__name__)
         return False
-    log("octo %s started in the background (office %s)"
-        % ("phone lookups + billing check" if slot_has_lookups(slot) else "billing check",
-           ", ".join(offices)))
+    what = ("phone lookups + billing check" if with_lookups and with_billing
+            else "billing check" if with_billing else "phone lookups")
+    log("octo %s started in the background (office %s%s)"
+        % (what, ", ".join(offices), "; run-now request %s" % kick["id"] if kick else ""))
     return True
 
 

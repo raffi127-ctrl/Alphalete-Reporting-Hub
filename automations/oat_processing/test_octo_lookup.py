@@ -229,6 +229,38 @@ class WhenTheTickFires(unittest.TestCase):
         self.assertEqual(OL._state().get("last_day_pm"), dt.date.today().isoformat())
         self.assertIsNone(OL._state().get("last_day_am"))
 
+    def test_a_run_now_request_shipped_with_the_code_runs_once(self):
+        kick = self.tmp / "octo_kick.json"
+        kick.write_text(json.dumps({"id": "2026-11-25-try-now",
+                                    "asked": dt.datetime.now().isoformat(timespec="seconds")}))
+        with mock.patch.object(OL, "_kick_path", return_value=kick), \
+             mock.patch.object(OL, "enabled", return_value=["11580"]), \
+             mock.patch.object(OL, "due", return_value=None), \
+             mock.patch.object(OL.subprocess, "Popen") as popen:
+            self.assertTrue(OL.maybe_kick(log=lambda m: None))
+            self.assertFalse(OL.maybe_kick(log=lambda m: None), "the same request runs once")
+        argv = popen.call_args[0][0]
+        self.assertEqual(argv[1:], ["-m", "automations.oat_processing.octo_lookup",
+                                    "--scheduled", "--office", "11580"])
+        self.assertEqual(popen.call_args[1]["env"]["OAT_OCTO_KICK"], "2026-11-25-try-now")
+        self.assertEqual(popen.call_count, 1)
+        self.assertEqual(OL._state().get("last_kick"), "2026-11-25-try-now")
+        self.assertIsNone(OL._state().get("last_day_am"), "a request is not the morning slot")
+
+    def test_an_old_request_or_a_broken_file_runs_nothing(self):
+        kick = self.tmp / "octo_kick.json"
+        old = (dt.datetime.now() - dt.timedelta(hours=7)).isoformat(timespec="seconds")
+        kick.write_text(json.dumps({"id": "stale", "asked": old}))
+        with mock.patch.object(OL, "_kick_path", return_value=kick):
+            self.assertIsNone(OL.kick_request(), "a machine that was off that day")
+            kick.write_text(json.dumps({"id": "billing-now", "lookups": False,
+                                        "asked": dt.datetime.now().isoformat(timespec="seconds")}))
+            self.assertEqual(OL.kick_request(), {"id": "billing-now", "lookups": False, "billing": True})
+            kick.write_text("not json")
+            self.assertIsNone(OL.kick_request())
+        req = json.loads((REPO / "automations/oat_processing/octo_kick.json").read_text())
+        self.assertTrue(req.get("id") and dt.datetime.fromisoformat(req["asked"]), "the shipped file is well-formed")
+
     def test_nothing_on_a_machine_without_profiles_or_a_push(self):
         with mock.patch.object(OL, "enabled", return_value=[]), \
              mock.patch.object(OL.subprocess, "Popen") as popen:
@@ -510,7 +542,8 @@ class ItShips(unittest.TestCase):
         from automations.icd_alerts.package import AGENT_FILES
         listed = (REPO / "automations/icd_alerts/agent_files.txt").read_text()
         for rel in ("automations/oat_processing/octo_lookup.py",
-                    "automations/oat_processing/octo_profiles.json"):
+                    "automations/oat_processing/octo_profiles.json",
+                    "automations/oat_processing/octo_kick.json"):
             self.assertIn(rel, AGENT_FILES)
             self.assertIn(rel + "\n", listed)
             self.assertTrue((REPO / rel).exists())
