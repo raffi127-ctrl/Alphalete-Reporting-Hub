@@ -182,6 +182,21 @@ def reception_account(office_key: str) -> str:
     return ES.reception_account(office_key)
 
 
+def mark_not_completed(office_key: str, week_start: dt.date, *,
+                       dry_run: bool = True, log=print) -> int:
+    """Week-3 people never owner submitted -> off the board, "Onboarding Not
+    Completed" (Megan, 2026-11-25). The body is `not_completed`; this name is
+    what STEPS and the tests reach for.
+
+    IT IGNORES `week_start` ON PURPOSE. Every other step works on the week it
+    is handed; this one always judges the WEEK-3 week, because that is the
+    cohort the rule is about. `wk3.start_week_for` owns that, so the mark and
+    the drug send cannot disagree about which week they mean.
+    """
+    from automations.icd_onboarding import not_completed as NC
+    return NC.run(office_key, dry_run=dry_run, log=log)
+
+
 def from_contacts(office_key: str, week_start: dt.date, *,
                   dry_run: bool = True, log=print) -> int:
     """Contact Added. The step itself is `eco_steps.contacts`, which SHIPS to
@@ -217,7 +232,10 @@ STEPS = (("seed", seed), ("seed_names", seed_names),
          # WHO WAS MARKED NO in ApplicantStream -- the signal that somebody is
          # not starting, which this board had no way to carry until now
          # (Megan, 2026-11-16). Hand-run: it is the seven-page calendar walk.
-         ("no_shows", from_no_shows))
+         ("no_shows", from_no_shows),
+         # WEEKLY, and on its own clock. Marks the week-3 cohort's
+         # never-owner-submitted people off the board.
+         ("not_completed", mark_not_completed))
 
 # STEPS THAT NO MACHINE RUNS ON A SCHEDULE, each one listed with its reason.
 # Every other step must be routed to exactly one box, and the test that pins
@@ -250,14 +268,28 @@ HAND_RUN_ONLY = ("uid_reasons",)
 #                training day has to have happened, and it lands before the
 #                next morning's 7:30am Blue Ink send, which is what this
 #                column stops for somebody who did not come.
-#   seed_names   com.alphalete.icd-onboarding-seed, :00/:15/:45 from 6am to
-#                8:45pm on the box holding this office's ApplicantStream
-#                session. It is `seed` with the Showed Up half left off, so
-#                the names land within 15 minutes of a BOB (Megan,
-#                2026-11-22). NOT at :30: the hourly board run fires at half
-#                past and seeds as its first step, so a :30 pass would be the
-#                same work twice, racing itself for the one AppStream session.
-OWN_CLOCK = ("no_shows", "seed_names")
+#   seed_names   com.alphalete.icd-onboarding-seed-names, :05/:20/:50 from
+#                6am to 8:50pm on the box holding this office's
+#                ApplicantStream session. It is `seed` with the Showed Up
+#                half left off, so the names land within 15 minutes of a BOB
+#                (Megan, 2026-11-22).
+#                OFF THE BOARD'S MINUTES, which are :00/:15/:30/:45. It ran
+#                :00/:15/:45 until 2026-11-25, avoiding only :30 because the
+#                board then fired at half past; the board moved to the hour
+#                and that avoidance stopped avoiding anything, so the two
+#                collided at nearly every fire and the overlap guard was
+#                skipping one of them. Nobody saw it because both plists
+#                carried an illegal "--" in an XML comment and the collision
+#                test's parser gave up before reading a single time.
+#   not_completed  com.alphalete.icd-onboarding-not-completed, Mondays at
+#                07:40 -- weekly, because the cohort it judges does not change
+#                inside the week, and :40 because it is not a minute the board
+#                (:00/:15/:30/:45) or the names run (:05/:20/:50) uses. Early
+#                Monday so the board is right before anybody is nudged to send
+#                that week's drug tests. SHEETS ONLY: it reads the Owner
+#                Submit column the hourly `ownerville` step already wrote, so
+#                it opens no OwnerVille and holds no session.
+OWN_CLOCK = ("no_shows", "seed_names", "not_completed")
 
 # Every step must be accounted for: routed to a machine, hand-run, or on its
 # own clock. The coverage test reads this, so a new step fails until it is

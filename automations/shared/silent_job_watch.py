@@ -179,9 +179,32 @@ JOBS: Dict[str, dict] = {
     # publishes NO Hub row (45 fires a day would drown the card and two
     # publishers for one card hide which half stopped), so this heartbeat is
     # the ONLY thing that can see it stop. What a stopped pass costs is time,
-    # not data: the hourly board run still seeds at :30, so the names arrive
-    # late rather than never -- which is why it is worth watching and not
-    # worth paging about.
+    # not data: the hourly board run seeds too, so the names arrive late
+    # rather than never -- which is why it is worth watching and not worth
+    # paging about. (It said "at :30" until 2026-11-25; the board moved to
+    # the hour and the names moved to :05/:20/:50 to stop colliding with it.)
+    # WEEK 3, NEVER OWNER SUBMITTED (2026-11-25). Weekly, and the only step
+    # that takes somebody OFF the board without a person saying so -- which is
+    # exactly why it is watched. A pass that stops firing does not break
+    # anything visibly: the board simply goes on saying that a cohort which
+    # drifted away three weeks ago is still onboarding, and the drug-test list
+    # built from it orders tests for people who have gone. Silence is the
+    # failure mode, so a heartbeat is the only thing that can see it.
+    "icd_onboarding_not_completed": {
+        "name": "OBCL week-3 'not completed' mark (Mondays 07:40)",
+        "machine": "Lucy 3",
+        "first_by": "08:40",       # the one pass 07:40 + 60 min grace
+        "max_gap_min": None,       # one opportunity a week; first_by covers it
+        "active_until": None,
+        "weekdays": (0,),          # Monday only
+        "watch_from": "2026-11-25",
+        "means": ("nobody is marked \"Onboarding Not Completed\", so a cohort "
+                  "that never finished keeps reading as live on the board -- "
+                  "and the week-3 drug-test list built from that board arrives "
+                  "ticked for people who left, each order billed to the owner."),
+        "fix": ("lucy rerun install_icd_onboarding_not_completed_agent "
+                "--machine \"Lucy 3\""),
+    },
     "icd_onboarding_seed_names": {
         "name": "OBCL seed (names, every 15 min)",
         "machine": "Lucy 3",

@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alphalete.icd-onboarding-not-completed</string>
+
+    <!-- WEEK 3, NEVER OWNER SUBMITTED: off the board as "Onboarding Not
+         Completed" (Megan, 2026-11-25). The board used to record how
+         onboarding ENDED and then never move, so somebody who finished
+         classroom and drifted away a fortnight later read as a clean finish
+         for ever. TIME KNOB: edit StartCalendarInterval here, not the
+         wrapper.
+
+         MONDAYS 07:40. Weekly, because the cohort it judges is a fixed week
+         three weeks back and does not change inside the week. Monday
+         morning, because that cohort's drug tests go out this week and the
+         board has to be right before anybody is nudged to send them.
+
+         :40 IS NOBODY'S MINUTE. The hourly board run owns :00/:15/:30/:45
+         and the names run owns :05/:20/:50. Those two collided at nearly
+         every fire until 2026-11-25 and the overlap guard was quietly
+         skipping one of them, so a new job picks a minute on purpose and
+         the collision test checks it.
+
+         SHEETS ONLY. It reads the Owner Submit column the hourly ownerville
+         step already wrote; it opens no OwnerVille and needs no browser.
+         DRY until the chain goes live: the wrapper's MODE is "dry".
+         Install: lucy rerun install_icd_onboarding_not_completed_agent machine "<Lucy N>" -->
+
+    <!-- Path is the laptop placeholder; install_agent.py rewrites it to that
+         machine's repo path. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/megan/1st Claude Folder/deploy/icd_onboarding_not_completed.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/megan/1st Claude Folder</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/megan/1st Claude Folder</string>
+    </dict>
+
+    <!-- 9:15pm EVERY DAY, machine LOCAL time. No Weekday key: a training day
+         can fall on any day of the week, and the board is seeded from whoever
+         is scheduled to start, not from a Monday.
+
+         THE EVENING is the point. The training day has to have happened and a
+         recruiter has to have marked the Show Up radio, so this runs after the
+         office closes. It lands before the next morning's sends: Blue Ink goes
+         out at 7:30am, and this is the column that stops it mailing documents
+         to somebody who did not come (Megan, 2026-11-16: "run it daily").
+
+         ONCE A DAY, not hourly, because it is the seven page calendar walk the
+         hourly board run deliberately stopped doing. TIME KNOB: edit
+         StartCalendarInterval here, not the wrapper.
+
+         21:15, NOT ON THE HOUR. com.alphalete.icd-onboarding drives the same
+         ApplicantStream profile, so the wrapper's own overlap guard skips
+         this walk whenever the two meet. Set to 19:30 it met the board run
+         every single night: it fired on time on 2026-11-19 at 19:30:05,
+         skipped, and would have gone on skipping forever while looking
+         installed. 21:15 falls between two board runs, and is still ahead of
+         Blue Ink at 7:30am.
+
+         WHAT THE BOARD'S CLOCK ACTUALLY IS, checked 2026-11-25: every hour
+         ON THE HOUR, all 24 of them, plus extra passes at :15/:30/:45
+         between 08:00 and 12:00 and on the half hour 12:00-14:30. This
+         paragraph used to say ":30 of every hour from 6:30 to 20:30", which
+         was true before the clock changed and then quietly was not — and
+         the rule it gave ("go between the :30 fires") would now put a new
+         time ON one. 21:15 happens to still be clear.
+
+         So: any new time here goes BETWEEN the board's fires. Read them out
+         of com.alphalete.icd-onboarding.plist rather than from this comment,
+         which is a copy and will go stale again. -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Weekday</key>
+        <integer>1</integer>
+        <key>Hour</key>
+        <integer>7</integer>
+        <key>Minute</key>
+        <integer>40</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/icd-onboarding-not-completed.launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/icd-onboarding-not-completed.launchd.err.log</string>
+</dict>
+</plist>
