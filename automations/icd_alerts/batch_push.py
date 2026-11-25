@@ -134,7 +134,7 @@ def _robot_center(page):
 
 
 # --- navigation ------------------------------------------------------------------
-def open_batches(page):
+def open_batches(page, signin=None):
     """Console -> 'Explore Appstream AI' (v2) -> Applicants > Process Emails >
     Process in Batches. Returns the page the table is on, or None."""
     ctx = page.context
@@ -147,6 +147,29 @@ def open_batches(page):
         page.wait_for_timeout(2500)
     except Exception as e:  # noqa: BLE001
         _log("[batch] could not open the console: %s" % type(e).__name__)
+    # A FRESH LOAD OF THE CONSOLE URL LANDS ON LOGIN (Raf 24065, 11/25 3:17pm:
+    # "console @ Login | .../index.cfm"): the session lives in the walk's own
+    # navigation, not in a bare URL. That bare load is also the AppStream
+    # sign-in box Megan saw on Raf's computer. So sign in the same way every
+    # push does (resume_push.sign_in, the saved login) before going on.
+    try:
+        on_login = "login" in (page.title() or "").lower()
+    except Exception:  # noqa: BLE001
+        on_login = False
+    if on_login and signin is not None:
+        ok = False
+        try:
+            ok = bool(signin(page))
+        except Exception as e:  # noqa: BLE001
+            _log("[batch] sign-in raised %s" % type(e).__name__)
+        LAST_STEPS.append("signed in again" if ok else "sign-in failed")
+        if not ok:
+            return None
+        try:
+            page.goto(CONSOLE_URL, wait_until="domcontentloaded", timeout=45000)
+            page.wait_for_timeout(2500)
+        except Exception:  # noqa: BLE001
+            pass
     _step(page, "console")
     before = len(ctx.pages)
     if _click_if_present(page, ["Explore Appstream AI", "Explore AppStream AI"],
@@ -302,7 +325,8 @@ def _send_first(page, limit: int) -> Optional[int]:
     return int(m.group(1).replace(",", "")) if m else None
 
 
-def run(page, office: str, profile_dir, live_allowed: bool, net=None) -> dict:
+def run(page, office: str, profile_dir, live_allowed: bool, net=None,
+        signin=None) -> dict:
     """One trial pass for `office`. Never raises. Leaves `page` alone; any v2
     tab it opened is closed again. Returns what it saw/did for the stats row."""
     office = str(office)
@@ -321,7 +345,7 @@ def run(page, office: str, profile_dir, live_allowed: bool, net=None) -> dict:
     pages_before = list(ctx.pages)
     bpage = None
     try:
-        bpage = open_batches(page)
+        bpage = open_batches(page, signin=signin)
         if bpage is None:
             out["skipped"] = "Process in Batches not reached"
             out["steps"] = list(LAST_STEPS)[-6:]

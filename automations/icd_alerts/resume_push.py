@@ -1303,7 +1303,8 @@ def _walk(page, live: bool, record: dict) -> dict:
         from automations.icd_alerts import batch_push as BP
         if BP.mode_for(seen):
             BP.set_logger(_log)
-            batch = BP.run(page, seen, PROFILE_DIR, live_allowed=live)
+            batch = BP.run(page, seen, PROFILE_DIR, live_allowed=live,
+                           signin=lambda pg: sign_in(pg, pg.context))
             sent += int(batch.get("sent") or 0)
     except Exception as e:  # noqa: BLE001 -- the trial never costs the walk
         _log("batch trial skipped: %s" % type(e).__name__)
