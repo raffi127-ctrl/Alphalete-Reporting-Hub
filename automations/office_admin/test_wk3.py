@@ -187,3 +187,45 @@ class TwoOptionsBothSayingDrug(unittest.TestCase):
 
     def test_the_elite_pick_is_untouched_by_the_tie_break(self):
         self.assertEqual(SS.pick_elite(self.REAL), "Sterling - Elite")
+
+
+class DotCoIsATypo(unittest.TestCase):
+    """Three of the 22 in Raf's week-3 cohort typed their own address ending
+    ".co". Sterling bills the owner for each and the invite reaches nobody.
+    Megan, 2026-11-25: "we should always have .com - we know that's what's
+    correct".
+    """
+
+    def test_known_providers_get_the_m(self):
+        from automations.office_admin.actions import fix_email
+        for bad, good in (("Layeeeq@gmail.co", "Layeeeq@gmail.com"),
+                          ("a@yahoo.co", "a@yahoo.com"),
+                          ("b@ICLOUD.CO", "b@ICLOUD.COm")):
+            self.assertEqual(fix_email(bad), good)
+
+    def test_a_real_co_uk_address_is_left_alone(self):
+        """yahoo.co.uk and hotmail.co.uk are real and do not end ".co"."""
+        from automations.office_admin.actions import fix_email
+        for keep in ("a@yahoo.co.uk", "b@hotmail.co.uk"):
+            self.assertEqual(fix_email(keep), keep)
+
+    def test_an_unknown_domain_ending_co_is_left_alone(self):
+        """".co" is a real top-level domain. Guessing at somebody else's
+        domain is how a GOOD address gets broken."""
+        from automations.office_admin.actions import fix_email
+        for keep in ("a@alphalete.co", "b@someagency.co", "c@no-at-sign"):
+            self.assertEqual(fix_email(keep), keep)
+
+    def test_the_send_list_carries_what_it_changed(self):
+        """Fixing an address silently is its own kind of wrong: the admin is
+        the one who can tell us we guessed badly."""
+        from automations.office_admin.actions import valid_people
+        got = valid_people([
+            {"first_name": "Chrisjen", "last_name": "Davis",
+             "email": "chrisjen2828@gmail.co"},
+            {"first_name": "Ada", "last_name": "Fournier",
+             "email": "ada@gmail.com"},
+        ])
+        self.assertEqual(got[0]["email"], "chrisjen2828@gmail.com")
+        self.assertEqual(got[0]["email_was"], "chrisjen2828@gmail.co")
+        self.assertNotIn("email_was", got[1])

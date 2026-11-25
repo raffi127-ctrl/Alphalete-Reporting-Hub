@@ -381,12 +381,18 @@ def _drug_section(admin, reqs, ws) -> None:
                 name = "%s %s" % (p.get("first_name"), p.get("last_name"))
                 has_email = "@" in (p.get("email") or "")
                 why = p.get("gone") or ""
+                # A ".co" we corrected is SAID, not fixed behind their back:
+                # the admin is the one who can tell us we guessed badly.
+                from automations.office_admin.actions import fix_email
+                fixed = fix_email(p.get("email") or "")
+                note = ("" if fixed == (p.get("email") or "")
+                        else " · email corrected to %s" % fixed)
                 if not has_email:
                     label = "%s — no email in ApplicantStream" % name
                 elif why:
-                    label = "%s — %s" % (name, why)
+                    label = "%s — %s%s" % (name, why, note)
                 else:
-                    label = name
+                    label = name + note
                 # A board we could not read pre-ticks NOBODY: ticking on a
                 # failed read is how a whole cohort gets ordered by accident.
                 on = has_email and not why and not err

@@ -28,8 +28,42 @@ def _age_min(stamp: str, now: dt.datetime) -> float:
     return (now - t).total_seconds() / 60.0
 
 
+# "gmail.co" IS A TYPO, AND IT COSTS AN ORDER. Three of the 22 in Raf's
+# week-3 cohort typed their own address ending ".co" -- Sterling would bill
+# the owner for each and the invite would reach nobody. Megan, 2026-11-25:
+# "we should always have .com - we know that's what's correct".
+#
+# ONLY FOR PROVIDERS WE KNOW, and only when the domain ends EXACTLY ".co".
+# A blanket rule would be wrong twice over: ".co" is a real top-level domain
+# that a business address can legitimately use, and "yahoo.co.uk" /
+# "hotmail.co.uk" are real addresses that do not end ".co" at all, so they
+# never reach this. Anything outside the list is left exactly as typed --
+# guessing at somebody else's domain is how a good address gets broken.
+_CONSUMER_DOMAINS = (
+    "gmail", "yahoo", "hotmail", "outlook", "icloud", "aol", "live", "msn",
+    "comcast", "att", "verizon", "sbcglobal", "bellsouth", "protonmail",
+)
+
+
+def fix_email(email: str) -> str:
+    """`gmail.co` -> `gmail.com`, for the providers above only."""
+    e = str(email or "").strip()
+    if "@" not in e:
+        return e
+    name, _, domain = e.rpartition("@")
+    low = domain.lower()
+    if low.endswith(".co") and low[:-3] in _CONSUMER_DOMAINS:
+        return "%s@%sm" % (name, domain)
+    return e
+
+
 def valid_people(people) -> List[Dict]:
-    """The send list, cleaned: needs first, last and an email with an @."""
+    """The send list, cleaned: needs first, last and an email with an @.
+
+    A corrected address carries `email_was` so the page can SAY it changed
+    one. Fixing somebody's email silently is its own kind of wrong: the admin
+    is the one who can tell us we guessed badly.
+    """
     out = []
     for p in people or []:
         if not isinstance(p, dict):
@@ -37,8 +71,12 @@ def valid_people(people) -> List[Dict]:
         first, last = str(p.get("first_name") or "").strip(), str(p.get("last_name") or "").strip()
         email = str(p.get("email") or "").strip()
         if first and last and "@" in email:
-            out.append({"first_name": first, "last_name": last, "email": email,
-                        "phone": str(p.get("phone") or "").strip()})
+            fixed = fix_email(email)
+            rec = {"first_name": first, "last_name": last, "email": fixed,
+                   "phone": str(p.get("phone") or "").strip()}
+            if fixed != email:
+                rec["email_was"] = email
+            out.append(rec)
     return out
 
 

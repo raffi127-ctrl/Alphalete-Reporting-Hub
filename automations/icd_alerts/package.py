@@ -332,6 +332,18 @@ AGENT_FILES = [
     "automations/apex_new_starts/blueink_data.py",
     "automations/apex_new_starts/ssn_prompt.py",
     "automations/apex_new_starts/eco_run.py",
+    # THE TWO THAT ACTUALLY TYPE THE RECORD. Declared on the ship list
+    # 2026-11-08 and never added to the list an office downloads, so an
+    # apex_week job on an office machine answered "no module named
+    # automations.apex_new_starts.drive" -- and always would have. Nobody
+    # noticed because no job has ever been queued to one: Raf is apex_mode
+    # "dry" and every other office is "off".
+    #
+    # `drive` is the browser walk (open the roster, press Add Employee, set
+    # the Kendo dropdowns with real clicks) and it imports `filler`, so the
+    # two travel together or neither works.
+    "automations/apex_new_starts/drive.py",
+    "automations/apex_new_starts/filler.py",
     "automations/blueink_docs/__init__.py",
     "automations/blueink_docs/blueink.py",
     "automations/blueink_docs/config.py",
