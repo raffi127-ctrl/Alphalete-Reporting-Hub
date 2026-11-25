@@ -8581,6 +8581,492 @@
    "verify": null,
    "timeout_minutes": 25
   },
+  "commission_refresh_0930": {
+   "on_scheduler": true,
+   "_note": "Maud 2026-11-24: every 30 min Wed-Fri, re-lay the rep tabs' top block on this week's RH sheet (pct_payout.refresh_rep_tabs) so NPA / Clawback / Other / Training / Extra Bonus typed in since show up as their own bordered rows. Cadence has no interval vocabulary (weekdays + not_before only), so every half hour = ONE ENTRY PER SLOT, 09:30-18:00; all map to the one Hub card commission_refresh_0930 (hub_publish._HUB_CARD). A pass with nothing new typed in changes nothing. Needs the same raffi127 Drive token as commission_weekly_drop.",
+   "display_name": "Raf Commission Sheet — refresh rep tabs",
+   "source_type": "tableau",
+   "data_sources": [],
+   "command": [
+    "automations.commission_sheet.weekly_drop"
+   ],
+   "base_args": [
+    "--refresh",
+    "--write"
+   ],
+   "cadence": {
+    "weekdays": [
+     2,
+     3,
+     4
+    ],
+    "not_before": "09:30"
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 10
+  },
+  "commission_refresh_1000": {
+   "on_scheduler": true,
+   "_note": "Maud 2026-11-24: every 30 min Wed-Fri, re-lay the rep tabs' top block on this week's RH sheet (pct_payout.refresh_rep_tabs) so NPA / Clawback / Other / Training / Extra Bonus typed in since show up as their own bordered rows. Cadence has no interval vocabulary (weekdays + not_before only), so every half hour = ONE ENTRY PER SLOT, 09:30-18:00; all map to the one Hub card commission_refresh_0930 (hub_publish._HUB_CARD). A pass with nothing new typed in changes nothing. Needs the same raffi127 Drive token as commission_weekly_drop.",
+   "display_name": "Raf Commission Sheet — refresh rep tabs",
+   "source_type": "tableau",
+   "data_sources": [],
+   "command": [
+    "automations.commission_sheet.weekly_drop"
+   ],
+   "base_args": [
+    "--refresh",
+    "--write"
+   ],
+   "cadence": {
+    "weekdays": [
+     2,
+     3,
+     4
+    ],
+    "not_before": "10:00"
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 10
+  },
+  "commission_refresh_1030": {
+   "on_scheduler": true,
+   "_note": "Maud 2026-11-24: every 30 min Wed-Fri, re-lay the rep tabs' top block on this week's RH sheet (pct_payout.refresh_rep_tabs) so NPA / Clawback / Other / Training / Extra Bonus typed in since show up as their own bordered rows. Cadence has no interval vocabulary (weekdays + not_before only), so every half hour = ONE ENTRY PER SLOT, 09:30-18:00; all map to the one Hub card commission_refresh_0930 (hub_publish._HUB_CARD). A pass with nothing new typed in changes nothing. Needs the same raffi127 Drive token as commission_weekly_drop.",
+   "display_name": "Raf Commission Sheet — refresh rep tabs",
+   "source_type": "tableau",
+   "data_sources": [],
+   "command": [
+    "automations.commission_sheet.weekly_drop"
+   ],
+   "base_args": [
+    "--refresh",
+    "--write"
+   ],
+   "cadence": {
+    "weekdays": [
+     2,
+     3,
+     4
+    ],
+    "not_before": "10:30"
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 10
+  },
+  "commission_refresh_1100": {
+   "on_scheduler": true,
+   "_note": "Maud 2026-11-24: every 30 min Wed-Fri, re-lay the rep tabs' top block on this week's RH sheet (pct_payout.refresh_rep_tabs) so NPA / Clawback / Other / Training / Extra Bonus typed in since show up as their own bordered rows. Cadence has no interval vocabulary (weekdays + not_before only), so every half hour = ONE ENTRY PER SLOT, 09:30-18:00; all map to the one Hub card commission_refresh_0930 (hub_publish._HUB_CARD). A pass with nothing new typed in changes nothing. Needs the same raffi127 Drive token as commission_weekly_drop.",
+   "display_name": "Raf Commission Sheet — refresh rep tabs",
+   "source_type": "tableau",
+   "data_sources": [],
+   "command": [
+    "automations.commission_sheet.weekly_drop"
+   ],
+   "base_args": [
+    "--refresh",
+    "--write"
+   ],
+   "cadence": {
+    "weekdays": [
+     2,
+     3,
+     4
+    ],
+    "not_before": "11:00"
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 10
+  },
+  "commission_refresh_1130": {
+   "on_scheduler": true,
+   "_note": "Maud 2026-11-24: every 30 min Wed-Fri, re-lay the rep tabs' top block on this week's RH sheet (pct_payout.refresh_rep_tabs) so NPA / Clawback / Other / Training / Extra Bonus typed in since show up as their own bordered rows. Cadence has no interval vocabulary (weekdays + not_before only), so every half hour = ONE ENTRY PER SLOT, 09:30-18:00; all map to the one Hub card commission_refresh_0930 (hub_publish._HUB_CARD). A pass with nothing new typed in changes nothing. Needs the same raffi127 Drive token as commission_weekly_drop.",
+   "display_name": "Raf Commission Sheet — refresh rep tabs",
+   "source_type": "tableau",
+   "data_sources": [],
+   "command": [
+    "automations.commission_sheet.weekly_drop"
+   ],
+   "base_args": [
+    "--refresh",
+    "--write"
+   ],
+   "cadence": {
+    "weekdays": [
+     2,
+     3,
+     4
+    ],
+    "not_before": "11:30"
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 10
+  },
+  "commission_refresh_1200": {
+   "on_scheduler": true,
+   "_note": "Maud 2026-11-24: every 30 min Wed-Fri, re-lay the rep tabs' top block on this week's RH sheet (pct_payout.refresh_rep_tabs) so NPA / Clawback / Other / Training / Extra Bonus typed in since show up as their own bordered rows. Cadence has no interval vocabulary (weekdays + not_before only), so every half hour = ONE ENTRY PER SLOT, 09:30-18:00; all map to the one Hub card commission_refresh_0930 (hub_publish._HUB_CARD). A pass with nothing new typed in changes nothing. Needs the same raffi127 Drive token as commission_weekly_drop.",
+   "display_name": "Raf Commission Sheet — refresh rep tabs",
+   "source_type": "tableau",
+   "data_sources": [],
+   "command": [
+    "automations.commission_sheet.weekly_drop"
+   ],
+   "base_args": [
+    "--refresh",
+    "--write"
+   ],
+   "cadence": {
+    "weekdays": [
+     2,
+     3,
+     4
+    ],
+    "not_before": "12:00"
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 10
+  },
+  "commission_refresh_1230": {
+   "on_scheduler": true,
+   "_note": "Maud 2026-11-24: every 30 min Wed-Fri, re-lay the rep tabs' top block on this week's RH sheet (pct_payout.refresh_rep_tabs) so NPA / Clawback / Other / Training / Extra Bonus typed in since show up as their own bordered rows. Cadence has no interval vocabulary (weekdays + not_before only), so every half hour = ONE ENTRY PER SLOT, 09:30-18:00; all map to the one Hub card commission_refresh_0930 (hub_publish._HUB_CARD). A pass with nothing new typed in changes nothing. Needs the same raffi127 Drive token as commission_weekly_drop.",
+   "display_name": "Raf Commission Sheet — refresh rep tabs",
+   "source_type": "tableau",
+   "data_sources": [],
+   "command": [
+    "automations.commission_sheet.weekly_drop"
+   ],
+   "base_args": [
+    "--refresh",
+    "--write"
+   ],
+   "cadence": {
+    "weekdays": [
+     2,
+     3,
+     4
+    ],
+    "not_before": "12:30"
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 10
+  },
+  "commission_refresh_1300": {
+   "on_scheduler": true,
+   "_note": "Maud 2026-11-24: every 30 min Wed-Fri, re-lay the rep tabs' top block on this week's RH sheet (pct_payout.refresh_rep_tabs) so NPA / Clawback / Other / Training / Extra Bonus typed in since show up as their own bordered rows. Cadence has no interval vocabulary (weekdays + not_before only), so every half hour = ONE ENTRY PER SLOT, 09:30-18:00; all map to the one Hub card commission_refresh_0930 (hub_publish._HUB_CARD). A pass with nothing new typed in changes nothing. Needs the same raffi127 Drive token as commission_weekly_drop.",
+   "display_name": "Raf Commission Sheet — refresh rep tabs",
+   "source_type": "tableau",
+   "data_sources": [],
+   "command": [
+    "automations.commission_sheet.weekly_drop"
+   ],
+   "base_args": [
+    "--refresh",
+    "--write"
+   ],
+   "cadence": {
+    "weekdays": [
+     2,
+     3,
+     4
+    ],
+    "not_before": "13:00"
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 10
+  },
+  "commission_refresh_1330": {
+   "on_scheduler": true,
+   "_note": "Maud 2026-11-24: every 30 min Wed-Fri, re-lay the rep tabs' top block on this week's RH sheet (pct_payout.refresh_rep_tabs) so NPA / Clawback / Other / Training / Extra Bonus typed in since show up as their own bordered rows. Cadence has no interval vocabulary (weekdays + not_before only), so every half hour = ONE ENTRY PER SLOT, 09:30-18:00; all map to the one Hub card commission_refresh_0930 (hub_publish._HUB_CARD). A pass with nothing new typed in changes nothing. Needs the same raffi127 Drive token as commission_weekly_drop.",
+   "display_name": "Raf Commission Sheet — refresh rep tabs",
+   "source_type": "tableau",
+   "data_sources": [],
+   "command": [
+    "automations.commission_sheet.weekly_drop"
+   ],
+   "base_args": [
+    "--refresh",
+    "--write"
+   ],
+   "cadence": {
+    "weekdays": [
+     2,
+     3,
+     4
+    ],
+    "not_before": "13:30"
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 10
+  },
+  "commission_refresh_1400": {
+   "on_scheduler": true,
+   "_note": "Maud 2026-11-24: every 30 min Wed-Fri, re-lay the rep tabs' top block on this week's RH sheet (pct_payout.refresh_rep_tabs) so NPA / Clawback / Other / Training / Extra Bonus typed in since show up as their own bordered rows. Cadence has no interval vocabulary (weekdays + not_before only), so every half hour = ONE ENTRY PER SLOT, 09:30-18:00; all map to the one Hub card commission_refresh_0930 (hub_publish._HUB_CARD). A pass with nothing new typed in changes nothing. Needs the same raffi127 Drive token as commission_weekly_drop.",
+   "display_name": "Raf Commission Sheet — refresh rep tabs",
+   "source_type": "tableau",
+   "data_sources": [],
+   "command": [
+    "automations.commission_sheet.weekly_drop"
+   ],
+   "base_args": [
+    "--refresh",
+    "--write"
+   ],
+   "cadence": {
+    "weekdays": [
+     2,
+     3,
+     4
+    ],
+    "not_before": "14:00"
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 10
+  },
+  "commission_refresh_1430": {
+   "on_scheduler": true,
+   "_note": "Maud 2026-11-24: every 30 min Wed-Fri, re-lay the rep tabs' top block on this week's RH sheet (pct_payout.refresh_rep_tabs) so NPA / Clawback / Other / Training / Extra Bonus typed in since show up as their own bordered rows. Cadence has no interval vocabulary (weekdays + not_before only), so every half hour = ONE ENTRY PER SLOT, 09:30-18:00; all map to the one Hub card commission_refresh_0930 (hub_publish._HUB_CARD). A pass with nothing new typed in changes nothing. Needs the same raffi127 Drive token as commission_weekly_drop.",
+   "display_name": "Raf Commission Sheet — refresh rep tabs",
+   "source_type": "tableau",
+   "data_sources": [],
+   "command": [
+    "automations.commission_sheet.weekly_drop"
+   ],
+   "base_args": [
+    "--refresh",
+    "--write"
+   ],
+   "cadence": {
+    "weekdays": [
+     2,
+     3,
+     4
+    ],
+    "not_before": "14:30"
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 10
+  },
+  "commission_refresh_1500": {
+   "on_scheduler": true,
+   "_note": "Maud 2026-11-24: every 30 min Wed-Fri, re-lay the rep tabs' top block on this week's RH sheet (pct_payout.refresh_rep_tabs) so NPA / Clawback / Other / Training / Extra Bonus typed in since show up as their own bordered rows. Cadence has no interval vocabulary (weekdays + not_before only), so every half hour = ONE ENTRY PER SLOT, 09:30-18:00; all map to the one Hub card commission_refresh_0930 (hub_publish._HUB_CARD). A pass with nothing new typed in changes nothing. Needs the same raffi127 Drive token as commission_weekly_drop.",
+   "display_name": "Raf Commission Sheet — refresh rep tabs",
+   "source_type": "tableau",
+   "data_sources": [],
+   "command": [
+    "automations.commission_sheet.weekly_drop"
+   ],
+   "base_args": [
+    "--refresh",
+    "--write"
+   ],
+   "cadence": {
+    "weekdays": [
+     2,
+     3,
+     4
+    ],
+    "not_before": "15:00"
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 10
+  },
+  "commission_refresh_1530": {
+   "on_scheduler": true,
+   "_note": "Maud 2026-11-24: every 30 min Wed-Fri, re-lay the rep tabs' top block on this week's RH sheet (pct_payout.refresh_rep_tabs) so NPA / Clawback / Other / Training / Extra Bonus typed in since show up as their own bordered rows. Cadence has no interval vocabulary (weekdays + not_before only), so every half hour = ONE ENTRY PER SLOT, 09:30-18:00; all map to the one Hub card commission_refresh_0930 (hub_publish._HUB_CARD). A pass with nothing new typed in changes nothing. Needs the same raffi127 Drive token as commission_weekly_drop.",
+   "display_name": "Raf Commission Sheet — refresh rep tabs",
+   "source_type": "tableau",
+   "data_sources": [],
+   "command": [
+    "automations.commission_sheet.weekly_drop"
+   ],
+   "base_args": [
+    "--refresh",
+    "--write"
+   ],
+   "cadence": {
+    "weekdays": [
+     2,
+     3,
+     4
+    ],
+    "not_before": "15:30"
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 10
+  },
+  "commission_refresh_1600": {
+   "on_scheduler": true,
+   "_note": "Maud 2026-11-24: every 30 min Wed-Fri, re-lay the rep tabs' top block on this week's RH sheet (pct_payout.refresh_rep_tabs) so NPA / Clawback / Other / Training / Extra Bonus typed in since show up as their own bordered rows. Cadence has no interval vocabulary (weekdays + not_before only), so every half hour = ONE ENTRY PER SLOT, 09:30-18:00; all map to the one Hub card commission_refresh_0930 (hub_publish._HUB_CARD). A pass with nothing new typed in changes nothing. Needs the same raffi127 Drive token as commission_weekly_drop.",
+   "display_name": "Raf Commission Sheet — refresh rep tabs",
+   "source_type": "tableau",
+   "data_sources": [],
+   "command": [
+    "automations.commission_sheet.weekly_drop"
+   ],
+   "base_args": [
+    "--refresh",
+    "--write"
+   ],
+   "cadence": {
+    "weekdays": [
+     2,
+     3,
+     4
+    ],
+    "not_before": "16:00"
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 10
+  },
+  "commission_refresh_1630": {
+   "on_scheduler": true,
+   "_note": "Maud 2026-11-24: every 30 min Wed-Fri, re-lay the rep tabs' top block on this week's RH sheet (pct_payout.refresh_rep_tabs) so NPA / Clawback / Other / Training / Extra Bonus typed in since show up as their own bordered rows. Cadence has no interval vocabulary (weekdays + not_before only), so every half hour = ONE ENTRY PER SLOT, 09:30-18:00; all map to the one Hub card commission_refresh_0930 (hub_publish._HUB_CARD). A pass with nothing new typed in changes nothing. Needs the same raffi127 Drive token as commission_weekly_drop.",
+   "display_name": "Raf Commission Sheet — refresh rep tabs",
+   "source_type": "tableau",
+   "data_sources": [],
+   "command": [
+    "automations.commission_sheet.weekly_drop"
+   ],
+   "base_args": [
+    "--refresh",
+    "--write"
+   ],
+   "cadence": {
+    "weekdays": [
+     2,
+     3,
+     4
+    ],
+    "not_before": "16:30"
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 10
+  },
+  "commission_refresh_1700": {
+   "on_scheduler": true,
+   "_note": "Maud 2026-11-24: every 30 min Wed-Fri, re-lay the rep tabs' top block on this week's RH sheet (pct_payout.refresh_rep_tabs) so NPA / Clawback / Other / Training / Extra Bonus typed in since show up as their own bordered rows. Cadence has no interval vocabulary (weekdays + not_before only), so every half hour = ONE ENTRY PER SLOT, 09:30-18:00; all map to the one Hub card commission_refresh_0930 (hub_publish._HUB_CARD). A pass with nothing new typed in changes nothing. Needs the same raffi127 Drive token as commission_weekly_drop.",
+   "display_name": "Raf Commission Sheet — refresh rep tabs",
+   "source_type": "tableau",
+   "data_sources": [],
+   "command": [
+    "automations.commission_sheet.weekly_drop"
+   ],
+   "base_args": [
+    "--refresh",
+    "--write"
+   ],
+   "cadence": {
+    "weekdays": [
+     2,
+     3,
+     4
+    ],
+    "not_before": "17:00"
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 10
+  },
+  "commission_refresh_1730": {
+   "on_scheduler": true,
+   "_note": "Maud 2026-11-24: every 30 min Wed-Fri, re-lay the rep tabs' top block on this week's RH sheet (pct_payout.refresh_rep_tabs) so NPA / Clawback / Other / Training / Extra Bonus typed in since show up as their own bordered rows. Cadence has no interval vocabulary (weekdays + not_before only), so every half hour = ONE ENTRY PER SLOT, 09:30-18:00; all map to the one Hub card commission_refresh_0930 (hub_publish._HUB_CARD). A pass with nothing new typed in changes nothing. Needs the same raffi127 Drive token as commission_weekly_drop.",
+   "display_name": "Raf Commission Sheet — refresh rep tabs",
+   "source_type": "tableau",
+   "data_sources": [],
+   "command": [
+    "automations.commission_sheet.weekly_drop"
+   ],
+   "base_args": [
+    "--refresh",
+    "--write"
+   ],
+   "cadence": {
+    "weekdays": [
+     2,
+     3,
+     4
+    ],
+    "not_before": "17:30"
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 10
+  },
+  "commission_refresh_1800": {
+   "on_scheduler": true,
+   "_note": "Maud 2026-11-24: every 30 min Wed-Fri, re-lay the rep tabs' top block on this week's RH sheet (pct_payout.refresh_rep_tabs) so NPA / Clawback / Other / Training / Extra Bonus typed in since show up as their own bordered rows. Cadence has no interval vocabulary (weekdays + not_before only), so every half hour = ONE ENTRY PER SLOT, 09:30-18:00; all map to the one Hub card commission_refresh_0930 (hub_publish._HUB_CARD). A pass with nothing new typed in changes nothing. Needs the same raffi127 Drive token as commission_weekly_drop.",
+   "display_name": "Raf Commission Sheet — refresh rep tabs",
+   "source_type": "tableau",
+   "data_sources": [],
+   "command": [
+    "automations.commission_sheet.weekly_drop"
+   ],
+   "base_args": [
+    "--refresh",
+    "--write"
+   ],
+   "cadence": {
+    "weekdays": [
+     2,
+     3,
+     4
+    ],
+    "not_before": "18:00"
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 10
+  },
   "raf_captainship_bonus": {
    "on_scheduler": true,
    "_note": "Raf Captainship Bonus — Maud's weekly Tuesday fill of the 'Captainship Bonuses' tab in the *Alphalete Org/Captainship Reports* sheet (each active rep's Total Activations for Raf's team from Tableau CaptainsBonus, current cycle + team New Internet 60-day churn % and Activation % rolling 4 weeks; Total Sales / Money Made / TOTAL MONEY MADE recompute, chart re-points, PDF DM'd to Raf, Dylan + Maud on Slack as Lucy — nothing saved to Downloads). No 'machine' key = Lucy 1 (the mini). cadence.weekdays [] = the 4am orchestrator NEVER auto-runs it — its real schedule is the Tuesday 10:00am launchd job (com.alphalete.raf-captainship-bonus-tue, installed via install_raf_captainship_bonus_agent) on Lucy 1. This handle exists so `lucy rerun raf_captainship_bonus --dry-run` (safe probe) and `lucy rerun raf_captainship_bonus` (LIVE fill) work, and matches the Hub card's run buttons. source_type 'tableau' so rerun runs the chrome-guard + readiness gate. Runs off the mini's warm Tableau session.",

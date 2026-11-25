@@ -450,6 +450,24 @@ _HUB_CARD = {
     # Country Campaign Board afternoon catch-ups ride the main card.
     "program_daily_summary_catchup_13": "program_daily_summary",
     "program_daily_summary_catchup_15": "program_daily_summary",
+    # Raf's commission sheet: one refresh entry per half hour Wed-Fri, ONE card.
+    "commission_refresh_1000": "commission_refresh_0930",
+    "commission_refresh_1030": "commission_refresh_0930",
+    "commission_refresh_1100": "commission_refresh_0930",
+    "commission_refresh_1130": "commission_refresh_0930",
+    "commission_refresh_1200": "commission_refresh_0930",
+    "commission_refresh_1230": "commission_refresh_0930",
+    "commission_refresh_1300": "commission_refresh_0930",
+    "commission_refresh_1330": "commission_refresh_0930",
+    "commission_refresh_1400": "commission_refresh_0930",
+    "commission_refresh_1430": "commission_refresh_0930",
+    "commission_refresh_1500": "commission_refresh_0930",
+    "commission_refresh_1530": "commission_refresh_0930",
+    "commission_refresh_1600": "commission_refresh_0930",
+    "commission_refresh_1630": "commission_refresh_0930",
+    "commission_refresh_1700": "commission_refresh_0930",
+    "commission_refresh_1730": "commission_refresh_0930",
+    "commission_refresh_1800": "commission_refresh_0930",
 }
 
 

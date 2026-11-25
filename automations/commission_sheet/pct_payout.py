@@ -6,7 +6,7 @@ DD Detail crosstab this builds an .xlsx with:
   Edited    the columns Raf keeps, sorted by rep. Rule notes (Sunday internet,
             carried-over new-start sales) go in Description Detail. cl.Category WEARABLES /
             TABLET copied into the empty cl.Product cell.
-  Reps Name & Commission payout
+  Reps Name & Commission Payout
             A Rep | B % (yellow, editable) | C Revenue | D Total Payout |
             E Level / Rule (+ lost-leadership reason) | F Lost Leadership
             Pay checkbox, Level 1-3 only (ticked = 35%) |
@@ -177,11 +177,33 @@ CENTER = Alignment(horizontal="center", vertical="center")
 _EDGE = Side(style="thin", color="8EA9C8")
 BORDER = Border(left=_EDGE, right=_EDGE, top=_EDGE, bottom=_EDGE)
 TAB_EDITED = "Edited"
-TAB_PAYOUT = "Reps Name & Commission payout"
+TAB_PAYOUT = "Reps Name & Commission Payout"
+#: Sheets built before 11/24 spell it with a small "p" (read for carry-over).
+OLD_TAB_PAYOUT = "Reps Name & Commission payout"
+
+
+def _payout_ws(sh):
+    try:
+        return sh.worksheet(TAB_PAYOUT)
+    except Exception:                                   # noqa: BLE001
+        return sh.worksheet(OLD_TAB_PAYOUT)
 TAB_RAW = "Raw"
+TAB_EXTRA = "Extra Payouts"            # Maud types NPA / Clawback / Other here
+TAB_CHECK = "Transfers to Check"
+NOT_REP_TABS = (TAB_EDITED, TAB_PAYOUT, TAB_RAW, TAB_EXTRA, TAB_CHECK)
+EXTRA_TYPES = ("NPA", "Clawback", "Other")
+EXTRA_ROWS = 150
 PAYOUT_HEADERS = ["Rep Name", "Commission %", "Revenue Brought In", "Total Payout",
                   "Level / Rule", "Lost Leadership Pay", "Sunday Internet Revenue",
-                  "Commission", "Guarantee", "Base Pay", "Bonus", "Gas Bonus"]
+                  "Commission", "Guarantee", "Base Pay", "Bonus", "Gas Bonus",
+                  "Customer Bonus", "Training Bonus", "Other", "Extra Bonus",
+                  "Final Pay", "NPA", "Clawback"]
+#: Total Payout (D) = MAX(H, I) + J..N. Final Pay (Q) = D + Other + Extra Bonus
+#: + NPA - Clawback. Other / NPA / Clawback come from the Extra Payouts tab;
+#: Training Bonus (N) and Extra Bonus (P) are typed straight in (yellow).
+INPUT_COLS = (2, 14, 16)              # B Commission %, N Training Bonus, P Extra Bonus
+FINAL_COL = 17
+FINAL_FILL = PatternFill("solid", fgColor="E7E6E6")
 #: Rep tab: label, payout-tab column, number format. Rows 1..len, sales below.
 REP_DETAILS = [
     ("Commission %", "B", "0%"),
@@ -193,10 +215,76 @@ REP_DETAILS = [
     ("Base Pay", "J", MONEY),
     ("Bonus", "K", MONEY),
     ("Gas Bonus", "L", MONEY),
+    # (customer bonuses go here, one row per customer, from the build)
+    ("Training Bonus", "N", MONEY),
     ("Total Payout", "D", MONEY),
+    ("NPA", "R", MONEY),
+    ("Clawback", "S", MONEY),
+    ("Other", "O", MONEY),
+    ("Extra Bonus", "P", MONEY),
+    ("Final Pay", "Q", MONEY),
 ]
+#: Rep-tab top block (Maud 2026-11-24): rows back to back, only what applies;
+#: one row per Extra Payouts entry right under Total Payout, its note in
+#: column C (left, bordered). Typed-in values appear on the next refresh
+#: (refresh_rep_tabs — every 30 min Wed-Fri on the mini, or by hand).
+REP_EXTRA_AFTER = "D"                  # Extra Payouts rows go under Total Payout
+REP_SKIP = {"R", "S", "O"}             # shown per entry instead of as totals
+STD_LABELS = {lab for lab, _c, _f in REP_DETAILS} | {"Rep"}
+NAME_ROW_FONT = ("FFFFFF", 14)
 #: Rep tab: detail rows from row 1 down to the first blank row (only the
 #: details that apply), one blank row, then the sales header.
+
+
+def top_spec(rep, show, cb, extras):
+    """The rep tab's top block as [(A, B, C)] rows, back to back.
+    show = {payout column: bool}; cb = [(label, amount)] customer bonuses;
+    extras = [(type, amount, note)] from Extra Payouts, one row each
+    (Clawback shown negative, as it comes off Final Pay)."""
+    look = f"'{TAB_PAYOUT}'!"
+    rows = [("Rep", rep, "")]
+    for label, col, _fmt in REP_DETAILS:
+        idx = f"INDEX({look}${col}:${col},MATCH($B$1,{look}$A:$A,0))"
+        if col == "N":
+            rows += [(cl, ca, "") for cl, ca in cb]
+        if col in REP_SKIP or not show.get(col):
+            continue
+        if col == "F":
+            rows.append((label, f'=IFERROR(IF({idx}=TRUE,"Yes — Entry Level 35%",""),"")', ""))
+        else:
+            rows.append((label, f'=IFERROR({idx},"")', ""))
+        if col == REP_EXTRA_AFTER:
+            order = {t: i for i, t in enumerate(EXTRA_TYPES)}
+            for typ, amt, note in sorted(extras, key=lambda e: order.get(e[0], 9)):
+                rows.append((typ, -abs(amt) if typ == "Clawback" else amt, note))
+    return rows
+
+
+def _top_kind(r, label):
+    if r == 1:
+        return "name"
+    if label == "Total Payout":
+        return "total"
+    if label == "Final Pay":
+        return "final"
+    if label in EXTRA_TYPES:
+        return "extra"
+    return "plain"
+
+
+def _top_fmt(label):
+    for lab, _c, fmt in REP_DETAILS:
+        if lab == label:
+            return fmt
+    return None if label == "Rep" else MONEY
+
+
+#: kind -> (A fill, B fill, font color, size); None = no fill / default.
+TOP_LOOK = {"name": ("1F4E78", "1F4E78", "FFFFFF", 14),
+            "total": ("C6EFCE", "C6EFCE", "006100", 13),
+            "final": ("E7E6E6", "E7E6E6", "000000", 13),
+            "extra": ("DDEBF7", None, None, None),
+            "plain": ("DDEBF7", None, None, None)}
 
 
 def money(s):
@@ -514,7 +602,7 @@ def carried_lines(sheet_id):
     """Last week's held new starts' sales, from last week's RH sheet."""
     from automations.recruiting_report.fill import open_by_key
     sh = open_by_key(sheet_id)
-    pay = sh.worksheet(TAB_PAYOUT).get_values(value_render_option="UNFORMATTED_VALUE")
+    pay = _payout_ws(sh).get_values(value_render_option="UNFORMATTED_VALUE")
     held = {r[0] for r in pay[1:] if len(r) > 4 and str(r[4]).startswith("New start")}
     if not held:
         return [], sh.title
@@ -529,6 +617,22 @@ def carried_lines(sheet_id):
             rec[NOTE_COL] = _add_note(rec[NOTE_COL], label)
             out.append(rec)
     return out, sh.title
+
+
+def carried_customer_bonus(sheet_id):
+    """{rep: $} — held new starts' Customer Bonus on last week's sheet, paid
+    with their carried sales this week."""
+    from automations.recruiting_report.fill import open_by_key
+    pay = _payout_ws(open_by_key(sheet_id)).get_values(
+        value_render_option="UNFORMATTED_VALUE")
+    if not pay or "Customer Bonus" not in pay[0]:
+        return {}
+    c = pay[0].index("Customer Bonus")
+    out = {}
+    for r in pay[1:]:
+        if len(r) > c and str(r[4]).startswith("New start") and money(r[c]):
+            out[r[0]] = money(r[c])
+    return out
 
 
 # --- styling ----------------------------------------------------------------
@@ -584,7 +688,7 @@ def style_workbook(wb):
     while last > 1 and wr.cell(last, 1).value in (None, ""):
         last -= 1
     pcols = 4                                   # every titled column in row 1
-    while wr.cell(1, pcols + 1).value not in (None, "") and pcols < 12:
+    while wr.cell(1, pcols + 1).value not in (None, "") and pcols < len(PAYOUT_HEADERS):
         pcols += 1
     _header_row(wr, 1, 1, pcols)
     for r in range(2, last + 1):
@@ -604,8 +708,18 @@ def style_workbook(wb):
         if row_fill:
             for c in range(1, pcols + 1):
                 wr.cell(r, c).fill = row_fill
-        else:
-            wr.cell(r, 2).fill = INPUT_FILL
+        is_total = str(wr.cell(r, 1).value).strip().upper() == "TOTAL"
+        # A colored row (purple / orange / green / grey / TOTAL) keeps its color
+        # all the way across; yellow and grey only on plain rows (Maud 11/24).
+        if not row_fill:
+            for c in INPUT_COLS:                  # typed in: light yellow
+                if c <= pcols:
+                    wr.cell(r, c).fill = INPUT_FILL
+        if pcols >= FINAL_COL:                    # Final Pay stands out
+            fc = wr.cell(r, FINAL_COL)
+            fc.font = Font(bold=True)
+            if not row_fill:
+                fc.fill = FINAL_FILL
     _box(wr, 1, last, 1, pcols)
     if pcols >= 6:
         # Lost leadership pay — auto-filled or typed in F — turns the row pink.
@@ -615,16 +729,45 @@ def style_workbook(wb):
                         fill=LOST_FILL,
                         stopIfTrue=True))
 
+    for name in (TAB_EXTRA, TAB_CHECK):
+        if name in wb.sheetnames:
+            x = wb[name]
+            w = sum(1 for c in x[1] if c.value not in (None, ""))
+            _header_row(x, 1, 1, w)
+            _box(x, 1, x.max_row, 1, w)
+            if name == TAB_EXTRA:
+                for row in x.iter_rows(min_row=2, max_row=x.max_row, max_col=w):
+                    for c in row:
+                        c.fill = INPUT_FILL
+
     for ws in wb.worksheets:
-        if ws.title in (TAB_EDITED, TAB_PAYOUT, TAB_RAW):
+        if ws.title in NOT_REP_TABS:
             continue
         top = 1
         while ws.cell(top + 1, 1).value not in (None, ""):
             top += 1
         hdr = top + 2
-        for r in range(1, top + 1):               # the detail labels
-            ws.cell(r, 1).fill = LABEL_FILL
-        _box(ws, 1, top, 1, 2)
+        for r in range(1, top + 1):               # the top block, back to back
+            label = str(ws.cell(r, 1).value or "")
+            kind = _top_kind(r, label)
+            fa, fb, color, size = TOP_LOOK[kind]
+            for c, fill in ((1, fa), (2, fb)):
+                cell = ws.cell(r, c)
+                cell.alignment = CENTER
+                cell.border = BORDER
+                if fill:
+                    cell.fill = PatternFill("solid", fgColor=fill)
+                cell.font = Font(bold=(c == 1 or kind != "plain" and kind != "extra"),
+                                 size=size, color=color)
+            fmt = _top_fmt(label)
+            if fmt and r > 1:
+                ws.cell(r, 2).number_format = fmt
+            if kind == "extra":                   # the note, left of the amount's row
+                n = ws.cell(r, 3)
+                n.alignment = Alignment(horizontal="left", vertical="center")
+                n.border = BORDER
+                n.font = Font(italic=True)
+        ws.row_dimensions[1].height = 24
         pend = next((r for r in range(hdr, ws.max_row + 1)
                      if str(ws.cell(r, 1).value or "").startswith(PENDING_BANNER)), None)
         end = (pend - 2) if pend else ws.max_row
@@ -703,7 +846,7 @@ def is_sunday_internet(rec):
 
 
 def main(src, out, use_board=True, carry_from=None, run_date=None,
-         pending_file=None):
+         pending_file=None, transfers=True, write_transfers=False):
     rows = read_crosstab(Path(src))
     h = rows[0]
     ix = {n.strip(): i for i, n in enumerate(h)}
@@ -726,15 +869,17 @@ def main(src, out, use_board=True, carry_from=None, run_date=None,
             extra_labels.append(rep)
         rec["Rep Full Name"] = rep
         rec["Total $ to ICD"] = money(rec["Total $ to ICD"])
+        rec["_spe"] = r[ix["cl.Production Lookup"]].strip()     # one per line
+        rec["_ctype"] = r[ix["cl.Commission Type"]].strip()
         if is_sunday_internet(rec):
             rec[NOTE_COL] = _add_note(rec[NOTE_COL], SUNDAY_NOTE)
         edited.append(rec)
 
-    carried, carried_from = [], None
+    carried, carried_from, carried_bonus = [], None, {}
     if carry_from:
         carried, carried_from = carried_lines(carry_from)
+        carried_bonus = carried_customer_bonus(carry_from)
         edited += carried
-    edited.sort(key=lambda d: (d["Rep Full Name"].lower(), d["Product"].lower()))
     extras = sorted(set(extra_labels), key=str.lower)
 
     sunday = dd_sunday(raw, ix)
@@ -745,6 +890,46 @@ def main(src, out, use_board=True, carry_from=None, run_date=None,
         except Exception as e:                          # noqa: BLE001
             print(f"!! could not read Raf's board ({type(e).__name__}: {e}) — "
                   "every % left blank")
+
+    # ATT Sales Transfers: move transferred sales, customer bonuses, splits.
+    cust_bonus = collections.defaultdict(list)          # rep key -> [(label, $)]
+    for rep_, amt in carried_bonus.items():
+        cust_bonus[_name_key(rep_)].append((f"Customer bonus ({carried_from})", amt))
+    checks = []
+    if transfers and sunday:
+        from automations.commission_sheet import pct_transfers as T
+        try:
+            # one spelling per person — the DD's wins over the board's "(DJ)" form
+            by_key = {}
+            for nm in (list(board.names.values()) + list(BASE_PAY) + list(SPECIAL_PCT)
+                       + [d["Rep Full Name"] for d in edited
+                          if d["Rep Full Name"] not in extra_labels]):
+                by_key[_name_key(nm)] = re.sub(r"\s*\([^)]*\)", "", nm).strip()
+            roster = sorted(by_key.values())
+            tws, tvals = T.load()
+            tp = T.plan(tvals, edited, roster, f"WE {_md(sunday)}",
+                        run_date or dt.date.today())
+            for i, dst, why in tp.moves:
+                edited[i]["Rep Full Name"] = dst
+                edited[i][NOTE_COL] = _add_note(edited[i][NOTE_COL], why)
+            for i in tp.split:
+                edited[i][NOTE_COL] = _add_note(edited[i][NOTE_COL], T.SPLIT_NOTE)
+            for rep_, label, amt in tp.bonuses:
+                cust_bonus[_name_key(rep_)].append((label, amt))
+            checks = tp.checks
+            for line in tp.applied:
+                print("   transfer " + line)
+            print(f"   transfers: {len(tp.moves)} line(s) moved, {len(tp.bonuses)} "
+                  f"customer bonus(es), {len(checks)} to check, "
+                  f"{len(tp.updates)} status update(s)")
+            if write_transfers:
+                print(f"   wrote {T.write(tws, tvals, tp.updates)} status(es) to "
+                      f"{T.C.TAB_TRANSFERS!r}")
+        except Exception as e:                          # noqa: BLE001
+            print(f"!! could not read ATT Sales Transfers ({type(e).__name__}: {e})")
+    edited.sort(key=lambda d: (d["Rep Full Name"].lower(), d["Product"].lower()))
+    names_by_key = {_name_key(n): n for n in
+                    list(board.names.values()) + [d["Rep Full Name"] for d in edited]}
     bonuses = {}
     if use_board and sunday:
         try:
@@ -774,10 +959,10 @@ def main(src, out, use_board=True, carry_from=None, run_date=None,
         if d.get("Customer Name"):
             custs[_name_key(d["Rep Full Name"])].add(str(d["Customer Name"]).strip().lower())
     apps = {k: len(v) for k, v in custs.items()}
-    for key in list(board.guarantee) + [k for k in board.gas
+    for key in list(cust_bonus) + list(board.guarantee) + [k for k in board.gas
                                          if gas_for(board.names.get(k, k), board, apps)]:
         if key not in have:
-            names.add(board.names.get(key) or key.title())
+            names.add(names_by_key.get(key) or key.title())
             have.add(key)
     reps = sorted(names, key=str.lower)
     base_by_key = {_name_key(n): v for n, v in BASE_PAY.items()}
@@ -797,8 +982,9 @@ def main(src, out, use_board=True, carry_from=None, run_date=None,
     widths(ws, [24, 12, 14, 30, 16, 9, 26, 16, 26, 14])
     last = ws.max_row
     A, J, K = (f"Edited!${c}$2:${c}${last}" for c in "AJG")   # K = note column
+    SPLIT = "Split sale"
 
-    # --- Reps Name & Commission payout ------------------------------------
+    # --- Reps Name & Commission Payout ------------------------------------
     wr = wb.create_sheet(TAB_PAYOUT)
     header(wr, PAYOUT_HEADERS)
     results, tabbed = {}, []
@@ -831,70 +1017,111 @@ def main(src, out, use_board=True, carry_from=None, run_date=None,
         else:
             p = wr.cell(i, 2, pct)
         p.number_format = "0%"
-        wr.cell(i, 3, f"=SUMIF({A},A{i},{J})").number_format = MONEY
-        wr.cell(i, 4, f'=IF(COUNT(H{i}:L{i})=0,"",MAX(N(H{i}),N(I{i}))+N(J{i})+N(K{i})+N(L{i}))'
+        # split sales are paid as customer bonuses, not commission
+        wr.cell(i, 3, f'=SUMIF({A},A{i},{J})-SUMIFS({J},{A},A{i},{K},"*{SPLIT}*")'
                 ).number_format = MONEY
+        if kind != KIND_HELD:
+            wr.cell(i, 4, f'=IF(COUNT(H{i}:N{i})=0,"",MAX(N(H{i}),N(I{i}))'
+                          f'+N(J{i})+N(K{i})+N(L{i})+N(M{i})+N(N{i}))').number_format = MONEY
         wr.cell(i, 5, note)
         wr.cell(i, 6, bool(lost) if leader else None)   # bool -> checkbox
-        wr.cell(i, 7, f'=SUMIFS({J},{A},A{i},{K},"*{SUNDAY_NOTE}*")').number_format = MONEY
+        wr.cell(i, 7, f'=SUMIFS({J},{A},A{i},{K},"*{SUNDAY_NOTE}*")'
+                      f'-SUMIFS({J},{A},A{i},{K},"*{SUNDAY_NOTE}*{SPLIT}*")').number_format = MONEY
         if key not in no_comm:
             wr.cell(i, 8, f'=IF(B{i}="","",(C{i}-G{i})*B{i}'
                           f'+G{i}*MAX(B{i},{SUNDAY_INTERNET_PCT}))').number_format = MONEY
+        cb = cust_bonus.get(key, []) if name not in extras else []
+        cb_amt = round(sum(a for _l, a in cb), 2) or None
+        if cb_amt:
+            note += " · Customer bonus"
+            wr.cell(i, 5, note)
         for col, v in ((9, g_amt), (10, base), (11, bonus[0] if bonus else None),
-                       (12, gas)):
+                       (12, gas), (13, cb_amt)):
             if v is not None:
                 wr.cell(i, col, v).number_format = MONEY
+        X = f"'{TAB_EXTRA}'!"
+        for col, typ in ((15, "Other"), (18, "NPA"), (19, "Clawback")):
+            wr.cell(i, col, f'=SUMIFS({X}$C:$C,{X}$A:$A,$A{i},{X}$B:$B,"{typ}")'
+                    ).number_format = MONEY
+        wr.cell(i, 16).number_format = MONEY          # Extra Bonus: typed in
+        wr.cell(i, 17, f'=IF(AND(D{i}="",O{i}=0,N(P{i})=0,R{i}=0,S{i}=0),"",'
+                       f'N(D{i})+O{i}+N(P{i})+R{i}-ABS(S{i}))').number_format = MONEY
         results[name] = (pct if not lost else lpct, kind, note, lost, g_amt, base,
-                         bonus[0] if bonus else None, gas)
+                         bonus[0] if bonus else None, gas, cb)
         if name not in extras and kind != KIND_HELD and not note.startswith(NOTE_NOT_ON):
             tabbed.append(name)
     n = len(reps) + len(extras) + 1
     t = n + 1
     wr.cell(t, 1, "TOTAL").font = Font(bold=True)
-    for col in ("C", "D", "G", "H", "I", "J", "K", "L"):
+    for col in ("C", "D", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S"):
         c = wr[f"{col}{t}"]
         c.value = f"=SUM({col}2:{col}{n})"
         c.number_format, c.font = MONEY, Font(bold=True)
-    wr["N1"] = ("Yellow % can be typed over; each rep's tab follows. Level 1-3 "
+    wr["U1"] = ("Yellow % can be typed over; each rep's tab follows. Level 1-3 "
                 "reps have a Lost Leadership Pay box: ticked = Entry Level 35% "
                 "(the reason is in Level / Rule), untick to pay their level %. Total Payout = "
-                "higher of Commission or Guarantee, + Base Pay + Bonus + Gas Bonus. "
+                "higher of Commission or Guarantee, + Base Pay + Bonus + Gas Bonus + Customer "
+                "Bonus + Training Bonus. Final Pay = Total Payout + Other + Extra Bonus + "
+                "NPA - Clawback (Other / NPA / Clawback come from the Extra Payouts tab). "
+                "Light yellow = type in. "
                 "Orange = no level, type a %. Purple = new start, paid next week. "
                 "Green = guarantee (not LinkedIn). Grey = DD line with no rep. Pink = lost leadership pay.")
-    wr["N1"].font = Font(italic=True)
-    widths(wr, [28, 14, 20, 14, 40, 22, 22, 14, 14, 14, 14, 14])
+    wr["U1"].font = Font(italic=True)
+    wr.auto_filter.ref = f"A1:{get_column_letter(len(PAYOUT_HEADERS))}{n}"
+    wr.freeze_panes = "B2"            # rep names (and the header) stay in view
+    widths(wr, [28, 14, 20, 14, 40, 22, 22, 14, 14, 14, 14, 14, 16, 16, 12, 14, 14, 12, 12])
+
+    # --- Extra: NPA / Clawback / Extra Bonus, typed in by hand ---------------
+    from openpyxl.worksheet.datavalidation import DataValidation
+    wx = wb.create_sheet(TAB_EXTRA)
+    header(wx, ["Rep Name", "Type", "Amount", "Note"])
+    for r in range(2, EXTRA_ROWS + 2):
+        wx.cell(r, 3).number_format = MONEY
+    # strict: a typed first name ("Pranish") would never be counted
+    dv_rep = DataValidation(type="list", allow_blank=True, showErrorMessage=True,
+                            errorStyle="stop", errorTitle="Pick a rep from the list",
+                            error="Use the full name from the drop-down so it's counted.",
+                            formula1=f"='{TAB_PAYOUT}'!$A$2:$A${n}")
+    dv_typ = DataValidation(type="list", allow_blank=True,
+                            formula1='"' + ",".join(EXTRA_TYPES) + '"')
+    wx.add_data_validation(dv_rep)
+    wx.add_data_validation(dv_typ)
+    dv_rep.add(f"A2:A{EXTRA_ROWS + 1}")
+    dv_typ.add(f"B2:B{EXTRA_ROWS + 1}")
+    wx["F1"] = ("Pick the rep and the type. NPA and Other are added to Final "
+                "Pay; Clawback is taken off (type it as a positive amount). The note "
+                "shows on the rep's tab.")
+    wx["F1"].font = Font(italic=True)
+    widths(wx, [28, 16, 14, 40])
+
+    # --- Transfers to Check ---------------------------------------------------
+    if checks:                                    # only when there's something
+        wc = wb.create_sheet(TAB_CHECK)
+        header(wc, ["Row on ATT Sales Transfers", "Submitted", "Your Name",
+                    "Name the Sale is Under", "Customer", "Quantity", "Notes", "Why"])
+        for row in checks:
+            wc.append(row)
+        widths(wc, [14, 18, 22, 22, 24, 18, 36, 50])
 
     # --- one tab per paid rep: every detail, then their sales ---------------
-    used = {"edited", "reps name & commission payout", "raw"}
-    look = "'Reps Name & Commission payout'!"
+    used = {t.lower() for t in NOT_REP_TABS}
+    look = f"'{TAB_PAYOUT}'!"
     for rep in tabbed:
         wt = wb.create_sheet(safe_title(rep, used))
-        wt["A1"], wt["B1"] = "Rep", rep
-        wt["A1"].font = Font(bold=True)
-        wt["B1"].font = Font(bold=True, size=13)
         # Only what applies to this rep — nothing that's 0, blank or "No".
-        _p, _k, _n, lost, g_amt, base, bonus, gas = results[rep]
+        _p, _k, _n, lost, g_amt, base, bonus, gas, cb = results[rep]
         rev = sum(d["Total $ to ICD"] for d in edited if d["Rep Full Name"] == rep)
         sun = sum(d["Total $ to ICD"] for d in edited if d["Rep Full Name"] == rep
                   and SUNDAY_NOTE in str(d[NOTE_COL] or ""))
         show = {"B": _p is not None, "C": bool(rev), "G": bool(sun), "F": bool(lost),
                 "H": bool(rev) and _p is not None, "I": bool(g_amt), "J": bool(base),
                 "K": bool(bonus), "L": bool(gas), "D": True}
-        r = 1
-        for label, col, fmt in REP_DETAILS:
-            if not show.get(col):
-                continue
-            r += 1
-            idx = f"INDEX({look}${col}:${col},MATCH($B$1,{look}$A:$A,0))"
-            wt.cell(r, 1, label).font = Font(bold=True)
-            if col == "F":
-                f = f'=IFERROR(IF({idx}=TRUE,"Yes — Entry Level 35%",""),"")'
-            else:
-                f = f'=IFERROR({idx},"")'
-            c = wt.cell(r, 2, f)
-            if fmt:
-                c.number_format = fmt
-        wt.cell(r, 2).font = Font(bold=True, size=13, color="006100")
+        show["Q"] = False                        # nothing typed in yet
+        for r, (a, b, c) in enumerate(top_spec(rep, show, cb, []), 1):
+            wt.cell(r, 1, a)
+            wt.cell(r, 2, b)
+            if c:
+                wt.cell(r, 3, c)
         wt.append([])
         mine = [d for d in edited if d["Rep Full Name"] == rep]
         if mine:                                  # no sales -> no empty header
@@ -946,12 +1173,116 @@ def main(src, out, use_board=True, carry_from=None, run_date=None,
     return results
 
 
+def copy_manual_entries(old_id, new_id):
+    """After re-making a week's sheet: bring over what was typed by hand on
+    the old one — Extra Payouts rows (first names resolved to the full rep
+    name when there's exactly one), Lost Leadership ticks, typed Commission %
+    / Training Bonus / Extra Bonus. Returns a short report."""
+    from automations.commission_sheet.names import match_person
+    from automations.recruiting_report.fill import open_by_key
+    old, new = open_by_key(old_id), open_by_key(new_id)
+    po = _payout_ws(old).get_values(value_render_option="FORMULA")
+    pn_ws = _payout_ws(new)
+    pn = pn_ws.get_values(value_render_option="FORMULA")
+    names = [r[0] for r in pn[1:] if r and r[0] and r[0] != "TOTAL"]
+    row_of = {r[0]: i for i, r in enumerate(pn, 1) if r and r[0]}
+    head_o = po[0]
+    report, data = [], []
+    for r in po[1:]:
+        if not r or r[0] not in row_of or r[0] == "TOTAL":
+            continue
+        i = row_of[r[0]]
+        cells = dict(zip(head_o, r))
+        f = cells.get("Lost Leadership Pay")
+        if isinstance(f, bool):
+            data.append({"range": f"F{i}", "values": [[f]]})
+        b = cells.get("Commission %")
+        if b not in (None, "") and not str(b).startswith("="):
+            data.append({"range": f"B{i}", "values": [[b]]})
+            report.append(f"{r[0]}: typed % {b}")
+        for label, col in (("Training Bonus", "N"), ("Extra Bonus", "P")):
+            v = cells.get(label)
+            if v not in (None, "") and not str(v).startswith("="):   # typed, not formula
+                data.append({"range": f"{col}{i}", "values": [[v]]})
+    if data:
+        pn_ws.batch_update(data, value_input_option="USER_ENTERED")
+    ex_old = next((w for w in old.worksheets() if w.title in (TAB_EXTRA, "Extra")), None)
+    rows = []
+    for r in (ex_old.get_values("A2:D400") if ex_old else []):
+        if not any(r):
+            continue
+        r = (list(r) + ["", "", "", ""])[:4]
+        typ = "Other" if r[1].strip() == "Extra Bonus" else r[1].strip()
+        who = r[0].strip()
+        if who not in names:
+            m, cands = match_person(who, names)
+            if not m:   # "Christopher W": first name + surname initial
+                t = who.split()
+                hits = [n for n in names if len(t) == 2 and n.lower().startswith(t[0].lower() + " ")
+                        and n.split()[-1].lower().startswith(t[1].lower().rstrip("."))]
+                m = hits[0] if len(hits) == 1 else None
+            if not m:   # a typo: one close spelling
+                import difflib
+                close = difflib.get_close_matches(who, names, n=2, cutoff=0.7) or \
+                    [n for n in names if difflib.SequenceMatcher(
+                        None, who.lower(), n.split()[0].lower()).ratio() >= 0.8]
+                m = close[0] if len(close) == 1 else None
+            if m:
+                report.append(f"Extra Payouts: {who!r} -> {m}")
+                who = m
+            else:
+                report.append(f"Extra Payouts: {who!r} is not on this sheet — not counted")
+        rows.append([who, typ, r[2], r[3]])
+    if rows:
+        ws = new.worksheet(TAB_EXTRA)
+        ws.update(values=rows, range_name=f"A2:D{len(rows) + 1}",
+                  value_input_option="USER_ENTERED", raw=False)
+    return report
+
+
+def fit_columns(sheet_id):
+    """Google Sheets: fit every payout-tab column (A to the last header) to its
+    text (Maud 2026-11-24). Done after upload — an .xlsx can't carry auto-fit."""
+    from automations.recruiting_report.fill import open_by_key
+    sh = open_by_key(sheet_id)
+    ws = _payout_ws(sh)
+    sh.batch_update({"requests": [{"autoResizeDimensions": {"dimensions": {
+        "sheetId": ws.id, "dimension": "COLUMNS",
+        "startIndex": 0, "endIndex": len(PAYOUT_HEADERS)}}}]})
+    return len(PAYOUT_HEADERS)
+
+
+#: Collapsible column groups on the payout tab (Maud 2026-11-24): the pay
+#: breakdown G:O (Sunday Internet .. Other) and NPA / Clawback R:S. 0-based, end exclusive.
+PAYOUT_GROUPS = ((6, 15), (17, 19))
+
+
+def group_columns(sheet_id):
+    """Google Sheets: add the payout tab's column groups (skips any that are
+    already there, so a re-run doesn't nest them)."""
+    from automations.recruiting_report.fill import open_by_key
+    sh = open_by_key(sheet_id)
+    ws = _payout_ws(sh)
+    meta = sh.fetch_sheet_metadata({"fields": "sheets(properties(sheetId),columnGroups)"})
+    have = set()
+    for sheet in meta["sheets"]:
+        if sheet["properties"]["sheetId"] == ws.id:
+            have = {(g["range"]["startIndex"], g["range"]["endIndex"])
+                    for g in sheet.get("columnGroups", [])}
+    reqs = [{"addDimensionGroup": {"range": {
+        "sheetId": ws.id, "dimension": "COLUMNS", "startIndex": a, "endIndex": b}}}
+        for a, b in PAYOUT_GROUPS if (a, b) not in have]
+    if reqs:
+        sh.batch_update({"requests": reqs})
+    return len(reqs)
+
+
 def add_checkboxes(sheet_id):
     """Google Sheets: turn every FALSE/TRUE cell in the payout tab's Lost
     Leadership Pay column into a checkbox (an .xlsx upload can't carry one)."""
     from automations.recruiting_report.fill import open_by_key
     sh = open_by_key(sheet_id)
-    ws = sh.worksheet(TAB_PAYOUT)
+    ws = _payout_ws(sh)
     col = ws.get_values("F1:F400", value_render_option="UNFORMATTED_VALUE")
     rows = [i for i, r in enumerate(col, 1) if r and isinstance(r[0], bool)]
     reqs = [{"setDataValidation": {
@@ -964,18 +1295,169 @@ def add_checkboxes(sheet_id):
     return len(reqs)
 
 
+def _rgb(hexs):
+    return {"red": int(hexs[0:2], 16) / 255, "green": int(hexs[2:4], 16) / 255,
+            "blue": int(hexs[4:6], 16) / 255}
+
+
+def _api_cell(v, *, fmt=None, fill=None, bold=False, italic=False, size=None,
+              color=None, left=False, border=True):
+    """A Sheets API CellData with the same look style_workbook gives the .xlsx."""
+    if v in (None, ""):
+        val = None
+    elif isinstance(v, bool):
+        val = {"boolValue": v}
+    elif isinstance(v, (int, float)):
+        val = {"numberValue": v}
+    elif str(v).startswith("="):
+        val = {"formulaValue": str(v)}
+    else:
+        val = {"stringValue": str(v)}
+    font = {"bold": bold, "italic": italic}
+    if size:
+        font["fontSize"] = size
+    if color:
+        font["foregroundColor"] = _rgb(color)
+    f = {"horizontalAlignment": "LEFT" if left else "CENTER",
+         "verticalAlignment": "MIDDLE", "textFormat": font}
+    if fill:
+        f["backgroundColor"] = _rgb(fill)
+    if fmt:
+        f["numberFormat"] = ({"type": "PERCENT", "pattern": fmt} if "%" in fmt
+                             else {"type": "CURRENCY", "pattern": fmt})
+    if border:
+        edge = {"style": "SOLID", "color": _rgb("8EA9C8")}
+        f["borders"] = {k: edge for k in ("top", "bottom", "left", "right")}
+    cell = {"userEnteredFormat": f}
+    if val:
+        cell["userEnteredValue"] = val
+    return cell
+
+
+def _api_top_row(r, a, b, c):
+    kind = _top_kind(r, a)
+    fa, fb, color, size = TOP_LOOK[kind]
+    strong = kind in ("name", "total", "final")
+    fmt = _top_fmt(a) if r > 1 else None
+    cells = [_api_cell(a, fill=fa, bold=True, size=size, color=color),
+             _api_cell(b, fmt=fmt, fill=fb, bold=strong, size=size, color=color)]
+    cells.append(_api_cell(c, italic=True, left=True) if kind == "extra"
+                 else {})                       # {} + the fields mask = cleared
+    return {"values": cells}
+
+
+def _nz(v):
+    try:
+        return float(v or 0) != 0
+    except (TypeError, ValueError):
+        return False
+
+
+def _same(x, y):
+    try:
+        return round(float(x), 2) == round(float(y), 2)
+    except (TypeError, ValueError):
+        return str(x if x is not None else "").strip() == str(y if y is not None else "").strip()
+
+
+def refresh_rep_tabs(sheet_id, log=print):
+    """Google Sheets: re-lay every rep tab's top block from what's on the sheet
+    now — rows back to back, only what applies, one row per Extra Payouts entry
+    (NPA / Clawback / Other) with its note in column C (Maud 2026-11-24).
+    Rows are inserted / deleted above the sales so nothing below moves out of
+    place. A tab that already matches is left alone, so a pass with nothing
+    new typed in changes nothing. Returns the tabs it changed."""
+    from automations.recruiting_report.fill import open_by_key
+    sh = open_by_key(sheet_id)
+    pv = _payout_ws(sh).get_values(value_render_option="UNFORMATTED_VALUE")
+    col_ix = {get_column_letter(i + 1): i for i in range(len(PAYOUT_HEADERS))}
+    pay = {str(r[0]).strip(): list(r) + [""] * len(PAYOUT_HEADERS)
+           for r in pv[1:] if r and r[0]}
+    extras = collections.defaultdict(list)
+    try:
+        ex = sh.worksheet(TAB_EXTRA).get_values(
+            f"A2:D{EXTRA_ROWS + 1}", value_render_option="UNFORMATTED_VALUE")
+    except Exception:                             # noqa: BLE001 — older sheet
+        ex = []
+    for r in ex:
+        r = (list(r) + ["", "", "", ""])[:4]
+        if str(r[0]).strip() and str(r[1]).strip() in EXTRA_TYPES and _nz(r[2]):
+            extras[str(r[0]).strip()].append(
+                (str(r[1]).strip(), float(r[2]), str(r[3] or "").strip()))
+
+    skip = set(NOT_REP_TABS) | {OLD_TAB_PAYOUT, "Extra"}
+    tabs = [w for w in sh.worksheets() if w.title not in skip]
+    if not tabs:
+        return []
+    got = sh.values_batch_get([f"'{w.title}'!A1:C60" for w in tabs],
+                              params={"valueRenderOption": "FORMULA"})["valueRanges"]
+    reqs, changed = [], []
+    for w, vr in zip(tabs, got):
+        cur = [(list(r) + ["", "", ""])[:3] for r in vr.get("values", [])]
+        if not cur or cur[0][0] != "Rep":
+            continue
+        rep = str(cur[0][1]).strip()
+        top = 0
+        while top < len(cur) and str(cur[top][0]).strip():
+            top += 1
+        row = pay.get(rep)
+        if row is None:
+            log(f"   refresh: {rep!r} not on the payout tab — tab left alone")
+            continue
+        v = {c: row[i] for c, i in col_ix.items()}
+        show = {"B": v["B"] not in (None, ""), "F": v["F"] is True, "D": True,
+                **{c: _nz(v[c]) for c in "CGHIJKLNP"},
+                "Q": any(_nz(v[c]) for c in "OPRS")}
+        cb = [(a, b) for a, b, _c in cur[1:top]
+              if str(a).strip() and str(a) not in STD_LABELS
+              and str(a) not in EXTRA_TYPES and not str(a).startswith("=")]
+        want = top_spec(rep, show, cb, extras.get(rep, []))
+        if len(want) == top and all(
+                _same(x, y) for wr, cr in zip(want, cur[:top]) for x, y in zip(wr, cr)):
+            continue
+        sid = w.id
+        if len(want) > top:
+            reqs.append({"insertDimension": {"range": {
+                "sheetId": sid, "dimension": "ROWS", "startIndex": top,
+                "endIndex": len(want)}, "inheritFromBefore": True}})
+        elif len(want) < top:
+            reqs.append({"deleteDimension": {"range": {
+                "sheetId": sid, "dimension": "ROWS", "startIndex": len(want),
+                "endIndex": top}}})
+        reqs.append({"updateCells": {
+            "range": {"sheetId": sid, "startRowIndex": 0, "endRowIndex": len(want),
+                      "startColumnIndex": 0, "endColumnIndex": 3},
+            "rows": [_api_top_row(i, *t) for i, t in enumerate(want, 1)],
+            "fields": "userEnteredValue,userEnteredFormat"}})
+        changed.append(w.title)
+    if reqs:
+        sh.batch_update({"requests": reqs})
+    log(f"   refresh: {len(changed)} rep tab(s) re-laid"
+        + (f": {', '.join(changed)}" if changed else " (nothing new)"))
+    return changed
+
+
 def cli(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--dd-file", help="already-downloaded ORG DD Detail crosstab")
     ap.add_argument("--restyle", help="existing workbook to rename + restyle only")
-    ap.add_argument("--out", required=True, help="where to save the .xlsx")
+    ap.add_argument("--out", help="where to save the .xlsx")
     ap.add_argument("--no-board", action="store_true",
                     help="don't read Raf's board (every %% left blank)")
+    ap.add_argument("--write-transfers", action="store_true",
+                    help="write PAID / PARTIALLY / CANCELLED back to ATT Sales Transfers")
     ap.add_argument("--order-log-file", help="already-downloaded Order Log crosstab "
                     "(else it's pulled from Tableau)")
+    ap.add_argument("--refresh", metavar="SHEET_ID",
+                    help="re-lay the rep tabs' top blocks on this Google Sheet, then stop")
     ap.add_argument("--carry-from", help="last week's RH sheet id: carry its held "
                                          "new starts' sales onto this week")
     a = ap.parse_args(argv)
+    if a.refresh:
+        refresh_rep_tabs(a.refresh)
+        return
+    if not a.out:
+        ap.error("--out is required")
     if a.restyle:
         restyle(a.restyle, a.out)
         return
@@ -984,7 +1466,7 @@ def cli(argv=None):
         from automations.commission_sheet.sources import fetch_dd
         dd = fetch_dd()
     main(dd, a.out, use_board=not a.no_board, carry_from=a.carry_from,
-         pending_file=a.order_log_file)
+         pending_file=a.order_log_file, write_transfers=a.write_transfers)
 
 
 if __name__ == "__main__":

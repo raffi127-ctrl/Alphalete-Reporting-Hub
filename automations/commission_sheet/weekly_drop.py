@@ -32,6 +32,7 @@ that owns Raf's folders). One-time setup on the machine that runs this:
     python -m automations.commission_sheet.weekly_drop --write
     python -m automations.commission_sheet.weekly_drop --write --suffix " - Maudy"
     python -m automations.commission_sheet.weekly_drop --dd-file dd.csv --write
+    python -m automations.commission_sheet.weekly_drop --refresh --write   # 30-min pass
 """
 from __future__ import annotations
 
@@ -164,13 +165,16 @@ def run(write: bool, dd_file: Optional[Path], suffix: str) -> int:
         _log("2  building the workbook…")
         if not carry_from:
             _log("   (no sheet for last week — nothing to carry over)")
-        pct_payout.main(dd, xlsx, carry_from=carry_from)
+        pct_payout.main(dd, xlsx, carry_from=carry_from, write_transfers=write)
         if write:
             made = upload(svc, xlsx, name)
             _log(f"3  uploaded {made['name']!r}  {made.get('webViewLink', '')}")
             try:
                 n = pct_payout.add_checkboxes(made["id"])
                 _log(f"   {n} Lost Leadership Pay checkboxes added")
+                pct_payout.fit_columns(made["id"])
+                pct_payout.group_columns(made["id"])
+                pct_payout.refresh_rep_tabs(made["id"], log=_log)
             except Exception as e:                  # noqa: BLE001
                 _log(f"   !! checkboxes not added ({type(e).__name__}: {e}) — "
                      "the cells show FALSE; type TRUE to tick")
@@ -189,13 +193,39 @@ def run(write: bool, dd_file: Optional[Path], suffix: str) -> int:
     return 0
 
 
+def refresh(write: bool) -> int:
+    """Every 30 min Wed-Fri: re-lay this week's sheet's rep-tab tops so NPA /
+    Clawback / Other / Training / Extra Bonus typed in since show up (Maud
+    2026-11-24). Only the newest of OUR sheets; a pass with nothing new is a no-op."""
+    from automations.commission_sheet import pct_payout
+    from automations.commission_sheet.drive_auth import service
+    ours = our_sheets(service())
+    if not ours:
+        _log("no RH sheet in Commission Sheets — nothing to refresh")
+        return 0
+    week, f = ours[0]
+    if (dt.date.today() - week).days > 7:
+        _log(f"newest sheet {f['name'].strip()!r} is not this week's — left alone")
+        return 0
+    _log(f"refreshing rep tabs on {f['name'].strip()!r}")
+    if not write:
+        _log("(dry run — add --write)")
+        return 0
+    pct_payout.refresh_rep_tabs(f["id"], log=_log)
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--write", action="store_true", help="actually upload + move")
     ap.add_argument("--dd-file", type=Path, help="use this DD crosstab")
+    ap.add_argument("--refresh", action="store_true",
+                    help="only re-lay this week's sheet's rep tabs (the 30-min pass)")
     ap.add_argument("--suffix", default="", help='added to the name, e.g. " - Maudy"')
     a = ap.parse_args(argv)
     try:
+        if a.refresh:
+            return refresh(a.write)
         return run(a.write, a.dd_file, a.suffix)
     except RuntimeError as e:
         _log(f"STOPPED: {e}")
