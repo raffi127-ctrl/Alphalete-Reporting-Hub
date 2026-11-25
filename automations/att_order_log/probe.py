@@ -254,6 +254,91 @@ def _list_views(page, rec) -> None:
             rec("    (no view hits)")
 
 
+# 2026-11-25: the bare ORDERLOG.csv started coming back as ~13KB holding only
+# ANOTHER company's rows (ALEX CENSI [power shift marketing], one rep, one day)
+# — the published default view got saved with a filter on it, and our Start/End
+# URL params don't undo that. Same failure D2D had on 9/29 (fixed there by
+# pulling a custom view). These are the candidate URLs to replace the bare one;
+# --compare-views pulls each and says which still carries Carlos's sales.
+_ORDERLOG_HOST = "https://us-east-1.online.tableau.com/t/sci/views/ATTTRACKER-B2B/ORDERLOG"
+COMPARE_VARIANTS = (
+    ("bare (today's URL)", _ORDERLOG_HOST + ".csv?:refresh=yes"),
+    ("bare + :revert=all", _ORDERLOG_HOST + ".csv?:refresh=yes&:revert=all"),
+    ("Carlos custom view 415114d7",
+     _ORDERLOG_HOST + "/415114d7-6d65-4415-a61c-3658fab96f6b/"
+     "CarlosLocalOfficeEXPANDEDCHURN.csv?:refresh=yes"),
+)
+_COMPARE_DAYS = 31        # same window att_order_log/run.py pulls
+
+
+def _compare_views(page, rec) -> None:
+    """Pull every COMPARE_VARIANTS URL with the same date window and report, for
+    each: bytes, row count, how many rows are Carlos's, the top owners, and the
+    date range. Read-only — nothing is written anywhere but the diag tab."""
+    import csv
+    import io
+
+    today = dt.date.today()
+    start = today - dt.timedelta(days=_COMPARE_DAYS)
+    dates = "&Start%20Date={}&End%20Date={}".format(start.isoformat(),
+                                                    today.isoformat())
+    rec("")
+    rec("=== ORDERLOG variants, {} .. {} ===".format(start, today))
+    for label, base in COMPARE_VARIANTS:
+        rec("")
+        rec("--- {} ---".format(label))
+        rec("  {}".format(base + dates))
+        try:
+            r = page.context.request.get(base + dates, timeout=300_000)
+            body = r.body() or b""
+        except Exception as e:  # noqa: BLE001 — one variant must not stop the rest
+            rec("  FETCH FAILED: {}: {}".format(type(e).__name__,
+                                                (str(e).splitlines() or [""])[0][:160]))
+            continue
+        rec("  status={} bytes={:,}".format(r.status, len(body)))
+        if r.status != 200 or len(body) < 50:
+            rec("  head={!r}".format(body[:200].decode("utf-8", "replace")))
+            continue
+        rows = list(csv.reader(io.StringIO(body.decode("utf-8-sig", "replace"))))
+        if not rows:
+            continue
+        hdr = [str(h or "").strip() for h in rows[0]]
+        data = rows[1:]
+        rec("  rows={:,} cols={}".format(len(data), len(hdr)))
+
+        def col(name):
+            return hdr.index(name) if name in hdr else None
+
+        oi = col("Owner & Office")
+        if oi is not None:
+            owners = collections.Counter(
+                " ".join((row[oi] if oi < len(row) else "").split())
+                for row in data)
+            carlos = sum(n for o, n in owners.items()
+                         if o.upper().startswith("CARLOS HIDALGO"))
+            rec("  CARLOS HIDALGO rows={:,}   distinct owners={}".format(
+                carlos, len(owners)))
+            for o, n in owners.most_common(8):
+                rec("    {:>7,}  {}".format(n, o[:70]))
+        ri = col("Rep")
+        if ri is not None:
+            rec("  distinct reps={}".format(
+                len({row[ri] for row in data if ri < len(row)})))
+        for name in hdr:
+            if "date" not in name.lower():
+                continue
+            i = hdr.index(name)
+            ds = []
+            for row in data:
+                try:
+                    ds.append(dt.datetime.strptime(row[i].strip(), "%m/%d/%Y").date())
+                except (ValueError, IndexError):
+                    pass
+            if ds:
+                rec("  {:<30} {} .. {}  ({:,} dated)".format(
+                    name[:30], min(ds), max(ds), len(ds)))
+
+
 def main(argv=None) -> int:
     import argparse
     ap = argparse.ArgumentParser(prog="att_order_log.probe")
@@ -271,6 +356,10 @@ def main(argv=None) -> int:
     ap.add_argument("--cancel-only", action="store_true",
                     help="probe ONLY the B2B cancel-rates view (for the "
                          "Ongoing Cancel report Carlos asked for)")
+    ap.add_argument("--compare-views", action="store_true",
+                    help="ONLY pull the ORDERLOG URL variants and say which "
+                         "still carries Carlos's sales (2026-11-25 filtered "
+                         "default view). Ignores --list-views.")
     args = ap.parse_args(argv)
 
     buf = []
@@ -329,6 +418,9 @@ def main(argv=None) -> int:
                                                  allow_form_login=True)
                 rec("[cdp] auth OK")
 
+                if args.compare_views:
+                    stage("orderlog variants", _compare_views, page, rec)
+                    return _finish(buf, rec, args, rc)
                 if args.cancel_only:
                     stage("cancel rates", _probe_cancel, page, rec)
                     return _finish(buf, rec, args, rc)
