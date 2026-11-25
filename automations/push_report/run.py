@@ -230,6 +230,12 @@ def _relay_line(label: str, stats: dict, last) -> str:
         flag, label, pushed, left, at, extra)
 
 
+def relay_offices():
+    """[(relay key, office id, label)] for every office computer that pushes."""
+    return [(t.split(":")[1], t.split(":")[2], label)
+            for t, label, _m in OFFICES if t.startswith("relay:")]
+
+
 def build_report(unreadable=None) -> str:
     """The DM text. `unreadable`, when given, collects the offices whose diag
     tab could not be read — their line says so, but the numbers are missing."""
@@ -561,6 +567,14 @@ def main(argv=None) -> int:
         ok = post_threads(client, text)
         print("[push_report] posted to %d channel thread(s): %s"
               % (len(ok), ", ".join(ok)))
+        # STALLED OFFICES -> A DM TO MEGAN (2026-11-25), see stall_alert.py.
+        try:
+            from automations.push_report import stall_alert as SA
+            from automations.recruiting_report import fill as _fill
+            SA.run(client, MEGAN, relay_offices(),
+                   _fill._client().open_by_key(RELAY_BOOK))
+        except Exception as e:  # noqa: BLE001 -- the report still posted
+            print("[push_report] stall check skipped: %s" % type(e).__name__)
         if ok:
             record_delivery(unreadable, "office threads")
         return 0

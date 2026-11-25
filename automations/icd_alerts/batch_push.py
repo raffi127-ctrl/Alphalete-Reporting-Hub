@@ -39,6 +39,7 @@ EXTRACT_CAP_S = 240
 OFF_AFTER_BLOCKS = 2
 EXT_ID = "goofbdglmeckblcbcoffnkdnmpehhhmo"     # Resume Helper
 TABLE = "#table-batch-resume"
+CONSOLE_URL = "https://applicantstream.com/index.cfm"
 
 _log: Callable[[str], None] = print
 
@@ -125,6 +126,14 @@ def open_batches(page):
     """Console -> 'Explore Appstream AI' (v2) -> Applicants > Process Emails >
     Process in Batches. Returns the page the table is on, or None."""
     ctx = page.context
+    # FROM THE CONSOLE. The walk leaves the page on One App at a time, which
+    # has no "Explore Appstream AI" button (Raf 24065, 11:43 on 11/25:
+    # "Process in Batches not reached").
+    try:
+        page.goto(CONSOLE_URL, wait_until="domcontentloaded", timeout=45000)
+        page.wait_for_timeout(2500)
+    except Exception as e:  # noqa: BLE001
+        _log("[batch] could not open the console: %s" % type(e).__name__)
     before = len(ctx.pages)
     if _click_if_present(page, ["Explore Appstream AI", "Explore AppStream AI"],
                          timeout=10000):
