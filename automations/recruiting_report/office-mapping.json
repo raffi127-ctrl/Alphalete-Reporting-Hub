@@ -428,11 +428,11 @@
     },
     {
       "sheet_tab": "Hasan Salame",
-      "office_id": "24279",
+      "office_id": "24337",
       "as_owner": "Hasan Salame",
       "as_company": "Ascend Elite Marketing, Inc.",
       "confidence": 1.0,
-      "note": "tab added 2026-11-10 (Raf: 'he's recruiting under an app stream under me called Hasan'). Office 24279 sits under Rafael Hidalgo in AppStream; as_owner is on purpose Hasan's name (Tableau fallback), not Raf's, so Raf's numbers never land here. His own AppStream account 24337 (U-HasanSalame) has no access yet: switch office_id when the team migrates. 2026-11-16: office 24279 -> 24337 (Eve: access granted to Hasan's own account, Ascend Elite Marketing, Inc.); weeks already filled came from 24279 and stay as-is."
+      "note": "tab added 2026-11-10 (Raf: 'he's recruiting under an app stream under me called Hasan'). Office 24279 sits under Rafael Hidalgo in AppStream; as_owner is on purpose Hasan's name (Tableau fallback), not Raf's, so Raf's numbers never land here. His own AppStream account 24337 (U-HasanSalame) has no access yet: switch office_id when the team migrates. 2026-11-16: office 24279 -> 24337 (Eve: access granted to Hasan's own account, Ascend Elite Marketing, Inc.); weeks already filled came from 24279 and stay as-is. 2026-11-25: WE 11/15 + 11/22 refilled from 24279 (Maud 11/19: he moved to 24337 on Mon 11/23); 24337 from WE 11/29 on."
     },
     {
       "sheet_tab": "Vincent Dodson",
