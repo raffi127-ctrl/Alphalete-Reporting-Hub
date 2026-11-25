@@ -15,6 +15,7 @@ import html
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -444,24 +445,69 @@ def keep_display_on() -> None:
         pass
 
 
+VIEWER_SRC = Path(__file__).with_name("viewer.js")
+VIEWER_APP = REPO / "output" / "lucy_screens" / "Lucy Screen.app"
+VIEWER_STAMP = REPO / "output" / "lucy_screens" / "viewer.sha"
+
+
+def _viewer_running() -> bool:
+    return subprocess.run(["pgrep", "-f", f"{VIEWER_APP}/Contents/MacOS/"],
+                          stdout=subprocess.DEVNULL).returncode == 0
+
+
+def viewer() -> Optional[Path]:
+    """The full-screen window Lucy 2's photo shows in (viewer.js), built on this
+    Mac once per version. Megan 2026-11-25: in Safari it "is showing as a webpage
+    and not just a fully screen desktop like image". None = Safari, as before."""
+    if sys.platform != "darwin":
+        return None
+    src = VIEWER_SRC.read_text(encoding="utf-8").replace(
+        "__PAGE__", json.dumps(str(PHOTO_PAGE)))
+    sha = hashlib.sha1(src.encode("utf-8")).hexdigest()[:10]
+    built = VIEWER_STAMP.read_text(encoding="utf-8") if VIEWER_STAMP.exists() else ""
+    if built == sha and (VIEWER_APP / "Contents" / "MacOS").is_dir():
+        return VIEWER_APP
+    if _viewer_running():  # an older build: the new one takes its place
+        subprocess.run(["pkill", "-f", f"{VIEWER_APP}/Contents/MacOS/"], check=False)
+    script = VIEWER_STAMP.with_name("viewer.js")
+    script.parent.mkdir(parents=True, exist_ok=True)
+    script.write_text(src, encoding="utf-8")
+    shutil.rmtree(VIEWER_APP, ignore_errors=True)
+    done = subprocess.run(["osacompile", "-l", "JavaScript", "-s", "-o",
+                           str(VIEWER_APP), str(script)],
+                          stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    if done.returncode != 0:
+        print(f"viewer build failed: {done.stderr.strip()[:160]}")
+        return None
+    VIEWER_STAMP.write_text(sha, encoding="utf-8")
+    return VIEWER_APP
+
+
 def keep_open(target: str) -> None:
     """Open it after a restart; otherwise bring it back in front once it has been
     covered. Megan 2026-11-01: Lucy 1 kept leaving the page as automations ran.
     Holds back while a report runs (a covered Chrome can stall its capture) and
-    while a person is using the machine. Plain `open -a` so no new tab each tick."""
+    while a person is using the machine. Plain `open -a` so no new tab each tick.
+    The photo shows full screen in its own window (viewer), not a Safari tab."""
     boot = subprocess.run(["sysctl", "-n", "kern.boottime"], stdout=subprocess.PIPE,
                           text=True).stdout.strip()
     opened = OPENED.read_text(encoding="utf-8") if OPENED.exists() else ""
-    running = subprocess.run(["pgrep", "-x", "Safari"],
-                             stdout=subprocess.DEVNULL).returncode == 0
+    app = viewer() if target == PHOTO else None
+    if app is not None:
+        running = _viewer_running()
+        launch = front = ["open", str(app)]  # running: brings it back in front
+    else:
+        running = subprocess.run(["pgrep", "-x", "Safari"],
+                                 stdout=subprocess.DEVNULL).returncode == 0
+        url = PAGES[target].as_uri() if target in PAGES else target
+        launch, front = ["open", "-a", "Safari", url], ["open", "-a", "Safari"]
     version = _photo_version(target)
     if not running or _needs_open(target, boot, opened, version):
-        url = PAGES[target].as_uri() if target in PAGES else target
-        subprocess.run(["open", "-a", "Safari", url], check=False)
+        subprocess.run(launch, check=False)
         OPENED.parent.mkdir(parents=True, exist_ok=True)
         OPENED.write_text(_marker(boot, target, version), encoding="utf-8")
     elif not _report_running() and _idle_seconds() > IDLE_BEFORE_FRONT:
-        subprocess.run(["open", "-a", "Safari"], check=False)
+        subprocess.run(front, check=False)
 
 
 def main() -> int:
