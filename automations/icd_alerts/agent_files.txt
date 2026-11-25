@@ -34,6 +34,7 @@ automations/icd_alerts/ov_signin.py
 automations/icd_alerts/as_signin.py
 automations/icd_alerts/leader_in_calendar.py
 automations/icd_alerts/resume_push.py
+automations/icd_alerts/batch_push.py
 automations/oat_processing/__init__.py
 automations/oat_processing/config.py
 automations/oat_processing/classify.py

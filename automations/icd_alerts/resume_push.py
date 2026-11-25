@@ -1252,6 +1252,29 @@ def _walk(page, live: bool, record: dict) -> dict:
         return {"reached": True, "office": seen, "rc": 2, "why": why}
     _point_walk_here(seen, record)
     _recheck_once_per_fix(OAT, seen)
+    # RESUME HELPER BATCH, TRIAL (Megan 2026-11-25, 24065 only): before the
+    # one-at-a-time walk, see batch_push.py. It leaves its own tab closed; the
+    # walk then re-opens One App at a time and re-checks the office.
+    batch = {}
+    try:
+        from automations.icd_alerts import batch_push as BP
+        if BP.mode_for(seen):
+            BP.set_logger(_log)
+            batch = BP.run(page, seen, PROFILE_DIR, live_allowed=live)
+            try:
+                page.goto(AS_BASE, wait_until="domcontentloaded", timeout=45000)
+            except Exception:  # noqa: BLE001
+                pass
+            if not OAT.open_oat(page):
+                return {"reached": False, "batch": batch,
+                        "why": "could not re-open One App at a time after the batch"}
+            page.wait_for_timeout(1500)
+            ok, why = _pin_office(OAT.office_on_page(page), record)
+            if not ok:
+                return {"reached": True, "office": seen, "rc": 2, "batch": batch,
+                        "why": why}
+    except Exception as e:  # noqa: BLE001 -- the trial never costs the walk
+        _log("batch trial skipped: %s" % type(e).__name__)
     if live:
         # The Await text's interview times follow the clock (Carlos 10/28;
         # Megan: every office that pushes). Only offices with their windows on
@@ -1299,6 +1322,7 @@ def _walk(page, live: bool, record: dict) -> dict:
                 "send_unconfirmed", 0)),
             "walled": bool(OAT._cf_walled()),
             "why_left": dict(walk.get("why_left") or {}),
+            "batch": batch,
             "cf": dict(getattr(OAT, "CF_STATS", {}) or {}),
             "why": "" if rc == 0 else "the walk stopped (rc=%s)" % rc}
 
@@ -1507,6 +1531,7 @@ def _file_stats(out: dict, live: bool, sent_today: int, result: str) -> None:
             "unconfirmed": int(out.get("unconfirmed") or 0),
             "walled": bool(out.get("walled")), "result": result,
             "why_left": out.get("why_left") or {},
+            "batch": out.get("batch") or {},
             "cf": out.get("cf") or {},
             "chrome": out.get("chrome") or "",
             "chrome_up_min": out.get("chrome_up_min"),
