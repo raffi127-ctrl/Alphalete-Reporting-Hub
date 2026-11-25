@@ -66,5 +66,12 @@ class ChromeAge(unittest.TestCase):
             k.assert_not_called()
 
 
+class WalledChromeRestarts(unittest.TestCase):
+    """Raf 11/24-25: a week-old Chrome walled every run with no box shown."""
+    def test_every_fourth_walled_run(self):
+        self.assertEqual([n for n in range(1, 13) if RP.restart_due(n)], [4, 8, 12])
+        self.assertFalse(RP.restart_due(0))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -376,7 +376,7 @@ HEALTH_EVERY_MINUTES = 15
 # characters of a row, and a raw tail filled that with attachment and Cloudflare
 # chatter -- on 10/22 the row cut off right at "Jorge Banos" and nobody could
 # tell whether he went through. These, newest last, short.
-_KEY_LINES = ("would not take orders", "SENT to AI", "SENT via", "override-sent", "FLAG_NO_PHONE",
+_KEY_LINES = ("would not take orders", "next run starts fresh", "SENT to AI", "SENT via", "override-sent", "FLAG_NO_PHONE",
               "DID NOT STICK", "why not sent",
               "read by the Mac itself", "phone read OFF THE SCREEN",
               "resume phone", "resume read BLOCKED", "QUEUE at", "removed",
@@ -1318,6 +1318,19 @@ def _walk(page, live: bool, record: dict) -> dict:
 WALL_RUNS = 2
 
 
+# A CHROME THAT STAYS WALLED GETS RESTARTED (Raf's MacBook, 11/24-11/25:
+# Lucy's Chrome up ~7 days and self-updated 156 -> 158 underneath; Indeed's
+# check came up on every run, never cleared, and there was no box on screen
+# for Megan to tick). Every RESTART_AFTER_WALLS walled runs in a row, the
+# Chrome is quit after the run; the next one starts fresh, which is what
+# clears a stale session. Lucy's own profile only.
+RESTART_AFTER_WALLS = 4
+
+
+def restart_due(streak: int) -> bool:
+    return streak > 0 and streak % RESTART_AFTER_WALLS == 0
+
+
 def _note_wall(walled: bool) -> None:
     st = _state()
     before = int(st.get("wall_streak") or 0)
@@ -1725,6 +1738,7 @@ def push(live: bool, scheduled: bool = False) -> int:
         bo.setdefault(_CURRENT_OFFICE, {})["last_start"] = now_iso
     _save_state(st)
     result, out, guard = "ok", {}, None
+    restart_chrome = False
     try:
         from patchright.sync_api import sync_playwright
         guard = _FocusGuard().start() if scheduled else None
@@ -1779,6 +1793,8 @@ def push(live: bool, scheduled: bool = False) -> int:
             _note_wall(bool(out.get("walled")))
             if out.get("walled"):
                 result = "walled"
+                if restart_due(int(_state().get("wall_streak") or 0)):
+                    restart_chrome = True
             # LEAVE CHROME RUNNING, minimized. The next tick reuses it, so the
             # session and the security check it already passed carry over.
             _log("%s: office %s, %d sent to AI%s"
@@ -1798,6 +1814,11 @@ def push(live: bool, scheduled: bool = False) -> int:
                      traceback.format_exc())
         return 1
     finally:
+        if restart_chrome:
+            n = _quit_lucy_chrome()
+            _log("Indeed blocked %d runs in a row -- quit Lucy's Chrome (%d "
+                 "process(es)) so the next run starts fresh"
+                 % (int(_state().get("wall_streak") or 0), n))
         if guard:
             guard.stop()
             if guard.hidden:
