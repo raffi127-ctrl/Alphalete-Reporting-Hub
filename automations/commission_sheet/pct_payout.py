@@ -122,7 +122,8 @@ LEADER_LEVELS = {"level 1", "level 2", "level 3"}
 #: week (board "Apps", DD week's board): 5+ 45%, 10+ 50%, 15+ 55%; under 5
 #: = their level % (40%). Not Entry Level / Mastermind (Maud 2026-11-24).
 LEADER_APP_TIERS = ((15, 0.55), (10, 0.50), (5, 0.45))
-#: T / X in every day's Apps cell on the DD week's board = not paid at all.
+#: T in the Apps cell all week (or T and X mixed), no day worked = not paid
+#: at all. X alone all week is still paid (Maud 2026-11-24).
 OFF_MARKS = {"t", "x"}
 LOST_LEADERSHIP_PCT = 0.35
 #: Maud's standing deals, every week. Matched on the name with any
@@ -409,6 +410,8 @@ class Board:
         self.names = {}        # key -> name as the board spells it
         self.apps = {}         # key -> apps that week (DD week's board "Apps")
         self.off = {}          # key -> why: T / X every day of the DD week
+        self.dd_apps = {}      # key -> distinct DD customers (set by the build)
+        self.last_week_apps = {}  # key -> next board's "LAST WEEK'S TOTALS" Apps
         self.tabs = []         # titles read, for the log
         self.held_tab = None
 
@@ -540,16 +543,39 @@ def read_board(dd_sunday, run_date=None):
                     elif any(str(BD._cell(grid, r, c) or "").strip()
                              for c in range(c1, c2 + 1) if c not in rc):
                         worked += 1
-                if offs and not worked:
+                # T all week, or T and X mixed = not paid; X alone is still
+                # paid (Maud 2026-11-24)
+                if "T" in offs and not worked:
                     kinds = "/".join(sorted(offs, reverse=True))
-                    b.off[key] = f"{kinds} all week WE {_md(dd_sunday)} — not paid"
+                    b.off[key] = f"{kinds} all week — not paid"
             marks = _late_marks(BD, grid, lay, r) if key else []
             if 5 in marks:
                 b.late[key] = f"Late Sat {sat.month}/{sat.day}"
             elif len(marks) >= 2:
-                b.late[key] = f"Late {len(marks)}x WE {_md(dd_sunday)}"
+                b.late[key] = f"Late {len(marks)}x"
     else:
         print(f"!! no board tab for WE {_md(dd_sunday)} — lateness not checked")
+
+    # Reps missing from the DD week's board: the NEXT board's "LAST WEEK'S
+    # TOTALS" block has their Apps for the DD week (col P on WE 11.29; Maud
+    # 2026-11-24: "usually the totals will be on the correct board").
+    title = by_date.get(dd_sunday + dt.timedelta(days=7))
+    if title:
+        grid = _grid(sh, title)
+        lay = BD.find_layout(grid)
+        top = grid[0] if grid else []
+        start = next((i for i, v in enumerate(top, 1)
+                      if "last week" in BD._norm(v)), None)
+        hdr = grid[lay.header_row - 1] if lay.header_row else []
+        col = next((c for c in range(start or 0, len(hdr) + 1)
+                    if start and BD._norm(hdr[c - 1]) == "apps"), None)
+        if col:
+            for r in lay.roster_rows:
+                key = _name_key(BD._cell(grid, r, lay.name_col))
+                v = BD._cell(grid, r, col)
+                v = "" if v is None else str(v).strip()      # 0 is a real 0
+                if key and v and v.lower() not in OFF_MARKS:
+                    b.last_week_apps[key] = int(money(v))
 
     # new starts held: the New Starts box on the DD week's own board
     title = by_date.get(dd_sunday - dt.timedelta(days=NEW_START_LAG_DAYS))
@@ -644,10 +670,17 @@ def rule_for(rep, board):
             return None, KIND_MISSING, f"{level.title()} — no % for this level", "", None
         pct = LEVEL_PCT[level]
         if level in LEADER_LEVELS:
-            if key in board.apps:                # not on the DD week's roster -> level %
+            # apps from the DD week's board; not on that board -> their DD
+            # customers, marked "(DD)" (Maud 2026-11-24: every Level 1-3 shows apps)
+            src = ""
+            if key in board.apps:
                 n = board.apps[key]
-                pct = next((p for need, p in LEADER_APP_TIERS if n >= need), pct)
-                note += f" · {n} app{'s' if n != 1 else ''}"
+            elif key in board.last_week_apps:    # next board's last-week totals
+                n = board.last_week_apps[key]
+            else:
+                n, src = board.dd_apps.get(key, 0), " (DD)"
+            pct = next((p for need, p in LEADER_APP_TIERS if n >= need), pct)
+            note += f" · {n} app{'s' if n != 1 else ''}{src}"
             return pct, "leader", note, board.late.get(key, ""), pct
         return pct, "set", note, "", None
     if key in board.in_box:
@@ -900,9 +933,30 @@ def _b_value(kind, pct, lvl, i, paid):
     return pct if pct is not None else ""
 
 
-def _auto_json(b, f):
+def _auto_json(rep, lead, pct, f):
+    """Hidden col T: what the system put in B / F for THIS rep — no row
+    numbers in it, so a sort can't make it point at the wrong row."""
     import json
-    return json.dumps({"b": b, "f": f})
+    return json.dumps({"rep": rep, "lead": bool(lead), "pct": pct, "f": f})
+
+
+def _auto_load(cell, rep):
+    """The auto record for this row, or {} if missing / for another rep."""
+    import json
+    try:
+        was = json.loads(cell) if cell else {}
+    except ValueError:
+        return {}
+    return was if was.get("rep") == rep else {}
+
+
+def _auto_b(was, i):
+    """What B on row i would hold if nobody had typed over it."""
+    if not was:
+        return None
+    if was.get("lead"):
+        return f"=IF(F{i}=TRUE,{LOST_LEADERSHIP_PCT},{was['pct']})"
+    return was["pct"] if was.get("pct") is not None else ""
 
 
 def _same_cell(cur, want):
@@ -1035,6 +1089,7 @@ def main(src, out, use_board=True, carry_from=None, run_date=None,
         if d.get("Customer Name"):
             custs[_name_key(d["Rep Full Name"])].add(str(d["Customer Name"]).strip().lower())
     apps = {k: len(v) for k, v in custs.items()}
+    board.dd_apps = apps
     for key in list(cust_bonus) + list(board.guarantee) + [k for k in board.gas
                                          if gas_for(board.names.get(k, k), board, apps)]:
         if key not in have:
@@ -1100,7 +1155,7 @@ def main(src, out, use_board=True, carry_from=None, run_date=None,
         wr.cell(i, 5, note)
         wr.cell(i, 6, bool(lost) if leader else None)   # bool -> checkbox
         if name not in extras and kind != KIND_HELD:
-            wr.cell(i, AUTO_COL, _auto_json(_b_value(kind, pct, lvl, i, paid),
+            wr.cell(i, AUTO_COL, _auto_json(name, leader, lvl if leader else pct,
                                             bool(lost) if leader else None))
         wr.cell(i, 7, f'=SUMIFS({J},{A},A{i},{K},"*{SUNDAY_NOTE}*")'
                       f'-SUMIFS({J},{A},A{i},{K},"*{SUNDAY_NOTE}*{SPLIT}*")').number_format = MONEY
@@ -1141,11 +1196,12 @@ def main(src, out, use_board=True, carry_from=None, run_date=None,
                 "Bonus + Training Bonus. Final Pay = Total Payout + Other + Extra Bonus "
                 "(NPA and Clawback are listed apart, not in Final Pay; Other / NPA / Clawback "
                 "come from the Extra Payouts tab). "
-                "Light yellow = type in. "
+                "Level 1-3: apps = board Apps that week; '(DD)' = not on that board, counted from "
+                "their DD customers. Light yellow = type in. "
                 "Orange = no level, type a %. Purple = new start, paid next week. "
                 "Green = guarantee (not LinkedIn). Grey = DD line with no rep. Pink = lost leadership pay.")
     wr["U1"].font = Font(italic=True)
-    wr.auto_filter.ref = f"A1:{get_column_letter(len(PAYOUT_HEADERS))}{n}"
+    wr.auto_filter.ref = f"A1:{get_column_letter(AUTO_COL)}{n}"   # T too: a sort must move it
     wr.freeze_panes = "B2"            # rep names (and the header) stay in view
     widths(wr, [28, 14, 20, 14, 40, 22, 22, 14, 14, 14, 14, 14, 16, 16, 12, 14, 14, 12, 12])
 
@@ -1268,24 +1324,23 @@ def copy_manual_entries(old_id, new_id):
     head_o = po[0]
     has_auto = len(head_o) >= AUTO_COL and head_o[AUTO_COL - 1] == AUTO_HEADER
     report, data = [], []
-    for r in po[1:]:
+    for oi, r in enumerate(po[1:], 2):
         if not r or r[0] not in row_of or r[0] == "TOTAL":
             continue
         i = row_of[r[0]]
         cells = dict(zip(head_o, r))
-        was = {}
-        if has_auto and len(r) >= AUTO_COL and r[AUTO_COL - 1]:
-            was = json.loads(r[AUTO_COL - 1])
+        was = _auto_load(r[AUTO_COL - 1], r[0]) if has_auto and len(r) >= AUTO_COL else {}
         f = cells.get("Lost Leadership Pay")
-        f_typed = isinstance(f, bool) and (not has_auto or f != was.get("f"))
+        has_box = isinstance((pn[i - 1] + [""] * 6)[5], bool)   # Level 1-3 only
+        f_typed = has_box and isinstance(f, bool) and (not was or f != was.get("f"))
         if f_typed:                               # ticked / unticked by hand
             data.append({"range": f"F{i}", "values": [[f]]})
         b = cells.get("Commission %")
         new_row = pn[i - 1] + [""] * 5
         blocked = (str(new_row[4]).startswith("New start")
                    or "not paid" in str(new_row[4]))
-        if has_auto:                              # typed = differs from what was built
-            b_typed = bool(was) and not _same_cell(b, was.get("b"))
+        if was:                                   # typed = differs from what was built
+            b_typed = not _same_cell(b, _auto_b(was, oi))
         else:                                     # older sheet: best guess
             b_typed = (b not in (None, "") and not str(b).startswith("=")
                        and str(new_row[1]) != str(b))
@@ -1508,6 +1563,7 @@ def sync_from_board(sheet_id, log=print):
         if r[eh["Customer Name"]]:
             custs[_name_key(r[eh["Rep Full Name"]])].add(r[eh["Customer Name"]].strip().lower())
     apps = {k: len(v) for k, v in custs.items()}
+    board.dd_apps = apps
     data, changed, notes = [], [], []
     for i, r in enumerate(rows[1:], 2):
         r = r + [""] * AUTO_COL
@@ -1534,28 +1590,30 @@ def sync_from_board(sheet_id, log=print):
         leader = pct is not None and kind == "leader"
         want_b = _b_value(kind, pct, lvl, i, pct is not None)
         want_f = bool(lost) if leader else None
-        was = json.loads(auto)
+        was = _auto_load(auto, name)
         upd = {}
         if e_cur != note:
             upd["E"] = note
         for col, v in (("I", g_amt), ("L", gas)):
             if not _same_cell(r[ord(col) - 65], v):
                 upd[col] = v if v is not None else ""
-        b_auto = _same_cell(r[1], was["b"])       # B not typed over by hand
+        b_auto = bool(was) and _same_cell(r[1], _auto_b(was, i))   # not typed over
         if b_auto and not _same_cell(r[1], want_b):
             upd["B"] = want_b                     # follow the board
         f_cur = r[5] if isinstance(r[5], bool) else (
             str(r[5]).upper() == "TRUE" if r[5] != "" else None)
-        f_auto = was["f"] is not None and f_cur == was["f"]
+        f_auto = bool(was) and was.get("f") is not None and f_cur == was["f"]
         if f_auto and want_f is not None and f_cur != want_f:
             upd["F"] = want_f
         if e_cur.startswith(NOTE_NOT_ON) and not note.startswith(NOTE_NOT_ON):
             notes.append(f"{name}: now on the board — re-make the sheet for their tab")
         if not upd:
             continue
-        upd[get_column_letter(AUTO_COL)] = _auto_json(
-            want_b if b_auto else was["b"],
-            want_f if f_auto and want_f is not None else was["f"])
+        if b_auto or f_auto:
+            upd[get_column_letter(AUTO_COL)] = _auto_json(
+                name, leader if b_auto else was["lead"],
+                (lvl if leader else pct) if b_auto else was["pct"],
+                want_f if f_auto and want_f is not None else was["f"])
         for col, v in upd.items():
             data.append({"range": f"{col}{i}", "values": [[v]]})
         changed.append(f"{name} ({', '.join(c for c in upd if c != get_column_letter(AUTO_COL))})")
