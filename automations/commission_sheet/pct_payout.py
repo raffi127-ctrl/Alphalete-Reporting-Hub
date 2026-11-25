@@ -1257,7 +1257,9 @@ def main(src, out, use_board=True, carry_from=None, run_date=None,
                 wr.cell(i, PC[hd], v).number_format = MONEY
         X = f"'{TAB_EXTRA}'!"
         for typ in ("NPA", "Clawback"):
-            wr.cell(i, PC[typ], f'=SUMIFS({X}$C:$C,{X}$A:$A,$A{i},{X}$B:$B,"{typ}")'
+            sf = f'SUMIFS({X}$C:$C,{X}$A:$A,$A{i},{X}$B:$B,"{typ}")'
+            # Clawback always shows negative, typed + or - (Maud 2026-11-25)
+            wr.cell(i, PC[typ], f"=-ABS({sf})" if typ == "Clawback" else f"={sf}"
                     ).number_format = MONEY
         wr.cell(i, PC["Training Bonus"]).number_format = MONEY   # typed in, $
         wr.cell(i, PC["Extra Bonus"]).number_format = MONEY      # typed in
@@ -1316,9 +1318,10 @@ def main(src, out, use_board=True, carry_from=None, run_date=None,
     wx.add_data_validation(dv_typ)
     dv_rep.add(f"A2:A{EXTRA_ROWS + 1}")
     dv_typ.add(f"B2:B{EXTRA_ROWS + 1}")
-    wx["F1"] = ("Pick the rep and the type (NPA or Clawback — type the amount as a "
-                "positive number). Neither is part of Final Pay; each shows as its own "
-                "line with its note on the rep's tab.")
+    wx["F1"] = ("Pick the rep and the type (NPA or Clawback). A Clawback shows as a "
+                "negative on the payout tab and rep tab, whichever sign you type. Neither "
+                "is part of Final Pay or the PNL; each shows as its own line with its "
+                "note on the rep's tab.")
     wx["F1"].font = Font(italic=True)
     widths(wx, [28, 16, 14, 40])
 
