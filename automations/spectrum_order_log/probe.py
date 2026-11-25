@@ -17,6 +17,9 @@ Downloads only into memory, writes no Sheet, posts nothing. Prefixed lines so
 `lucy logtail <log> COLS: 20` can page past the result cell.
 
 Runs on a Lucy (Tableau SSO via ownerville). `lucy rerun spectrum_order_log_probe`
+
+2026-11-25: default run now ONLY presses the dashboard's 'EXPORT OPTIONS'
+button and logs what it opens (EXP-* lines). `--all` = the 11/24 sweep.
 """
 from __future__ import annotations
 
@@ -180,5 +183,107 @@ def _crosstab_peek(page) -> None:
         print(f"XROWS: {s} {len(rows) - 1}", flush=True)
 
 
+EXPORT_JS = """() => {
+    const out = [];
+    const seen = new Set();
+    for (const el of document.querySelectorAll('body *')) {
+        const r = el.getBoundingClientRect();
+        if (!r.width || !r.height) continue;
+        const own = Array.from(el.childNodes)
+            .filter(n => n.nodeType === 3).map(n => n.textContent.trim())
+            .join(' ').trim();
+        if (!own || own.length > 120 || seen.has(own)) continue;
+        seen.add(own);
+        out.push(own + ' @' + Math.round(r.x) + ',' + Math.round(r.y));
+    }
+    return out;
+}"""
+
+
+def _dump_text(page, tag: str) -> set:
+    """Every visible text bit in every frame -> '<tag>: <text> @x,y'."""
+    got = set()
+    for f in page.frames:
+        try:
+            bits = f.evaluate(EXPORT_JS)
+        except Exception:  # noqa: BLE001
+            continue
+        for b in bits:
+            got.add(b.rsplit(" @", 1)[0])
+            print(f"{tag}: {b}", flush=True)
+    return got
+
+
+def export_options_peek(page) -> None:
+    """Order Log dashboard has an 'EXPORT OPTIONS' button under the blue left
+    panel (Eve 2026-11-24). Crosstab/View Data can't reach the order table, so
+    press it and log what it opens: 'EXP-URL:' url after, 'EXP-NEW:' text that
+    appeared, 'EXP-POPUP:'/'EXP-DL:' new window or download. Then re-list the
+    Crosstab sheets and peek the .csv of wherever we landed."""
+    from automations.recruiting_report.opt_phase import _wait_viz_loaded
+    print("=" * 64, flush=True)
+    page.goto(ORDERLOG_URL, wait_until="domcontentloaded")
+    viz = page.frame_locator('iframe[title="Data Visualization"]')
+    viz.locator('[data-tb-test-id="viz-viewer-toolbar-button-download"]'
+                ).wait_for(state="visible", timeout=120_000)
+    _wait_viz_loaded(page)
+    page.wait_for_timeout(10_000)
+    before = _dump_text(page, "EXP-BEFORE")
+    btn = viz.get_by_text("EXPORT OPTIONS", exact=False)
+    n = btn.count()
+    print(f"EXP-BTN: {n} match(es)", flush=True)
+    if not n:
+        btn = viz.get_by_text("Export", exact=False)
+        n = btn.count()
+        print(f"EXP-BTN: fallback 'Export' {n} match(es)", flush=True)
+        if not n:
+            return
+    popups, downloads = [], []
+    page.context.on("page", lambda p: popups.append(p))
+    page.on("download", lambda d: downloads.append(d))
+    try:
+        btn.first.click(timeout=15_000)
+    except Exception as e:  # noqa: BLE001
+        print(f"EXP-ERR: click: {type(e).__name__}: {str(e)[:200]}", flush=True)
+        return
+    page.wait_for_timeout(5_000)
+    _wait_viz_loaded(page)
+    page.wait_for_timeout(8_000)
+    print(f"EXP-URL: {page.url}", flush=True)
+    for p in popups:
+        print(f"EXP-POPUP: {p.url}", flush=True)
+    for d in downloads:
+        print(f"EXP-DL: {d.suggested_filename}", flush=True)
+    after = set()
+    for f in page.frames:
+        try:
+            after.update(b.rsplit(" @", 1)[0] for b in f.evaluate(EXPORT_JS))
+        except Exception:  # noqa: BLE001
+            pass
+    for t in sorted(after - before):
+        print(f"EXP-NEW: {t}", flush=True)
+    for t in sorted(before - after):
+        print(f"EXP-GONE: {t}", flush=True)
+    # Wherever we are now, what does Crosstab offer, and does .csv work?
+    seg = page.url.split("/views/", 1)[-1].split("?")[0] if "/views/" in page.url else ""
+    if seg and seg != "CharterD2DSalesMetrics/OrderLog":
+        repo, _, view = seg.partition("/")
+        _csv_peek(page, repo, view)
+        try:
+            from automations.recruiting_report.opt_phase import list_crosstab_sheets
+            for s in list_crosstab_sheets(page.url, page=page, verbose=True):
+                print(f"EXP-XSHEET: {s}", flush=True)
+        except Exception as e:  # noqa: BLE001
+            print(f"EXP-ERR: crosstab: {type(e).__name__}: {str(e)[:200]}", flush=True)
+
+
+def export_main() -> int:
+    from automations.shared.tableau_patchright import tableau_session
+    with tableau_session(verbose=True) as page:
+        export_options_peek(page)
+    return 0
+
+
 if __name__ == "__main__":
-    sys.exit(main())
+    # Default = just the EXPORT OPTIONS check (the rest was answered 11/24).
+    sys.exit(main() if "--all" in sys.argv else export_main())
