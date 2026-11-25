@@ -89,7 +89,31 @@ def _print_filters(obj, depth: int = 0) -> None:
             _print_filters(v, depth + 1)
 
 
-def pull() -> "tuple[list[str], list[list]]":
+# Last 30 days, like the AT&T log (Eve 2026-11-25). The dashboard opens on
+# the current Sale Week only; a URL filter widens it. Sale Week = the Saturday
+# that closes a Sun-Sat week, and ONLY yyyy-mm-dd works in the URL (probe
+# --weeks: m/d/yyyy and mm/dd/yyyy came back with this week only).
+DAYS_BACK = 30
+
+
+def sale_weeks(today: dt.date) -> "list[dt.date]":
+    """Every Sale Week (Saturday) with a day inside the last DAYS_BACK days."""
+    sat = today + dt.timedelta(days=(5 - today.weekday()) % 7)
+    first = today - dt.timedelta(days=DAYS_BACK)
+    out = []
+    while sat >= first:
+        out.append(sat)
+        sat -= dt.timedelta(weeks=1)
+    return out
+
+
+def orderlog_url(today: dt.date) -> str:
+    from automations.spectrum_order_log import probe
+    weeks = ",".join(f"{d:%Y-%m-%d}" for d in sale_weeks(today))
+    return f"{probe.ORDERLOG_URL}?Sale%20Week={weeks}"
+
+
+def pull(today: "dt.date | None" = None) -> "tuple[list[str], list[list]]":
     from automations.shared.tableau_patchright import tableau_session
     from automations.spectrum_order_log import probe
 
@@ -104,7 +128,9 @@ def pull() -> "tuple[list[str], list[list]]":
 
     with tableau_session(verbose=True) as page:
         page.context.on("response", _grab)
-        page.goto(probe.ORDERLOG_URL, wait_until="domcontentloaded")
+        url = orderlog_url(today or dt.date.today())
+        print(f"  opening {url}", flush=True)
+        page.goto(url, wait_until="domcontentloaded")
         viz = page.frame_locator('iframe[title="Data Visualization"]')
         viz.locator('[data-tb-test-id="viz-viewer-toolbar-button-download"]'
                     ).wait_for(state="visible", timeout=120_000)
@@ -368,7 +394,7 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
 
     today = dt.date.today()
-    fields, rows = pull()
+    fields, rows = pull(today)
     recs = shape(fields, rows)
     counts: dict = {}
     for r in recs:
