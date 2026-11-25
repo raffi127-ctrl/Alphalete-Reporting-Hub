@@ -360,14 +360,37 @@ def _drug_section(admin, reqs, ws) -> None:
         if not people:
             st.write("Nobody started training that week.")
         else:
+            # WHO IS STILL HERE IS PRE-ANSWERED. Megan, 2026-11-25: "it's
+            # likely a lot that were onboarded won't still be active reps".
+            # Anybody the board has taken off starts UNTICKED with the reason
+            # beside them, so the admin confirms a short list instead of
+            # remembering twenty-two names. An order for somebody who left is
+            # billed to the owner exactly like a real one.
+            err = next((q.get("board_error") for q in people if q.get("board_error")), "")
+            if err:
+                st.warning("Couldn't read the onboarding board (%s), so nobody "
+                           "is ticked for you — check each name yourself "
+                           "before sending." % err)
+            left = sum(1 for q in people if q.get("gone"))
+            if left:
+                st.caption("%d of these %d are off the board already — "
+                           "unticked below." % (left, len(people)))
             st.write("Tick who should get a drug test (read %s):" % found["at"])
             picked = []
             for i, p in enumerate(people):
                 name = "%s %s" % (p.get("first_name"), p.get("last_name"))
                 has_email = "@" in (p.get("email") or "")
-                label = name if has_email else \
-                    "%s — no email in ApplicantStream" % name
-                if st.checkbox(label, value=has_email, disabled=not has_email,
+                why = p.get("gone") or ""
+                if not has_email:
+                    label = "%s — no email in ApplicantStream" % name
+                elif why:
+                    label = "%s — %s" % (name, why)
+                else:
+                    label = name
+                # A board we could not read pre-ticks NOBODY: ticking on a
+                # failed read is how a whole cohort gets ordered by accident.
+                on = has_email and not why and not err
+                if st.checkbox(label, value=on, disabled=not has_email,
                                key="d-%s-%d" % (found["at"], i)):
                     picked.append(p)
             if st.button("🧪 Send drug tests (%d)" % len(picked), type="primary",

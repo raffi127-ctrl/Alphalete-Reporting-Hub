@@ -66,24 +66,91 @@ def start_week_for(day: Optional[dt.date] = None) -> dt.date:
     return week_start_of(day or dt.date.today()) - dt.timedelta(days=DAYS_BEFORE)
 
 
+def gone_by_now(office_key: str, start_week: dt.date, log=print) -> Dict[str, str]:
+    """{folded name: why} for the week-3 people the board says are OFF.
+
+    MOST OF A THREE-WEEK-OLD COHORT IS NOT STILL SELLING. Megan, 2026-11-25:
+    "it's likely a lot that were onboarded won't still be active reps". The
+    training calendar cannot know that -- it is a record of who turned up on
+    one day three weeks ago and never changes afterwards.
+
+    The onboarding board does know: it carries a Terminated date and a reason
+    for everybody who came off. So the page unticks those and SAYS WHY, rather
+    than handing somebody twenty-two ticked boxes and asking them to remember
+    which reps are still here. An order placed for somebody who left is billed
+    to the owner exactly like a real one.
+
+    UNREADABLE IS NOT EMPTY. A board that cannot be read raises rather than
+    answering "nobody was removed", because the caller would then tick the
+    whole cohort on the strength of a failed read. The page turns that into a
+    visible warning and no pre-ticks at all.
+    """
+    from automations.icd_onboarding import board as B
+    from automations.icd_onboarding import fillers as F
+    rows = F.rows_anywhere(office_key, start_week, log=log)
+    if not rows:
+        # NO BOARD IS NOT "NOBODY LEFT". A week with no tab and a week where
+        # everybody is still selling both read as zero removals, and the
+        # difference decides whether twenty-two boxes arrive ticked. Apex can
+        # treat a missing board as "nobody removed" because its gate only ever
+        # SUBTRACTS from a list; here it would ADD people to a billed order.
+        # Found 2026-11-25: Raf's week of 11/08 has no board, so the first
+        # version of this ticked all 22 on no evidence at all.
+        raise RuntimeError("no onboarding board for %s on the week of %s, so "
+                           "who is still active could not be read"
+                           % (office_key, start_week))
+    out: Dict[str, str] = {}
+    for r in rows:
+        if str(r.get(B.TERMINATED_AT) or "").strip():
+            name = ("%s %s" % (r.get("Name", ""), r.get("Last Name", ""))).strip()
+            if name:
+                out[B._fold(name)] = (str(r.get(B.REMOVED_WHY) or "").strip()
+                                      or "off the board")
+    log("  the board says %d of that week are off" % len(out))
+    return out
+
+
 def find(office, *, today: Optional[dt.date] = None, session=None,
-         log=print) -> List[Dict]:
+         log=print, check_board: bool = True) -> List[Dict]:
     """The week-3 people for one office, off its own ApplicantStream calendar.
 
-    Returns fdot's rows unchanged ({first_name, last_name, phone, email}) with
-    `start_week` added, so the page can say which week it is showing without
-    recomputing it. RAISES when the calendar cannot be read.
+    Returns fdot's rows ({first_name, last_name, phone, email}) plus
+    `start_week`, and — where the board could be read — `gone` carrying the
+    reason somebody is no longer on it. RAISES when the CALENDAR cannot be
+    read; a board that cannot be read is reported per-person as `board_error`
+    and leaves `gone` unset, so the page can refuse to pre-tick rather than
+    pre-tick on no evidence.
     """
     from automations.office_admin import fdot
+    from automations.icd_onboarding import board as B
     if session is None:
         from automations.applicant_tracker.applicantstream import session
     sunday = start_week_for(today)
     with session() as app:
         rows = fdot.read_week(app, office.appstream_id, sunday, log=log)
+
+    gone: Dict[str, str] = {}
+    board_error = ""
+    if check_board:
+        try:
+            gone = gone_by_now(office.key, sunday, log=log)
+        except Exception as e:  # noqa: BLE001
+            board_error = "%s: %s" % (type(e).__name__, str(e)[:140])
+            log("  (could not read the board: %s)" % board_error)
+
     out = []
     for r in rows:
         p = dict(r)
         p["start_week"] = sunday.isoformat()
+        name = ("%s %s" % (p.get("first_name", ""), p.get("last_name", ""))).strip()
+        if board_error:
+            p["board_error"] = board_error
+        else:
+            why = gone.get(B._fold(name))
+            if why:
+                p["gone"] = why
         out.append(p)
-    log("  week 3 of the week starting %s: %d person(s)" % (sunday, len(out)))
+    still = sum(1 for p in out if not p.get("gone"))
+    log("  week 3 of the week starting %s: %d person(s), %d still on the board"
+        % (sunday, len(out), still))
     return out

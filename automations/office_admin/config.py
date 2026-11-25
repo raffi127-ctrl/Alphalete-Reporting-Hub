@@ -171,6 +171,12 @@ OFFICES: Dict[str, Office] = {
     # (Megan 2026-11-04): his Sterling account is rahidalgo, codes to raffi127.
     "raf": Office(key="raf", owner="Rafael Hidalgo", appstream_id="11280",
                   channel="C06881A7WLV", bgc_mode="dry", tz="America/Chicago",
+                  # ARMED 2026-11-25, RAF ONLY, to watch the first real drug
+                  # order go in. His office asked for the test and supplied
+                  # the names. Nobody else is live: `drug_mode` defaults to
+                  # "dry", and it is a per-office switch precisely so this
+                  # line does not arm forty owners' billing at once.
+                  drug_mode="live",
                   alert_at="16:30", apex_mode="dry", ov_program="RES-AT&T",
                   # 23965 = Algemar Kennel El Paso, a new launch onboarding
                   # under Raf (Megan 2026-11-20).

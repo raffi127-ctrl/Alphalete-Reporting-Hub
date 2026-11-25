@@ -116,15 +116,62 @@ def set_admin_cells(ws, row: int, updates: Dict[str, str]) -> None:
 
 # ---------------------------------------------------------- settings tab --
 
+# WHERE THE OFFICE'S CITY AND STATE REALLY LIVE: the RELAY workbook, not the
+# Org one the rest of this page uses.
+#
+# There were two 'Office Settings' tabs. The relay owns one in 'Lucy Access
+# App' and reads it in `_admOffice` when a send is queued -- that is the copy
+# that decides what goes on Sterling's form. This page opened the Org
+# workbook's tab, which has our header row and NOT ONE DATA ROW, so
+# `office_settings` answered {} for every office and `location_of` turned that
+# into "not set".
+#
+# Raf's real row has said Texas / Plano since 2026-11-24. The page has been
+# asking him for it ever since, and `send_bgc` / `send_drug` would have
+# refused with "Set your office's city and state first" for an office whose
+# location was already saved -- found 2026-11-25 while arming the drug test.
+#
+# One tab, so the half that asks and the half that sends cannot disagree. The
+# extension writes here too.
+RELAY_SHEET_ID = "1_5YGHhZ0gCYVZzHl7TPnP-6_75xaI0kcjPinQdVTlKg"
+
+
 def settings_tab(sheet_id: str = ""):
-    return open_tab(C.SETTINGS_TAB, C.SETTINGS_HEADERS, sheet_id)
+    return open_tab(C.SETTINGS_TAB, C.SETTINGS_HEADERS, sheet_id or RELAY_SHEET_ID)
+
+
+# THE TAB'S FIRST COLUMN IS CALLED "Office", NOT "Office Key".
+#
+# The relay owns this tab and wrote its header row; `C.SETTINGS_HEADERS` says
+# "Office Key", and `open_tab` finds a tab by TITLE and leaves an existing
+# header alone -- so our header list was never applied and every lookup here
+# matched nothing. Every office read as "location not set", which is why the
+# page kept asking for a city it already had: Raf's row has said
+# Texas / Plano since 11/24 and `office_settings` returned {} for it.
+#
+# It stayed invisible because the EXTENSION path reads this tab in the relay,
+# under the relay's own header, and that is the path the background check
+# actually goes through. Only the Streamlit page used this reader, and its
+# answer to a missing location is to show the "where is your office?" form --
+# which looks like a setup step, not a bug.
+#
+# Both spellings are accepted rather than one renamed: the live tab is the
+# relay's, and renaming its column would break the half that works.
+_OFFICE_COLUMNS = ("Office Key", "Office")
+
+
+def _office_of(row: Dict[str, str]) -> str:
+    for col in _OFFICE_COLUMNS:
+        if col in row:
+            return (row.get(col) or "").strip().lower()
+    return ""
 
 
 def office_settings(ws, office_key: str) -> Dict[str, str]:
     """This office's row ({} when none). One row per office."""
     k = (office_key or "").strip().lower()
     for r in records(_retry(ws.get_all_values)):
-        if (r.get("Office Key") or "").strip().lower() == k:
+        if _office_of(r) == k:
             return r
     return {}
 
@@ -141,8 +188,16 @@ def save_office_location(ws, office_key: str, state: str, city: str, by: str) ->
     if row:
         _set_cells(ws, row["_row"], fields)
     else:
-        fields["Office Key"] = office_key.strip().lower()
-        _retry(ws.append_row, [fields.get(h, "") for h in C.SETTINGS_HEADERS],
+        # APPEND UNDER THE HEADER THAT IS ACTUALLY THERE. Writing our own
+        # column order into a tab the relay laid out would put the state in
+        # whatever column happens to sit second. Read the live header, fill
+        # the cells it names, and leave every other column blank rather than
+        # shifting them.
+        values = _retry(ws.get_all_values)
+        header = [_norm(h) for h in (values[0] if values else [])] or list(C.SETTINGS_HEADERS)
+        key_col = next((c for c in _OFFICE_COLUMNS if c in header), header[0] if header else "Office")
+        fields[key_col] = office_key.strip().lower()
+        _retry(ws.append_row, [fields.get(h, "") for h in header],
                value_input_option="RAW")
 
 

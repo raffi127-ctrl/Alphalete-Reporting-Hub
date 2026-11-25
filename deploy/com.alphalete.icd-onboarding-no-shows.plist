@@ -45,15 +45,25 @@
          hourly board run deliberately stopped doing. TIME KNOB: edit
          StartCalendarInterval here, not the wrapper.
 
-         21:15, NOT ON THE HALF HOUR. com.alphalete.icd-onboarding fires at
-         :30 of every hour from 6:30 to 20:30 and drives the same
+         21:15, NOT ON THE HOUR. com.alphalete.icd-onboarding drives the same
          ApplicantStream profile, so the wrapper's own overlap guard skips
          this walk whenever the two meet. Set to 19:30 it met the board run
          every single night: it fired on time on 2026-11-19 at 19:30:05,
          skipped, and would have gone on skipping forever while looking
-         installed. 21:15 is 45 minutes past the last board run of the day,
-         still the same evening, and still ahead of Blue Ink at 7:30am.
-         Any new time here goes BETWEEN the :30 fires, never on one. -->
+         installed. 21:15 falls between two board runs, and is still ahead of
+         Blue Ink at 7:30am.
+
+         WHAT THE BOARD'S CLOCK ACTUALLY IS, checked 2026-11-25: every hour
+         ON THE HOUR, all 24 of them, plus extra passes at :15/:30/:45
+         between 08:00 and 12:00 and on the half hour 12:00-14:30. This
+         paragraph used to say ":30 of every hour from 6:30 to 20:30", which
+         was true before the clock changed and then quietly was not -- and
+         the rule it gave ("go between the :30 fires") would now put a new
+         time ON one. 21:15 happens to still be clear.
+
+         So: any new time here goes BETWEEN the board's fires. Read them out
+         of com.alphalete.icd-onboarding.plist rather than from this comment,
+         which is a copy and will go stale again. -->
     <key>StartCalendarInterval</key>
     <dict>
         <key>Hour</key>
