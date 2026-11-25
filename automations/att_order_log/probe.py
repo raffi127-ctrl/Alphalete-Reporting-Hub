@@ -316,6 +316,10 @@ def _summarize_csv(page, rec, label, url) -> None:
         rec("  head={!r}".format(body[:200].decode("utf-8", "replace")))
         return
     rows = list(csv.reader(io.StringIO(body.decode("utf-8-sig", "replace"))))
+    _summarize_rows(rec, rows)
+
+
+def _summarize_rows(rec, rows) -> None:
     if not rows:
         return
     hdr = [str(h or "").strip() for h in rows[0]]
@@ -353,6 +357,37 @@ def _summarize_csv(page, rec, label, url) -> None:
         if ds:
             rec("  {:<30} {} .. {}  ({:,} dated)".format(
                 name[:30], min(ds), max(ds), len(ds)))
+
+
+def _crosstab_check(page, rec) -> None:
+    """Round 4 (2026-11-25 afternoon). Eve opened ORDERLOG in Carlos's account:
+    'Vista: Original', every filter '(Todo)', every owner on screen — yet the
+    .csv export at 13:53 CT was still the same 32 Alex Censi rows. So the view
+    is fine and the EXPORT is what changed: a dashboard's .csv hands back ONE
+    of its worksheets, and that is no longer the Order Log table. Download it
+    the way a person does — Download → Crosstab → pick the sheet — over a
+    short window so the file stays small. If the sheet name is wrong, the
+    dialog's error lists the real thumbnail names, which is the answer too."""
+    from automations.recruiting_report.opt_phase import drive_crosstab_dialog
+    from automations.vantura_churn import compute
+
+    today = dt.date.today()
+    start = today - dt.timedelta(days=3)
+    url = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
+           "ATTTRACKER-B2B/ORDERLOG?:iid=1&Start%20Date={}&End%20Date={}").format(
+               start.isoformat(), today.isoformat())
+    rec("")
+    rec("=== crosstab download, sheet {!r}, {} .. {} ===".format(
+        CROSSTAB_SHEET, start, today))
+    rec("  {}".format(url))
+    dst = Path("/tmp/att_orderlog_crosstab_probe.csv")
+    try:
+        drive_crosstab_dialog(page, url, CROSSTAB_SHEET, dst, verbose=False)
+    except Exception as e:  # noqa: BLE001 — the message names the real sheets
+        rec("  CROSSTAB FAILED: {}: {}".format(type(e).__name__, str(e)[:600]))
+        return
+    rec("  downloaded {:,} bytes".format(dst.stat().st_size))
+    _summarize_rows(rec, compute._load_grid(dst))
 
 
 def _dates_qs() -> str:
@@ -493,6 +528,9 @@ def main(argv=None) -> int:
     ap.add_argument("--cancel-only", action="store_true",
                     help="probe ONLY the B2B cancel-rates view (for the "
                          "Ongoing Cancel report Carlos asked for)")
+    ap.add_argument("--crosstab-check", action="store_true",
+                    help="ONLY download ORDERLOG via Download -> Crosstab "
+                         "(the person's way) and say whose sales it holds.")
     ap.add_argument("--compare-views", action="store_true",
                     help="ONLY pull the ORDERLOG URL variants and say which "
                          "still carries Carlos's sales (2026-11-25 filtered "
@@ -555,6 +593,9 @@ def main(argv=None) -> int:
                                                  allow_form_login=True)
                 rec("[cdp] auth OK")
 
+                if args.crosstab_check:
+                    stage("crosstab check", _crosstab_check, page, rec)
+                    return _finish(buf, rec, args, rc)
                 if args.compare_views:
                     stage("orderlog variants", _compare_views, page, rec)
                     return _finish(buf, rec, args, rc)
