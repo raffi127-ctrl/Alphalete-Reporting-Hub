@@ -13,7 +13,9 @@ office computer that pushes:
   * no finished run in STALE_MIN while that computer says it is in its push
     hours and wants to run (or a run has held the lock for half an hour), or
   * WAITING_FLOOR+ applicants left and nothing sent since the last check.
-One DM to Megan when an office stalls, one when it moves again. Never in the
+One message when an office stalls, one when it moves again, in the
+office's own group DM -- owner, helpers, Megan, Eve, the same chat the Indeed
+alert uses (Megan: "it should DM in the group for Raf right"). Never in the
 weekend pause or outside 6am-10pm.
 """
 from __future__ import annotations
@@ -73,8 +75,8 @@ def in_hours(now: dt.datetime) -> bool:
 
 
 def check(now: dt.datetime, offices: List[Tuple[str, str, str]],
-          stats: dict, health: dict, state: dict) -> List[str]:
-    """Messages to send now. `offices` = [(relay key, office id, label)].
+          stats: dict, health: dict, state: dict) -> List[Tuple[str, str]]:
+    """(relay key, message) to send now. `offices` = [(key, office id, label)].
     Updates `state` in place (per-office last sent count + alerted flag)."""
     out = []
     if not in_hours(now):
@@ -103,12 +105,12 @@ def check(now: dt.datetime, offices: List[Tuple[str, str, str]],
         if s:
             st["sent"], st["day"] = s["sent"], now.date().isoformat()
         if why and not st.get("alerted"):
-            out.append(":rotating_light: *%s* -- apps aren't going out: %s."
-                       % (label, why))
+            out.append((key, ":rotating_light: *%s* -- apps aren't going out: %s."
+                        % (label, why)))
             st["alerted"] = True
         elif not why and st.get("alerted"):
-            out.append(":white_check_mark: *%s* -- pushing again (%d sent today)."
-                       % (label, s["sent"] if s else 0))
+            out.append((key, ":white_check_mark: *%s* -- pushing again (%d sent today)."
+                        % (label, s["sent"] if s else 0)))
             st["alerted"] = False
     return out
 
@@ -136,9 +138,20 @@ def run(client, megan: str, offices, book, now: Optional[dt.datetime] = None,
         state_path().write_text(json.dumps(state, indent=2))
         if not msgs:
             return 0
-        ch = client.conversations_open(users=megan)["channel"]["id"]
-        client.chat_postMessage(channel=ch, text="\n".join(msgs))
-        log("[stall] DM'd Megan: %s" % " | ".join(msgs))
+        by_key: Dict[str, List[str]] = {}
+        for key, m in msgs:
+            by_key.setdefault(key, []).append(m)
+        from automations.icd_alerts import post as P
+        for key, lines in by_key.items():
+            text = "\n".join(lines)
+            try:
+                P.dm_office_people(key, text, log=log)   # owner+helpers+Megan+Eve
+            except Exception as e:  # noqa: BLE001 -- never lose the alert
+                log("[stall] group DM for %s failed (%s) -- DMing Megan"
+                    % (key, type(e).__name__))
+                ch = client.conversations_open(users=megan)["channel"]["id"]
+                client.chat_postMessage(channel=ch, text=text)
+            log("[stall] %s: %s" % (key, text))
         return len(msgs)
     except Exception as e:  # noqa: BLE001
         log("[stall] check skipped: %s: %s" % (type(e).__name__, str(e)[:120]))

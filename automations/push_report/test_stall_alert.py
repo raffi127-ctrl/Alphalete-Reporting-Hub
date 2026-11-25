@@ -23,13 +23,13 @@ class Stall(unittest.TestCase):
                                     "sent": 39, "end": 4, "walled": False}}
         m = SA.check(NOW, OFF, stats, H(last_result="no_queue_page"), st)
         self.assertEqual(len(m), 1)
-        self.assertIn("Raf 24065", m[0]); self.assertIn("no_queue_page", m[0])
+        self.assertEqual(m[0][0], "raf"); self.assertIn("Raf 24065", m[0][1]); self.assertIn("no_queue_page", m[0][1])
         self.assertEqual(SA.check(NOW, OFF, stats, H(), st), [])   # once
         stats[("raf", "24065")] = {"last": NOW, "sent": 5, "end": 3, "walled": False}
         stats[("raf", "11280")] = {"last": NOW + dt.timedelta(minutes=50),
                                    "sent": 50, "end": 2, "walled": False}
         m = SA.check(NOW + dt.timedelta(hours=1), OFF, stats, H(), st)
-        self.assertEqual(len(m), 1); self.assertIn("pushing again", m[0])
+        self.assertEqual(len(m), 1); self.assertIn("pushing again", m[0][1])
 
     def test_waiting_and_nothing_sent_for_an_hour(self):
         st = {}
@@ -39,8 +39,8 @@ class Stall(unittest.TestCase):
                      {("raf", "24065"): dict(stats[("raf", "24065")],
                                              last=NOW + dt.timedelta(minutes=55))},
                      H(), st)
-        self.assertEqual(len(m), 1); self.assertIn("92 waiting", m[0])
-        self.assertIn("Indeed", m[0])
+        self.assertEqual(len(m), 1); self.assertIn("92 waiting", m[0][1])
+        self.assertIn("Indeed", m[0][1])
 
     def test_quiet_outside_push_hours(self):
         sat = dt.datetime(2026, 11, 28, 11, 0)
@@ -54,6 +54,23 @@ class Stall(unittest.TestCase):
     def test_stuck_lock_alerts(self):
         m = SA.check(NOW, OFF[:1], {}, H(due=False, lock_min=45), {})
         self.assertEqual(len(m), 1)
+
+
+class GoesToTheOfficeGroup(unittest.TestCase):
+    def test_raf_stall_goes_to_rafs_group_dm(self):
+        from unittest import mock
+        import tempfile, pathlib
+        sent = []
+        book = mock.MagicMock()
+        with mock.patch.object(SA, "collect", lambda rows, day: ({}, H())), \
+             mock.patch.object(SA, "check", lambda *a, **k: [("raf", "STALL")]), \
+             mock.patch.object(SA, "state_path",
+                               lambda: pathlib.Path(tempfile.mkdtemp()) / "s.json"), \
+             mock.patch("automations.icd_alerts.post.dm_office_people",
+                        lambda key, text, log=print: sent.append((key, text))):
+            self.assertEqual(SA.run(mock.MagicMock(), "U04G5HJBGFN", OFF, book,
+                                    log=lambda *_: None), 1)
+        self.assertEqual(sent, [("raf", "STALL")])
 
 
 if __name__ == "__main__":
