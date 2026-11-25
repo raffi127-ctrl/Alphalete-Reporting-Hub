@@ -41,6 +41,9 @@ ALIASES = {"mj": "Amjad Malhas", "amjad malhas": "Amjad Malhas",
 NOT_LEADER = ("entry", "in training")
 #: rep -> tab when the board has no trainer for them (Maud 2026-11-24)
 PLACE = {"ximena lazcano lopez": "Algemar-Alphaletes PNL 2026"}
+#: trainer -> tab, for trainers who aren't on a PNL tab themselves (Maud 2026-11-25:
+#: Jay Turnage and the reps he trains go on OG)
+TRAINER_TAB = {"jay turnage": "OG-Alphaletes PNL 2026"}
 SUMMARY_TAB, EXTRA_ON_DD = "RAF PNL 2026 (NEW)", "extra on dd"
 OFF = "all week — not paid"
 MIN_EXTRA = 3                       # keep at least this many EXTRA rows per tab
@@ -139,7 +142,7 @@ def trainer_info(dd_sunday):
     return out
 
 
-def fill(rh_sheet_id, write=False, log=_log):
+def fill(rh_sheet_id, write=False, log=_log, _again=True):
     from automations.commission_sheet import pct_payout as P
     from automations.recruiting_report.fill import open_by_key
     from automations.shared.workbooks import ALL_IN_ONE_RAF
@@ -164,7 +167,7 @@ def fill(rh_sheet_id, write=False, log=_log):
     col = tabs[0].week_col(label)
     if col is None:
         raise RuntimeError(f"no {label!r} block on {TABS[0]!r}")
-    writes, adds, unplaced, leader = {}, [], [], []
+    writes, adds, unplaced, leader, short = {}, [], [], [], {}
     trainers = trainer_info(dds)
     prev_off = _prev_off(dds, log)
     seen = set()
@@ -173,7 +176,8 @@ def fill(rh_sheet_id, write=False, log=_log):
         if not hit:                                 # new: their trainer's tab
             info = trainers.get(P._name_key(name))
             home = find(tabs, info[0], col) if info else None
-            forced = PLACE.get(P._name_key(name))
+            forced = PLACE.get(P._name_key(name)) or (
+                TRAINER_TAB.get(P._name_key(info[0])) if info and not home else None)
             if forced:
                 ft = next(t for t in tabs if t.title == forced)
                 team = (info[1] if info else "") or _main_team(ft)
@@ -185,6 +189,7 @@ def fill(rh_sheet_id, write=False, log=_log):
                 continue
             t = home[0]
             if not t.extra:
+                short[t.title] = short.get(t.title, 0) + 1
                 unplaced.append(f"{name} ({t.title} has no EXTRA row left)")
                 continue
             i = t.extra.pop(0)
@@ -276,8 +281,10 @@ def fill(rh_sheet_id, write=False, log=_log):
             sw.update(range_name=summary[0], values=[[summary[1]]],
                       value_input_option="USER_ENTERED")
         for t in tabs:
-            top_up_extra(sh, t, log)
+            top_up_extra(sh, t, log, want=MIN_EXTRA + short.get(t.title, 0))
         hide_n_extra(sh, log)
+        if short and _again:                      # rows added -> place the rest
+            return fill(rh_sheet_id, write=True, log=log, _again=False)
     return {"writes": n, "adds": adds, "unplaced": unplaced}
 
 
@@ -334,26 +341,52 @@ def hide_n_extra(sh, log=_log):
         log(f"   rep PNL: N / EXTRA filtered out on {len(reqs)} tab(s)")
 
 
-def top_up_extra(sh, t, log=_log):
-    """Keep at least MIN_EXTRA empty EXTRA rows: copy the last one below itself."""
+def top_up_extra(sh, t, log=_log, want=MIN_EXTRA):
+    """Keep at least `want` empty EXTRA rows under the reps: copy the last
+    empty EXTRA row (or, when none is left, the last rep row — then emptied:
+    A "EXTRA", B..F and every week's Brought In / Got Paid cleared; the
+    Profit/Loss and % formulas stay)."""
     ws = t.ws
     v = ws.get_values("A1:F400")
-    extra = [i for i, r in enumerate(v, 1)
-             if r and str(r[0]).strip().upper() == "EXTRA"
-             and not "".join(str(x) for x in (list(r) + [""] * 6)[4:6]).strip()]
-    if not extra or len(extra) >= MIN_EXTRA:
+    flagged = [i for i, r in enumerate(v, 1)
+               if r and str(r[0]).strip().upper() in ("Y", "N", "EXTRA") and i > 2]
+    if not flagged:
         return 0
-    need, last = MIN_EXTRA - len(extra), extra[-1]
-    src = {"sheetId": ws.id, "startRowIndex": last - 1, "endRowIndex": last}
+    # only the block the reps live in (Bas has another block far below)
+    block = [flagged[0]]
+    for i in flagged[1:]:
+        if i - block[-1] > 1:
+            break
+        block.append(i)
+    empty = [i for i in block if str(v[i - 1][0]).strip().upper() == "EXTRA"
+             and not "".join(str(x) for x in (list(v[i - 1]) + [""] * 6)[4:6]).strip()]
+    if len(empty) >= want:
+        return 0
+    need, last = want - len(empty), block[-1]
+    sid = ws.id
+    # insert ABOVE the last row, so the totals' ranges (…3:last) grow with it;
+    # fill the new rows + the last row from a copy of the last row, then empty
+    # the bottom `need` rows — the last row's content ends up at `last`.
     sh.batch_update({"requests": [
-        {"insertDimension": {"range": {"sheetId": ws.id, "dimension": "ROWS",
+        {"insertDimension": {"range": {"sheetId": sid, "dimension": "ROWS",
                                        "startIndex": last - 1, "endIndex": last - 1 + need},
-                             "inheritFromBefore": False}},
-        {"copyPaste": {"source": {**src, "startRowIndex": last - 1 + need,
+                             "inheritFromBefore": True}},
+        {"copyPaste": {"source": {"sheetId": sid, "startRowIndex": last - 1 + need,
                                   "endRowIndex": last + need},
-                       "destination": {"sheetId": ws.id, "startRowIndex": last - 1,
+                       "destination": {"sheetId": sid, "startRowIndex": last - 1,
                                        "endRowIndex": last - 1 + need},
                        "pasteType": "PASTE_NORMAL"}}]})
+    head = ws.get_values("2:2")
+    head = head[0] if head else []
+    money_cols = [j for j, x in enumerate(head)
+                  if str(x).strip().lower() in ("brought in", "got paid")]
+    lo, hi = last + 1, last + need                # bottom rows -> empty EXTRA
+    data = [{"range": f"A{r}:F{r}", "values": [["EXTRA", "", "", "", "", ""]]}
+            for r in range(lo, hi + 1)]
+    for j in money_cols:
+        col = _a1(j)
+        data.append({"range": f"{col}{lo}:{col}{hi}", "values": [[""]] * need})
+    ws.batch_update(data, value_input_option="USER_ENTERED")
     log(f"   rep PNL: {need} EXTRA row(s) added on {t.title}")
     return need
 
