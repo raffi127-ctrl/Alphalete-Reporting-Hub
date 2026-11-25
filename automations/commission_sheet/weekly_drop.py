@@ -168,6 +168,12 @@ def run(write: bool, dd_file: Optional[Path], suffix: str) -> int:
         if write:
             made = upload(svc, xlsx, name)
             _log(f"3  uploaded {made['name']!r}  {made.get('webViewLink', '')}")
+            try:
+                n = pct_payout.add_checkboxes(made["id"])
+                _log(f"   {n} Lost Leadership Pay checkboxes added")
+            except Exception as e:                  # noqa: BLE001
+                _log(f"   !! checkboxes not added ({type(e).__name__}: {e}) — "
+                     "the cells show FALSE; type TRUE to tick")
         else:
             _log(f"3  would upload {name!r} to Commission Sheets")
 
