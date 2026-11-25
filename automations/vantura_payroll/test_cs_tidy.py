@@ -106,6 +106,47 @@ class Rates(unittest.TestCase):
         self.assertEqual(reqs[0]["insertDimension"]["range"]["startIndex"], 4)
         box = [r["updateBorders"]["range"] for r in reqs if "updateBorders" in r][0]
         self.assertEqual((box["startRowIndex"], box["endRowIndex"], box["endColumnIndex"]), (2, 28, 6))
+        f = [r["setBasicFilter"]["filter"]["range"] for r in reqs if "setBasicFilter" in r]
+        self.assertEqual([(x["startRowIndex"], x["endRowIndex"], x["startColumnIndex"], x["endColumnIndex"])
+                          for x in f], [(2, 27, 0, 6)])              # header to last rep, never TOTAL; Rate sorts too
+
+    def test_rates_follow_the_names_if_the_tab_is_sorted_mid_build(self):
+        class WS:
+            id, row_count = 7, 60
+            wrote = None
+
+            def get(self, rng):
+                return [["Abe Last"], ["Zed First"]]                 # sorted after the grid was read
+
+            def update(self, range_name, values, value_input_option):
+                self.wrote = (range_name, values)
+
+        class Tab:
+            def __init__(self, v):
+                self.v = v
+
+            def get_all_values(self):
+                return self.v
+
+            def get(self, rng):
+                return []
+
+        class SH:
+            def worksheet(self, t):
+                return Tab([])
+
+            def batch_update(self, body):
+                pass
+
+        mat = [["", "", "", "", ""], ["", "", "", "", ""], ["Rep", "Brought In", "Commission", "Profit/Loss", "NPA's"],
+               ["Zed First", "", "", "", ""], ["Abe Last", "", "", "", ""], ["TOTAL", "", "", "", ""]]
+        ws, keep = WS(), (T._alias_map, T.rates_for)
+        T._alias_map, T.rates_for = (lambda sh: {}), (lambda *a: {"Zed First": 0.75, "Abe Last": 0.4})
+        try:
+            T.add_rate_column(SH(), ws, mat, WK, log=lambda s: None)
+        finally:
+            T._alias_map, T.rates_for = keep
+        self.assertEqual(ws.wrote, ("E3:E5", [[T.RATE_HDR], [0.4], [0.75]]))
 
 
 class Payout(unittest.TestCase):
