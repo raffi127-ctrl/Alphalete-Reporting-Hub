@@ -50,6 +50,12 @@ from typing import Dict, List, Optional
 # because "three weeks" is said as a number of weeks and written as a number
 # of days, and that is where an off-by-seven lives.
 WEEKS_AFTER_START = 2
+
+# The first week that lives in a per-ICD onboarding workbook. Before this,
+# every office's weeks were seeded onto the SHARED 'D2D OBCL' book and were
+# never migrated, so a board lookup for an earlier week finds nothing and
+# says so in those words rather than as a bare failure.
+BOOKS_FROM = __import__("datetime").date(2026, 11, 15)
 DAYS_BEFORE = WEEKS_AFTER_START * 7
 
 
@@ -96,9 +102,21 @@ def gone_by_now(office_key: str, start_week: dt.date, log=print) -> Dict[str, st
         # SUBTRACTS from a list; here it would ADD people to a billed order.
         # Found 2026-11-25: Raf's week of 11/08 has no board, so the first
         # version of this ticked all 22 on no evidence at all.
+        # WHY IT MIGHT BE MISSING, so the next person does not chase a ghost.
+        # Per-ICD onboarding workbooks only began on 2026-11-21 (commit
+        # 8fcc6334, "each ICD gets their own workbook, a tab per week").
+        # Weeks before that were seeded onto the SHARED book -- Raf's week of
+        # 11/09 is on 'D2D OBCL 11.9' in his All in One Local Office, with 77
+        # people on it -- and were never migrated. So `rows_anywhere` answers
+        # "no board" for every earlier week, which looks exactly like a seed
+        # that failed and is not one.
+        why = ("that week predates the per-ICD workbooks (they began "
+               "2026-11-21); it will be on the shared 'D2D OBCL' book"
+               if start_week < BOOKS_FROM else
+               "nothing has seeded it")
         raise RuntimeError("no onboarding board for %s on the week of %s, so "
-                           "who is still active could not be read"
-                           % (office_key, start_week))
+                           "who is still active could not be read -- %s"
+                           % (office_key, start_week, why))
     out: Dict[str, str] = {}
     for r in rows:
         if str(r.get(B.TERMINATED_AT) or "").strip():
