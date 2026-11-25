@@ -89,6 +89,14 @@ SYSTEMS = {
         "stamp": "apex-2fa-autoprompt.txt",
         "name": "Apex code app",
     },
+    # Apex's own "Select a 2FA option" page, pressed once by the owner after
+    # the setup (Jairo 2026-11-24). Offered only to pnl.APEX_FINISH_KEYS.
+    "apex_2fa_finish": {
+        "module": "automations.icd_alerts.apex_2fa_setup",
+        "args": ["--finish"],
+        "stamp": "apex-2fa-finish-autoprompt.txt",
+        "name": "Apex 2FA option",
+    },
     "ownerville_password": {
         "module": "automations.icd_alerts.run",
         "args": ["--set-ownerville-login"],

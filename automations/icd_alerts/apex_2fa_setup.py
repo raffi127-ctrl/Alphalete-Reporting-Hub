@@ -290,7 +290,172 @@ def _run(log, ask, end) -> int:
             pass
 
 
+# --- FINISH: Apex's own "Select a 2FA option" (Jairo, 2026-11-24) ----------
+# After the setup, Lucy signed in alone but every page -- even /payrolls --
+# sent her to /Identity/Account/Manage/TwoFactorAuthentication, "Select a 2FA
+# option: Use Authenticator / Use SMS". Apex wants that button pressed once on
+# the account; the setup had gone straight to the configure page. Pressing it
+# changes the OWNER's account, so HE presses it (Eve 2026-11-24, with Jairo
+# there ~5 min). Lucy signs in with the saved login, opens that page, and if
+# Apex then shows the configure page she types the code and he presses Verify;
+# a key different from the saved one is saved only after Verify.
+TWO_FA_PATH = "Identity/Account/Manage/TwoFactorAuthentication"
+PICK_WAIT_S = 300
+TURN_PICK = 'YOUR TURN: PRESS "USE AUTHENTICATOR"'
+TURN_PICK_DETAIL = "Only that button. Then wait -- Lucy does the rest."
+SAY_PICK = ("Apex wants one more click on your account.\n\n"
+            'Press OK, then press "Use Authenticator" in the Apex window. '
+            "Only that.")
+SAY_FINISH_DONE = "Done. Lucy can open your payroll now. Nothing else to do."
+SAY_FINISH_NOT = ("Thanks -- that is saved. Lucy still could not open the "
+                  "payroll; her team will look at it. Nothing else to do.")
+
+
+def _payroll_opens(page) -> bool:
+    from automations.carlos_payroll_pull import run as AP
+    try:
+        page.goto(AP.APEX_URL.rstrip("/") + "/payrolls",
+                  wait_until="domcontentloaded", timeout=60_000)
+    except Exception:  # noqa: BLE001
+        return False
+    for _ in range(40):
+        AP._dismiss_modal(page)
+        if AP.period_on_page(page):
+            return True
+        time.sleep(1)
+    return False
+
+
+def finish(log=print, ask=None) -> int:
+    end = ["finish stopped before the end, no reason recorded"]
+    try:
+        return _finish(log, ask, end)
+    except BaseException as e:  # noqa: BLE001
+        end[0] = "finish crashed (%s)" % type(e).__name__
+        raise
+    finally:
+        tell_us(end[0], log=log)
+
+
+def _finish(log, ask, end) -> int:
+    from patchright.sync_api import sync_playwright
+    from automations.carlos_payroll_pull import run as AP
+    from automations.icd_alerts import apex_guard as G
+    from automations.icd_alerts import apex_signin as AS
+    from automations.shared import browser_banner
+
+    if ask is None:
+        from automations.icd_alerts import dialogs as ask
+    login = L.creds()
+    if not login:
+        end[0] = "finish: no saved login on this computer -- needs the setup"
+        return 1
+    AS.APEX_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        AS.APEX_SIGNIN_LOCK.write_text(dt.datetime.now().isoformat())
+    except OSError:
+        pass
+    ok = False
+    try:
+        with sync_playwright() as p:
+            ctx = p.chromium.launch_persistent_context(
+                str(AS.APEX_PROFILE_DIR), headless=False,
+                args=["--disable-sync"], **G.launch_args())
+            guard = G.install(ctx, "watch")
+            browser_banner.attach(ctx, WAIT, WAIT_DETAIL)
+            try:
+                page = ctx.pages[0] if ctx.pages else ctx.new_page()
+                # 1. Lucy signs in with the saved login + her own code
+                signed, step = L.sign_in(page, login, log=log)
+                if not signed:
+                    end[0] = "finish: Lucy's sign-in %s" % step
+                    ask.message(SAY_FINISH_NOT, error=True)
+                    return 1
+                if _payroll_opens(page):
+                    end[0] = "finish: payroll already opens -- nothing to press"
+                    ok = True
+                else:
+                    # 2. HE presses "Use Authenticator"
+                    page.goto(AP.APEX_URL + TWO_FA_PATH,
+                              wait_until="domcontentloaded", timeout=60_000)
+                    page.wait_for_timeout(3000)
+                    browser_banner.show(page, TURN_PICK, TURN_PICK_DETAIL,
+                                        browser_banner.GREEN)
+                    ask.message(SAY_PICK)
+                    deadline = time.time() + PICK_WAIT_S
+                    while (time.time() < deadline
+                           and TWO_FA_PATH.lower() in page.url.lower()):
+                        time.sleep(2)
+                    if TWO_FA_PATH.lower() in page.url.lower():
+                        end[0] = 'finish: "Use Authenticator" not pressed in 5 min'
+                        ask.message("Nothing was pressed, so nothing changed.")
+                        return 1
+                    page.wait_for_timeout(3000)
+                    browser_banner.show(page, WAIT, WAIT_DETAIL)
+                    # 3. the configure page, if Apex shows it: code + his Verify
+                    key_note = "no configure page"
+                    if ENABLE_PATH.lower() in page.url.lower():
+                        try:
+                            key = L.key_from_page(page.inner_text("body", timeout=10_000))
+                        except ValueError:
+                            end[0] = ("finish: configure page without a key [%s]"
+                                      % L.where(page))
+                            ask.message(SAY_FINISH_NOT, error=True)
+                            return 1
+                        same = L.clean_key(key) == L.clean_key(login["totp_key"])
+                        key_note = "same key" if same else "NEW key"
+                        page.locator(L._CODE).first.fill(L.fresh_code(key))
+                        filled = time.time()
+                        browser_banner.show(page, TURN_VERIFY, TURN_VERIFY_DETAIL,
+                                            browser_banner.GREEN)
+                        ask.message(SAY_VERIFY)
+                        deadline = time.time() + VERIFY_WAIT_S
+                        while time.time() < deadline and not _verified(page):
+                            time.sleep(2)
+                            if time.time() - filled > 25 and not _verified(page):
+                                try:
+                                    page.locator(L._CODE).first.fill(L.fresh_code(key))
+                                    filled = time.time()
+                                except Exception:  # noqa: BLE001
+                                    pass
+                        if not _verified(page):
+                            end[0] = ("finish: pressed Use Authenticator (%s), but "
+                                      "Verify not pressed in 5 min" % key_note)
+                            ask.message("Verify was not pressed. Lucy's team will "
+                                        "look at it.", error=True)
+                            return 1
+                        if not same:
+                            L.save_creds(login["username"], login["password"], key)
+                        browser_banner.show(page, WAIT, WAIT_DETAIL)
+                        page.wait_for_timeout(2000)
+                        if "recoverycodes" in page.url.lower().replace("-", ""):
+                            browser_banner.show(page, TURN_PHOTO, TURN_PHOTO_DETAIL,
+                                                browser_banner.GREEN)
+                            ask.message(SAY_BACKUP)
+                            browser_banner.show(page, WAIT, WAIT_DETAIL)
+                    # 4. the real proof: the payroll page opens
+                    ok = _payroll_opens(page)
+                    end[0] = ("DONE (finish, %s) -- payroll opens" % key_note if ok
+                              else "finish (%s): payroll still does not open [%s]"
+                              % (key_note, L.where(page)))
+            finally:
+                guard.save()
+                try:
+                    ctx.close()
+                except Exception:  # noqa: BLE001
+                    pass
+        ask.message(SAY_FINISH_DONE if ok else SAY_FINISH_NOT)
+        return 0 if ok else 1
+    finally:
+        try:
+            AS.APEX_SIGNIN_LOCK.unlink()
+        except OSError:
+            pass
+
+
 def main(argv=None) -> int:
+    if "--finish" in (sys.argv[1:] if argv is None else argv):
+        return finish()
     return run()
 
 

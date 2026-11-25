@@ -161,6 +161,31 @@ class Wiring(unittest.TestCase):
             self.assertEqual(pnl.run_apex_check(log=lambda *a: None), 0)
         read.assert_not_called()
 
+    def test_finish_window_is_on_only_for_jairo(self):
+        from automations.icd_alerts import pnl
+        self.assertEqual(pnl.APEX_FINISH_KEYS, frozenset({"jairo15"}))
+
+    def test_finish_is_offered_only_with_a_saved_login_on_the_2fa_page(self):
+        import inspect
+        from automations.icd_alerts import pnl
+        src = inspect.getsource(pnl.run_apex_check)
+        before = src[:src.index('AU.offer("apex_2fa_finish"')][-300:]
+        for need in ("APEX_FINISH_KEYS", "_apex_login_saved()", "FINISH_SIGN in status"):
+            self.assertIn(need, before)
+
+    def test_finish_owner_presses_the_account_buttons(self):
+        import inspect
+        from automations.icd_alerts import apex_2fa_setup as S
+        src = inspect.getsource(S._finish)
+        self.assertNotIn(".click()", src)      # Lucy never presses his buttons
+        self.assertLess(src.index("_verified(page)"), src.index("L.save_creds("))
+
+    def test_autoprompt_knows_the_finish(self):
+        from automations.icd_alerts import autoprompt as AU
+        spec = AU.SYSTEMS["apex_2fa_finish"]
+        self.assertEqual(spec["module"], "automations.icd_alerts.apex_2fa_setup")
+        self.assertEqual(spec["args"], ["--finish"])
+
     def test_autoprompt_knows_the_setup(self):
         from automations.icd_alerts import autoprompt as AU
         self.assertEqual(AU.SYSTEMS["apex_2fa"]["module"],

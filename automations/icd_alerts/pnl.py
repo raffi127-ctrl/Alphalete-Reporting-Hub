@@ -60,6 +60,12 @@ APEX_SETUP_KEYS = frozenset({"jairo15"})   # Jairo said "today" in Slack (Eve 20
 # until it is in APEX_SETUP_KEYS -- only the DD check runs, nothing on screen
 # (Colten, Eve 2026-11-17: "sin que él vea nada").
 APEX_HAND_SIGNIN_KEYS = frozenset({"jairo15"})
+# Offices whose owner presses Apex's "Use Authenticator" once more WITH Lucy
+# (apex_2fa_setup --finish): offered while Lucy signs in fine but Apex keeps
+# sending her to its "Select a 2FA option" page. OFF until Eve has a time with
+# the owner (Jairo: planned 2026-11-25).
+APEX_FINISH_KEYS = frozenset({"jairo15"})
+FINISH_SIGN = "TwoFactorAuthentication"
 
 TABLEAU = "https://us-east-1.online.tableau.com"
 # The view our Lucys already read for DD by rep (override_bulletin.pulls
@@ -587,6 +593,12 @@ def run_apex_check(log=print) -> int:
             # the browser to knocks tries again within the hour.
             if pay and weeks and not setup_still_wanted(key):
                 state["apex_ok_v1"] = dt.date.today().isoformat()
+        if (key in APEX_FINISH_KEYS and _apex_login_saved()
+                and FINISH_SIGN in status):
+            from automations.icd_alerts import autoprompt as AU
+            shown = AU.offer("apex_2fa_finish", log=log)
+            line += "; 2FA-option window %s" % (
+                "opened" if shown else "not opened: nobody at the Mac")
         if not status.startswith("signed out") and setup_still_wanted(key):
             from automations.icd_alerts import autoprompt as AU
             shown = AU.offer("apex_2fa", log=log)
