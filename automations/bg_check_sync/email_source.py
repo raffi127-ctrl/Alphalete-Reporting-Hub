@@ -85,8 +85,15 @@ def _best_text(msg) -> str:
     return _TAG_RE.sub(" ", html_body)
 
 
+# No timeout = a stalled Gmail socket blocks forever. 2026-11-24 13:30 Lucy 1's
+# onboarding pass stopped mid-"sterling" and never returned, and launchd won't
+# start a job whose last run is still alive, so BG Status + Contact Added sat
+# still for 20h. A timeout raises OSError, which _fetch_one already retries.
+IMAP_TIMEOUT_S = 60
+
+
 def _connect() -> imaplib.IMAP4_SSL:
-    M = imaplib.IMAP4_SSL(IMAP_HOST)
+    M = imaplib.IMAP4_SSL(IMAP_HOST, timeout=IMAP_TIMEOUT_S)
     M.login(ACCOUNT, _app_password())
     M.select('"[Gmail]/All Mail"', readonly=True)
     return M

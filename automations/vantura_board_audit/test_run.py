@@ -1437,7 +1437,8 @@ class StationsNameHygiene(unittest.TestCase):
 
     def test_territory_status_values_are_not_names(self):
         for status in ("New T", "T Extended", "Need New T",
-                       "Needs New T", "Needs NewT"):  # +9/28 A10/A11, +11/12 A6/A10
+                       "Needs New T", "Needs NewT",  # +9/28 A10/A11, +11/12 A6/A10
+                       "Same T"):                    # +11/25 B9
             self.assertEqual(self._findings(status), [],
                              "%r is a Territory Status value" % status)
 

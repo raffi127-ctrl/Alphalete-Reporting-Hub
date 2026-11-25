@@ -634,7 +634,10 @@ _LIVE = {
     "valeria",                         # 10/22: 10/15-10/22 loaded from Slack rows, 5 threads, 29 photos, Eastern
     "luke",                            # 10/22: loaded, marks on (7 live, 8 closed)
     "mercy",                           # 10/22: loaded, marks on (5 live, 3 closed)
-    "jennifer",                        # 10/22: 10/1-10/22 loaded, 16 threads, marks on
+    # "jennifer" OFF 11/25: recruiting room C0AU0G3M2NT deleted (channel_not_found
+    # for Lucy too), #23132-figspire-management-inc-jennifer-figueroa archived, and
+    # Eve told her photos channel 11/24 it is no longer posting. Every nightly
+    # pass failed (10x on 11/24). Back on = new room id in OFFICES + this line.
     "joshua",                          # 10/22: 10/1-10/22 loaded, 9 threads, 60 photos, marks on
     "omar",                            # 10/19: 10/7-10/19 loaded from Lucy 1, 9 threads, Eastern
     "frank",                           # 10/29: 10/1-10/29 loaded from Lucy 1, Eastern (Eve: "dejalo corriendo diario")

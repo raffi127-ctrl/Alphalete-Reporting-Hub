@@ -55,8 +55,15 @@ ARGS=(--if-due)
 
 LOG_FILE="output/logs/icd-onboarding-$(date +%Y-%m-%d-%H%M%S).log"
 echo "[$(date)] onboarding board starting (mode=$MODE)" > "$LOG_FILE"
-"$VENV_PY" -u -m automations.icd_onboarding.run ${ARGS[@]+"${ARGS[@]}"} "$@" >> "$LOG_FILE" 2>&1
+# Hard cap (perl alarm = portable timeout; macOS ships no `timeout`). launchd
+# never starts a job whose last run is still alive, so ONE hung pass silences
+# this box for good: 2026-11-24 13:30 Lucy 1 hung in "sterling" and nothing ran
+# for 20h. 60 min is far past a normal pass; a killed one exits 142.
+RUN_CAP_S=3600
+perl -e 'alarm shift; exec @ARGV' "$RUN_CAP_S" \
+    "$VENV_PY" -u -m automations.icd_onboarding.run ${ARGS[@]+"${ARGS[@]}"} "$@" >> "$LOG_FILE" 2>&1
 ST=$?
+[ "$ST" -eq 142 ] && echo "[$(date)] KILLED at the ${RUN_CAP_S}s cap — a step hung" >> "$LOG_FILE"
 echo "[$(date)] onboarding board finished exit=$ST" >> "$LOG_FILE"
 
 # Heartbeat (one overwritten row) so a run that stops firing is noticed.
