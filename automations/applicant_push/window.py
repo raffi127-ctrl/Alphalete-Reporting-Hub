@@ -23,10 +23,18 @@ from __future__ import annotations
 QUIET_EXIT = 75
 
 
+# WHOLE DAYS OFF, every office (Megan 2026-11-25: "We need to pause all resume
+# pushing tomorrow (Thanksgiving)"). Machine-local date; nothing is pushed
+# all day, and the push resumes on its own the next morning.
+HOLIDAYS = {"2026-11-26"}
+
+
 def quiet_window(now) -> bool:
     """Is `now` inside the weekend quiet window? Fri 1:00 PM -> Sun 1:00 PM,
     machine-local (Lucy 2 runs Central). Carlos, 2026-09-04 — supersedes the
     plain Saturday block of 2026-08-31."""
+    if now.date().isoformat() in HOLIDAYS:
+        return True
     wd, hr = now.weekday(), now.hour
     # 2026-10-04 ONLY (Carlos, 10/2: "this sunday lets start up at 2pm"): that
     # Sunday the window ends an hour later. Every other Sunday stays 1 PM.
