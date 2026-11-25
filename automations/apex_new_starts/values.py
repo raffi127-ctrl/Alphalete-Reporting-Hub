@@ -85,6 +85,27 @@ def apex_values(c: BRD.Candidate, hire: BID.NewHire,
         for field in unanswered:
             v.pop(field, None)
     email = v.pop("email", "")
+    # APPSTREAM'S ADDRESS WINS OVER THE PACKET'S. Megan, 2026-11-24:
+    # ApplicantStream "should be the MAIN thing we check". Kimble Townsend's
+    # packet that day read `Tkimble501-@gmail.com` where AppStream and the
+    # board both had `Tkimble5011@gmail.com` -- a hyphen where the last digit
+    # belongs, which is what a boxed-character form does to a signature read.
+    #
+    # This is NOT the date-of-birth rule ("whatever date they put in is what
+    # we enter because it's their form"). A wrong date is the employee's own
+    # answer on their own form; a wrong ACCOUNT EMAIL means the sign-in and
+    # every password reset go nowhere, and we hold a second, better copy of
+    # it. Where the two differ, the disagreement is said out loud rather than
+    # resolved quietly.
+    said = str(getattr(c, "email", "") or "").strip()
+    if said and email and said.lower() != str(email).strip().lower():
+        # Said out loud by whoever is printing these values -- this function
+        # is pure and takes no logger, so the disagreement travels WITH the
+        # values rather than being dropped.
+        v["_email_was"] = str(email).strip()
+        email = said
+    elif said and not email:
+        email = said
     if email:
         v["account_email"] = email
         # Only needed for somebody being CREATED: the ones already on the

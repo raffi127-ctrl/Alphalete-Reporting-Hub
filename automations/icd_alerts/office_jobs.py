@@ -170,10 +170,20 @@ def work(job: Dict, office_key: str, log=print) -> Dict:
             # calendar, so a list cannot be posted in from outside.
             from automations.apex_new_starts import eco_run
             payload = job.get("payload") or {}
+            # TWO SHAPES OF THE SAME JOB. `preview` opens nothing and
+            # saves nothing: it returns the week's names and the gender that
+            # would be used, which is what the person pressing Send is shown
+            # before they press it (Megan, 2026-11-24). The send that follows
+            # carries their answers back in `genders`, and those win over the
+            # guesser -- see run_week. Who is IN the week is still read here,
+            # off this office's own calendar; only the gender answers come
+            # from outside, and a gender cannot add or remove anybody.
             res = eco_run.run_week(
                 dt.date.fromisoformat(str(payload.get("week_start"))),
                 office_appstream=_appstream_id(office_key),
                 office_key=office_key,
+                genders=dict(payload.get("genders") or {}),
+                preview=bool(payload.get("preview")),
                 live=live, log=log)
         elif kind in ("zoho_signin", "social_check", "social_post"):
             # Online presence: this office's OWN Zoho, signed in here

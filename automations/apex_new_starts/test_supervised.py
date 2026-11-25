@@ -475,7 +475,8 @@ def test_run_reaches_the_triage_without_a_NameError(monkeypatch):
                         lambda office, name, week, log=print: person)
     monkeypatch.setattr(SUP.BID, "for_people", lambda *a, **k: {})
     monkeypatch.setattr(SUP.ECO, "plan",
-                        lambda people, hires, log=print, office_key="":
+                        lambda people, hires, log=print, office_key="",
+                        watched=False:
                         {"ready": [(person, {"first": "Ada"})], "blocked": []})
     reached = {}
     def _load(page, people, week, log=print):
@@ -576,3 +577,191 @@ def test_the_run_says_which_mode_it_is_in():
     from automations.apex_new_starts import supervised as SUP
     src = inspect.getsource(SUP._complete)
     assert "THIS RUN PRESSES SAVE ITSELF." in src
+
+
+# ------------------------------- a namesake is not a duplicate payroll record
+
+# Luis Frias, 2026-11-24: a first-name search for "Luis" returned 30 rows, the
+# fallback accepted them, and the run reported "in Apex but not on Pending" --
+# refusing a create Megan had asked for by name. The fallback is for a
+# MISTYPED surname (McCrob for McCrobie), never for a different person.
+
+def test_a_truncated_surname_still_matches():
+    from automations.apex_new_starts.drive import _close_surname
+    assert _close_surname("McCrobie", "mccrob")
+    assert _close_surname("McCrob", "mccrobie")
+
+
+def test_a_different_surname_does_not():
+    from automations.apex_new_starts.drive import _close_surname
+    assert not _close_surname("Frias", "rodriguez")
+    assert not _close_surname("Frias", "ramirez")
+
+
+def test_a_short_near_miss_does_not():
+    """Three letters is too few to call two surnames the same person."""
+    from automations.apex_new_starts.drive import _close_surname
+    assert not _close_surname("Lee", "li")
+    assert not _close_surname("Ngo", "ng")
+
+
+def test_the_fallback_reads_the_names_not_just_a_count():
+    """A count cannot tell a namesake from a typo."""
+    from automations.apex_new_starts import drive
+    body = inspect.getsource(drive.triage)
+    assert "roster_surnames" in body
+    assert "_close_surname" in body
+
+
+# --------------------------- the fill may not start on a half-loaded page
+
+# 2026-11-24: the first control was on the page, jQuery was not, and the fill
+# threw "$ is not a function" at Hire Date -- after the text boxes had already
+# taken their values.
+
+def test_drivable_wants_jquery():
+    """jQuery only: Kendo is reached through its `.data()` here and is not a
+    dependable global, and requiring it turned a crash into a silent wait."""
+    body = inspect.getsource(SUP._drivable)
+    assert "window.jQuery" in body
+    assert "window.kendo &&" not in body
+
+
+def test_drivable_is_false_when_the_page_cannot_be_asked():
+    class Dead:
+        def evaluate(self, *a, **k):
+            raise RuntimeError("navigating")
+
+    assert SUP._drivable(Dead()) is False
+
+
+def test_the_wait_reports_jquery_but_does_not_block_on_it():
+    """The live form has neither global, so blocking meant never filling
+    (Megan, 2026-11-24: "nothing is filling"). It warns instead."""
+    body = inspect.getsource(SUP.wait_for_form)
+    assert "_drivable" in body
+    assert "count() > 0 and _drivable" not in body
+
+
+def test_the_fill_no_longer_reaches_for_jquery_at_all():
+    """It did, and `window.jQuery` is undefined on the create form, so the
+    whole fill died part-done at Hire Date. The dropdowns are clicked from
+    Python now and nothing in the JS wants a library."""
+    import re
+    js = re.sub(r"/\*.*?\*/", "", ECO.FILL_JS, flags=re.S)
+    assert "jQuery" not in js
+    assert "$(" not in js
+
+
+# ------------------------- somebody the board never got is still addable
+
+# Megan, 2026-11-24: "Frias isn't in payroll at all so he's one that would
+# need added" -- and he was on no week of the board, so the run opened nothing.
+
+def _bundles(monkeypatch, bundles):
+    monkeypatch.setattr(SUP.BID, "search_bundles", lambda *a, **k: bundles)
+
+
+def test_it_refuses_an_unsigned_packet(monkeypatch):
+    said = []
+    _bundles(monkeypatch, [{"id": "x", "status": "se",
+                            "packets": [{"name": "Luis Frias",
+                                         "email": "a@b.c"}]}])
+    got = SUP._packet_person("Luis Frias", dt.date(2026, 11, 22),
+                             log=said.append)
+    assert got is None
+    assert any("not signed" in s for s in said)
+
+
+def test_a_signed_packet_becomes_a_starter(monkeypatch):
+    _bundles(monkeypatch, [{"id": "ZUNqcm1C4i", "status": "co",
+                            "created": "2026-11-23T15:40:17Z",
+                            "packets": [{"name": "Luis Frias",
+                                         "email": "luismanuel8089@gmail.com"}]}])
+    got = SUP._packet_person("Luis Frias", dt.date(2026, 11, 22),
+                             start=dt.date(2026, 11, 23), log=lambda *a: None)
+    assert got is not None
+    assert got.name == "Luis Frias"
+    assert got.hire_date == dt.date(2026, 11, 23)
+    assert got.source == "blue ink packet"
+
+
+def test_a_stranger_with_the_same_surname_is_not_them(monkeypatch):
+    _bundles(monkeypatch, [{"id": "y", "status": "co",
+                            "packets": [{"name": "Maria Frias",
+                                         "email": "m@b.c"}]}])
+    got = SUP._packet_person("Luis Frias", dt.date(2026, 11, 22),
+                             log=lambda *a: None)
+    assert got is None
+
+
+def test_the_board_is_still_tried_first():
+    """The packet is a fallback, not a replacement: a board row carries a real
+    start date and a packet does not."""
+    body = inspect.getsource(SUP.run)
+    assert body.index("_board_person") < body.index("_packet_person")
+
+
+# ------------------- it opens the create form instead of waiting on a person
+
+# Megan, 2026-11-24: "why wait 10 min?" -- the wait predated `triage` doing
+# the All Employees duplicate check itself, so it was asking her to redo a
+# check the run had already run and reported.
+
+def test_the_add_path_presses_the_button_itself():
+    body = inspect.getsource(SUP.run)
+    assert "press_add_employee" in body
+    assert body.index("press_add_employee") < body.index("wait_for_form")
+
+
+def test_the_wait_is_still_there_as_the_fallback():
+    """A roster this cannot press must still be openable by hand."""
+    body = inspect.getsource(SUP.run)
+    assert "wait_for_form" in body
+
+
+def test_pressing_add_is_only_reached_after_the_roster_came_back_empty():
+    """It must never be pressed on somebody the roster found: that is a second
+    payroll record for a real employee."""
+    body = inspect.getsource(SUP.run)
+    head = body[:body.index("press_add_employee")]
+    assert 'need.get("need") != drive.ADD' in head
+
+
+def test_the_button_is_marked_then_clicked_not_text_matched():
+    """`:text-is()` does not click Apex's Angular buttons -- the same reason
+    Apply Filters and the roster tabs are marked first."""
+    from automations.apex_new_starts import drive
+    body = inspect.getsource(drive.press_add_employee)
+    assert "data-ans-add" in body
+    assert "page.click" in body
+
+
+def test_it_returns_false_rather_than_raising_on_a_page_it_cannot_read():
+    from automations.apex_new_starts import drive
+
+    class Dead:
+        def evaluate(self, *a, **k):
+            raise RuntimeError("navigating")
+
+    said = []
+    assert drive.press_add_employee(Dead(), log=said.append) is False
+    assert said
+
+
+def test_the_dropdowns_are_clicked_from_python():
+    """Kendo paints a span over a display:none <select> and Angular holds the
+    model. Neither is addressable on a page with no globals, so writing the
+    value left the box reading "Select" (Megan, 2026-11-24: "this isn't
+    filled"). Only a real click runs Kendo's handler."""
+    body = inspect.getsource(ECO.fill_one)
+    assert "pick_dropdown" in body
+    assert "drops={}" in body, "the JS must not try the dropdowns itself"
+
+
+def test_a_dropdown_counts_only_when_the_box_reads_it_back():
+    """A click that opened nothing must not pass for a choice."""
+    from automations.apex_new_starts import drive
+    body = inspect.getsource(drive.pick_dropdown)
+    assert "k-input" in body
+    assert "clicked %r but the box reads" in body

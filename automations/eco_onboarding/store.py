@@ -71,6 +71,27 @@ def ensure_columns(ws, log=print) -> List[str]:
     if not missing:
         return []
     start = len(have) + 1
+    # WIDEN THE GRID FIRST. A Sheet has a fixed column count and writing one
+    # cell past it is refused outright -- "Range ('Office Settings'!AA1)
+    # exceeds grid limits. Max columns: 26", which is exactly what the first
+    # 27th column asked for (the Time Zone question, 2026-11-24).
+    #
+    # THE SAME BUG, THE SAME LESSON, A SECOND TIME. `icd_onboarding.sheet`
+    # learned this on 2026-11-20 with `Funnel`: every run said it was adding
+    # the column, every run was refused, and the column never appeared,
+    # because the caller logged the exception TYPE and carried on. This form
+    # has never been submitted, so it would have fired on the first REAL
+    # submission by an office -- and creating a column it is asked for is the
+    # one structural thing this form does.
+    #
+    # Only when the sheet both reports its width and can grow: a worksheet
+    # that does not say how wide it is cannot be widened on a guess, and the
+    # write below is what finds out, loudly.
+    wide = int(getattr(ws, "col_count", 0) or 0)
+    need = (start + len(missing) - 1) - wide
+    if wide and need > 0 and hasattr(ws, "add_cols"):
+        ws.add_cols(need)
+        log("widened the tab by %d column(s)" % need)
     ws.update(
         values=[missing],
         range_name="%s1:%s1" % (_a1(start), _a1(start + len(missing) - 1)))

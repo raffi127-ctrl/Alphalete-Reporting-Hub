@@ -310,16 +310,36 @@ def test_salary_is_never_in_what_gets_filled():
     assert "salary" not in str(spec).lower() or "99999" not in str(spec)
 
 
-def test_a_fill_that_leaves_apex_objecting_raises(monkeypatch):
-    """Apex's own validation is the judge, not our idea of done."""
+def test_a_box_that_did_not_take_its_value_raises(monkeypatch):
+    """The READ-BACK is the judge now. Apex's own validation stopped being
+    one when the create form was rewritten: it leaves "User Name is
+    required." on screen over a filled box, and that refused four correct
+    fills in a row (Luis Frias, 2026-11-24)."""
+    class Page:
+        def evaluate(self, js, spec):
+            return {"done": [], "missed": [], "errors": [],
+                    "readback": {"$ctrl.user.FirstName": ""},
+                    "salaryTouched": False, "passwordResetTicked": False}
+    with pytest.raises(RuntimeError, match="did not take"):
+        eco_run.fill_one(eco_run.Starter(name="Ada Fournier"),
+                         {"first": "Ada"}, None,
+                         log=lambda *a: None, page=Page())
+
+
+def test_a_stale_message_over_a_filled_box_does_not_raise():
+    said = []
+
     class Page:
         def evaluate(self, js, spec):
             return {"done": ["FirstName"], "missed": [],
-                    "errors": ["State Working In is required."],
+                    "errors": ["User Name is required."],
+                    "readback": {"$ctrl.user.FirstName": "Ada"},
                     "salaryTouched": False, "passwordResetTicked": False}
-    with pytest.raises(RuntimeError, match="still objects"):
-        eco_run.fill_one(eco_run.Starter(name="Ada Fournier"), {}, None,
-                         log=lambda *a: None, page=Page())
+    got = eco_run.fill_one(eco_run.Starter(name="Ada Fournier"),
+                           {"first": "Ada"}, None,
+                           log=said.append, page=Page())
+    assert got["done"] == ["FirstName"]
+    assert any("every value IS in" in s for s in said), said
 
 
 def test_writing_salary_stops_everything(monkeypatch):
@@ -342,15 +362,53 @@ def test_a_clean_fill_does_not_save_by_default():
     assert got["errors"] == []
 
 
-def test_saving_still_refuses_until_watched(monkeypatch):
-    monkeypatch.delenv("APEX_FILL_PROVEN", raising=False)
+def test_saving_goes_through_save_tab_and_nothing_else(monkeypatch):
+    """The APEX_FILL_PROVEN gate is cleared (Megan, 2026-11-24: "clear the
+    gate") -- it asked for one watched save and got one. What replaces it is
+    not nothing: `save_tab` is the only way a Save is pressed, and it refuses
+    an incomplete tab, a wrong value, or a form Angular still calls invalid,
+    and proves the save by watching for the POST."""
+    pressed = []
+
     class Page:
-        def evaluate(self, js, spec):
-            return {"done": [], "missed": [], "errors": [],
+        def evaluate(self, js, spec=None):
+            return {"done": ["FirstName"], "missed": [], "errors": [],
+                    "readback": {"$ctrl.user.FirstName": "Ada"},
                     "salaryTouched": False, "passwordResetTicked": False}
-    with pytest.raises(RuntimeError, match="never been watched"):
-        eco_run.fill_one(eco_run.Starter(name="Ada Fournier"), {}, None,
+
+    from automations.apex_new_starts import drive
+    monkeypatch.setattr(drive, "save_tab",
+                        lambda *a, **k: pressed.append(a) or True)
+    got = eco_run.fill_one(eco_run.Starter(name="Ada Fournier"),
+                           {"first": "Ada"}, None,
+                           log=lambda *a: None, page=Page(), save=True)
+    assert got["saved"] is True
+    assert len(pressed) == 1
+
+
+def test_a_save_that_does_not_go_through_is_not_reported_as_one(monkeypatch):
+    class Page:
+        def evaluate(self, js, spec=None):
+            return {"done": ["FirstName"], "missed": [], "errors": [],
+                    "readback": {"$ctrl.user.FirstName": "Ada"},
+                    "salaryTouched": False, "passwordResetTicked": False}
+
+    from automations.apex_new_starts import drive
+    monkeypatch.setattr(drive, "save_tab", lambda *a, **k: False)
+    with pytest.raises(RuntimeError, match="would not save"):
+        eco_run.fill_one(eco_run.Starter(name="Ada Fournier"),
+                         {"first": "Ada"}, None,
                          log=lambda *a: None, page=Page(), save=True)
+
+
+def test_save_is_still_off_by_default(monkeypatch):
+    """Clearing the gate did not arm anything. `save` stays False unless a
+    caller asks, and the supervised run never asks."""
+    import inspect
+    sig = inspect.signature(eco_run.fill_one)
+    assert sig.parameters["save"].default is False
+    from automations.apex_new_starts import supervised as SUP
+    assert "save=False" in inspect.getsource(SUP)
 
 
 # ------------------------------------------- only where it has been switched on
@@ -505,10 +563,10 @@ def test_everyone_removed_is_a_week_with_nobody_not_a_crash(monkeypatch):
 
 # --------------------------------------------- the gate, and what it stands for
 
-def test_a_live_run_refuses_until_somebody_has_watched_one_save(monkeypatch):
-    """Nothing in this repo has ever saved an Apex record unwatched. The gate
-    is not a formality -- a half-right save lands on a real person's payroll
-    record and there is no undo."""
+def test_a_live_run_no_longer_stops_at_the_watched_save_gate(monkeypatch):
+    """The gate is cleared. What still stands between a live run and a
+    payroll record is `plan` (which holds anybody with a gap), the board's
+    removals, and `save_tab`'s own refusals -- not a flag."""
     monkeypatch.delenv("APEX_FILL_PROVEN", raising=False)
     _patch(monkeypatch, rows=_rows("Ada Fournier"),
            hires={"Ada Fournier": _hire("Ada Fournier", ssn=True)})
@@ -517,10 +575,16 @@ def test_a_live_run_refuses_until_somebody_has_watched_one_save(monkeypatch):
                         lambda *a, **k: touched.append(a) or {"added": [], "blocked": []})
     res = eco_run.run_week(MONDAY, office_appstream="11280", office_key="raf",
                            live=True, log=lambda *a: None)
-    assert res["status"] == "error"
-    assert "never been watched" in res["error"]
-    assert touched == [], "Apex must not be opened at all"
-    assert res["added"] == []
+    assert res["status"] != "error" or "never been watched" not in (
+        res.get("error") or "")
+
+
+def test_a_live_run_is_still_off_for_every_office_but_rafs():
+    """Clearing the gate did not switch anybody on. This is what keeps a
+    live run from reaching anyone else's payroll."""
+    from automations.office_admin import config as OC
+    on = {k: o.apex_mode for k, o in OC.OFFICES.items() if o.apex_mode != "off"}
+    assert set(on) == {"raf"}, "only Raf's office may run this, got %r" % on
 
 
 def test_the_payload_is_built_with_the_engines_own_field_map():
@@ -911,3 +975,242 @@ def test_each_gap_says_where_its_answer_lives(monkeypatch):
     assert "no gender on the board" in why, why
     # and the packet gaps are named as packet gaps, not lumped in with ours
     assert "dob" in why.split("this office")[0], why
+
+
+# ---------------------------------------- the create form, as Apex rewrote it
+
+# probe_create, 2026-11-24, on the live /employees/new: window.jQuery,
+# window.$, window.kendo and window.angular are ALL undefined. The ng-model
+# attributes are still in the markup as dead text, so the old fill found every
+# element, reported no misses, and Apex refused to save because no binding had
+# heard anything (Megan: "nothing is filling").
+
+def _code_only(js):
+    """The JS with its /* */ comments stripped. The comments NAME the globals
+    that are gone, so asserting over the whole string fails on its own
+    explanation."""
+    import re
+    return re.sub(r"/\*.*?\*/", "", js, flags=re.S)
+
+
+def test_the_fill_needs_no_framework():
+    js = _code_only(eco_run.FILL_JS)
+    assert "window.jQuery" not in js
+    assert "window.$" not in js
+    assert "kendo" not in js.lower()
+    assert "$(" not in js
+
+
+def test_it_sets_both_boxes_of_a_paired_control():
+    """User Name, Account Email and Rate of Pay are each a visible input with
+    no id over the real one that carries the value the form posts. Setting
+    one and not the other is what produced "User Name is required" on a form
+    that looked filled."""
+    js = eco_run.FILL_JS
+    assert "const twin =" in js
+    body = js.split("const setText =", 1)[1].split("};", 1)[0]
+    assert "twin(el)" in body and "put(t, val)" in body
+
+
+def test_a_dropdown_mirrors_its_choice_into_the_hidden_input():
+    """The <select> has no name, so it does not post -- the hidden input
+    beside it does."""
+    body = eco_run.FILL_JS.split("const setDrop =", 1)[1].split("};", 1)[0]
+    assert "sel.value = o.value" in body
+    assert "put(idEl, o.value)" in body
+
+
+def test_an_unknown_option_names_every_option_it_does_have():
+    body = eco_run.FILL_JS.split("const setDrop =", 1)[1].split("};", 1)[0]
+    assert "it offers: " in body
+
+
+def test_hire_date_fills_the_picker_as_well_as_the_date_box():
+    body = eco_run.FILL_JS.split("if (spec.hire_date)", 1)[1]
+    assert "twin(real)" in body
+    assert "m + '/' + d + '/' + y" in body, "the visible picker reads MM/dd/yyyy"
+
+
+def test_salary_is_still_never_written():
+    """Salary sits directly under Rate of Pay and is the wrong box for $10/hr."""
+    js = eco_run.FILL_JS
+    assert "salaryTouched" in js
+    assert "put(salary" not in js
+
+
+def test_the_password_reset_box_is_still_set_deliberately():
+    js = eco_run.FILL_JS
+    assert "$ctrl.sendUserPassword" in js
+    assert "passwordResetTicked" in js
+
+
+def test_the_spec_shape_did_not_change():
+    """fill_spec and its tests are unchanged on purpose: only the DOM
+    mechanics moved, so a spec built for the old page still drives the new
+    one."""
+    person = eco_run.Starter(name="Ada Fournier", hire_date=dt.date(2026, 11, 23))
+    spec = eco_run.fill_spec(person, {"first": "Ada", "position": "Sales Rep",
+                                      "rate": "10.00"})
+    assert set(spec) == {"text", "drops", "hire_date", "rate", "role_value",
+                         "email_password_reset"}
+    assert spec["text"] == {"$ctrl.user.FirstName": "Ada"}
+    assert spec["drops"] == {"JobTitleID": "Sales Rep"}
+    assert spec["hire_date"] == "2026-11-23"
+
+
+# ------------------- the verdict is the read-back, not the red messages
+
+def test_unfilled_names_a_box_that_did_not_take():
+    spec = {"text": {"$ctrl.userName": "a@b.c"}, "drops": {},
+            "hire_date": "", "rate": ""}
+    assert eco_run.unfilled(spec, {"$ctrl.userName": ""}) == ["userName"]
+    assert eco_run.unfilled(spec, {"$ctrl.userName": "a@b.c"}) == []
+
+
+def test_unfilled_matches_a_dropdown_by_its_suffix():
+    spec = {"text": {}, "drops": {"JobTitleID": "Sales Rep"},
+            "hire_date": "", "rate": ""}
+    assert eco_run.unfilled(
+        spec, {"$ctrl.employmentRecord.JobTitleID": "5"}) == []
+    assert eco_run.unfilled(
+        spec, {"$ctrl.employmentRecord.JobTitleID": ""}) == ["JobTitleID"]
+
+
+def test_unfilled_covers_hire_date_and_rate():
+    spec = {"text": {}, "drops": {}, "hire_date": "2026-11-23", "rate": "10.00"}
+    assert sorted(eco_run.unfilled(spec, {})) == ["HireDate", "PayRate"]
+    assert eco_run.unfilled(spec, {
+        "$ctrl.employmentRecord.HireDate": "2026-11-23",
+        "$ctrl.employmentRecord.PayRate": "10"}) == []
+
+
+def test_a_stale_red_message_no_longer_refuses_a_filled_form():
+    """Four correct fills in a row were thrown away for "User Name is
+    required" over a User Name box holding the right address."""
+    import inspect
+    body = inspect.getsource(eco_run.fill_one)
+    assert "unfilled(" in body
+    assert body.index("unfilled(") < body.index('got.get("errors")')
+    assert "Apex still objects" not in body
+
+
+# ------------------- gender is assumed from the name, and only where clear
+
+def test_an_unwatched_run_still_holds_a_person_with_no_gender(monkeypatch):
+    """Nobody is there to say, and a coin flip lands on a payroll record."""
+    from automations.apex_new_starts import values as V
+    monkeypatch.setattr(V, "apex_values",
+                        lambda c, hire, office_key="": {
+                            "dob": "1/1/2000", "address1": "a", "city": "b",
+                            "zip": "1", "rate": "10", "pay_state": "Texas",
+                            "tax_state": "Texas", "gender": ""})
+    person = eco_run.Starter(name="Kimble Townsend")
+    got = eco_run.plan([person], {"Kimble Townsend": _hire("Kimble Townsend")},
+                       log=lambda *a: None, office_key="raf")
+    assert got["ready"] == []
+    assert "no gender" in got["blocked"][0]["why"]
+
+
+def test_a_watched_run_fills_everything_else_and_names_the_one_box(monkeypatch):
+    """Megan, 2026-11-24: "remember that we're assuming gender based on
+    name". The guesser will not call "Kimble", and holding the whole record
+    for one dropdown is the wrong trade when somebody is reading the form."""
+    from automations.apex_new_starts import values as V
+    monkeypatch.setattr(V, "apex_values",
+                        lambda c, hire, office_key="": {
+                            "dob": "1/1/2000", "address1": "a", "city": "b",
+                            "zip": "1", "rate": "10", "pay_state": "Texas",
+                            "tax_state": "Texas", "gender": ""})
+    person = eco_run.Starter(name="Kimble Townsend")
+    got = eco_run.plan([person], {"Kimble Townsend": _hire("Kimble Townsend")},
+                       log=lambda *a: None, office_key="raf", watched=True)
+    assert len(got["ready"]) == 1
+    assert got["ready"][0][1]["_set_yourself"] == "Gender"
+
+
+def test_a_watched_run_still_holds_on_anything_else(monkeypatch):
+    """Only gender is handed to the person. A missing address or rate is a
+    real gap and still holds, watched or not."""
+    from automations.apex_new_starts import values as V
+    monkeypatch.setattr(V, "apex_values",
+                        lambda c, hire, office_key="": {
+                            "dob": "1/1/2000", "address1": "", "city": "b",
+                            "zip": "1", "rate": "10", "pay_state": "Texas",
+                            "tax_state": "Texas", "gender": ""})
+    person = eco_run.Starter(name="Kimble Townsend")
+    got = eco_run.plan([person], {"Kimble Townsend": _hire("Kimble Townsend")},
+                       log=lambda *a: None, office_key="raf", watched=True)
+    assert got["ready"] == []
+
+
+# ------------- the pop-up: names and assumed gender, confirmed before Send
+
+# Megan, 2026-11-24: "when someone pushes the button to send to apex - we
+# should pop up the names and gender we assume - then the admin/icd sending
+# can change if they want before hitting send."
+
+def test_a_preview_opens_nothing_and_lists_who_with_what_gender(monkeypatch):
+    _patch(monkeypatch, rows=_rows("Ada Fournier"),
+           hires={"Ada Fournier": _hire("Ada Fournier", ssn=True)})
+    touched = []
+    monkeypatch.setattr(eco_run, "fill_week",
+                        lambda *a, **k: touched.append(a) or {"added": [], "blocked": []})
+    res = eco_run.run_week(MONDAY, office_appstream="11280", office_key="raf",
+                           live=True, preview=True, log=lambda *a: None)
+    assert res["status"] == "preview"
+    assert touched == [], "a preview must not open Apex"
+    assert res["added"] == []
+    names = [p["name"] for p in res["people"]]
+    assert "Ada Fournier" in names
+    assert set(res["people"][0]) == {"name", "gender", "from"}
+
+
+def test_a_confirmed_gender_beats_the_guess(monkeypatch):
+    """The guesser calls "Ada" Female. A person who says Male is answering,
+    not guessing, and an answer is never re-guessed."""
+    _patch(monkeypatch, rows=_rows("Ada Fournier"),
+           hires={"Ada Fournier": _hire("Ada Fournier", ssn=True)})
+    monkeypatch.setattr(eco_run, "fill_week",
+                        lambda *a, **k: {"added": [], "blocked": []})
+    res = eco_run.run_week(MONDAY, office_appstream="11280", office_key="raf",
+                           live=True, preview=True,
+                           genders={"Ada Fournier": "Male"},
+                           log=lambda *a: None)
+    row = [p for p in res["people"] if p["name"] == "Ada Fournier"][0]
+    assert row["gender"] == "Male"
+    assert row["from"] == "confirmed"
+
+
+def test_the_preview_says_where_each_gender_came_from(monkeypatch):
+    """A guess and an answer must not look the same in the pop-up, or the
+    person has no way to know which ones need their attention."""
+    # genders={} = the guesser called nobody, which is what it really does
+    # for "Kimble" (gender_suggest.suggest("Kimble") is "").
+    _patch(monkeypatch, rows=_rows("Kimble Townsend"),
+           hires={"Kimble Townsend": _hire("Kimble Townsend", ssn=True)},
+           genders={})
+    monkeypatch.setattr(eco_run, "fill_week",
+                        lambda *a, **k: {"added": [], "blocked": []})
+    res = eco_run.run_week(MONDAY, office_appstream="11280", office_key="raf",
+                           live=True, preview=True, log=lambda *a: None)
+    row = [p for p in res["people"] if p["name"] == "Kimble Townsend"][0]
+    assert row["from"] == "unknown", "the guesser will not call Kimble"
+    assert row["gender"] == ""
+
+
+def test_the_real_guesser_will_not_call_kimble():
+    """The fixture above stands in for this; this is the fact behind it."""
+    from automations.icd_onboarding import gender_suggest as GS
+    assert GS.suggest("Kimble") == ""
+    assert GS.suggest("Luis") == "Male"
+
+
+def test_the_job_passes_both_through(monkeypatch):
+    """A gender answer cannot add or remove anybody -- who is in the week is
+    still read off the office's own calendar."""
+    import inspect
+    from automations.icd_alerts import office_jobs as OJ
+    body = inspect.getsource(OJ.work)
+    assert 'payload.get("genders")' in body
+    assert 'payload.get("preview")' in body
+    assert 'payload.get("people")' not in body.split("apex_week")[-1][:800]

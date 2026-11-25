@@ -103,12 +103,25 @@ def _board_person(office_key: str, name: str, week_start: dt.date,
                 break
             except ValueError:
                 continue
-        # GENDER COMES OFF THE BOARD, not a sales board -- an ECO machine has
-        # no sales board to read (Megan, 2026-11-10). Blank is blank: nothing
-        # guesses it, because a guess lands on a payroll record.
+        # GENDER IS GUESSED FROM THE FIRST NAME, at the moment Apex is typed
+        # (Megan, 2026-11-24: "gender now is just assumed based on name and
+        # does not belong on the OBCL"). It used to be read off a Gender
+        # column on the board; that column left the board the same day, so
+        # this read silently returned "" and `plan` held EVERY person back
+        # for "no gender on the board" -- which would have made this
+        # rehearsal open nothing at all. Found before the sitting, not during
+        # it.
+        #
+        # THIS IS THE RIGHT PLACE FOR THE GUESS: the person running this run
+        # reads every value on screen before pressing Save, so a wrong one is
+        # in front of the one human who can fix it. A name the guesser will
+        # not call still comes back blank and is still held, because a guess
+        # lands on a payroll record.
+        from automations.icd_onboarding import gender_suggest as GS
+        first = str(r.get("Name") or "").strip()
         return ECO.Starter(name=full, email=str(r.get("Email") or "").strip(),
                            phone=str(r.get("Phone") or "").strip(),
-                           gender=str(r.get(B.GENDER) or "").strip(),
+                           gender=GS.suggest(first),
                            hire_date=when or week_start,
                            source="onboarding board")
     log("  %r is not on the week of %s. That week has: %s"
@@ -116,6 +129,60 @@ def _board_person(office_key: str, name: str, week_start: dt.date,
            ", ".join(sorted(("%s %s" % (r.get("Name", ""),
                                         r.get("Last Name", ""))).strip()
                             for r in rows)) or "nobody"))
+    return None
+
+
+def _packet_person(name: str, week_start: dt.date, start: dt.date = None,
+                   log=print):
+    """The same person off their own signed Blue Ink packet, when the board
+    has no row for them.
+
+    WHY A SECOND SOURCE. Megan, 2026-11-24: "Frias isn't in payroll at all so
+    he's one that would need added" -- and the people who most need adding by
+    hand are exactly the ones the board missed. Refusing them because a Sheet
+    has no row would make this run useless for its own purpose.
+
+    IT IS NOT A LOOSER SOURCE, it is the SAME one. Every value Apex gets --
+    date of birth, address, Social -- already comes out of this packet; the
+    board was only ever supplying a name, an email and a start date. So this
+    reads the name and email off the packet's own signer, which is the person
+    who signed, and takes the start date from --start (or the week) because a
+    packet does not carry one.
+
+    IT STILL REFUSES AN UNSIGNED PACKET. "co" is complete. A packet still out
+    for signature has no typed values in it, so filling off one would put
+    blanks on a payroll record.
+    """
+    from automations.icd_onboarding import board as B
+    from automations.icd_onboarding import gender_suggest as GS
+
+    want = B._fold(name)
+    last = (name.split()[-1] if name.split() else name)
+    try:
+        found = BID.search_bundles(last, limit=25)
+    except Exception as e:
+        log("  could not search Blue Ink: %s: %s" % (type(e).__name__, e))
+        return None
+    for b in found or []:
+        for pk in b.get("packets") or []:
+            who = str(pk.get("name") or "").strip()
+            if B._fold(who) != want:
+                continue
+            if str(b.get("status") or "").lower() != "co":
+                log("  %s has a Blue Ink packet, but it is %r, not signed. "
+                    "Nothing to fill off." % (who, b.get("status")))
+                return None
+            log("  not on the board -- using %s's own signed packet (%s, "
+                "signed %s)." % (who, b.get("id"), (b.get("created")
+                                                    or "?")[:10]))
+            return ECO.Starter(name=who,
+                               email=str(pk.get("email") or "").strip(),
+                               phone=str(pk.get("phone") or "").strip(),
+                               gender=GS.suggest(who.split()[0] if who.split()
+                                                 else who),
+                               hire_date=start or week_start,
+                               source="blue ink packet")
+    log("  %r has no Blue Ink packet either." % name)
     return None
 
 
@@ -140,6 +207,60 @@ def _describe(values: Dict) -> List[str]:
     return out
 
 
+def _drivable(page) -> bool:
+    """jQuery is on the page.
+
+    THE FIRST TEXT BOX IS NOT THE FORM BEING READY. Waiting on it alone
+    returned True on a page still loading its libraries, so the fill ran with
+    `window.jQuery` undefined: the text boxes took their values, every
+    dropdown came back "no widget", and Hire Date threw (Luis Frias,
+    2026-11-24). Every Kendo control -- the dropdowns, the datepicker, the
+    rate box -- is driven through jQuery, so a page without it can only ever
+    be half filled, and half a payroll record is the thing this run exists to
+    not produce.
+
+    jQUERY ONLY, NOT `window.kendo` TOO. The first version of this wanted
+    both, and the form never came back ready: Kendo is reached through
+    jQuery's `.data()` here and is not a dependable global on this page --
+    `filler.kw` has always treated `window.kendo` as an optional extra branch.
+    Requiring it turned a crash into a ten-minute silent wait, which is worse,
+    because a crash at least says what went wrong (2026-11-24).
+    """
+    try:
+        return bool(page.evaluate(
+            "() => !!(window.jQuery || window.$)"))
+    except Exception:              # noqa: BLE001 — mid-navigation
+        return False
+
+
+def _id_in_url(url: str) -> str:
+    """The employee id out of an Apex URL, or "" if there is not one.
+
+    Read rather than guessed: after the create form saves, the page lands on
+    the new record and its id is the only place the new number appears.
+    """
+    import re
+    m = re.search(r"/employees/(\d+)", str(url or ""))
+    return m.group(1) if m else ""
+
+
+def _readback(res, log=print) -> None:
+    """What is in the boxes NOW, for the boxes that matter.
+
+    The page's own red messages stopped being a verdict when the framework
+    went: nothing re-renders them, so one can sit there over a filled box.
+    This prints what the fill could read back instead, which is the thing a
+    person at the keyboard would otherwise have to check by eye.
+    """
+    got = res.get("readback") or {}
+    if not got:
+        return
+    log("    read back:")
+    for k in sorted(got):
+        if k.startswith("select:") or k.startswith("$ctrl"):
+            log("      %-46s %r" % (k, got[k]))
+
+
 def wait_for_form(page, log=print, *, seconds: int = WAIT_SECONDS) -> bool:
     """Wait for the operator to land on the Add Employee form.
 
@@ -152,12 +273,34 @@ def wait_for_form(page, log=print, *, seconds: int = WAIT_SECONDS) -> bool:
     while waited < seconds:
         try:
             if page.locator(FORM_READY).count() > 0:
+                # THE GATE REPORTS, IT DOES NOT BLOCK. Requiring jQuery here
+                # meant waiting for something the live Add Employee form never
+                # provides -- it has neither `window.jQuery` nor `window.$` --
+                # so the run sat on an open, empty form until it timed out
+                # (Megan, 2026-11-24: "nothing is filling"). A fill that
+                # reaches the text boxes and NAMES what it could not reach is
+                # worth more than one that never starts: the guards below mean
+                # it can no longer throw, and `missed` says what is left.
+                if not _drivable(page):
+                    # Said, not acted on. The fill needs no jQuery any more
+                    # (the rewritten form has none), but knowing which shape
+                    # of page a run met is worth one line in the log.
+                    log("  (no jQuery global on this page — Kendo and "
+                        "Angular are here, just bundled)")
                 return True
         except Exception:          # noqa: BLE001 — mid-navigation
             pass
         if not said:
             log("")
             log("  Waiting for the Add Employee form.")
+            try:
+                seen = page.locator(FORM_READY).count() > 0
+            except Exception:      # noqa: BLE001
+                seen = False
+            if seen:
+                log("  (the form is there, but jQuery is on neither "
+                    "window.jQuery nor window.$ —")
+                log("   reload the page if this does not clear)")
             log("")
             log("  Apex will be showing 'change your password'. Ignore it —")
             log("  it never needs actioning. USE THE LEFT-HAND NAV, not a")
@@ -276,7 +419,7 @@ def _pages(values):
 
 
 def _complete(page, who, person, apex_id, log=print, *,
-              social=None, press_save: bool = False) -> int:
+              social=None, press_save: bool = False, tabs=None) -> int:
     """Fill the employment tab of somebody ALREADY on Pending, stopping at Save.
 
     This is the path that runs twenty-odd times a week. The engine's own
@@ -370,7 +513,7 @@ def _complete(page, who, person, apex_id, log=print, *,
 
     walked = drive.complete_person(page, who, apex_id, values=values,
                                    social=social,
-                                   save=saved, log=log)
+                                   save=saved, log=log, tabs=tabs)
     if not walked:
         log("")
         log("  Nothing was filled on any tab, so there is nothing to save.")
@@ -378,7 +521,7 @@ def _complete(page, who, person, apex_id, log=print, *,
         return 1
 
     log("")
-    for tab, _path, _prove in drive.TABS:
+    for tab, _path, _prove in (tabs or drive.TABS):
         got = walked.get(tab)
         if got is None:
             said = "NOT reached"
@@ -388,7 +531,7 @@ def _complete(page, who, person, apex_id, log=print, *,
             said = "FILLED BUT NOT SAVED"
         log("    %-20s %s" % (tab, said))
     # Short = anything not actually saved, not merely anything not reached.
-    short = [t for t, _p, _v in drive.TABS
+    short = [t for t, _p, _v in (tabs or drive.TABS)
              if not (walked.get(t) or {}).get("saved")]
     if short:
         log("")
@@ -402,12 +545,23 @@ def _complete(page, who, person, apex_id, log=print, *,
 
 
 def run(office_key: str, name: str, week_start: dt.date, log=print,
-        *, press_save: bool = False) -> int:
+        *, press_save: bool = False, start: dt.date = None,
+        gender: str = "") -> int:
     from automations.apex_new_starts import apex as AX
 
     person = _board_person(office_key, name, week_start, log=log)
     if person is None:
+        person = _packet_person(name, week_start, start, log=log)
+    if person is None:
         return 1
+    if gender:
+        # SAID BY THE PERSON RUNNING IT, never inferred. `gender_suggest`
+        # returns blank for a name it will not call -- Kimble Townsend,
+        # 2026-11-24 -- and `plan` then holds them, which is right for an
+        # unattended run and wrong for this one: somebody is sitting here
+        # who can simply say. What they say is used as given.
+        person = person.__class__(**dict(person.__dict__, gender=gender))
+        log("  gender: %s (given on the command line, not guessed)" % gender)
 
     log("  %s — start %s, %s"
         % (person.name, person.hire_date, person.email or "no email"))
@@ -424,7 +578,11 @@ def run(office_key: str, name: str, week_start: dt.date, log=print,
     for _p, _h in (hires or {}).items():
         for _sem, _why in getattr(_h, "flagged", ()):
             log("  NOTE: %s" % _why)
-    got = ECO.plan([person], hires, log=log, office_key=office_key)
+    # WATCHED: a person is reading every value before it is saved, so a
+    # name the gender guesser will not call (Kimble Townsend, 2026-11-24)
+    # leaves one dropdown for them instead of holding the whole record.
+    got = ECO.plan([person], hires, log=log, office_key=office_key,
+                   watched=True)
     if not got["ready"]:
         why = (got["blocked"] or [{}])[0].get("why", "unknown")
         log("  held back: %s" % why)
@@ -432,6 +590,13 @@ def run(office_key: str, name: str, week_start: dt.date, log=print,
         return 1
     _p, values = got["ready"][0]
 
+    if values.get("_email_was"):
+        log("")
+        log("  EMAIL: ApplicantStream says %r; their signed packet says %r."
+            % (values.get("account_email"), values["_email_was"]))
+        log("  Using ApplicantStream's — it is the one we check, and a wrong")
+        log("  account email means the sign-in and every password reset go")
+        log("  nowhere. Stop here if the packet's is the right one.")
     log("")
     log("  This is what will be typed in, on whichever path they need:")
     for line in _describe(values):
@@ -510,6 +675,14 @@ def run(office_key: str, name: str, week_start: dt.date, log=print,
             return 1
 
         log("  Apex has never heard of them, so this is the create form.")
+        # OPENED HERE, not waited for. `triage` has already searched All
+        # Employees with real clicks and come back empty -- that IS the
+        # duplicate check the ten-minute wait was reserving for a person, and
+        # asking them to run it again was asking them to redo work the log
+        # above already reports (Megan, 2026-11-24: "why wait 10 min?").
+        # The wait stays as the fallback for a roster this cannot press.
+        if not drive.press_add_employee(s.page, log=log):
+            log("  Opening it by hand instead.")
         if not wait_for_form(s.page, log=log):
             log("  The form never appeared, so nothing was typed.")
             return 1
@@ -518,6 +691,7 @@ def run(office_key: str, name: str, week_start: dt.date, log=print,
                            page=s.page, save=False)
         done = res.get("done") or []
         log("    filled: %s" % (", ".join(done) or "nothing"))
+        _readback(res, log=log)
         if res.get("missed"):
             log("    NOT filled: %s" % ", ".join(res["missed"]))
         log("    Apex objects to: %s"
@@ -527,10 +701,34 @@ def run(office_key: str, name: str, week_start: dt.date, log=print,
                if res.get("passwordResetTicked") else "off"))
         log("")
         log("  READ THE FORM, THEN PRESS SAVE YOURSELF.")
-        log("  Nothing here will press it. If the record is right, Save moves")
-        log("  them onto the Pending tab, which is where stage two finds them.")
+        log("  Nothing here will press it. I am watching for your Save, and")
+        log("  when it lands I carry straight on to the user profile and the")
+        log("  tax tab in the same sitting.")
         log("")
-        _hold_open(s.page, log=log)
+        # ONE SITTING FOR A NEW ADD. Pages 2 and 3 live at
+        # /employees/<id>/edit/..., and that id DOES NOT EXIST until page 1
+        # is saved -- which is why this used to stop here and why re-running
+        # afterwards found them Active and refused to touch the record
+        # (Luis Frias, 2026-11-24). So the id is read out of the URL the save
+        # lands on, and the same walker the COMPLETE path uses finishes the
+        # job, minus the employment tab that was just saved.
+        if not drive.wait_for_save(s.page, "", log=log):
+            log("  No save seen, so the other two tabs were not opened.")
+            _hold_open(s.page, log=log)
+            return 1
+        new_id = _id_in_url(s.page.url)
+        if not new_id:
+            log("  Saved, but the URL does not name the new record (%s),"
+                % s.page.url)
+            log("  so I cannot open their profile tab. Run this again and it")
+            log("  will find them on the roster.")
+            _hold_open(s.page, log=log)
+            return 1
+        log("")
+        log("  Saved — they are record %s. Carrying on to the last two tabs."
+            % new_id)
+        return _complete(s.page, who, person, new_id, log=log, social=social,
+                         press_save=press_save, tabs=drive.TABS[1:])
     return 0
 
 
@@ -542,6 +740,14 @@ def main(argv=None) -> int:
     ap.add_argument("--person", default="", help='"First Last", as the '
                                                  "board spells them")
     ap.add_argument("--week", default=None, help="YYYY-MM-DD in the week")
+    ap.add_argument("--gender", default="",
+                    help="Male or Female. Only needed when the name is one "
+                         "the guesser will not call -- it refuses to guess, "
+                         "because a guess lands on a payroll record.")
+    ap.add_argument("--start", default=None,
+                    help="YYYY-MM-DD, their first day. Only needed for "
+                         "somebody who is not on the board -- a Blue Ink "
+                         "packet does not carry a start date.")
     ap.add_argument("--save", action="store_true",
                     help="press Save itself instead of waiting for you. It "
                          "still refuses a tab with a missing or wrong value.")
@@ -558,7 +764,8 @@ def main(argv=None) -> int:
     day = dt.date.fromisoformat(a.week) if a.week else dt.date.today()
     try:
         return run(a.office, a.person, B.week_start_of(day),
-                   press_save=a.save)
+                   press_save=a.save, gender=a.gender,
+                   start=dt.date.fromisoformat(a.start) if a.start else None)
     except AX.NotLoggedIn as e:
         print("  %s" % e)
         print("")

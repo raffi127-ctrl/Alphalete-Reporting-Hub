@@ -7,6 +7,7 @@ the two things a person used to type arrive without ever being logged.
 from __future__ import annotations
 
 import inspect
+from unittest import mock
 
 from automations.apex_new_starts import drive
 from automations.apex_new_starts import filler as F
@@ -166,6 +167,18 @@ class _Triage:
             return "" if self.no_search else "ok"
         if "data-ans-f" in js:                               # the filter boxes
             return {} if self.no_search else {"last": True, "first": True}
+        if "'terminated', 'inactive'" in js:                 # the Status cells
+            # THE DOUBLE HAS TO ANSWER THIS HONESTLY, because the real bug it
+            # now guards was a table saying one thing and the tab another
+            # (Luis Frias, 2026-11-24). A row on the Active tab reports
+            # "active"; the same surname elsewhere reports what it is.
+            want = str(arg or "").lower()
+            if self.tab == "Active":
+                return ["active" for n in self.active if want in n.lower()]
+            if self.tab == "Pending":
+                return ["pending" for n in self.pending if want in n.lower()]
+            return ["active" if n in self.active else "pending"
+                    for n in self.anywhere if want in n.lower()]
         if "includes(want)" in js:                           # the row count
             who = {"All Employees": self.anywhere,
                    "Active": self.active}.get(self.tab, self.pending)
@@ -453,14 +466,25 @@ def test_a_tab_is_reached_only_by_clicking_its_link():
       * a DIRECT navigation is refused: the server answers 302 and sends the
         session to its change-password page
 
-    So the click is the only way, and both location.assign and page.goto are
-    dead ends that were each tried and each bounced."""
+    So clicking comes FIRST, always. A direct navigation is allowed only
+    after every click has failed and the record id is already known -- the
+    2026-11-12 bounce was measured from the change-password page, and by the
+    time that last resort is reached the run has loaded the roster and found
+    the person on it. It reports which way it got there either way
+    (Luis Frias, 2026-11-24: neither click left the roster).
+
+    location.assign stays out: it was tried and bounced and adds nothing a
+    page.goto does not."""
     import inspect
     body = inspect.getsource(drive.go_tab).split('"""', 2)[-1]
     code = [l for l in body.splitlines() if not l.strip().startswith("#")]
     assert any("[data-ans-tab]" in l for l in code), "click the link"
-    for dead in ("page.goto", "location.assign"):
-        assert not any(dead in l for l in code), "%s is bounced by Apex" % dead
+    assert not any("location.assign" in l for l in code)
+    # the click is tried before any navigation
+    joined = "\n".join(code)
+    assert joined.index("[data-ans-tab]") < joined.index("page.goto")
+    assert "open_from_roster" in joined, "press Edit before navigating"
+    assert joined.index("open_from_roster") < joined.index("page.goto")
 
 
 def test_the_unsaved_changes_confirm_is_always_dismissed():
@@ -1218,3 +1242,103 @@ def test_somebody_on_pending_AND_active_is_left_alone():
     got = drive.triage(page, [{"name": "Alena Guerrero"}], log=lambda *a: None)
     assert got["Alena Guerrero"]["need"] == drive.ALREADY
     assert "stale" in got["Alena Guerrero"]["why"]
+
+
+# ------------- "Active" has to be what the row SAYS, not what the tab is
+
+# Luis Frias, 2026-11-24: created, Status cell reading "Pending", and the
+# check reported "on Active already -- the record is finished" and refused to
+# fill his other two tabs. A row count cannot tell a freshly filtered table
+# from the previous tab's rows still on screen.
+
+def test_a_row_count_alone_no_longer_clears_anybody():
+    import inspect
+    from automations.apex_new_starts import drive
+    body = inspect.getsource(drive._rule_out_the_active)
+    assert "roster_statuses" in body
+    assert body.index("roster_statuses") < body.index("ALREADY")
+
+
+def test_a_pending_status_is_not_ruled_out():
+    from automations.apex_new_starts import drive
+
+    said = []
+
+    class Page:
+        url = "https://apex.example.com/roster"
+
+        def evaluate(self, js, arg=None):
+            return ["pending"]
+
+    out = {"Luis Frias": {"need": drive.COMPLETE, "id": "5"}}
+    with mock.patch.object(drive, "to_roster", return_value=True), \
+         mock.patch.object(drive, "open_roster_tab", return_value=True), \
+         mock.patch.object(drive, "search_roster", return_value=1):
+        drive._rule_out_the_active(Page(), out, log=said.append)
+    assert out["Luis Frias"]["need"] == drive.COMPLETE
+    assert any("Status cell reads pending" in s for s in said), said
+
+
+def test_an_active_status_still_is():
+    from automations.apex_new_starts import drive
+
+    class Page:
+        url = "https://apex.example.com/roster"
+
+        def evaluate(self, js, arg=None):
+            return ["active"]
+
+    out = {"Ada Fournier": {"need": drive.COMPLETE, "id": "5"}}
+    with mock.patch.object(drive, "to_roster", return_value=True), \
+         mock.patch.object(drive, "open_roster_tab", return_value=True), \
+         mock.patch.object(drive, "search_roster", return_value=1):
+        drive._rule_out_the_active(Page(), out, log=lambda *a: None)
+    assert out["Ada Fournier"]["need"] == drive.ALREADY
+
+
+def test_an_unreadable_status_clears_nobody():
+    from automations.apex_new_starts import drive
+
+    class Page:
+        url = "https://apex.example.com/roster"
+
+        def evaluate(self, js, arg=None):
+            return []
+
+    out = {"Ada Fournier": {"need": drive.COMPLETE, "id": "5"}}
+    with mock.patch.object(drive, "to_roster", return_value=True), \
+         mock.patch.object(drive, "open_roster_tab", return_value=True), \
+         mock.patch.object(drive, "search_roster", return_value=1):
+        drive._rule_out_the_active(Page(), out, log=lambda *a: None)
+    assert out["Ada Fournier"]["need"] == drive.COMPLETE
+
+
+def test_an_unreadable_status_says_the_check_did_not_happen():
+    """It used to read as a result ("left as complete"), which retires the
+    guard that stops a finished record being typed over."""
+    from automations.apex_new_starts import drive
+
+    said = []
+
+    class Page:
+        url = "https://apex.example.com/roster"
+
+        def evaluate(self, js, arg=None):
+            return [""]
+
+    out = {"Ada Fournier": {"need": drive.COMPLETE, "id": "5"}}
+    with mock.patch.object(drive, "to_roster", return_value=True), \
+         mock.patch.object(drive, "open_roster_tab", return_value=True), \
+         mock.patch.object(drive, "search_roster", return_value=2):
+        drive._rule_out_the_active(Page(), out, log=said.append)
+    assert out["Ada Fournier"]["need"] == drive.COMPLETE
+    assert any("COULD NOT READ" in s for s in said), said
+
+
+def test_inactive_never_reads_as_active():
+    """A whole-word match, and 'inactive' is tested first."""
+    from automations.apex_new_starts import drive
+    import inspect
+    body = inspect.getsource(drive.roster_statuses)
+    assert body.index("'inactive'") < body.index("'active'")
+    assert "[^a-z]" in body, "matched on a boundary, not as a substring"

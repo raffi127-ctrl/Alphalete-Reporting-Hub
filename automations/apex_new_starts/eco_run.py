@@ -107,7 +107,7 @@ def _name_disagreement(person, hire) -> str:
 
 
 def plan(people: List[Starter], hires: Dict[str, BID.NewHire],
-         log=print, office_key: str = "") -> Dict:
+         log=print, office_key: str = "", watched: bool = False) -> Dict:
     """Who can go in, and why anybody cannot -- without touching Apex.
 
     Returns {ready: [(Starter, values)], blocked: [{name, why}]}. Nothing is
@@ -177,6 +177,26 @@ def plan(people: List[Starter], hires: Dict[str, BID.NewHire],
         FROM_THE_OFFICE = ("rate", "pay_state", "tax_state")
         gaps = [lbl for lbl in PACKET + FROM_THE_OFFICE + ("gender",)
                 if not values.get(lbl)]
+        # A MISSING GENDER DOES NOT HOLD A WATCHED RUN. Gender is assumed
+        # from the first name (Megan, 2026-11-24: "remember that we're
+        # assuming gender based on name"), and `gender_suggest` deliberately
+        # returns blank rather than flip a coin on a name like Kimble. On an
+        # unattended run that blank still has to hold the person -- nobody is
+        # there to say. On a run somebody is WATCHING, holding the whole
+        # record for one dropdown is the wrong trade: everything else gets
+        # filled and that one box is named for them to set before they save,
+        # which is the same "suggest, admin accepts or changes" shape the
+        # board already uses.
+        if watched and gaps == ["gender"]:
+            # NOT "set it yourself in Apex" (Megan, 2026-11-24: "no, I
+            # shouldn't have to fill anything on apex"). The first cut left
+            # the Gender dropdown for the person to set on the form, which
+            # is the one thing this is supposed to spare them. Gender is
+            # confirmed BEFORE the fill now -- in the pop-up the send button
+            # raises, or with --gender on a one-person sitting -- and then
+            # it is TYPED like every other value. A blank one still holds,
+            # because the alternative is guessing onto a payroll record.
+            pass
         if gaps:
             # Named by WHERE THE ANSWER LIVES, because each sends somebody
             # somewhere different: the packet means Blue Ink, the enrolment
@@ -194,8 +214,11 @@ def plan(people: List[Starter], hires: Dict[str, BID.NewHire],
                 says.append("this office's enrolment has no %s — ask the ICD "
                             "and add it" % ", ".join(nice[g] for g in ours))
             if "gender" in gaps:
-                says.append("no gender on the board — Apex will not take them "
-                            "without one, and nothing guesses it")
+                says.append("no gender — %r is not a first name the guesser "
+                            "will call, so it has to be confirmed before the "
+                            "send (the pop-up, or --gender on a sitting). "
+                            "Nothing here guesses it onto a payroll record"
+                            % (p.name.split()[0] if p.name.split() else p.name))
             why = "; ".join(says)
             blocked.append({"name": p.name, "why": why})
             continue
@@ -206,7 +229,7 @@ def plan(people: List[Starter], hires: Dict[str, BID.NewHire],
 
 def _result(week_start: dt.date, *, status: str, added=(), blocked=(),
             error: str = "", counted: int = 0, live: bool = False,
-            apex=None) -> Dict:
+            apex=None, people=None) -> Dict:
     """The job's answer. Plain JSON -- names and reasons, never a number.
 
     Built in one place so there is one thing to read when asking "could a
@@ -219,6 +242,11 @@ def _result(week_start: dt.date, *, status: str, added=(), blocked=(),
            "mode": "live" if live else "dry"}
     if error:
         out["error"] = error
+    if people is not None:
+        # THE PREVIEW'S LIST: name and the gender that would be used, so the
+        # person sending can change one before they press Send. Names and
+        # one word each -- nothing from the packet, same rule as the rest.
+        out["people"] = [dict(p) for p in people]
     if apex is not None:
         # WHAT APEX ALREADY HOLDS, beside what the data says is ready. Names
         # only -- the same rule as everything else in here.
@@ -227,15 +255,23 @@ def _result(week_start: dt.date, *, status: str, added=(), blocked=(),
 
 
 def run_week(week_start: dt.date, *, office_appstream: str, office_key: str = "",
-             live: bool = False, log=print) -> Dict:
+             live: bool = False, log=print, genders: Dict = None,
+             preview: bool = False) -> Dict:
     """The whole job. Returns a result dict; raises nothing the caller must
     catch for correctness (office_jobs also guards, belt and braces)."""
     from automations.office_admin import fdot
 
     monday = week_start - dt.timedelta(days=week_start.weekday())
     try:
-        from automations.applicant_tracker.applicantstream import session
-        with session() as app:
+        # WHICHEVER APPLICANTSTREAM THIS MACHINE HAS. This job runs on the
+        # OFFICE's computer (Megan, 2026-11-11: "apex has to run on the ECO
+        # machine since it's that ICDs independent login"), and the warm
+        # console `applicantstream.session` binds to lives only on a Lucy --
+        # so that import was the one line here that could not resolve where
+        # the job actually runs. `sessions.appstream_anywhere` reads the
+        # office's own Chrome there and the warm console on a Lucy.
+        from automations.icd_onboarding import sessions as SES
+        with SES.appstream_anywhere(office_key, log=log) as app:
             rows = fdot.read_week(app, office_appstream, monday, log=log)
     except Exception as e:  # noqa: BLE001
         # A calendar that cannot be read is NOT an empty week. Saying "0 new
@@ -284,13 +320,41 @@ def run_week(week_start: dt.date, *, office_appstream: str, office_key: str = ""
     # rather than read off the board (Megan, 2026-11-24) -- `plan` still holds
     # anybody it would not call, which is the point (Megan, 2026-11-13), and a
     # value somebody has already typed is never overwritten.
-    genders = _genders_for(people, log=log)
+    # WHAT THE ADMIN CONFIRMED WINS OVER WHAT WAS GUESSED. Megan,
+    # 2026-11-24: "when someone pushes the button to send to apex - we should
+    # pop up the names and gender we assume - then the admin/icd sending can
+    # change if they want before hitting send." So the guess is a DRAFT shown
+    # before the send, and whatever comes back in the payload is an answer a
+    # person gave. An answer is never re-guessed and never overwritten.
+    said = {}
     if genders:
         from automations.icd_onboarding import board as _B
-        byk = {_B._fold(k): v for k, v in genders.items()}
-        for _p in people:
-            if not _p.gender:
-                _p.gender = byk.get(_B._fold(_p.name), "")
+        said = {_B._fold(k): v for k, v in (genders or {}).items() if v}
+    guessed = _genders_for(people, log=log)
+    from automations.icd_onboarding import board as _B
+    byk = {_B._fold(k): v for k, v in (guessed or {}).items()}
+    for _p in people:
+        if _p.gender:
+            continue
+        key = _B._fold(_p.name)
+        _p.gender = said.get(key) or byk.get(key, "")
+    if said:
+        log("  %d gender(s) confirmed by the person sending" % len(said))
+
+    # THE POP-UP'S DATA. A preview opens nothing and saves nothing: it is the
+    # list the admin is shown before they press Send -- every name in the
+    # week, the gender we would use, and whether that came from a person or
+    # from the guesser. Built from the SAME people list the send will use, so
+    # what is confirmed is what goes in.
+    if preview:
+        return _result(
+            monday, status="preview", live=False, counted=len(people),
+            added=[], blocked=[],
+            people=[{"name": _p.name,
+                     "gender": _p.gender,
+                     "from": ("confirmed" if _B._fold(_p.name) in said
+                              else ("guessed" if _p.gender else "unknown"))}
+                    for _p in people])
 
     got = plan(people, hires, log=log, office_key=office_key)
     if not live:
@@ -311,19 +375,16 @@ def run_week(week_start: dt.date, *, office_appstream: str, office_key: str = ""
                        added=[p.name for p, _ in got["ready"]],
                        blocked=got["blocked"], apex=state)
 
-    # THE GATE. Everything above this line reads; everything below SAVES to a
-    # payroll record, and no code has yet done that unwatched. Somebody has to
-    # see one go in by hand first (Megan: "nothing actually sends" -- the
-    # create form's password email is off, but the save itself is still the
-    # thing nobody has watched).
-    import os
-    if not os.environ.get("APEX_FILL_PROVEN"):
-        return _result(monday, status="error", live=True, counted=len(people),
-                       added=[], blocked=list(got["blocked"]),
-                       error="ready to fill %d, but saving into Apex has never "
-                             "been watched end to end. Run supervised.py, see "
-                             "one record save, then set APEX_FILL_PROVEN=1."
-                             % len(got["ready"]))
+    # THE GATE IS CLEARED (Megan, 2026-11-24: "clear the gate"). It asked
+    # for one thing -- somebody watches a record go in -- and that happened:
+    # Luis Frias was filled by this code and saved on screen.
+    #
+    # EVERYTHING BELOW STILL SAVES TO A REAL PAYROLL RECORD, so the checks
+    # that matter are the ones further in, not this flag: `plan` holds back
+    # anybody with a gap, `fill_one` refuses a box that did not take its
+    # value, and `save_tab` refuses a tab that is wrong or incomplete. The
+    # flag only ever said "nobody has watched one yet", and now somebody
+    # has.
 
     # NOBODY IS WATCHING THIS ONE -- no window on the owner's screen.
     with apex.ApexSession(log=log, visible=False) as s:
@@ -542,69 +603,119 @@ NEVER = ("$ctrl.sendUserPassword", "$ctrl.employmentRecord.Salary")
 
 
 FILL_JS = r"""(spec) => {
-  /* Proven against the live form 2026-11-08 -- resources/apex-form-controls.md.
-     Every control is driven through its OWN widget API, because AngularJS
-     debug info is off in production: angular.element(el).scope() is undefined
-     and there is no $apply to reach for. */
+  /* THE CREATE FORM, AS IT IS NOW. Apex was rewritten: /employees/new has no
+     jQuery, no Kendo and no Angular -- window.jQuery, window.$, window.kendo
+     and window.angular are all undefined on it (probe_create, 2026-11-24).
+     The `ng-model` attributes are STILL IN THE MARKUP as dead text, which is
+     what made the old version look like it worked: every lookup found its
+     element, nothing reported a miss, and Apex then refused to save because
+     no binding had heard a thing.
+
+     So nothing here goes through a framework. Each control is set on the DOM
+     and told about it with the events a plain page listens for.
+
+     THE PAIRED BOXES ARE THE WHOLE BUG. User Name, Account Email, Rate of
+     Pay, Salary and Commission Threshold are each TWO inputs in one group: a
+     visible one with no id, over the real one that carries the id and the
+     value the form posts. Setting one and not the other is what produced a
+     form that looked filled and still said "User Name is required"
+     (Luis Frias, 2026-11-24). Everything here sets BOTH.
+
+     THE DROPDOWNS ARE A <select> OVER A HIDDEN INPUT. The <select> has no
+     name, so it does not post; the hidden input beside it does. Picking an
+     option without mirroring its value into that hidden input leaves the
+     page showing "Sales Rep" and posting nothing. */
   const norm = s => (s || '').replace(/\s+/g, ' ').trim();
-  const $ = window.jQuery;
   const done = [], missed = [];
 
-  const setText = (model, val) => {
-    const el = document.querySelector('[ng-model="' + model + '"]');
-    if (!el) { missed.push(model + ' (no control)'); return; }
-    el.value = val;
+  const group = el => el && el.closest('.form-group, .mb-3, .col, td, .row');
+
+  /* The visible box sitting over a real one, if there is one. Same group, a
+     typable input, not hidden, not the element itself, and with no id of its
+     own -- the id is what marks the real one. */
+  const twin = el => {
+    const g = group(el);
+    if (!g) return null;
+    return [...g.querySelectorAll('input')].find(
+      o => o !== el && !o.id && o.type !== 'hidden' && o.type !== 'checkbox'
+           && o.type !== 'radio' && o.offsetParent) || null;
+  };
+
+  const tell = el => {
     el.dispatchEvent(new Event('input', {bubbles: true}));
     el.dispatchEvent(new Event('change', {bubbles: true}));
+    el.dispatchEvent(new Event('blur', {bubbles: true}));
+  };
+
+  const put = (el, val) => { el.value = val; tell(el); };
+
+  /* Find a control by the ng-model attribute the spec names. The attribute is
+     inert now, but it is still the most stable handle on the page: the ids
+     carry a record-number suffix (PayRate_368) that changes per form. */
+  const byModel = model =>
+    document.querySelector('[ng-model="' + model + '"]');
+
+  const setText = (model, val) => {
+    const el = byModel(model);
+    if (!el) { missed.push(model + ' (no control)'); return; }
+    put(el, val);
+    const t = twin(el);
+    if (t) put(t, val);
     done.push(model.split('.').pop());
   };
 
-  const dropFor = idSuffix => {
+  const setDrop = (idSuffix, wantText) => {
+    /* The hidden input the spec names, then the <select> in its group. */
     const idEl = [...document.querySelectorAll('input[ng-model]')]
         .find(e => (e.getAttribute('ng-model') || '').endsWith(idSuffix));
-    if (!idEl) return null;
-    const grp = idEl.closest('.form-group');
-    const sel = grp && grp.querySelector('select');
-    return (sel && $) ? {sel, w: $(sel).data('kendoDropDownList'), idEl} : null;
-  };
-
-  const setDrop = (idSuffix, wantText) => {
-    const d = dropFor(idSuffix);
-    if (!d || !d.w) { missed.push(idSuffix + ' (no widget)'); return; }
-    const opts = [...d.sel.options].map(o => norm(o.text));
+    if (!idEl) { missed.push(idSuffix + ' (no control)'); return; }
+    const g = group(idEl);
+    const sel = g && g.querySelector('select');
+    if (!sel) { missed.push(idSuffix + ' (no select)'); return; }
+    const opts = [...sel.options];
     const want = norm(wantText).toLowerCase();
-    let i = opts.findIndex(t => t.toLowerCase() === want);
-    if (i < 0) i = opts.findIndex(t => t.toLowerCase().indexOf(want) === 0);
-    if (i < 0) {
+    let o = opts.find(x => norm(x.text).toLowerCase() === want);
+    if (!o) o = opts.find(x => norm(x.text).toLowerCase().indexOf(want) === 0);
+    if (!o) {
       /* Name every option. A dropdown handed something it does not have stays
          on 'Select' with no error anywhere -- the silent failure this whole
          report keeps meeting. */
       missed.push(idSuffix + ' has no "' + wantText + '" -- it offers: ' +
-                  opts.filter(Boolean).join(' | '));
+                  opts.map(x => norm(x.text)).filter(Boolean).join(' | '));
       return;
     }
-    d.w.select(i);
-    d.w.trigger('change');
-    done.push(idSuffix.replace(/ID$/, '') + '=' + opts[i]);
+    sel.value = o.value;
+    tell(sel);
+    /* THE HIDDEN ONE IS WHAT POSTS. */
+    put(idEl, o.value);
+    done.push(idSuffix + '=' + norm(o.text));
   };
-
-  const widget = (cls, kind) => $('.' + cls + ' input').toArray()
-      .map(el => $(el).data(kind)).find(Boolean);
 
   for (const [m, v] of Object.entries(spec.text || {})) setText(m, v);
   for (const [k, v] of Object.entries(spec.drops || {})) setDrop(k, v);
 
   if (spec.hire_date) {
-    const dp = widget('k-datepicker', 'kendoDatePicker');
-    if (dp) { dp.value(new Date(spec.hire_date)); dp.trigger('change');
-              done.push('Hire Date'); }
-    else missed.push('Hire Date (no datepicker)');
+    /* Two boxes again: a type=date that holds yyyy-mm-dd and a visible text
+       picker that shows MM/dd/yyyy. */
+    const real = byModel('$ctrl.employmentRecord.HireDate');
+    if (!real) missed.push('Hire Date (no control)');
+    else {
+      const [y, m, d] = spec.hire_date.split('-');
+      put(real, spec.hire_date);
+      const t = twin(real);
+      if (t) put(t, m + '/' + d + '/' + y);
+      done.push('Hire Date');
+    }
   }
   if (spec.rate) {
-    const nb = widget('k-numerictextbox', 'kendoNumericTextBox');
-    if (nb) { nb.value(Number(spec.rate)); nb.trigger('change');
-              done.push('Rate of Pay'); }
-    else missed.push('Rate of Pay (no numeric box)');
+    const real = byModel('$ctrl.employmentRecord.PayRate');
+    if (!real) missed.push('Rate of Pay (no control)');
+    else {
+      put(real, spec.rate);
+      const t = twin(real);
+      if (t) put(t, spec.rate);
+      done.push('Rate of Pay');
+    }
   }
   if (spec.role_value) {
     const r = [...document.querySelectorAll('input[type=radio][ng-model="$ctrl.roleID"]')]
@@ -621,12 +732,31 @@ FILL_JS = r"""(spec) => {
     done.push('password reset ' + (spec.email_password_reset ? 'ON' : 'OFF'));
   }
 
-  /* What the page itself still objects to. This is the honest check: reading
-     .value on a dropdown's hidden ID input shows '' even when it IS set. */
+  /* What the page itself still objects to, read AFTER everything is set.
+     These messages are the only honest check: the hidden inputs read back ''
+     in some states even when they carry a value. */
   const errors = [...new Set([...document.querySelectorAll('.text-danger, ng-message')]
       .filter(e => e.offsetParent).map(e => norm(e.innerText)).filter(Boolean))];
-  const salary = document.querySelector('[ng-model="$ctrl.employmentRecord.Salary"]');
-  return {done, missed, errors,
+  const salary = byModel('$ctrl.employmentRecord.Salary');
+  /* WHAT IS ACTUALLY IN THE BOXES NOW. The error messages on this page are
+     not a reliable verdict -- nothing re-renders them without a framework --
+     so the fill reports what it can read back, and the caller can tell a
+     value that did not stick from a message that did not clear
+     (Luis Frias, 2026-11-24). */
+  const readback = {};
+  for (const el of document.querySelectorAll('[ng-model]')) {
+    const m = el.getAttribute('ng-model');
+    if (!m) continue;
+    readback[m] = (el.type === 'checkbox' || el.type === 'radio')
+      ? (el.checked ? 'checked' : '') : (el.value || '');
+  }
+  for (const sel of document.querySelectorAll('select')) {
+    const g = group(sel);
+    const h = g && g.querySelector('input[type=hidden][id]');
+    if (h) readback['select:' + h.id] =
+      (sel.selectedOptions[0] ? norm(sel.selectedOptions[0].text) : '');
+  }
+  return {done, missed, errors, readback,
           salaryTouched: !!(salary && salary.value),
           passwordResetTicked: pw ? pw.checked : null};
 }"""
@@ -848,6 +978,57 @@ def _from_report(report, names: Sequence[str], log=print) -> Dict:
     return {"added": added, "blocked": blocked}
 
 
+READBACK_JS = r"""() => {
+  /* What is in the boxes NOW. Separate from FILL_JS so it can be run again
+     after the dropdowns are clicked from Python. */
+  const norm = s => (s || '').replace(/\s+/g, ' ').trim();
+  const out = {};
+  for (const el of document.querySelectorAll('[ng-model]')) {
+    const m = el.getAttribute('ng-model');
+    if (!m) continue;
+    out[m] = (el.type === 'checkbox' || el.type === 'radio')
+      ? (el.checked ? 'checked' : '') : (el.value || '');
+  }
+  /* The Kendo boxes show their choice in a span, not a value. */
+  for (const w of document.querySelectorAll('.k-dropdown, .k-widget')) {
+    const g = w.closest('.form-group, .mb-3, .col, td, .row');
+    const h = g && g.querySelector('input[type=hidden][id]');
+    const inp = w.querySelector('.k-input');
+    if (h && inp) out['shows:' + h.id] = norm(inp.innerText);
+  }
+  return out;
+}"""
+
+
+def unfilled(spec: Dict, readback: Dict) -> List[str]:
+    """What the spec asked for that is NOT in the box afterwards.
+
+    THIS IS THE VERDICT NOW, not the page's red messages. On the rewritten
+    create form nothing re-renders validation, so "User Name is required" sat
+    over a User Name box holding the right address, and four correct fills in
+    a row were refused for it (Luis Frias, 2026-11-24). A message that did not
+    clear and a value that did not stick are different problems, and only one
+    of them is ours.
+
+    Pure: it compares two dicts and opens nothing.
+    """
+    out = []
+    for model, want in (spec.get("text") or {}).items():
+        if want and not str(readback.get(model) or "").strip():
+            out.append(model.split(".")[-1])
+    for suffix in (spec.get("drops") or {}):
+        key = next((k for k in readback if k.endswith(suffix)), "")
+        if not key or not str(readback.get(key) or "").strip():
+            out.append(suffix)
+    if spec.get("hire_date") and not str(
+            readback.get("$ctrl.employmentRecord.HireDate") or "").strip():
+        out.append("HireDate")
+    if spec.get("rate") and not str(
+            readback.get("$ctrl.employmentRecord.PayRate") or "").strip():
+        out.append("PayRate")
+    return out
+
+
 def fill_one(person: Starter, values: Dict, hire, log=print, *, page=None,
              save: bool = False) -> Dict:
     """Fill one person into the Apex form that is already on screen.
@@ -855,32 +1036,83 @@ def fill_one(person: Starter, values: Dict, hire, log=print, *, page=None,
     The only function here that touches Apex, so there is one place to read
     when asking what this machine does to a payroll record.
 
-    FILLING is proven (2026-11-08, filled live and every validation error
-    cleared). SAVING is not: nothing has yet pressed Save, and a half-right
-    save lands on a real person. So `save` stays off unless somebody has
-    watched one go through and set APEX_FILL_PROVEN=1.
+    FILLING is proven (2026-11-08, filled live; re-proved 2026-11-24 against
+    the rewritten create form, which needed driving a different way
+    entirely). SAVING was proved on 2026-11-24 -- Luis Frias went in with
+    Megan watching -- so `save=True` now presses it, through `save_tab`,
+    which refuses a tab that is incomplete, wrong, or still invalid.
+
+    `save` is False by default and the supervised run never passes it.
     """
     import os
     if page is None:
         raise RuntimeError("fill_one needs the Apex page to fill.")
-    got = page.evaluate(FILL_JS, fill_spec(person, values))
+    spec = fill_spec(person, values)
+    # THE DROPDOWNS ARE CLICKED, NOT SET. Kendo paints a span over a hidden
+    # <select> and Angular holds the model; neither is addressable from a
+    # page with no globals, so writing the value left the box reading
+    # "Select" (Megan, 2026-11-24: "this isn't filled"). A real click runs
+    # Kendo's own handler, which is the only thing that tells Angular.
+    drops = dict(spec.get("drops") or {})
+    got = page.evaluate(FILL_JS, dict(spec, drops={}))
     for m in got.get("missed") or []:
         log("    missed: %s" % m)
+    from automations.apex_new_starts import drive as DR
+    stuck = []
+    for suffix, want in drops.items():
+        if DR.pick_dropdown(page, suffix, want, log=log):
+            (got.setdefault("done", [])).append("%s=%s" % (suffix, want))
+        else:
+            stuck.append("%s (%s)" % (suffix, want))
     if got.get("salaryTouched"):
         raise RuntimeError("Salary was written -- that is the wrong box for an "
                            "hourly rate. Nothing saved.")
+    # READ THE PAGE AGAIN. The first readback was taken before the dropdowns
+    # were clicked, so it showed every one of them empty in the log even
+    # after all five had been chosen -- a report that contradicts itself is
+    # worse than none (2026-11-24).
+    if drops:
+        try:
+            got["readback"] = page.evaluate(READBACK_JS)
+        except Exception:      # noqa: BLE001
+            pass
+    short = unfilled(dict(spec, drops={}),
+                     got.get("readback") or {}) + stuck
+    if short:
+        for k in sorted(got.get("readback") or {}):
+            log("      %-46s %r" % (k, got["readback"][k]))
+        raise RuntimeError("these boxes did not take their value: %s"
+                           % ", ".join(short))
     if got.get("errors"):
-        raise RuntimeError("Apex still objects: %s" % "; ".join(got["errors"][:4]))
+        # NOT A REFUSAL ANY MORE, because every box the spec asked for has
+        # its value -- checked just above. The rewritten form leaves its red
+        # messages on screen whatever you type into it.
+        log("    the page still shows (every value IS in — these do not "
+            "clear on this form): %s" % "; ".join(got["errors"][:6]))
     if not save:
         log("    filled, NOT saved (%d fields)" % len(got.get("done") or []))
         return got
-    if not os.environ.get("APEX_FILL_PROVEN"):
+    # THE GATE IS CLEARED (Megan, 2026-11-24: "clear the gate"). What it
+    # asked for happened: Luis Frias's create form was filled by this code,
+    # read on screen, and saved by a person watching -- the record went in
+    # clean. So the Save step is no longer the one thing nobody has seen.
+    #
+    # WHAT STILL GUARDS IT. Clearing the gate did not make this press Save
+    # on anything it is unsure of. `save_tab` refuses outright on a required
+    # box with no value, on a box holding something other than what was
+    # asked for, and on a form Angular still calls invalid -- and it proves
+    # the save by watching for the POST rather than trusting the click. The
+    # readback above has already shown every value is in by the time this
+    # line runs. And `save` is still False everywhere by default: the
+    # supervised run passes nothing and cannot be made to.
+    from automations.apex_new_starts import drive as DR
+    if not DR.save_tab(page, "", {"missed": [], "absent": []}, log=log):
         raise RuntimeError(
-            "filled, but saving has never been watched end to end. Look at the "
-            "screen, press Save by hand once, then set APEX_FILL_PROVEN=1.")
-    raise NotImplementedError(
-        "the Save step is the one thing still unproven -- it wants its "
-        "supervised first run.")
+            "the create form was filled correctly but would not save. "
+            "Nothing was created.")
+    got["saved"] = True
+    log("    SAVED.")
+    return got
 
 
 def main(argv=None) -> int:

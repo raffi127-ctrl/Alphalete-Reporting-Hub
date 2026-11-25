@@ -248,3 +248,38 @@ def test_nothing_on_the_board_opens_the_warm_console_directly():
     assert not offenders, (
         "these open the Hub's ApplicantStream console directly instead of "
         "sessions.appstream_anywhere: " + ", ".join(offenders))
+
+
+def test_the_apex_job_reads_the_calendar_through_it_too():
+    """`apex_week` runs on the OFFICE's machine (Megan, 2026-11-11: "apex has
+    to run on the ECO machine since it's that ICDs independent login"), so the
+    warm console was the one line in that job which could not resolve where it
+    actually runs."""
+    import inspect
+    from automations.apex_new_starts import eco_run as ECO
+    src = inspect.getsource(ECO.run_week)
+    assert "appstream_anywhere" in src
+    assert "from automations.applicant_tracker.applicantstream import session" \
+        not in src
+
+
+def test_nothing_that_runs_on_an_office_machine_opens_the_warm_console():
+    """The invariant now covers the Apex job as well as the board -- it ships
+    to those machines, so a direct reach there is a line that breaks outright.
+    """
+    import ast
+    import pathlib as _p
+    root = _p.Path(__file__).resolve().parents[1]
+    offenders = []
+    for rel in ("icd_onboarding", "apex_new_starts"):
+        for path in sorted((root / rel).glob("*.py")):
+            if path.name.startswith("test_") or path.name == "sessions.py":
+                continue
+            for node in ast.walk(ast.parse(path.read_text())):
+                if isinstance(node, ast.ImportFrom) and node.module == \
+                        "automations.applicant_tracker.applicantstream" and any(
+                            a.name == "session" for a in node.names):
+                    offenders.append("%s/%s:%d" % (rel, path.name, node.lineno))
+    assert not offenders, (
+        "these open the Hub's warm ApplicantStream console directly instead "
+        "of sessions.appstream_anywhere: " + ", ".join(offenders))

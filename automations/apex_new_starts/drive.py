@@ -387,9 +387,19 @@ def triage(page, people, log=print) -> Dict[str, dict]:
             # somebody is what stops a duplicate payroll record.
             again = search_roster(page, "", given, log=log)
             if again:
-                log("    found by FIRST name, not surname -- the surname in "
-                    "Apex may not match the board")
-                there = again
+                # IT HAS TO LOOK LIKE THEM. See `_close_surname`: accepting
+                # any row a first-name search returned is what blocked
+                # Luis Frias's create on a different Luis (2026-11-24).
+                saw = roster_surnames(page)
+                near = [s for s in saw if _close_surname(surname, s)]
+                if near:
+                    log("    found by FIRST name, not surname -- Apex has "
+                        "%r where we have %r" % (near[0], surname.lower()))
+                    there = again
+                else:
+                    log("    a first-name search for %r found %d row(s), but "
+                        "no surname near %r -- a different person, so not "
+                        "treated as a match" % (given, again, surname))
         if there is None:
             out[name] = {"need": BY_HAND,
                          "why": "the All Employees search could not be run, "
@@ -425,6 +435,71 @@ def triage(page, people, log=print) -> Dict[str, dict]:
     log("  triage: %s" % (", ".join("%d to %s" % (n, k)
                                     for k, n in sorted(tally.items())) or "nobody"))
     return out
+
+
+def roster_statuses(page, surname: str) -> list:
+    """The Status cell of every roster row naming `surname`, lowercased.
+
+    WHY THE CELL AND NOT THE TAB. `_rule_out_the_active` opened the Active
+    tab and then trusted a ROW COUNT. A count cannot tell a freshly filtered
+    table from the previous tab's rows still on screen -- and that is exactly
+    what happened to Luis Frias on 2026-11-24: he was created, the check
+    counted him, and the run reported "on Active already -- the record is
+    finished" about somebody whose Status cell said **Pending**. It then
+    refused to fill his other two tabs.
+
+    Reading the Status cell is a direct observation of the thing being
+    claimed, so a stale table cannot pass for a verdict.
+
+    "Inactive" contains "active", so the cell is compared whole, never
+    searched.
+    """
+    try:
+        return page.evaluate(
+            r"""(want) => {
+                 const norm = s => (s || '').replace(/\s+/g, ' ').trim()
+                                            .toLowerCase();
+                 const WORDS = ['terminated', 'inactive', 'pending', 'active'];
+                 const w = String(want || '').toLowerCase();
+                 const out = [];
+                 for (const tr of document.querySelectorAll('table tr')) {
+                   const cells = [...tr.querySelectorAll('td')];
+                   if (!cells.length) continue;
+                   const text = cells.map(c => norm(c.innerText));
+                   if (!text.some(c => c.includes(w))) continue;
+                   /* THE WHOLE CELL FIRST. A Status column holds one word.
+                      Apex also renders it as a badge inside the cell, so the
+                      cell's own text is read, then any span inside it -- the
+                      first version looked only at the cell and came back
+                      empty on the Active tab (Luis Frias, 2026-11-24),
+                      which left the guard permanently silent. */
+                   let st = text.find(c => WORDS.includes(c));
+                   if (!st) {
+                     for (const c of cells) {
+                       for (const sp of c.querySelectorAll('span, div, td')) {
+                         const t = norm(sp.innerText);
+                         if (WORDS.includes(t)) { st = t; break; }
+                       }
+                       if (st) break;
+                     }
+                   }
+                   /* LAST, A WHOLE-WORD MATCH inside a cell that says more
+                      than the word. "inactive" is checked before "active"
+                      and matched on a boundary, so one never reads as the
+                      other. */
+                   if (!st) {
+                     for (const c of text) {
+                       const hit = WORDS.find(
+                         x => new RegExp('(^|[^a-z])' + x + '([^a-z]|$)')
+                                .test(c));
+                       if (hit) { st = hit; break; }
+                     }
+                   }
+                   out.push(st || '');
+                 }
+                 return out; }""", str(surname or ""))
+    except Exception:          # noqa: BLE001
+        return []
 
 
 def _rule_out_the_active(page, out: Dict[str, dict], log=print) -> None:
@@ -463,12 +538,30 @@ def _rule_out_the_active(page, out: Dict[str, dict], log=print) -> None:
             log("    %s: the Active search could not be run -- left as %s"
                 % (name, COMPLETE))
             continue
-        if there:
-            out[name] = {"need": ALREADY,
-                         "why": "on Active already — the Pending row is "
-                                "stale, and the record is finished",
-                         "id": out[name].get("id", "")}
-            log("    %s: ACTIVE already — not touching the record" % name)
+        if not there:
+            continue
+        # THE ROW HAS TO SAY SO. A count on this tab was enough to call Luis
+        # Frias finished while his Status cell read "Pending" (2026-11-24);
+        # the rows on screen were not the ones the count was being read as.
+        says = roster_statuses(page, surname)
+        if not says or not any(says):
+            # NOT SILENT. This is the guard that stops a finished payroll
+            # record being typed over (Alena Guerrero, 2026-11-23), so a run
+            # that could not check says it could not check -- in the words a
+            # person reads, not as a line that looks like a result.
+            log("    %s: found %d row(s) on Active and COULD NOT READ their "
+                "Status. The finished-record check did not happen for them "
+                "-- look at the roster yourself before saving." % (name, there))
+            continue
+        if "active" not in says:
+            log("    %s: on this tab but its Status cell reads %s -- NOT "
+                "ruled out" % (name, ", ".join(sorted(set(says))) or "blank"))
+            continue
+        out[name] = {"need": ALREADY,
+                     "why": "on Active already — the Pending row is "
+                            "stale, and the record is finished",
+                     "id": out[name].get("id", "")}
+        log("    %s: ACTIVE already — not touching the record" % name)
 
 
 def set_dropdown(page, label: str, value: str, log=print) -> bool:
@@ -1329,6 +1422,78 @@ TABS = (
 )
 
 
+def open_from_roster(page, people=None, log=print) -> bool:
+    """Open a person's record from the roster by pressing their Edit button.
+
+    WHY THIS STEP EXISTS. `go_tab` moves between an employee's three tabs by
+    clicking a tab link -- but there is no tab link on the ROSTER, which is
+    where the triage leaves the page. The roster offers one control per row,
+    a blue Edit button, and nothing was pressing it: the walk reported "no
+    link to employment-record on this page" and stopped with nothing filled
+    (Luis Frias, 2026-11-24).
+
+    THE ROW HAS TO BE THEIRS. It matches on BOTH names, because one name is
+    how a first-name search for "Luis" matched a different Luis earlier the
+    same day -- and this one does not merely misreport, it opens somebody
+    else's payroll record.
+    """
+    who = (people or [{}])[0] or {}
+    name = str(who.get("name") or "")
+    parts = name.split()
+    if len(parts) < 2:
+        log("    no full name to find on the roster")
+        return False
+    given, surname = parts[0], parts[-1]
+    marked = page.evaluate(
+        r"""(p) => {
+             document.querySelectorAll('[data-ans-edit]')
+               .forEach(e => e.removeAttribute('data-ans-edit'));
+             const norm = s => (s || '').replace(/\s+/g, ' ').trim().toLowerCase();
+             for (const tr of document.querySelectorAll('table tr')) {
+               const t = norm(tr.innerText);
+               if (!t) continue;
+               if (t.indexOf(p.given) < 0 || t.indexOf(p.surname) < 0) continue;
+               const b = [...tr.querySelectorAll('a, button')]
+                 .find(x => norm(x.innerText).indexOf('edit') >= 0);
+               if (b) { b.setAttribute('data-ans-edit', '1');
+                        return norm(tr.innerText).slice(0, 60); }
+             }
+             return ''; }""",
+        {"given": given.lower(), "surname": surname.lower()})
+    if not marked:
+        log("    no Edit button on a row for %s" % name)
+        return False
+    log("    opening %s from the roster (%s)" % (name, marked))
+    # THREE WAYS, AND THE URL DECIDES. Neither a plain click nor a forced one
+    # got off the roster: the first timed out on actionability, the second
+    # raised while waiting for a load that had already happened. So each way
+    # is tried, every failure is survivable, and the only thing that counts
+    # as success is the address bar (Luis Frias, 2026-11-24).
+    def _landed(seconds=10):
+        for _ in range(seconds * 2):
+            if "/employees/" in (page.url or ""):
+                return True
+            page.wait_for_timeout(500)
+        return "/employees/" in (page.url or "")
+
+    for how, press in (
+        ("a click", lambda: page.click("[data-ans-edit]", timeout=5000,
+                                       force=True)),
+        ("a click from inside the page",
+         lambda: page.evaluate(
+             "() => { const e = document.querySelector('[data-ans-edit]');"
+             " if (e) e.click(); }")),
+    ):
+        try:
+            press()
+        except Exception as e:     # noqa: BLE001
+            log("    Edit: %s raised (%s)" % (how, type(e).__name__))
+        if _landed():
+            return True
+        log("    Edit: %s did not leave the roster" % how)
+    return False
+
+
 def go_tab(page, apex_id, path: str, *, people=None, log=print) -> bool:
     """Move to one of an employee's three tabs, and come back loaded.
 
@@ -1383,6 +1548,43 @@ def go_tab(page, apex_id, path: str, *, people=None, log=print) -> bool:
                 page.wait_for_timeout(1200)
             except Exception as e:     # noqa: BLE001
                 log("    could not click %r (%s)" % (marked, type(e).__name__))
+        elif on_roster(page):
+            # THE ROSTER HAS NO TAB LINKS, only an Edit button per row. Open
+            # the record first, then look for the tab link again.
+            opened = open_from_roster(page, people, log=log)
+            if not opened:
+                # LAST RESORT, and only now that the id is known. A direct
+                # navigation was ruled out on 2026-11-12 because the server
+                # 302s a session that has not changed its password -- but
+                # that was from the change-password page itself, and by here
+                # the run has already loaded the roster and a record id.
+                try:
+                    page.goto(where, timeout=20000)
+                    page.wait_for_timeout(1500)
+                    opened = "/employees/" in (page.url or "")
+                    log("    went straight to %s (%s)"
+                        % (path, "landed" if opened else "bounced to %s"
+                           % page.url))
+                except Exception as e:     # noqa: BLE001
+                    log("    direct navigation raised (%s)" % type(e).__name__)
+            if opened:
+                again = page.evaluate(
+                    """(w) => { document.querySelectorAll('[data-ans-tab]')
+                         .forEach(e => e.removeAttribute('data-ans-tab'));
+                       const a = [...document.querySelectorAll('a[href]')]
+                         .find(x => (x.getAttribute('href') || '').indexOf(w) >= 0);
+                       if (!a) return '';
+                       a.setAttribute('data-ans-tab', '1');
+                       return 'ok'; }""", where)
+                if again:
+                    try:
+                        page.click("[data-ans-tab]", timeout=6000)
+                        page.wait_for_load_state("domcontentloaded",
+                                                 timeout=15000)
+                        page.wait_for_timeout(1200)
+                    except Exception as e:     # noqa: BLE001
+                        log("    could not click the %s tab (%s)"
+                            % (path, type(e).__name__))
         else:
             log("    no link to %s on this page" % path)
 
@@ -1580,7 +1782,7 @@ def fill_employment(page, who, log=print) -> dict:
 
 
 def complete_person(page, who, apex_id, *, values=None, social=None,
-                    save=None, log=print) -> dict:
+                    save=None, log=print, tabs=None) -> dict:
     """Walk one person's three tabs, filling each. SAVING IS THE CALLER'S.
 
     `save` is called as save(tab, result) after each tab is filled and must
@@ -1608,7 +1810,12 @@ def complete_person(page, who, apex_id, *, values=None, social=None,
     # fill. Installed before the first tab is touched.
     rang = guard_unsaved(page, log=log)
     out = {}
-    for tab, path, prove in TABS:
+    # `tabs` lets a caller walk a SUBSET. A brand-new record has just had its
+    # employment tab saved on the create form, so re-opening it would be
+    # typing over what was saved a second ago (Megan, 2026-11-24: "wouldn't
+    # it be more time efficient on new adds to just do all 3 of their pages
+    # at 1 time?").
+    for tab, path, prove in (tabs or TABS):
         if not go_tab(page, apex_id, path, people=[who], log=log):
             log("  could not open the %s tab -- stopping." % tab)
             break
@@ -1857,6 +2064,201 @@ def open_roster_tab(page, label: str, log=print) -> bool:
         log("    could not click the %r tab, a <%s> (%s)"
             % (label, found, type(e).__name__))
         return False
+
+
+def _close_surname(want: str, saw: str) -> bool:
+    """Is `saw` plausibly our `want`, mistyped or truncated?
+
+    The first-name fallback exists for Alexandria McCrobie, saved as "McCrob"
+    by a run that typed into a form still rendering (2026-11-15). It accepted
+    ANY row a first-name search returned -- so for Luis Frias it found a
+    different Luis on the roster, reported "in Apex but not on Pending", and
+    refused a create that was genuinely needed (Megan, 2026-11-24: "Frias
+    isn't in payroll at all"). A common first name is not an identity.
+
+    So one surname has to be a prefix of the other, four letters or more:
+    mccrob/mccrobie yes, rodriguez/frias no. Four because that is the length
+    a truncation leaves, and short enough surnames are compared whole.
+    """
+    a = "".join(ch for ch in str(want or "").lower() if ch.isalpha())
+    b = "".join(ch for ch in str(saw or "").lower() if ch.isalpha())
+    if not a or not b:
+        return False
+    if a == b:
+        return True
+    shorter = min(len(a), len(b))
+    if shorter < 4:
+        return False
+    return a.startswith(b) or b.startswith(a)
+
+
+def roster_surnames(page) -> list:
+    """The surnames showing on the roster right now, lowercased.
+
+    Read off the same rows `search_roster` counts, so a count and the names
+    behind it cannot disagree.
+    """
+    try:
+        got = page.evaluate(
+            r"""() => [...document.querySelectorAll('table tr')]
+                 .map(r => (r.innerText || '').replace(/\s+/g, ' ').trim())
+                 .filter(t => t)""")
+    except Exception:      # noqa: BLE001
+        return []
+    out = []
+    for line in got or []:
+        for word in str(line).replace(",", " ").split():
+            if any(ch.isalpha() for ch in word):
+                out.append(word.lower())
+    return out
+
+
+def press_add_employee(page, log=print) -> bool:
+    """Press "+ Add Employee" on the roster.
+
+    WHY THIS IS OURS TO PRESS NOW. The supervised run used to poll for ten
+    minutes while the operator navigated here by hand, on the grounds that
+    clicking its own way to the form would walk past the All Employees
+    duplicate check. That stopped being true when `triage` started running
+    that check itself, with real clicks, and only routes to ADD after it comes
+    back empty -- so the wait was asking a person to redo a check that had
+    already been done and reported (Megan, 2026-11-24: "why wait 10 min?").
+
+    Found the way every other control here is: marked in the page, then
+    clicked by Playwright. `:text-is()` does not click Apex's Angular buttons.
+    Tolerant of "+ Add Employee", "Add New Employee" and a nested span, the
+    same spellings the extension's `addButton` allows for.
+    """
+    try:
+        hit = page.evaluate(
+            r"""() => {
+                 document.querySelectorAll('[data-ans-add]')
+                   .forEach(e => e.removeAttribute('data-ans-add'));
+                 const all = [...document.querySelectorAll(
+                   'button, a, input[type=submit], [ng-click]')];
+                 const b = all.find(e => {
+                   if (!e.offsetParent) return false;
+                   const t = ((e.innerText || e.value || '')
+                     .replace(/\s+/g, ' ').trim()).toLowerCase();
+                   return t.includes('add') && t.includes('employee');
+                 });
+                 if (!b) return '';
+                 b.setAttribute('data-ans-add', '1');
+                 return 'ok'; }""")
+    except Exception as e:      # noqa: BLE001
+        log("    could not look for Add Employee (%s)" % type(e).__name__)
+        return False
+    if not hit:
+        log("    no Add Employee button on this page")
+        return False
+    try:
+        page.click("[data-ans-add]", timeout=5000)
+    except Exception as e:      # noqa: BLE001
+        log("    could not press Add Employee (%s)" % type(e).__name__)
+        return False
+    page.wait_for_timeout(2000)
+    log("    pressed Add Employee")
+    return True
+
+
+def pick_dropdown(page, id_suffix: str, want_text: str, log=print) -> bool:
+    """Choose one Kendo dropdown the way a person does: open it, click the row.
+
+    WHY CLICKS AND NOT A VALUE. The create form looked framework-free --
+    window.jQuery, window.$, window.kendo and window.angular are all
+    undefined on it -- so the fill set the hidden input and the <select> and
+    dispatched events. Both took the value and the screen still read "Select"
+    with "Position is required." under it (Megan, 2026-11-24: "this isn't
+    filled").
+
+    The markup says why. Angular and Kendo ARE there, just not as globals:
+    the hidden input carries `ng-invalid-required`, the real <select> is
+    `display: none`, and what a person sees is
+    `<span class="k-widget k-dropdown"><span class="k-input">Select</span>`.
+    Nothing we write to the DOM reaches a model we cannot address -- but a
+    real click does, because then Kendo's own handler runs and tells Angular.
+
+    Returns True only when the widget ITSELF reads back the chosen text, so a
+    click that opened nothing cannot be mistaken for a choice.
+    """
+    marked = page.evaluate(
+        r"""(suffix) => {
+             document.querySelectorAll('[data-ans-dd], [data-ans-list]')
+               .forEach(e => { e.removeAttribute('data-ans-dd');
+                               e.removeAttribute('data-ans-list'); });
+             const idEl = [...document.querySelectorAll('input[ng-model]')]
+               .find(e => (e.getAttribute('ng-model') || '').endsWith(suffix));
+             if (!idEl) return '';
+             const g = idEl.closest('.form-group, .mb-3, .col, td, .row');
+             const w = g && g.querySelector('.k-dropdown, .k-widget');
+             if (!w) return '';
+             w.setAttribute('data-ans-dd', '1');
+             /* Kendo names its popup list on the widget itself. */
+             const owns = w.getAttribute('aria-owns') || '';
+             const list = owns ? document.getElementById(owns) : null;
+             if (list) list.setAttribute('data-ans-list', '1');
+             return owns || 'ok'; }""", id_suffix)
+    if not marked:
+        log("    %s: no dropdown widget on this page" % id_suffix)
+        return False
+    try:
+        page.click("[data-ans-dd]", timeout=5000)
+    except Exception as e:      # noqa: BLE001
+        log("    %s: could not open the dropdown (%s)"
+            % (id_suffix, type(e).__name__))
+        return False
+    page.wait_for_timeout(400)
+    # THE LIST IS RENDERED OUTSIDE THE GROUP, at the end of <body>, so it is
+    # found by the id the widget names rather than by looking near the field.
+    hit = page.evaluate(
+        r"""(want) => {
+             const norm = s => (s || '').replace(/\s+/g, ' ').trim();
+             const lists = [...document.querySelectorAll(
+               '[data-ans-list], .k-animation-container ul, ul.k-list')]
+                 .filter(l => l.offsetParent);
+             for (const l of lists) {
+               const rows = [...l.querySelectorAll('li')];
+               let r = rows.find(x => norm(x.innerText).toLowerCase()
+                                      === want.toLowerCase());
+               if (!r) r = rows.find(x => norm(x.innerText).toLowerCase()
+                                          .indexOf(want.toLowerCase()) === 0);
+               if (r) { r.setAttribute('data-ans-opt', '1'); return 'ok'; }
+             }
+             return ''; }""", str(want_text))
+    if not hit:
+        page.keyboard.press("Escape")
+        log("    %s: the open list has no %r" % (id_suffix, want_text))
+        return False
+    # FORCED, because Playwright's actionability check times out on these
+    # rows: Kendo renders the list in a floating k-animation-container that
+    # keeps moving while it opens, and three of five picks died waiting for
+    # it to hold still (2026-11-24). The element was already found by text in
+    # the open list, so there is nothing left for the check to protect.
+    try:
+        page.click("[data-ans-opt]", timeout=5000, force=True)
+    except Exception as e:      # noqa: BLE001
+        log("    %s: could not click %r (%s) — trying the keyboard"
+            % (id_suffix, want_text, type(e).__name__))
+        # Kendo's own type-to-select, which needs no element to be clickable.
+        try:
+            page.keyboard.type(str(want_text)[:12], delay=60)
+            page.keyboard.press("Enter")
+        except Exception:       # noqa: BLE001
+            return False
+    page.wait_for_timeout(400)
+    shows = page.evaluate(
+        r"""(suffix) => {
+             const idEl = [...document.querySelectorAll('input[ng-model]')]
+               .find(e => (e.getAttribute('ng-model') || '').endsWith(suffix));
+             const g = idEl && idEl.closest('.form-group, .mb-3, .col, td, .row');
+             const inp = g && g.querySelector('.k-input');
+             return inp ? (inp.innerText || '').replace(/\s+/g, ' ').trim()
+                        : ''; }""", id_suffix)
+    if str(shows).strip().lower() != str(want_text).strip().lower():
+        log("    %s: clicked %r but the box reads %r"
+            % (id_suffix, want_text, shows))
+        return False
+    return True
 
 
 def search_roster(page, surname: str, given: str = "", *, log=print):
