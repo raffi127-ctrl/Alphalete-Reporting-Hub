@@ -20,13 +20,44 @@ class RulingOutTheActive(unittest.TestCase):
                     "id": "e%d" % i} for i, n in enumerate(names)}
 
     def test_somebody_on_active_is_not_completed_again(self):
+        # THE STATUS CELL HAS TO SAY SO. Finding the row is no longer enough:
+        # a count called Luis Frias finished on 2026-11-24 while his cell read
+        # "Pending", so the check reads the cell now. This test stubbed only
+        # the search and went red the day that landed.
         out = self._out(["Alena Guerrero"])
         with mock.patch.object(drive, "to_roster", return_value=True), \
              mock.patch.object(drive, "open_roster_tab", return_value=True), \
-             mock.patch.object(drive, "search_roster", return_value=1):
+             mock.patch.object(drive, "search_roster", return_value=1), \
+             mock.patch.object(drive, "roster_statuses", return_value=["active"]):
             drive._rule_out_the_active(None, out, log=lambda *_a: None)
         self.assertEqual(out["Alena Guerrero"]["need"], drive.ALREADY)
         self.assertIn("stale", out["Alena Guerrero"]["why"])
+
+    def test_a_row_on_active_whose_status_still_says_pending_is_not_cleared(self):
+        """Luis Frias, 2026-11-24. The row was there and the cell said
+        Pending, and the old count-only check called him finished."""
+        said = []
+        out = self._out(["Luis Frias"])
+        with mock.patch.object(drive, "to_roster", return_value=True), \
+             mock.patch.object(drive, "open_roster_tab", return_value=True), \
+             mock.patch.object(drive, "search_roster", return_value=1), \
+             mock.patch.object(drive, "roster_statuses", return_value=["pending"]):
+            drive._rule_out_the_active(None, out, log=said.append)
+        self.assertEqual(out["Luis Frias"]["need"], drive.COMPLETE)
+        self.assertIn("NOT", " ".join(said))
+
+    def test_an_unreadable_status_says_the_check_did_not_happen(self):
+        """Blank cells are not a verdict. Clearing nobody is right; doing it
+        silently is what let the old behaviour come back unnoticed."""
+        said = []
+        out = self._out(["Alena Guerrero"])
+        with mock.patch.object(drive, "to_roster", return_value=True), \
+             mock.patch.object(drive, "open_roster_tab", return_value=True), \
+             mock.patch.object(drive, "search_roster", return_value=2), \
+             mock.patch.object(drive, "roster_statuses", return_value=["", ""]):
+            drive._rule_out_the_active(None, out, log=said.append)
+        self.assertEqual(out["Alena Guerrero"]["need"], drive.COMPLETE)
+        self.assertIn("COULD NOT READ", " ".join(said))
 
     def test_somebody_genuinely_pending_is_left_alone(self):
         out = self._out(["Jade Starkes"])
@@ -53,7 +84,8 @@ class RulingOutTheActive(unittest.TestCase):
         with mock.patch.object(drive, "to_roster", return_value=True), \
              mock.patch.object(drive, "open_roster_tab", return_value=True), \
              mock.patch.object(drive, "search_roster",
-                               side_effect=lambda _p, sur, giv, log=None: answers[sur]):
+                               side_effect=lambda _p, sur, giv, log=None: answers[sur]), \
+             mock.patch.object(drive, "roster_statuses", return_value=["active"]):
             drive._rule_out_the_active(None, out, log=lambda *_a: None)
         self.assertEqual(out["Alena Guerrero"]["need"], drive.COMPLETE)
         self.assertEqual(out["Jade Starkes"]["need"], drive.ALREADY)

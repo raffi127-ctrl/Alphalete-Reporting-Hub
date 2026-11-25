@@ -912,18 +912,39 @@ def test_a_name_it_will_not_call_is_left_out_and_said_out_loud():
     missed it, rather than picking one. The unsure list is the load-bearing
     half: a guess here lands on a payroll record, so "no idea" has to look
     different from an answer.
-    """
-    class _P:
-        def __init__(self, first, last):
-            self.first_name, self.last_name = first, last
 
+    ON THE REAL OBJECT. This used to build its own person with .first_name
+    and .last_name -- attributes a Starter does not have -- so it passed
+    while the live guesser skipped every single person and said nothing.
+    Use `Starter`, which is what `starters()` actually produces.
+    """
     said = []
-    got = eco_run._genders_for([_P("Jessica", "Hale"), _P("Xyzzy", "Quine")],
-                               log=said.append)
+    got = eco_run._genders_for(
+        [eco_run.Starter(name="Jessica Hale"),
+         eco_run.Starter(name="Xyzzy Quine")], log=said.append)
     told = " ".join(said)
     assert got.get("Jessica Hale"), got
     assert "Xyzzy Quine" not in got
     assert "would not call" in told and "Xyzzy Quine" in told, told
+
+
+def test_the_guesser_reads_the_name_a_starter_actually_carries():
+    """The regression itself: a whole week of real Starters must come back
+    with real guesses. 12 names in and 0 out was the live symptom on
+    2026-11-25 -- and 0 unsure alongside it proved nothing had been read, not
+    that nothing could be called.
+    """
+    week = [eco_run.Starter(name=n) for n in
+            ("Elijah Godinez", "Haley Paul", "Jayden Reeves", "Kip Wilson")]
+    said = []
+    got = eco_run._genders_for(week, log=said.append)
+    assert got, "the guesser read nothing off a real Starter: %s" % said
+    # Every name is either called or named out loud. Silence for all of them
+    # is the bug this test exists for.
+    unsure = [n for n in (p.name for p in week) if n not in got]
+    told = " ".join(said)
+    for n in unsure:
+        assert n in told, "%s was neither guessed nor reported: %s" % (n, told)
 
 
 def test_nobody_to_guess_for_is_not_an_error():
@@ -972,7 +993,13 @@ def test_each_gap_says_where_its_answer_lives(monkeypatch):
     why = got["blocked"][0]["why"]
     assert "their packet is missing" in why, why
     assert "this office's enrolment has no" in why, why
-    assert "no gender on the board" in why, why
+    # NOT "on the board" any more. Gender came off the OBCL on 2026-11-24 and
+    # is guessed from the first name at the moment Apex is typed, so the
+    # message has to send somebody to the pop-up, not to a column that is
+    # gone. This assertion went stale that day and stayed red until 11/25.
+    assert "no gender" in why, why
+    assert "confirmed before the send" in why, why
+    assert "board" not in why, why
     # and the packet gaps are named as packet gaps, not lumped in with ours
     assert "dob" in why.split("this office")[0], why
 
@@ -1111,10 +1138,19 @@ def test_an_unwatched_run_still_holds_a_person_with_no_gender(monkeypatch):
     assert "no gender" in got["blocked"][0]["why"]
 
 
-def test_a_watched_run_fills_everything_else_and_names_the_one_box(monkeypatch):
-    """Megan, 2026-11-24: "remember that we're assuming gender based on
-    name". The guesser will not call "Kimble", and holding the whole record
-    for one dropdown is the wrong trade when somebody is reading the form."""
+def test_a_watched_run_holds_on_a_blank_gender_too(monkeypatch):
+    """A blank gender holds EVEN WHEN SOMEBODY IS WATCHING.
+
+    This test used to assert the opposite -- that a watched run filled
+    everything else and left the Gender dropdown for the person to set on the
+    form. Megan overruled that on 2026-11-24: "no, I shouldn't have to fill
+    anything on apex". Gender is confirmed before the fill now, in the pop-up
+    or with --gender, and then typed like every other value. The assertion
+    went stale the same day and stayed red until 11/25.
+
+    The guesser will not call "Kimble", which is the point: it returns blank
+    rather than flip a coin, and a blank never reaches a payroll record.
+    """
     from automations.apex_new_starts import values as V
     monkeypatch.setattr(V, "apex_values",
                         lambda c, hire, office_key="": {
@@ -1124,8 +1160,23 @@ def test_a_watched_run_fills_everything_else_and_names_the_one_box(monkeypatch):
     person = eco_run.Starter(name="Kimble Townsend")
     got = eco_run.plan([person], {"Kimble Townsend": _hire("Kimble Townsend")},
                        log=lambda *a: None, office_key="raf", watched=True)
-    assert len(got["ready"]) == 1
-    assert got["ready"][0][1]["_set_yourself"] == "Gender"
+    assert got["ready"] == []
+    why = got["blocked"][0]["why"]
+    assert "no gender" in why and "confirmed before the send" in why, why
+
+
+def test_a_confirmed_gender_lets_a_watched_run_through(monkeypatch):
+    """The other half: once the pop-up has an answer, nothing holds."""
+    from automations.apex_new_starts import values as V
+    monkeypatch.setattr(V, "apex_values",
+                        lambda c, hire, office_key="": {
+                            "dob": "1/1/2000", "address1": "a", "city": "b",
+                            "zip": "1", "rate": "10", "pay_state": "Texas",
+                            "tax_state": "Texas", "gender": "Male"})
+    person = eco_run.Starter(name="Kimble Townsend", gender="Male")
+    got = eco_run.plan([person], {"Kimble Townsend": _hire("Kimble Townsend")},
+                       log=lambda *a: None, office_key="raf", watched=True)
+    assert len(got["ready"]) == 1, got
 
 
 def test_a_watched_run_still_holds_on_anything_else(monkeypatch):

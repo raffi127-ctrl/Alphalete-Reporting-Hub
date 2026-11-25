@@ -177,26 +177,23 @@ def plan(people: List[Starter], hires: Dict[str, BID.NewHire],
         FROM_THE_OFFICE = ("rate", "pay_state", "tax_state")
         gaps = [lbl for lbl in PACKET + FROM_THE_OFFICE + ("gender",)
                 if not values.get(lbl)]
-        # A MISSING GENDER DOES NOT HOLD A WATCHED RUN. Gender is assumed
-        # from the first name (Megan, 2026-11-24: "remember that we're
-        # assuming gender based on name"), and `gender_suggest` deliberately
-        # returns blank rather than flip a coin on a name like Kimble. On an
-        # unattended run that blank still has to hold the person -- nobody is
-        # there to say. On a run somebody is WATCHING, holding the whole
-        # record for one dropdown is the wrong trade: everything else gets
-        # filled and that one box is named for them to set before they save,
-        # which is the same "suggest, admin accepts or changes" shape the
-        # board already uses.
-        if watched and gaps == ["gender"]:
-            # NOT "set it yourself in Apex" (Megan, 2026-11-24: "no, I
-            # shouldn't have to fill anything on apex"). The first cut left
-            # the Gender dropdown for the person to set on the form, which
-            # is the one thing this is supposed to spare them. Gender is
-            # confirmed BEFORE the fill now -- in the pop-up the send button
-            # raises, or with --gender on a one-person sitting -- and then
-            # it is TYPED like every other value. A blank one still holds,
-            # because the alternative is guessing onto a payroll record.
-            pass
+        # A BLANK GENDER HOLDS, WATCHED OR NOT. Gender is assumed from the
+        # first name (Megan, 2026-11-24: "remember that we're assuming gender
+        # based on name"), and `gender_suggest` deliberately returns blank
+        # rather than flip a coin on a name like Kimble.
+        #
+        # An earlier cut let a watched run through on a blank and left the
+        # Gender dropdown for the person to set on the form. Megan,
+        # 2026-11-24: "no, I shouldn't have to fill anything on apex" -- that
+        # is the one thing this is supposed to spare them. So gender is
+        # confirmed BEFORE the fill now, in the pop-up the Send button raises
+        # or with --gender on a one-person sitting, and then it is TYPED like
+        # every other value. A blank still holds, because the alternative is
+        # guessing onto a payroll record with no undo.
+        #
+        # `watched` therefore no longer relaxes anything here. It is still
+        # accepted because supervised.py passes it; it is a candidate for
+        # removal, not a switch that does something subtle.
         if gaps:
             # Named by WHERE THE ANSWER LIVES, because each sends somebody
             # somewhere different: the packet means Blue Ink, the enrolment
@@ -463,11 +460,25 @@ def _genders_for(people, log=print) -> Dict:
         return {}
     out, unsure = {}, []
     for p in people or []:
+        # A Starter CARRIES ONE `name`. It has no first_name/last_name, and
+        # reading those through getattr defaults meant every person fell
+        # through the `continue` below -- so the guesser answered "nobody",
+        # in silence, for everybody. Found 2026-11-25 on the first real
+        # preview of Raf's week: 12 names in, 0 guessed and 0 unsure, which
+        # is the giveaway. An empty unsure list next to an empty answer
+        # cannot both be true unless nothing was looked at. The test that
+        # covered this built its own person with those two attributes, so it
+        # passed on a shape production never had.
+        whole = str(getattr(p, "name", "") or "").strip()
         first = str(getattr(p, "first_name", "") or "").strip()
-        name = ("%s %s" % (first, getattr(p, "last_name", "") or "")).strip()
+        last = str(getattr(p, "last_name", "") or "").strip()
+        if whole and not (first or last):
+            bits = whole.split()
+            first, last = bits[0], " ".join(bits[1:])
+        name = ("%s %s" % (first, last)).strip() or whole
         if not name:
             continue
-        said = GS.suggest(first)
+        said = GS.suggest(first) if first else ""
         if said:
             out[name] = said
         else:
