@@ -376,7 +376,7 @@ HEALTH_EVERY_MINUTES = 15
 # characters of a row, and a raw tail filled that with attachment and Cloudflare
 # chatter -- on 10/22 the row cut off right at "Jorge Banos" and nobody could
 # tell whether he went through. These, newest last, short.
-_KEY_LINES = ("would not take orders", "next run starts fresh", "SENT to AI", "SENT via", "override-sent", "FLAG_NO_PHONE",
+_KEY_LINES = ("[batch]", "would not take orders", "next run starts fresh", "SENT to AI", "SENT via", "override-sent", "FLAG_NO_PHONE",
               "DID NOT STICK", "why not sent",
               "read by the Mac itself", "phone read OFF THE SCREEN",
               "resume phone", "resume read BLOCKED", "QUEUE at", "removed",
@@ -1252,29 +1252,7 @@ def _walk(page, live: bool, record: dict) -> dict:
         return {"reached": True, "office": seen, "rc": 2, "why": why}
     _point_walk_here(seen, record)
     _recheck_once_per_fix(OAT, seen)
-    # RESUME HELPER BATCH, TRIAL (Megan 2026-11-25, 24065 only): before the
-    # one-at-a-time walk, see batch_push.py. It leaves its own tab closed; the
-    # walk then re-opens One App at a time and re-checks the office.
     batch = {}
-    try:
-        from automations.icd_alerts import batch_push as BP
-        if BP.mode_for(seen):
-            BP.set_logger(_log)
-            batch = BP.run(page, seen, PROFILE_DIR, live_allowed=live)
-            try:
-                page.goto(AS_BASE, wait_until="domcontentloaded", timeout=45000)
-            except Exception:  # noqa: BLE001
-                pass
-            if not OAT.open_oat(page):
-                return {"reached": False, "batch": batch,
-                        "why": "could not re-open One App at a time after the batch"}
-            page.wait_for_timeout(1500)
-            ok, why = _pin_office(OAT.office_on_page(page), record)
-            if not ok:
-                return {"reached": True, "office": seen, "rc": 2, "batch": batch,
-                        "why": why}
-    except Exception as e:  # noqa: BLE001 -- the trial never costs the walk
-        _log("batch trial skipped: %s" % type(e).__name__)
     if live:
         # The Await text's interview times follow the clock (Carlos 10/28;
         # Megan: every office that pushes). Only offices with their windows on
@@ -1316,6 +1294,20 @@ def _walk(page, live: bool, record: dict) -> dict:
     rows = OAT._ACTIVITY_ROWS[before:] if live else []
     sent = sum(1 for r in rows if len(r) > 5
                and str(r[5]).startswith("sent"))
+    # RESUME HELPER BATCH, TRIAL (Megan 2026-11-25, Raf's 24065 only), AFTER
+    # the one-at-a-time walk: run first it left the page on AppStream's v2
+    # screens and the 10:25 run could not get back to One App at a time, so
+    # nothing was pushed or reported. Here a stuck page costs nothing -- the
+    # next run reconnects from the console. See batch_push.py.
+    try:
+        from automations.icd_alerts import batch_push as BP
+        if BP.mode_for(seen):
+            BP.set_logger(_log)
+            batch = BP.run(page, seen, PROFILE_DIR, live_allowed=live)
+            sent += int(batch.get("sent") or 0)
+    except Exception as e:  # noqa: BLE001 -- the trial never costs the walk
+        _log("batch trial skipped: %s" % type(e).__name__)
+        batch = {"error": type(e).__name__}
     return {"reached": True, "office": seen, "rc": rc, "sent": sent,
             "queue_start": walk.get("start"), "queue_end": walk.get("end"),
             "unconfirmed": int((walk.get("counts") or {}).get(
