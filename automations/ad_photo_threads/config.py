@@ -192,6 +192,12 @@ NO_AD_ANSWERS = {
     # rows 1637/1641) with Ad Title "?".
     "2026-11-06|trinity scott": "Other(NLR Indeed)",
     "2026-11-06|stephany martinez": "Other(NLR Indeed)",
+    # Jairo, Camila 11/25: Ad Title "-----" (Jessica, tab `Jairo Ruiz` rows
+    # 4644/4678/5087). "Indeed / Entry Level Sales Assistant (Immediate
+    # Hire)" has no city -> the office's one copy, the Doral thread.
+    "2026-11-09|mary garcia": "Entry Level Sales Assistant (Immediate Hire) ? Doral FL",
+    "2026-11-10|enza morrone": "Entry Level Sales Assistant (Immediate Hire) ? Doral FL",
+    "2026-11-19|ashley sanchez": "AT&T Sales Associate ? Miami FL",
 }
 # Eve 11/5: a person said this row is someone already on an ad thread under
 # another name: it only comes off the no-ad list, never posted twice.
