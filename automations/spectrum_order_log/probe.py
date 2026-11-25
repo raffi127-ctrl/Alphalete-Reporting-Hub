@@ -409,9 +409,98 @@ def bootstrap_main() -> int:
         return bootstrap_peek(page)
 
 
+# ---------------------------------------------------------------- --weeks
+# 11/25: the Order Log only shows the CURRENT Sale Week; Eve wants the last
+# 30 days (like the AT&T log). Find out (a) what the Sale Week filter is
+# (WK-PATH lines: every place in the page data naming it) and (b) whether a
+# URL filter (?Sale Week=a,b,c) widens the table (WK-TRY lines: weeks back).
+
+def _walk(obj, path, hits, depth=0):
+    if depth > 30 or len(hits) > 120:
+        return
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            _walk(v, f"{path}.{k}", hits, depth + 1)
+    elif isinstance(obj, list):
+        for i, v in enumerate(obj[:400]):
+            _walk(v, f"{path}[{i}]", hits, depth + 1)
+    elif isinstance(obj, str) and ("sale week" in obj.lower()
+                                   or "Sale_Week" in obj):
+        hits.append(f"{path} = {obj[:160]}")
+
+
+def _load_weeks(page, url: str):
+    bodies = []
+
+    def _grab(resp):
+        if "bootstrapSession" in resp.url:
+            try:
+                bodies.append(resp.text())
+            except Exception:  # noqa: BLE001
+                pass
+    page.context.on("response", _grab)
+    try:
+        page.goto("about:blank")
+        page.goto(url, wait_until="domcontentloaded")
+        viz = page.frame_locator('iframe[title="Data Visualization"]')
+        viz.locator('[data-tb-test-id="viz-viewer-toolbar-button-download"]'
+                    ).wait_for(state="visible", timeout=120_000)
+        page.wait_for_timeout(12_000)
+    finally:
+        page.context.remove_listener("response", _grab)
+    parts = [p for b in bodies for p in _split_bootstrap(b)]
+    for p in parts:
+        info = p.get("secondaryInfo")
+        if not info:
+            continue
+        try:
+            fields, rows = _tables_from_bootstrap(info)["Order Log Raw"]
+        except Exception:  # noqa: BLE001
+            continue
+        i = fields.index("Sale Week") if "Sale Week" in fields else None
+        weeks = sorted({r[i] for r in rows}) if i is not None else []
+        return parts, len(rows), weeks
+    return parts, -1, []
+
+
+def weeks_main() -> int:
+    import datetime as _dt
+    from urllib.parse import quote
+    from automations.shared.tableau_patchright import tableau_session
+    today = _dt.date.today()
+    sat = today + _dt.timedelta(days=(5 - today.weekday()) % 7)   # this Sale Week
+    sats = [sat - _dt.timedelta(weeks=k) for k in range(6)]
+    with tableau_session(verbose=True) as page:
+        parts, n, weeks = _load_weeks(page, ORDERLOG_URL)
+        print(f"WK-BASE: {n} rows, weeks {weeks}", flush=True)
+        hits: list = []
+        for i, p in enumerate(parts):
+            _walk(p, f"part{i}", hits)
+        for h in hits:
+            print("WK-PATH: " + h, flush=True)
+        tries = {
+            "mdy": ",".join(f"{d.month}/{d.day}/{d.year}" for d in sats),
+            "iso": ",".join(f"{d:%Y-%m-%d}" for d in sats),
+            "mdy0": ",".join(f"{d:%m/%d/%Y}" for d in sats),
+        }
+        for tag, val in tries.items():
+            url = f"{ORDERLOG_URL}?Sale%20Week={quote(val, safe=',')}"
+            try:
+                _, n, weeks = _load_weeks(page, url)
+                print(f"WK-TRY {tag}: {n} rows, weeks {weeks}  ({url[-90:]})",
+                      flush=True)
+            except Exception as e:  # noqa: BLE001
+                print(f"WK-TRY {tag}: ERR {type(e).__name__}: {str(e)[:200]}",
+                      flush=True)
+    return 0
+
+
 if __name__ == "__main__":
     # Default = read the order table out of the page's bootstrap reply.
-    # --export = 11/25 EXPORT OPTIONS check; --all = 11/24 sweep.
+    # --export = 11/25 EXPORT OPTIONS check; --all = 11/24 sweep;
+    # --weeks = can the Sale Week filter go wider than this week?
+    if "--weeks" in sys.argv:
+        sys.exit(weeks_main())
     if "--all" in sys.argv:
         sys.exit(main())
     sys.exit(export_main() if "--export" in sys.argv else bootstrap_main())
