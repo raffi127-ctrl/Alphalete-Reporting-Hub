@@ -46,7 +46,7 @@ from pathlib import Path
 
 from automations.shared.names import base_name, norm_name
 
-LIVE = False                     # flip only on Eve's go (shadow until then)
+LIVE = True                      # Raf OK 11/24 on the Roderick Evans test (Eve 11/25)
 ACCOUNT = "raf"
 OFFICE_ID = 2556                 # 'Alphalete Marketing, Inc.'
 OWNER_NAMES = {"rafael hidalgo", "raf hidalgo"}
