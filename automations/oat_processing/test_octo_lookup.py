@@ -524,7 +524,8 @@ class OctoAsksForARestart(unittest.TestCase):
              mock.patch.object(OL, "profiles", return_value=profs), \
              mock.patch.object(OL, "wanted", return_value=([], {"snapshot": None, "listed": 0, "skipped_recent": 0})), \
              mock.patch.object(OL, "ensure_octo", side_effect=lambda log=None: (calls.append("ensure") or (True, "", False))), \
-             mock.patch.object(OL, "quit_octo", side_effect=lambda log=None: calls.append("quit")), \
+             mock.patch.object(OL, "quit_octo", side_effect=lambda log=None, notes=None: calls.append("quit")), \
+             mock.patch.object(OL, "octo_update_status", return_value={}), \
              mock.patch.object(OL, "octo_active", return_value=[]), \
              mock.patch.object(OL, "octo_start", side_effect=lambda uuid, log=None: next(starts)), \
              mock.patch.object(OL, "octo_stop"), \
@@ -535,6 +536,45 @@ class OctoAsksForARestart(unittest.TestCase):
             s = OL.run("11580", scheduled=True)
         self.assertEqual(calls, ["ensure", "quit", "ensure"], "quit + reopen exactly once")
         self.assertEqual(s["billing"], {"P1": "ok", "P2": "ok"})
+
+
+class TheQuitTheAgentIsAllowed(unittest.TestCase):
+    def test_a_normal_quit_then_the_signals_each_given_time(self):
+        from automations.icd_alerts import resume_push as RP
+        notes = []
+        with mock.patch.object(OL, "IS_MAC", True), mock.patch.object(OL, "IS_WINDOWS", False), \
+             mock.patch.object(OL.subprocess, "run"), \
+             mock.patch.object(OL, "_octo_main_pids", return_value=[41]), \
+             mock.patch.object(OL, "_octo_pids", return_value=[41, 42]), \
+             mock.patch.object(RP, "_running_app") as term, \
+             mock.patch.object(OL.os, "kill") as kill, \
+             mock.patch.object(OL, "_api_silent", side_effect=[False, True]):
+            self.assertTrue(OL.quit_octo(log=lambda m: None, notes=notes))
+        term.assert_called_once_with(41, b"terminate")
+        self.assertEqual([c[0][1] for c in kill.call_args_list], [OL.signal.SIGTERM] * 2)
+        self.assertEqual(notes, ["quit asked (1 main pid)", "SIGTERM to 2 pid(s)", "api silent after SIGTERM"])
+
+    def test_an_update_still_wanted_after_the_reopen_is_asked_for_through_the_api(self):
+        statuses = iter([{"current": "3.2.4", "latest": "3.2.7", "update_required": True},
+                         {"current": "3.2.4", "latest": "3.2.7", "update_required": True},
+                         {"current": "3.2.7", "latest": "3.2.7", "update_required": False}])
+        posted = []
+        summary = {"ran": {}}
+        with mock.patch.object(OL, "octo_update_status", side_effect=lambda: next(statuses)), \
+             mock.patch.object(OL, "quit_octo", return_value=True), \
+             mock.patch.object(OL, "ensure_octo", return_value=(True, "", True)), \
+             mock.patch.object(OL, "_api_path", side_effect=lambda path, payload=None, timeout=30: posted.append(path) or {"ok": True}), \
+             mock.patch.object(OL, "_api_silent", return_value=True), \
+             mock.patch.object(OL, "octo_start", return_value="ws://p1"), \
+             mock.patch.object(OL, "last_start_error", return_value=""), \
+             mock.patch.object(OL.time, "sleep"):
+            self.assertEqual(OL._restart_octo_for_update("a" * 32, summary, log=lambda m: None), "ws://p1")
+        self.assertEqual(posted, ["update"])
+        self.assertEqual(summary["ran"]["restart"],
+                         ["before: 3.2.4 -> 3.2.7, update required", "reopen: launched here",
+                          "after: 3.2.4 -> 3.2.7, update required", 'POST /api/update: {"ok": true}',
+                          "octo went down for the update", "back: launched here",
+                          "then: 3.2.7 -> 3.2.7", "start after: ok"])
 
 
 class ItShips(unittest.TestCase):

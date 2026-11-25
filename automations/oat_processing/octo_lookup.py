@@ -81,6 +81,7 @@ import json
 import os
 import platform
 import re
+import signal
 import subprocess
 import sys
 import time
@@ -410,7 +411,11 @@ def parse_phone(text) -> str:
 
 # --- Octo Browser's local API -------------------------------------------------
 def _api(path: str, payload: Optional[Dict] = None, timeout: int = 30):
-    url = "http://127.0.0.1:%d/api/profiles/%s" % (API_PORT, path)
+    return _api_path("profiles/" + path, payload, timeout)
+
+
+def _api_path(path: str, payload: Optional[Dict] = None, timeout: int = 30):
+    url = "http://127.0.0.1:%d/api/%s" % (API_PORT, path)
     data = json.dumps(payload).encode("utf-8") if payload is not None else None
     req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"},
                                  method="POST" if data is not None else "GET")
@@ -445,6 +450,34 @@ def octo_answers() -> bool:
         return isinstance(_api("active", timeout=5), list)
     except Exception:  # noqa: BLE001
         return False
+
+
+def octo_update_status() -> Dict:
+    """GET /api/update: {"current": "3.2.4", "latest": "3.2.7", "update_required": true}
+    (read off a laptop's Octo 2026-11-25) -- the state behind "Update is
+    available. Please restart application.", or {} when nothing answers."""
+    try:
+        d = _api_path("update", timeout=10)
+        return d if isinstance(d, dict) and "current" in d else {}
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def _upd_brief(st: Dict) -> str:
+    if not st:
+        return "no answer"
+    return "%s -> %s%s" % (st.get("current"), st.get("latest"),
+                           ", update required" if st.get("update_required") else "")
+
+
+def _api_silent(seconds: float) -> bool:
+    """True once Octo's local API stops answering (within `seconds`)."""
+    deadline = time.time() + seconds
+    while time.time() < deadline:
+        if not octo_answers():
+            return True
+        time.sleep(2)
+    return not octo_answers()
 
 
 def octo_active() -> List[Dict]:
@@ -574,6 +607,16 @@ def _octo_pids():
         return []
 
 
+def _octo_main_pids():
+    """The app's own process (not its helpers): what NSRunningApplication quits."""
+    try:
+        out = subprocess.run(["pgrep", "-x", "Octo Browser"],
+                             capture_output=True, text=True).stdout
+        return [int(x) for x in out.split()]
+    except Exception:  # noqa: BLE001
+        return []
+
+
 def _focus_guard(walled=None):
     """Keep Octo off the owner's screen for the whole run, or None.
 
@@ -607,17 +650,95 @@ def _focus_guard(walled=None):
         return None
 
 
-def quit_octo(log=_log) -> None:
+def quit_octo(log=_log, notes: Optional[List[str]] = None) -> bool:
+    """Quit Octo Browser and wait for its local API to go silent; True once it
+    has. A NORMAL quit first -- NSRunningApplication's terminate, the Dock's
+    Quit, the path on which an app installs an update it has downloaded --
+    because the agent is a background process and macOS does not let one send
+    Apple events: on 2026-11-25 the osascript quit here did nothing, so the
+    'restart' for Octo's update was over in 36 seconds and changed nothing.
+    Then SIGTERM, then SIGKILL, each given time to take. Steps land in `notes`."""
+    notes = notes if notes is not None else []
     try:
         if IS_MAC:
+            mains = _octo_main_pids()
+            for pid in mains:
+                try:
+                    from automations.icd_alerts import resume_push as RP
+                    RP._running_app(pid, b"terminate")
+                except Exception:  # noqa: BLE001
+                    pass
             subprocess.run(["osascript", "-e", 'tell application "Octo Browser" to quit'],
                            timeout=30, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            notes.append("quit asked (%d main pid%s)" % (len(mains), "" if len(mains) == 1 else "s"))
         elif IS_WINDOWS:
             subprocess.run(["taskkill", "/IM", "Octo Browser.exe", "/F"], timeout=30,
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        log("closed Octo Browser (it was not open before this run)")
-    except Exception:  # noqa: BLE001
-        pass
+            notes.append("taskkill")
+    except Exception as e:  # noqa: BLE001
+        notes.append("quit call failed: %s" % type(e).__name__)
+    if _api_silent(25):
+        notes.append("api silent after the quit")
+        log("closed Octo Browser")
+        return True
+    if IS_MAC:
+        for signame, sig in (("SIGTERM", signal.SIGTERM), ("SIGKILL", signal.SIGKILL)):
+            pids = _octo_pids()
+            for pid in pids:
+                try:
+                    os.kill(pid, sig)
+                except OSError:
+                    pass
+            notes.append("%s to %d pid(s)" % (signame, len(pids)))
+            if _api_silent(20):
+                notes.append("api silent after %s" % signame)
+                log("closed Octo Browser (%s)" % signame)
+                return True
+    notes.append("api still answering")
+    log("Octo Browser did not quit")
+    return False
+
+
+def _restart_octo_for_update(uuid: str, summary: Dict, log=_log) -> Optional[str]:
+    """2026-11-24: Octo downloaded an update mid-run and from then on refused
+    every profile with "Update is available. Please restart application." --
+    for three runs. The first fix (release .15) quit it with osascript, which
+    the agent may not do, and the run went on as if nothing had happened. Now:
+    a normal quit (quit_octo), reopen, and if Octo comes back still wanting
+    the update, ask for it through Octo's own API (POST /api/update, the
+    Restart button's road), wait for it to go down and come back, then try
+    the profile again. Every step lands in the tally (ran.restart), so the
+    next odd morning says what happened here."""
+    notes: List[str] = ["before: " + _upd_brief(octo_update_status())]
+    summary.setdefault("ran", {})["restart"] = notes
+    quit_octo(log, notes=notes)
+    time.sleep(8)
+    ok, why, launched = ensure_octo(log)
+    notes.append("reopen: " + ("launched here" if launched else "api still answering" if ok else why))
+    if not ok:
+        log("    Octo did not come back: %s" % why)
+        return None
+    time.sleep(10)
+    st = octo_update_status()
+    notes.append("after: " + _upd_brief(st))
+    if st.get("update_required"):
+        try:
+            d = _api_path("update", {}, timeout=120)
+        except Exception as e:  # noqa: BLE001 -- the app going down mid-request
+            d = {"error": type(e).__name__}
+        notes.append("POST /api/update: " + json.dumps(d, ensure_ascii=False)[:120])
+        if _api_silent(120):
+            notes.append("octo went down for the update")
+            time.sleep(10)
+            ok, why, launched = ensure_octo(log)
+            notes.append("back: " + ("launched here" if launched else "by itself" if ok else why))
+            if not ok:
+                return None
+            time.sleep(10)
+        notes.append("then: " + _upd_brief(octo_update_status()))
+    ws = octo_start(uuid, log)
+    notes.append("start after: " + ("ok" if ws else last_start_error()))
+    return ws
 
 
 # --- the Indeed page ----------------------------------------------------------
@@ -1209,14 +1330,7 @@ def run(office_id, *, names: Optional[List[str]] = None, account: str = "",
                     # once per run: quit, reopen, try the profile again.
                     restarted = True
                     log("    Octo asks to be restarted for an update -- restarting it")
-                    quit_octo(log)
-                    time.sleep(8)
-                    ok2, why2, _ = ensure_octo(log)
-                    if ok2:
-                        time.sleep(10)
-                        ws = octo_start(pr["uuid"], log)
-                    else:
-                        log("    Octo did not come back: %s" % why2)
+                    ws = _restart_octo_for_update(pr["uuid"], summary, log)
                 started_here = ws is not None
                 if ws:
                     time.sleep(12)

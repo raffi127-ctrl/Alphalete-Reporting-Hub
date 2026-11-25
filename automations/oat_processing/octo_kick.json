@@ -1,7 +1,7 @@
 {
-  "id": "2026-11-25-try-now",
-  "asked": "2026-11-25T16:25:00",
+  "id": "2026-11-25-try-now-2",
+  "asked": "2026-11-25T17:45:00",
   "lookups": true,
   "billing": true,
-  "note": "Carlos 2026-11-25 4:15pm: try now -- Octo refused every account since Mon 5am (update wall). To ask for another run: new id, asked = now (office local time), push with a release bump."
+  "note": "Carlos 2026-11-25 4:15pm: try now -- second pass, with the quit Octo actually honours and POST /api/update. To ask for another run: new id, asked = now (office local time), push with a release bump."
 }
