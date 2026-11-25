@@ -44,6 +44,32 @@ class CrosstabToCsv(unittest.TestCase):
         from automations.att_order_log import sheet
         self.assertEqual({r[-2] for r in rows[1:]}, set(sheet.MEASURES))
 
+    def test_bare_cr_in_owner_round_trips_through_load_rows(self):
+        """11/25: an owner cell with a bare \\r (no comma to force quoting) went
+        out unquoted, split every row, and load_rows counted each sale 4x."""
+        import os
+        import tempfile
+
+        from automations.att_order_log import clean
+        grid = [HDR,
+                ["ALEXANDER GODOY\r [jvc joint ventures inc]", "Kayla", "MIKE",
+                 "11/25/2026", "SPE-1", "WIRELESS", "1", "1", "0", "0"],
+                ["", "", "", "", "SPE-2", "WIRELESS", "1", "1", "0", "0"],
+                ["ADRIANA A\r\n [ace, inc.]", "Abi", "DONNA", "11/25/2026",
+                 "SPE-3", "WIRELESS", "1", "1", "0", "0"]]
+        fd, p = tempfile.mkstemp(suffix=".csv")
+        os.close(fd)
+        try:
+            with open(p, "wb") as f:
+                f.write(R._crosstab_to_long_csv(grid))
+            lines = clean.load_rows(p)
+        finally:
+            os.remove(p)
+        self.assertEqual(len(lines), 3)
+        self.assertEqual({l["spe.Name"] for l in lines}, {"SPE-1", "SPE-2", "SPE-3"})
+        self.assertEqual(lines[1]["Owner & Office"],
+                         "ALEXANDER GODOY\n [jvc joint ventures inc]")
+
     def test_empty_window_keeps_the_callers_empty_wording(self):
         with self.assertRaises(RuntimeError) as cm:
             R._crosstab_to_long_csv([HDR])

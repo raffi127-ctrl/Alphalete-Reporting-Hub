@@ -216,7 +216,14 @@ def _crosstab_to_long_csv(grid) -> bytes:
     rows = []
     prev = None
     for r in grid[1:]:
-        r = [str(c if c is not None else "") for c in r]
+        # Owner & Office carries a line break before "[company]", and in the
+        # crosstab it can be a bare \r. csv.writer (lineterminator "\n") only
+        # quotes \n, so a \r cell went out UNQUOTED and every reader split the
+        # row in two — groups of 1 made clean._unpivot count each sale 4x
+        # (2026-11-25 dry run: 119,600 "lines" for a 27k-row month). Normalise
+        # every break to \n so the writer quotes it.
+        r = [str(c if c is not None else "").replace("\r\n", "\n").replace("\r", "\n")
+             for c in r]
         r += [""] * (len(hdr) - len(r))
         if not any(c.strip() for c in r):
             continue
