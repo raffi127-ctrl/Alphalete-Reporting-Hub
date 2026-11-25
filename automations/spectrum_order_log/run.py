@@ -263,8 +263,10 @@ def main(argv=None) -> int:
 
     if args.sample:
         from automations.shared.slack_metrics_post import dm_user_with_file
+        # as_bot=False: the Lucys sign with the 'Lucy Reporting' USER token;
+        # the bot-app token only exists on Lucy 2 (failed on Lucy 4 11/25).
         res = dm_user_with_file(
-            path, user=EVE_SLACK_ID, file_name=name,
+            path, user=EVE_SLACK_ID, file_name=name, as_bot=False,
             comment=(f"SAMPLE — {comment} ({len(recs)} lines). This is what "
                      f"will post in the Metrics thread once you say go."))
         print(f"  ✓ sample DM'd to Eve: {res}")
