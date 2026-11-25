@@ -62,10 +62,11 @@ def _save_state(state: dict) -> None:
 
 
 def render(week_date: str, people: list, needs_confirm: list, updated_str: str,
-           unbacked: list | None = None) -> str:
+           unbacked: list | None = None, unsure: list | None = None) -> str:
     """people: list of (name, status). needs_confirm: list of names (report back,
     no PASS email). unbacked: [(name, status)] whose row claims an outcome no
-    Sterling email backs. Returns the reply body."""
+    Sterling email backs. unsure: [(name, why)] whose result email could not be
+    attributed to the background check (which_order). Returns the reply body."""
     lines = [f"*BG Status — New Starts (week of {week_date})*",
              f"*{len(people)} scheduled to start*",
              f"_updated {updated_str} · auto by Lucy_"]
@@ -114,6 +115,19 @@ def render(week_date: str, people: list, needs_confirm: list, updated_str: str,
                           "no Sterling email says so")
     section(unbacked_label, [n for n, _ in rows],
             suffixes={n: f"marked {st}" for n, st in rows})
+    # A RESULT CAME BACK AND WE WOULD NOT SWEAR WHAT IT WAS. Sterling sends the
+    # same email for a background check and a drug screen (Raf, 2026-11-25:
+    # "it doesn't actually say drug tests on it"), so where somebody has both
+    # in flight the result is held rather than written to col K.
+    #
+    # IT HAS TO BE SAID HERE, not only in the run's log. Holding the event
+    # means `match.decide` sees no email for that person, and a person sitting
+    # at a non-terminal status with no email produces no flag at all -- their
+    # row would simply stop moving, with nothing anywhere to say why.
+    unsure_rows = unsure or []
+    section("❓ Result back — is it the background check or the drug test?",
+            [n for n, _ in unsure_rows],
+            suffixes={n: why for n, why in unsure_rows})
     return "\n".join(lines)
 
 

@@ -24,7 +24,7 @@ import sys
 
 from automations.recruiting_report import fill
 from automations.bg_check_sync import (parse, match, email_source,
-                                      fail_alert,
+                                      fail_alert, which_order,
                                        name_gate, ov_name_sync, slack_post)
 from automations.shared import name_case
 from automations.shared.workbooks import ALL_IN_ONE_RAF
@@ -350,7 +350,7 @@ def process_week(sh, monday, events, *, dry_run, do_post, repost, now,
                  do_slack=True, rolling_vals=None, claimed_ids=None,
                  ov_targets=None, pending_asks=None, names_from=None,
                  refresh_asks=False, far_unbacked=None, sanity_problems=None,
-                 fail_decisions=None):
+                 fail_decisions=None, unsure=None):
     """Update col K on both tabs for ONE week, and (if do_slack) post/edit its
     Slack thread. Returns a short summary dict. Empty weeks are skipped."""
     week = _fmt_week(monday)
@@ -502,8 +502,13 @@ def process_week(sh, monday, events, *, dry_run, do_post, repost, now,
         # [flags] lines carry, put where somebody will see it.
         unbacked = [(name, next((st for n, st in slack_people if n == name), ""))
                     for name, why in flags if "no result email matched" in why]
+        # Only the people on THIS week's roster: the held list is global, and
+        # naming somebody from another cohort in this thread sends the office
+        # looking for a row that is not in it.
+        here = {n for n, _ in slack_people}
+        mine = [(n, why) for n, why in (unsure or []) if n in here]
         body = slack_post.render(week, slack_people, needs_confirm, updated_str,
-                                 unbacked=unbacked)
+                                 unbacked=unbacked, unsure=mine)
         slack_post.post_or_update(week, body, dry_run=not do_post,
                                   repost=repost, today=now.date().isoformat(),
                                   people=slack_people)
@@ -617,6 +622,38 @@ def _run(args) -> None:
     else:
         events = email_source.fetch_events(since_days=args.since_days)
 
+    # WHICH ORDER DID EACH RESULT COME BACK FROM? The email does not say
+    # (Raf, Loom 2026-11-25: "it doesn't actually say drug tests on it"), so
+    # a drug screen and a background check arrive looking identical. Anything
+    # we cannot attribute to a BACKGROUND CHECK is held here and never
+    # reaches the sheet -- see which_order.py for why the rule keys off the
+    # drug invite, and why an office that sends none is unaffected.
+    unsure = []
+    try:
+        from automations.office_admin import sheets as _OAS
+        invites = which_order.invites_from_requests(
+            _OAS.read_requests(_OAS.requests_tab()))
+    except Exception as e:  # noqa: BLE001
+        # NOT FATAL, AND NOT SILENT. With no invite record every event
+        # attributes to the background check, which is exactly what this run
+        # did before drug tests existed -- so the sync keeps working. But if
+        # an office HAS started sending drug tests, that is the window where
+        # one could be filed as a background check, so it is said out loud.
+        print("[which-order] could not read Admin Requests (%s: %s) -- every "
+              "result is being treated as a background check, which is wrong "
+              "for any office now sending drug tests."
+              % (type(e).__name__, str(e)[:120]))
+        invites = []
+    if invites:
+        kept, held = which_order.split(events, invites)
+        if held:
+            unsure = which_order.held_names(held, invites)
+            print("[which-order] %d result email(s) held -- not a background "
+                  "check, or not provably one:" % len(held))
+            for name, why in unsure:
+                print("  %s: %s" % (name, why))
+        events = kept
+
     # Who on the WHOLE checklist owns which result — the week-blind pairing the
     # name gate would otherwise make is the one bug this prevents.
     try:
@@ -666,7 +703,7 @@ def _run(args) -> None:
                      ov_targets=ov_targets, pending_asks=pending_asks,
                      names_from=names_from, refresh_asks=args.refresh_asks,
                      far_unbacked=far_unbacked, sanity_problems=sanity_problems,
-                     fail_decisions=fail_decisions)
+                     fail_decisions=fail_decisions, unsure=unsure)
 
     # ONE fail text per run for the whole current-week window (in-flight week +
     # next Monday's cohort), each person named once. Sending per week instead
