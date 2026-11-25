@@ -30,6 +30,24 @@ people to the office's ECO computer, which signs in to Sterling and bulk-uploads
 Open the ApplicantStream calendar (today) → **🛡️ Send background checks** (bottom right) →
 check the ticks → **Send**. The panel shows the ICD's Lucy ECO machine's answer (it checks every ~3 min).
 
+## The 6pm BOB-call card (built, switched OFF)
+After the office's own 6pm, if anyone from today's second interviews is still
+unmarked and nobody has pressed "I've made today's BOB calls", a cream card
+appears top-right with the names, a link to today's second interviews, and the
+same press the admin page has. ✕ hides it until tomorrow; pressing it answers
+it everywhere (one row per office per day).
+
+It does **not** read the calendar — `bob_nudge.py` does that on a Lucy and
+publishes what it read, and the card asks the relay for it (`bob_nudge` /
+`bob_done`). Two readers of one calendar would be two answers to one question.
+
+It is **off**, like the rest of the onboarding chain: `ARMED = false` at the
+top of `bob.js`. To see it on one computer without arming it, open
+`chrome://extensions` → Lucy BG✔️ Send → **service worker** and run
+`chrome.storage.local.set({bobPreview: true})`, then reload the
+ApplicantStream tab. Needs the relay redeployed with the `bob_nudge` /
+`bob_done` calls, and a snapshot from `bob_nudge --publish`.
+
 ## Safety
 - Picks the office by the account number on the calendar ("Office ID: 11280" / "#11280");
   a calendar whose number isn't on any of the admin's offices = nothing sent.

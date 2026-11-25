@@ -15524,7 +15524,7 @@
   },
   "bob_nudge_dry": {
    "on_scheduler": false,
-   "_off_scheduler_note": "DRY RUN for the 6pm BOB-call nudge (Megan 2026-11-18: 'a daily nudge / alert if BOB calls aren't made by 6pm local time'). `lucy rerun bob_nudge_dry` prints who it would DM and the exact message, and sends nothing -- bob_nudge.py only DMs on --send. Read this before installing the agent: the nudge names real people to real owners. No machine pin: any Lucy with the AppStream login can read it. weekdays [] so the batch never auto-runs it.",
+   "_off_scheduler_note": "DRY RUN for the 6pm BOB-call nudge (Megan 2026-11-18: 'a daily nudge / alert if BOB calls aren't made by 6pm local time'). `lucy rerun bob_nudge_dry` prints who it would DM and the exact message, and sends nothing -- bob_nudge.py only DMs on --send. Read this before installing the agent: the nudge names real people to real owners. No machine pin: any Lucy with the AppStream login can read it. weekdays [] so the batch never auto-runs it. The POP-UP half of the nudge (the card the Chrome extension draws on ApplicantStream, extension/office-admin/bob.js) reads a snapshot this run does NOT write -- a dry run writes no Sheet at all. `bob_nudge --publish` writes the snapshot and still DMs nobody, which is how that card gets previewed; the card itself is off until ARMED is flipped in bob.js.",
    "display_name": "BOB call nudge (dry run)",
    "source_type": "browser",
    "data_sources": [],

@@ -85,3 +85,44 @@
 #lucy-oa-panel .lucy-oa-tabs { display: flex; gap: 6px; margin-bottom: 10px; }
 #lucy-oa-panel .lucy-oa-tabs button { flex: 1; padding: 8px; border: 1px solid #c9d6e4; border-radius: 7px; background: #fff; color: #123E66; font-weight: 600; cursor: pointer; }
 #lucy-oa-panel .lucy-oa-tabs button.on { background: #123E66; color: #fff; border-color: #123E66; }
+
+/* ------------------------------------- the 6pm BOB-call nudge (bob.js) --
+   ITS OWN LOOK, ON PURPOSE. The blue panel is a thing the admin opened; this
+   is a thing that arrived while they were doing something else, so it reads
+   as the one piece of the screen that is not part of ApplicantStream --
+   cream and gold, top right, away from the blue button at the bottom. */
+#lucy-bob-card {
+  position: fixed; right: 22px; top: 22px; z-index: 2147483002; width: 360px;
+  background: #FFFDF5; color: #2b2410; border: 2px solid #C9A227;
+  border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,.28);
+  font: 14px/1.45 -apple-system, Segoe UI, Arial, sans-serif;
+}
+#lucy-bob-card, #lucy-bob-card * { float: none !important; box-sizing: border-box; text-align: left; }
+#lucy-bob-card .lucy-bob-head {
+  display: flex; justify-content: space-between; align-items: center; gap: 8px;
+  padding: 10px 14px; background: #C9A227; color: #2b2410;
+  border-radius: 10px 10px 0 0; font-size: 16px;
+}
+#lucy-bob-card .lucy-bob-x {
+  background: none; border: 0; color: #2b2410; font-size: 15px; cursor: pointer;
+  opacity: .8; padding: 0 2px;
+}
+#lucy-bob-card .lucy-bob-x:hover { opacity: 1; }
+#lucy-bob-card .lucy-bob-body { padding: 10px 14px 14px; }
+#lucy-bob-card p { margin: 0 0 8px; }
+#lucy-bob-card .lucy-bob-why { font-weight: 600; color: #7a3b00; }
+#lucy-bob-card .lucy-bob-names {
+  list-style: disc outside !important; display: block;
+  margin: 6px 0 10px 20px; padding: 0; font-size: 14px;
+}
+#lucy-bob-card .lucy-bob-names li { display: list-item !important; width: auto !important; padding: 2px 0; }
+#lucy-bob-card .lucy-bob-link { color: #1F6FB2; font-weight: 600; }
+#lucy-bob-card .lucy-bob-go {
+  width: 100%; margin-top: 4px; padding: 12px; border: 0; border-radius: 8px;
+  background: #1e6b34; color: #fff; font-weight: 700; font-size: 15px; cursor: pointer;
+}
+#lucy-bob-card .lucy-bob-go:hover { background: #17552a; }
+#lucy-bob-card .lucy-bob-go:disabled { background: #9db9a6; cursor: default; }
+#lucy-bob-card .lucy-bob-note { margin-top: 8px; font-size: 12px; color: #6b5c33; }
+#lucy-bob-card .lucy-bob-ok { background: #E6F4EA; color: #1e6b34; border-radius: 6px; padding: 8px 10px; margin-top: 8px; }
+#lucy-bob-card .lucy-bob-err { background: #FDECEA; color: #8a1c13; border-radius: 6px; padding: 8px 10px; margin-top: 8px; }

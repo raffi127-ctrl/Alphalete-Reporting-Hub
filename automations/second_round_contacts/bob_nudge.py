@@ -29,13 +29,22 @@ indistinguishable from an office with nothing on today -- and acting on it
 would DM every office every night about calls they did make. So an empty read
 nudges NOBODY, loudly.
 
-WHAT "POPS UP ON APP STREAM" MEANS. Not a banner inside ApplicantStream --
-their own escalations are the Aptel team's AI/SMS triage and there is no
-general alert channel in that product. It is the ApplicantStream page where
-the call gets made, opened in front of whoever is at the machine. That is the
-one allowed exception to Lucy running invisibly (visible_windows.PERSON: "a
-window is allowed only when a PERSON has to do something in it, and then only
-while that person is at the screen"), so it is listed there with that reason.
+WHAT "POPS UP ON APP STREAM" MEANS. Not a banner ApplicantStream itself puts
+up -- their own escalations are the Aptel team's AI/SMS triage and there is no
+general alert channel in that product. It means two things we do ourselves:
+
+  * ON THE OFFICE'S OWN MACHINE, the ApplicantStream page where the call gets
+    made, opened in front of whoever is at it. That is the one allowed
+    exception to Lucy running invisibly (visible_windows.PERSON: "a window is
+    allowed only when a PERSON has to do something in it, and then only while
+    that person is at the screen"), so it is listed there with that reason.
+  * ON THE ADMIN'S OWN SCREEN, a card the "Lucy BG✔️ Send" Chrome extension
+    draws on the ApplicantStream page they are already on
+    (extension/office-admin/bob.js), after their office's local 6pm, with the
+    names and the "I've made today's BOB calls" button on it. The extension
+    does NOT read the calendar for this: it asks the relay for what THIS read
+    found (see publish_owed), because two readers of one calendar is two
+    answers to one question and the day they disagree both get ignored.
 
 AND THE SECOND HALF OF THAT RULE IS ENFORCED, not assumed. "While that person
 is at the screen" is a real condition, and 6pm is not inside everybody's day:
@@ -357,19 +366,103 @@ def open_second_rounds(app, log=_log) -> bool:
         return False
 
 
+def publish_owed(office, people: List[dict], *, today: dt.date,
+                 utc_now: Optional[dt.datetime] = None,
+                 hour: int = NUDGE_HOUR, log=_log) -> bool:
+    """Hand what we just read to the pop-up half of the nudge.
+
+    THE POP-UP MUST NOT WORK THIS OUT FOR ITSELF. Megan asked for both halves
+    on 2026-11-18 -- "should pop up on app stream and send DM in slack" -- and
+    the half that pops up is a Chrome extension on the admin's own
+    ApplicantStream page. It could read the calendar in JavaScript, and then
+    there would be two answers to one question: which rows turned up, which
+    four marks count as answered, which of the calendar's same-headed tables
+    is the right one. The day the two disagree, both get ignored. So this read
+    is the only read, and the extension asks the relay for its result
+    (`office_admin.bob_owed`).
+
+    PUBLISHED ON EVERY TICK THAT WRITES, INCLUDING AN EMPTY ONE. An empty list
+    means "the calendar was read and everybody is marked", which is the answer
+    that stops the pop-up. A read that FAILED never gets here -- run() has
+    already skipped it -- so a missing snapshot means nobody looked, and that
+    nudges nobody. Same stop as the DM's. (A plain --dry-run writes no Sheet at
+    all and so publishes nothing; `--publish` is the opt-in.)
+
+    `nudge` is whether this office has reached ITS OWN 6pm, decided here off
+    its own timezone. The relay checks nothing but how old the snapshot is:
+    the one place that knows an office's clock stays the one place that
+    decides when it is time.
+
+    Never raises into the caller. A snapshot we could not write costs a
+    pop-up; it must not cost the DM.
+    """
+    key = str(getattr(office, "key", "") or "").strip()
+    if not key:
+        # No ECO office (pre-ECO, or no office record at all) means no office
+        # key, and nothing for an extension to ask about either -- that admin
+        # page and that pop-up are both ECO-office things. Nothing to say.
+        return False
+    try:
+        from automations.office_admin import bob_owed as OWED
+        OWED.publish(key, [p.get("name") for p in people],
+                     nudge=is_nudge_time(office, utc_now, hour),
+                     day=today, by="bob_nudge")
+        return True
+    except Exception as exc:                                # noqa: BLE001
+        log("    (couldn't publish %s's snapshot for the ApplicantStream "
+            "pop-up: %s: %s -- the DM is unaffected)"
+            % (key, type(exc).__name__, str(exc)[:90]))
+        return False
+
+
+def pressed_today(office, today: dt.date, log=_log) -> bool:
+    """Has this office already said today's BOB calls are made?
+
+    THE PRESS IS SOMEBODY'S WORD AND IT IS THE POINT OF THE PRESS. An office
+    that has pressed "I've made today's BOB calls" (office_admin.bob_calls,
+    the button on the admin page and now in the pop-up) and gets nudged
+    anyway learns in one evening that the nudge is not reading anything --
+    which is how both halves end up dismissed.
+
+    UNREADABLE READS AS NOT PRESSED. `bob_calls.done` already fails closed for
+    its own reason (it gates the daily update), and closed is the right way
+    here too: the two failures are "somebody who was done got a DM" and
+    "somebody is removed at 7pm with no warning", and they are not equals.
+    """
+    key = str(getattr(office, "key", "") or "").strip()
+    if not key:
+        return False
+    try:
+        from automations.office_admin import bob_calls as BOB
+        return bool(BOB.done(key, today))
+    except Exception as exc:                                # noqa: BLE001
+        log("    (couldn't check whether %s has pressed \"calls are done\" "
+            "(%s) -- nudging as though they have not)"
+            % (key, type(exc).__name__))
+        return False
+
+
 def run(owners: List[R.Owner], *, send: bool, show_window: bool = True,
         today: Optional[dt.date] = None,
         utc_now: Optional[dt.datetime] = None,
-        hour: int = NUDGE_HOUR) -> int:
+        hour: int = NUDGE_HOUR, publish: Optional[bool] = None) -> int:
     """Nudge every owner who has outstanding BOB calls. Returns how many.
 
     Reads ApplicantStream ONCE for all of them, the way the audit does -- the
     session is the slow part and five owners is five page sets, not five
     logins.
+
+    `publish` is the snapshot the ApplicantStream pop-up reads, and it follows
+    `send` unless it is asked for: a dry run writes NOTHING to a Sheet, which
+    is the house rule for anything still being built. `--publish` on its own
+    is how the pop-up gets previewed before the chain is signed off -- the
+    snapshot is written, and still not one DM is sent.
     """
     from automations.applicant_tracker.applicantstream import session
 
     from automations.icd_alerts import post
+
+    publish = send if publish is None else publish
 
     today = today or dt.date.today()
     already = _sent_today(today)
@@ -452,15 +545,37 @@ def run(owners: List[R.Owner], *, send: bool, show_window: bool = True,
                                     unticked))
 
             people = outstanding(rows)
+            office = target_for(o)
+
+            # THE POP-UP HALF ASKS FOR THIS, so it is written on every tick
+            # and before any of the gates below -- including the empty answer,
+            # which is what stops the pop-up appearing. See publish_owed.
+            if publish:
+                publish_owed(office, people, today=today, utc_now=utc_now,
+                             hour=hour)
+            elif getattr(office, "key", None):
+                _log("    --dry-run: would publish %d outstanding for %s "
+                     "(pop-up: %s)"
+                     % (len(people), office.key,
+                        "yes" if is_nudge_time(office, utc_now, hour)
+                        else "not yet 6pm there"))
+
             if not people:
                 _log("    all BOB calls marked." )
+                continue
+
+            # THEY HAVE ALREADY SAID THEY ARE DONE. Both halves of the nudge
+            # respect the press; it is what the press is for. See
+            # pressed_today.
+            if pressed_today(office, today):
+                _log("    %d still unmarked on the calendar, but %s has "
+                     "pressed \"I've made today's BOB calls\" -- nudging "
+                     "nobody." % (len(people), office.key))
                 continue
 
             if send and o.owner in already:
                 _log("    %d outstanding, already nudged today." % len(people))
                 continue
-
-            office = target_for(o)
 
             if office is not None and not is_nudge_time(office, utc_now,
                                                         hour):
@@ -545,6 +660,9 @@ def main(argv=None) -> int:
                     help="only this roster row (name as on the tab)")
     ap.add_argument("--hour", type=int, default=NUDGE_HOUR,
                     help="override the office-local hour (for a test run)")
+    ap.add_argument("--publish", action="store_true",
+                    help="write the snapshot the ApplicantStream pop-up "
+                         "reads, even on a dry run. Still DMs nobody.")
     args = ap.parse_args(argv)
 
     # The hour is passed down rather than rebound on the module: a global
@@ -566,7 +684,7 @@ def main(argv=None) -> int:
     print("=== BOB call nudge: %d owner(s)%s ==="
           % (len(owners), "" if args.send else " [DRY RUN]"))
     n = run(owners, send=args.send, show_window=not args.no_window,
-            hour=hour)
+            hour=hour, publish=True if args.publish else None)
     print("%d owner(s) %s." % (n, "nudged" if args.send else "would be nudged"))
     return 0
 
