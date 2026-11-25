@@ -29,9 +29,13 @@ reason is required. ARC refuses past dates, so the date is the day of the run,
 never the board's date. Afterwards the agent is read back through the API: the
 office end date must have moved off 5000-12-31, or it doesn't count.
 
-SHADOW MODE until Eve says go (LIVE = False). Nothing gets clicked. Eve and Raf
-get one group DM from Lucy with each person it WOULD terminate, once per person
-(Eve 11/23: Raf sees the test too). Login trouble still goes to Eve alone.
+THE GATE (Eve 11/25). A termination in ARC can't be undone: there is no
+reactivate button, only a brand-new onboarding (Add Campaign -> documents ->
+Credico approval). So nobody is terminated until Eve says so. Lucy DMs Eve
+alone, one message per batch, listing who she would terminate; Eve forwards it
+to Raf, and when it's right she reacts ✅ on Lucy's message. The next run
+(4am / 8pm) terminates exactly the people in that message. No ✅, nothing
+happens. Only Eve's ✅ counts. Login trouble also goes to Eve alone.
 
 Login: Raf's Credico session (`--account raf`). It's a 14-day token with no
 refresh, so when it dies this step reports '⏳ retrying' and does nothing until
@@ -46,7 +50,6 @@ from pathlib import Path
 
 from automations.shared.names import base_name, norm_name
 
-LIVE = False                     # off again: Eve 11/25 wants an approval gate first
 ACCOUNT = "raf"
 OFFICE_ID = 2556                 # 'Alphalete Marketing, Inc.'
 OWNER_NAMES = {"rafael hidalgo", "raf hidalgo"}
@@ -57,9 +60,11 @@ OWNER_NAMES = {"rafael hidalgo", "raf hidalgo"}
 OFFBOARD_REASON = "No Sales"
 NOTE = "Terminated on the Alphalete Sales Board ({day}). Auto - Lucy."
 OPEN_END = "5000-12-31"
-RAF_USER_ID = "U045Z8N0ZQC"      # resources/owner-slack-ids.md
 API = "https://arcapi.credico.com/"
 SEEN = Path(__file__).resolve().parents[2] / "output" / "terminated_reps" / "arc_shadow_seen.json"
+GATE = SEEN.with_name("arc_gate.json")   # {"asks": [{channel, ts, keys}], "told": [key]}
+APPROVE_EMOJI = {"white_check_mark", "heavy_check_mark"}
+EVE_ID = "U088E2KJEV8"           # only her ✅ opens the gate
 
 _FETCH = """async p=>{const a=JSON.parse(localStorage.getItem('CredicoArcAuth')||'{}');
 const r=await fetch('%s'+p,{headers:{authorization:'bearer '+(a.access_token||'')}});
@@ -189,10 +194,48 @@ def _terminate(page, agent: dict, rep: Rep, today: dt.date) -> str:
     return "done" if not is_active(back, today) else "clicked Terminate but ARC still shows them active"
 
 
-def _dm_eve_and_raf(text: str) -> bool:
-    """One group DM (Lucy + Eve + Raf). False when this machine isn't Lucy."""
+def gate_key(name: str, term_date: dt.date) -> str:
+    return f"{norm_name(name)}|{term_date}"
+
+
+def approved(msg: dict | None) -> bool:
+    """True when Eve reacted ✅ on the message. Anyone else's ✅ doesn't count."""
+    for r in (msg or {}).get("reactions") or []:
+        if r.get("name") in APPROVE_EMOJI and EVE_ID in (r.get("users") or []):
+            return True
+    return False
+
+
+def render_ask(results: list) -> str:
+    lines = [f"• {r.name} (terminated {r.term_date:%m/%d}) → "
+             + (f"terminate {r.agent}" if r.status == "would" else f"❌ won't touch: {r.status}")
+             for r in results]
+    asks = any(r.status == "would" for r in results)
+    return ("ARC terminations waiting for approval. Lucy will terminate these in ARC, "
+            f"reason '{OFFBOARD_REASON}', dated the day she runs:\n" + "\n".join(lines)
+            + ("\n\nCheck with Raf, then react ✅ to THIS message and Lucy does it on "
+               "her next run (4am / 8pm). No ✅ = nothing happens. A termination in ARC "
+               "can't be undone." if asks else ""))
+
+
+def load_gate() -> dict:
+    try:
+        g = json.loads(GATE.read_text(encoding="utf-8"))
+    except Exception:                                           # noqa: BLE001
+        g = {}
+    g.setdefault("asks", [])
+    g.setdefault("told", [])
+    return g
+
+
+def _save_gate(g: dict) -> None:
+    GATE.parent.mkdir(parents=True, exist_ok=True)
+    GATE.write_text(json.dumps(g, indent=1), encoding="utf-8")
+
+
+def _lucy_client():
+    """Lucy's Slack client, or None when this machine posts as someone else."""
     from automations.shared import slack_metrics_post as smp
-    from automations.sales_board_fixer.run import EVE_USER_ID
     client = smp._client()
     try:
         who = client.auth_test().get("user", "")
@@ -200,37 +243,59 @@ def _dm_eve_and_raf(text: str) -> bool:
         who = ""
     if who and "lucy" not in who.lower():
         print("! esta máquina postea como %s, no Lucy -- no mando el DM" % who)
-        return False
-    ch = client.conversations_open(users=f"{EVE_USER_ID},{RAF_USER_ID}")["channel"]["id"]
-    client.chat_postMessage(channel=ch, text=text)
-    return True
+        return None
+    return client
 
 
-def _shadow_dm(results: list, logfn) -> None:
-    """Shadow mode: tell Eve + Raf once per person what LIVE would have done."""
-    try:
-        seen = set(json.loads(SEEN.read_text(encoding="utf-8")))
-    except Exception:                                           # noqa: BLE001
-        seen = set()
-    new = [r for r in results if r.status and f"{norm_name(r.name)}|{r.term_date}" not in seen]
+def approved_keys(gate: dict, today: dt.date, logfn) -> set:
+    """Keys from every ask Eve ticked ✅. A read failure keeps the gate shut."""
+    ok: set = set()
+    if not gate["asks"]:
+        return ok
+    client = _lucy_client()
+    if client is None:
+        return ok
+    for ask in gate["asks"]:
+        try:
+            msgs = client.conversations_history(
+                channel=ask["channel"], latest=ask["ts"], oldest=ask["ts"],
+                inclusive=True, limit=1).get("messages") or []
+        except Exception as e:                                  # noqa: BLE001
+            logfn(f"  ⚠ ARC: couldn't read Eve's ✅ ({type(e).__name__})")
+            _once_a_day(today, "ARC: Lucy couldn't read the ✅ on her ARC approval "
+                        "message, so nobody was terminated in ARC. Nothing is lost: "
+                        "she tries again on the next run.", logfn, flag="arc_gate_read")
+            return set()
+        if msgs and approved(msgs[0]):
+            ok.update(ask.get("keys") or [])
+    return ok
+
+
+def _ask_eve(results: list, gate: dict, logfn) -> None:
+    """One new DM to Eve with whoever she hasn't been told about yet."""
+    told = set(gate["told"])
+    new = [r for r in results if r.status and r.status != "done"
+           and gate_key(r.name, r.term_date) not in told]
     if not new:
         return
-    lines = [f"• {r.name} (terminated {r.term_date:%m/%d}) → "
-             + (f"WOULD terminate {r.agent}" if r.status == "would" else f"❌ {r.status}")
-             for r in new]
-    text = ("ARC test run (nothing was clicked). This is what Lucy would do "
-            f"in ARC, reason '{OFFBOARD_REASON}', dated today:\n" + "\n".join(lines))
     try:
-        if _dm_eve_and_raf(text):
-            SEEN.parent.mkdir(parents=True, exist_ok=True)
-            SEEN.write_text(json.dumps(sorted(seen | {f"{norm_name(r.name)}|{r.term_date}"
-                                                      for r in new})), encoding="utf-8")
+        client = _lucy_client()
+        if client is None:
+            return
+        ch = client.conversations_open(users=EVE_ID)["channel"]["id"]
+        resp = client.chat_postMessage(channel=ch, text=render_ask(new))
     except Exception as e:                                      # noqa: BLE001
-        logfn(f"  ⚠ couldn't DM Eve + Raf the ARC test list: {type(e).__name__}")
+        logfn(f"  ⚠ couldn't DM Eve the ARC approval list: {type(e).__name__}")
+        return
+    keys = [gate_key(r.name, r.term_date) for r in new if r.status == "would"]
+    if keys:
+        gate["asks"].append({"channel": ch, "ts": resp["ts"], "keys": keys})
+    gate["told"] = sorted(told | {gate_key(r.name, r.term_date) for r in new})
+    _save_gate(gate)
 
 
-def _once_a_day(today: dt.date, text: str, logfn) -> None:
-    flag = SEEN.with_name(f"arc_login_dm_{today.isoformat()}.flag")
+def _once_a_day(today: dt.date, text: str, logfn, flag: str = "arc_login_dm") -> None:
+    flag = SEEN.with_name(f"{flag}_{today.isoformat()}.flag")
     if flag.exists():
         return
     try:
@@ -249,7 +314,6 @@ def run(today: dt.date, *, apply: bool, emails: dict | None = None,
     """Never raises. `emails` = {folded name: OwnerVille email} from step two."""
     from automations.terminated_reps.board import to_date, week_sunday
     from automations.terminated_reps.tracker import TAB, TRACKER_SHEET_ID, _open
-    live = apply and LIVE
     sunday = week_sunday(today)
     try:
         _, ws = _open(TRACKER_SHEET_ID, TAB)
@@ -263,8 +327,10 @@ def run(today: dt.date, *, apply: bool, emails: dict | None = None,
         r.email = (emails or {}).get(norm_name(r.name), "")
     if not reps:
         return []
+    gate = load_gate() if apply else {"asks": [], "told": []}
+    ok = approved_keys(gate, today, logfn) if apply else set()
     logfn(f"  ARC: checking {len(reps)} terminated rep(s) "
-          f"({'LIVE' if live else 'test only — nothing clicked'})")
+          f"({len(ok)} approved by Eve)")
     out: list[ArcResult] = []
     try:
         from automations.credico.session import credico_session
@@ -277,7 +343,7 @@ def run(today: dt.date, *, apply: bool, emails: dict | None = None,
                         out.append(ArcResult(r.name, r.term_date, why))
                     continue
                 res = ArcResult(r.name, r.term_date, "would", label(a))
-                if live:
+                if apply and gate_key(r.name, r.term_date) in ok:
                     try:
                         res.status = _terminate(page, a, r, today)
                     except Exception as e:                      # noqa: BLE001
@@ -297,6 +363,6 @@ def run(today: dt.date, *, apply: bool, emails: dict | None = None,
         return []
     for r in out:
         logfn(f"     ARC {r.name:28} {r.status} {r.agent}")
-    if not live and apply:
-        _shadow_dm(out, logfn)
+    if apply:
+        _ask_eve(out, gate, logfn)
     return out

@@ -93,5 +93,89 @@ class StatusLine(unittest.TestCase):
                          " · ✅ OwnerVille · ✅ Slack · ✅ ARC")
 
 
+class Gate(unittest.TestCase):
+    """Eve 11/25: nothing is terminated in ARC without her ✅."""
+
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+        self._dir = tempfile.TemporaryDirectory()
+        self._old = (arc.GATE, arc.SEEN, arc._lucy_client)
+        arc.GATE = Path(self._dir.name) / "arc_gate.json"
+        arc.SEEN = Path(self._dir.name) / "arc_shadow_seen.json"
+        self.client = _FakeSlack()
+        arc._lucy_client = lambda: self.client
+
+    def tearDown(self):
+        arc.GATE, arc.SEEN, arc._lucy_client = self._old
+        self._dir.cleanup()
+
+    def _res(self, status="would"):
+        return arc.ArcResult("Roderick Evans", dt.date(2026, 11, 24), status,
+                             "Roderick Evans <r@x.com> #514758")
+
+    def test_only_eves_tick_counts(self):
+        self.assertTrue(arc.approved({"reactions": [
+            {"name": "white_check_mark", "users": [arc.EVE_ID]}]}))
+        self.assertFalse(arc.approved({"reactions": [
+            {"name": "white_check_mark", "users": ["U045Z8N0ZQC"]}]}))
+        self.assertFalse(arc.approved({"reactions": [
+            {"name": "eyes", "users": [arc.EVE_ID]}]}))
+        self.assertFalse(arc.approved(None))
+
+    def test_ask_goes_to_eve_once_and_says_how_to_approve(self):
+        g = arc.load_gate()
+        arc._ask_eve([self._res()], g, print)
+        arc._ask_eve([self._res()], arc.load_gate(), print)
+        self.assertEqual(len(self.client.posted), 1)
+        users, text = self.client.posted[0]
+        self.assertEqual(users, arc.EVE_ID)
+        self.assertIn("Roderick Evans", text)
+        self.assertIn("react ✅", text)
+
+    def test_no_tick_no_approval_then_tick_approves(self):
+        arc._ask_eve([self._res()], arc.load_gate(), print)
+        key = arc.gate_key("Roderick Evans", dt.date(2026, 11, 24))
+        self.assertEqual(arc.approved_keys(arc.load_gate(), dt.date(2026, 11, 25), print), set())
+        self.client.reactions = [{"name": "white_check_mark", "users": [arc.EVE_ID]}]
+        self.assertEqual(arc.approved_keys(arc.load_gate(), dt.date(2026, 11, 25), print), {key})
+
+    def test_read_failure_keeps_gate_shut(self):
+        arc._ask_eve([self._res()], arc.load_gate(), print)
+        self.client.reactions = [{"name": "white_check_mark", "users": [arc.EVE_ID]}]
+        self.client.fail_read = True
+        old = arc._once_a_day
+        arc._once_a_day = lambda *a, **k: None
+        try:
+            self.assertEqual(arc.approved_keys(arc.load_gate(), dt.date(2026, 11, 25), print), set())
+        finally:
+            arc._once_a_day = old
+
+    def test_problem_rows_are_told_but_never_approvable(self):
+        arc._ask_eve([self._res("2 active ARC agents match (a, b)")], arc.load_gate(), print)
+        self.assertEqual(len(self.client.posted), 1)
+        self.assertNotIn("react ✅", self.client.posted[0][1])
+        self.assertEqual(arc.load_gate()["asks"], [])
+
+
+class _FakeSlack:
+    def __init__(self):
+        self.posted, self.reactions, self.fail_read = [], [], False
+        self._users = None
+
+    def conversations_open(self, users):
+        self._users = users
+        return {"channel": {"id": "D1"}}
+
+    def chat_postMessage(self, channel, text):
+        self.posted.append((self._users, text))
+        return {"ts": "111.222"}
+
+    def conversations_history(self, **kw):
+        if self.fail_read:
+            raise RuntimeError("missing_scope")
+        return {"messages": [{"ts": kw["latest"], "reactions": self.reactions}]}
+
+
 if __name__ == "__main__":
     unittest.main()

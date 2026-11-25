@@ -255,8 +255,8 @@ def main(argv=None) -> int:
         except Exception as e:                                  # noqa: BLE001
             print(f"  ⚠ auto-deactivation didn't run: {type(e).__name__}: {e}")
 
-    # 2c — terminate in ARC / Credico too (Raf, 2026-11-20). Shadow until
-    # arc_terminate.LIVE is flipped: it only DMs Eve what it would do. Its
+    # 2c — terminate in ARC / Credico too (Raf, 2026-11-20). Only after
+    # Eve's ✅ gate decides who (see arc_terminate's docstring). Its
     # results ride on the same status line as OwnerVille / Slack.
     if not args.sandbox and not args.no_arc:
         try:
@@ -265,7 +265,7 @@ def main(argv=None) -> int:
             from automations.terminated_reps.auto_deactivate import Outcome
             emails = {norm_name(o.name): o.email for o in (outcomes or []) if o.email}
             arc = arc_terminate.run(today, apply=not dry, emails=emails)
-            if arc_terminate.LIVE and arc:
+            if arc:
                 if outcomes is None:
                     outcomes = []
                 by = {norm_name(o.name): o for o in outcomes}
