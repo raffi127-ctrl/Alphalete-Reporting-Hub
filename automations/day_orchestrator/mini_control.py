@@ -5656,6 +5656,13 @@ _CRED_FILES = {
     # the first scheduled run (2026-10-01) died exit 2 on NoReadToken.
     "slack-read-token":
         lambda: Path.home() / ".config" / "recruiting-report" / "slack-read-token",
+    # raffi127's FULL-Drive token for Raf's commission sheets
+    # (commission_sheet.drive_auth.DRIVE_TOKEN_PATH, Maud 2026-11-24). The
+    # Wednesday drop + 30-min rep-tab refresh run on Lucy 1, but the consent
+    # needs a browser sign-in, so it's minted on Maud's Mac and pushed here.
+    # Its own file -- never oauth-token.json (that would re-scope every report).
+    "drive-full-token":
+        lambda: Path.home() / ".config" / "recruiting-report" / "drive-full-token.json",
     # Leader phone overlay for the New-Start texts (personal numbers — never
     # in git; the repo is PUBLIC). Filled on the laptop from
     # alphaletereception@'s Google Contacts (new_start_followup.contacts_google
