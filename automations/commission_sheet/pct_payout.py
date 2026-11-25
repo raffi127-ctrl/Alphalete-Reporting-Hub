@@ -21,8 +21,9 @@ DD Detail crosstab this builds an .xlsx with:
 
 THE % RULES (Maud 2026-11-24, "How You Get Paid" grid). First match wins:
 
-  1  NEW START HELD — in the New Starts box of the board 3 boards back (DD
-     week Sunday - 14 days). % blank, purple. Their sales are carried onto
+  1  NEW START HELD — in the New Starts box of the DD week's own board
+     (DD WE 11.22 -> 'Sales Board WE 11.22'; was 2 boards earlier until
+     Maud 11/24). Paid the next week. % blank, purple. Their sales are carried onto
      NEXT week's sheet (pass the previous week's sheet as carry_from).
   2  SPECIAL DEAL — SPECIAL_PCT (Willie Henderson, Chloe Johnson, Bas El
      Hassan, Thomas Crenshaw, Algemar Kennel 70%; Amjad Malhas 85%), every week.
@@ -117,6 +118,12 @@ LEVEL_PCT = {
 }
 #: Levels that lose leadership pay (drop to LOST_LEADERSHIP_PCT).
 LEADER_LEVELS = {"level 1", "level 2", "level 3"}
+#: "How You Get Paid" grid: a Level 1-3 rep's % goes up with their apps that
+#: week (board "Apps", DD week's board): 5+ 45%, 10+ 50%, 15+ 55%; under 5
+#: = their level % (40%). Not Entry Level / Mastermind (Maud 2026-11-24).
+LEADER_APP_TIERS = ((15, 0.55), (10, 0.50), (5, 0.45))
+#: T / X in every day's Apps cell on the DD week's board = not paid at all.
+OFF_MARKS = {"t", "x"}
 LOST_LEADERSHIP_PCT = 0.35
 #: Maud's standing deals, every week. Matched on the name with any
 #: (nickname) dropped, so the board's 'Amjad (MJ) Malhas' matches.
@@ -156,7 +163,7 @@ PENDING_BANNER = "Pending / Disconnect / Cancel"
 PENDING_COLS = ["Order Date", "Customer Name", "Package", "Product Type",
                 "Status", "Install Date", "Activation Date"]
 BOARD_COUNT = 2                      # "the last 2 boards"
-NEW_START_LAG_DAYS = 14              # box 3 boards back = DD Sunday - 14
+NEW_START_LAG_DAYS = 0               # New Starts box on the DD week's own board (Maud 11/24: was -14)
 
 KIND_HELD, KIND_EXTRA, KIND_MISSING = "held", "extra", "missing"
 NOTE_NOT_ON = "Not on the last 2 boards"
@@ -199,8 +206,12 @@ PAYOUT_HEADERS = ["Rep Name", "Commission %", "Revenue Brought In", "Total Payou
                   "Customer Bonus", "Training Bonus", "Other", "Extra Bonus",
                   "Final Pay", "NPA", "Clawback"]
 #: Total Payout (D) = MAX(H, I) + J..N. Final Pay (Q) = D + Other + Extra Bonus
-#: + NPA - Clawback. Other / NPA / Clawback come from the Extra Payouts tab;
+#: (NPA / Clawback NOT included — Maud 2026-11-24). Other / NPA / Clawback
+#: come from the Extra Payouts tab;
 #: Training Bonus (N) and Extra Bonus (P) are typed straight in (yellow).
+#: Hidden column T: what the build / board re-check last put in B and F, so a
+#: re-check only overwrites cells nobody has typed over (Maud 2026-11-24).
+AUTO_COL, AUTO_HEADER = 20, "auto (don't edit)"
 INPUT_COLS = (2, 14, 16)              # B Commission %, N Training Bonus, P Extra Bonus
 FINAL_COL = 17
 FINAL_FILL = PatternFill("solid", fgColor="E7E6E6")
@@ -236,11 +247,19 @@ NAME_ROW_FONT = ("FFFFFF", 14)
 #: details that apply), one blank row, then the sales header.
 
 
+def _extra_row(e):
+    """'Clawback - Movie': the reason right beside the type (Maud 11/24)."""
+    typ, amt, note = e
+    return (f"{typ} - {note}" if note else typ,
+            -abs(amt) if typ == "Clawback" else amt, "")
+
+
 def top_spec(rep, show, cb, extras):
     """The rep tab's top block as [(A, B, C)] rows, back to back.
     show = {payout column: bool}; cb = [(label, amount)] customer bonuses;
     extras = [(type, amount, note)] from Extra Payouts, one row each
-    (Clawback shown negative, as it comes off Final Pay)."""
+    (Clawback shown negative). Order: ... Total Payout, Other, Extra Bonus,
+    Final Pay, then NPA and Clawback (not part of Final Pay)."""
     look = f"'{TAB_PAYOUT}'!"
     rows = [("Rep", rep, "")]
     for label, col, _fmt in REP_DETAILS:
@@ -255,12 +274,11 @@ def top_spec(rep, show, cb, extras):
             rows.append((label, f'=IFERROR(IF({idx}=TRUE,IF({why}="","Lost leadership pay",{why}),""),"")', ""))
         else:
             rows.append((label, f'=IFERROR({idx},"")', ""))
-        if col == REP_EXTRA_AFTER:
-            order = {t: i for i, t in enumerate(EXTRA_TYPES)}
-            for typ, amt, note in sorted(extras, key=lambda e: order.get(e[0], 9)):
-                # "Clawback - Movie": the reason right beside the type (Maud 11/24)
-                rows.append((f"{typ} - {note}" if note else typ,
-                             -abs(amt) if typ == "Clawback" else amt, ""))
+        if col == REP_EXTRA_AFTER:                # Other: part of Final Pay
+            rows += [_extra_row(e) for e in extras if e[0] == "Other"]
+    # NPA / Clawback are NOT in Final Pay (Maud 11/24) -> listed after it
+    for typ in ("NPA", "Clawback"):
+        rows += [_extra_row(e) for e in extras if e[0] == typ]
     return rows
 
 
@@ -385,10 +403,12 @@ class Board:
         self.in_box = set()    # key: in a New Starts box on the last 2 boards
         self.linkedin = {}     # key -> tab
         self.late = {}         # key -> reason   (DD week's board)
-        self.held = set()      # key: New Starts box 3 boards back
+        self.held = set()      # key: New Starts box on the DD week's board
         self.gas = {}          # key -> (board text, tab)  newest of the last 2 boards
         self.guarantee = {}    # key -> (amount, tab)  newest of the last 2 boards
         self.names = {}        # key -> name as the board spells it
+        self.apps = {}         # key -> apps that week (DD week's board "Apps")
+        self.off = {}          # key -> why: T / X every day of the DD week
         self.tabs = []         # titles read, for the log
         self.held_tab = None
 
@@ -501,8 +521,28 @@ def read_board(dd_sunday, run_date=None):
         grid = _grid(sh, title)
         lay = BD.find_layout(grid)
         sat = dd_sunday - dt.timedelta(days=1)
+        hdr = grid[lay.header_row - 1] if lay.header_row else []
+        app_cols = [c for _wd, c1, c2 in lay.day_blocks for c in range(c1, c2 + 1)
+                    if c - 1 < len(hdr) and BD._norm(hdr[c - 1]) == "apps"]
+        rc = {c for _wd, c1, c2 in lay.day_blocks for c in range(c1, c2 + 1)
+              if c - 1 < len(hdr) and BD._norm(hdr[c - 1]) == "roll call"}
         for r in lay.roster_rows:
             key = _name_key(BD._cell(grid, r, lay.name_col))
+            if key and app_cols:
+                days = [str(BD._cell(grid, r, c) or "").strip().lower() for c in app_cols]
+                b.apps[key] = int(sum(money(d) for d in days if d not in OFF_MARKS))
+                # a day counts as worked if its Apps isn't T / X and anything
+                # (apps, knocks, talk-to's…) is filled in for it
+                worked, offs = 0, set()
+                for (_wd, c1, c2), d in zip(lay.day_blocks, days):
+                    if d in OFF_MARKS:
+                        offs.add(d.upper())
+                    elif any(str(BD._cell(grid, r, c) or "").strip()
+                             for c in range(c1, c2 + 1) if c not in rc):
+                        worked += 1
+                if offs and not worked:
+                    kinds = "/".join(sorted(offs, reverse=True))
+                    b.off[key] = f"{kinds} all week WE {_md(dd_sunday)} — not paid"
             marks = _late_marks(BD, grid, lay, r) if key else []
             if 5 in marks:
                 b.late[key] = f"Late Sat {sat.month}/{sat.day}"
@@ -511,7 +551,7 @@ def read_board(dd_sunday, run_date=None):
     else:
         print(f"!! no board tab for WE {_md(dd_sunday)} — lateness not checked")
 
-    # new starts held: the New Starts box 3 boards back
+    # new starts held: the New Starts box on the DD week's own board
     title = by_date.get(dd_sunday - dt.timedelta(days=NEW_START_LAG_DAYS))
     if title:
         b.held_tab = title
@@ -520,7 +560,7 @@ def read_board(dd_sunday, run_date=None):
         b.held = {_name_key(BD._cell(grid, r, lay.box_name_col))
                   for r in _box_rows(BD, grid, lay)}
     else:
-        print("!! no board tab 3 boards back — no new starts held")
+        print("!! no board tab for the DD week — no new starts held")
     return b
 
 
@@ -586,6 +626,8 @@ def rule_for(rep, board):
 
     kind: 'held' | 'missing' | 'leader' | 'set'."""
     key = _name_key(rep)
+    if key in board.off:                         # T / X all week: nothing paid
+        return None, KIND_MISSING, board.off[key], "", None
     if rep in NO_COMMISSION or key in {_name_key(n) for n in NO_COMMISSION}:
         return 0.0, "set", "Base pay + bonus (no commission)", "", None
     if key in board.held and key not in board.guarantee:
@@ -602,6 +644,10 @@ def rule_for(rep, board):
             return None, KIND_MISSING, f"{level.title()} — no % for this level", "", None
         pct = LEVEL_PCT[level]
         if level in LEADER_LEVELS:
+            if key in board.apps:                # not on the DD week's roster -> level %
+                n = board.apps[key]
+                pct = next((p for need, p in LEADER_APP_TIERS if n >= need), pct)
+                note += f" · {n} app{'s' if n != 1 else ''}"
             return pct, "leader", note, board.late.get(key, ""), pct
         return pct, "set", note, "", None
     if key in board.in_box:
@@ -847,6 +893,29 @@ def dd_sunday(raw, ix):
     return week + dt.timedelta(days=(6 - week.weekday()) % 7)
 
 
+def _b_value(kind, pct, lvl, i, paid):
+    """What the build puts in Commission % (B) on payout row i."""
+    if paid and kind == "leader":
+        return f"=IF(F{i}=TRUE,{LOST_LEADERSHIP_PCT},{lvl})"
+    return pct if pct is not None else ""
+
+
+def _auto_json(b, f):
+    import json
+    return json.dumps({"b": b, "f": f})
+
+
+def _same_cell(cur, want):
+    if want in (None, ""):
+        return cur in (None, "")
+    if isinstance(want, (int, float)) and not isinstance(want, bool):
+        try:
+            return abs(float(cur) - want) < 1e-9
+        except (TypeError, ValueError):
+            return False
+    return str(cur) == str(want)
+
+
 def is_sunday_internet(rec):
     d = _date(rec["Sale Date"])
     return bool(d and d.weekday() == 6 and NEW_INTERNET.match(str(rec["Product"]).strip()))
@@ -1002,16 +1071,14 @@ def main(src, out, use_board=True, carry_from=None, run_date=None,
             pct, kind, note, lost, lvl = None, KIND_EXTRA, NOTE_EXTRA, "", None
         else:
             pct, kind, note, lost, lvl = rule_for(name, board)
-        g_amt = board.guarantee.get(key, (None, ""))[0] if name not in extras else None
-        base = base_by_key.get(key) if name not in extras else None
-        bonus = bonus_by_key.get(key) if name not in extras else None
+        off = key in board.off                    # T / X all week: nothing at all
+        pay = name not in extras and not off
+        g_amt = board.guarantee.get(key, (None, ""))[0] if pay else None
+        base = base_by_key.get(key) if pay else None
+        bonus = bonus_by_key.get(key) if pay else None
         if g_amt:
             note += " · Guarantee"
-        if bonus:
-            note += f" · Bonus {bonus[1]}"
-        gas = gas_for(name, board, apps) if name not in extras else None
-        if gas:
-            note += " · Gas bonus"
+        gas = gas_for(name, board, apps) if pay else None
         if lost:
             note += f" · {lost}"
         wr.cell(i, 1, name)
@@ -1032,16 +1099,16 @@ def main(src, out, use_board=True, carry_from=None, run_date=None,
                           f'+N(J{i})+N(K{i})+N(L{i})+N(M{i})+N(N{i}))').number_format = MONEY
         wr.cell(i, 5, note)
         wr.cell(i, 6, bool(lost) if leader else None)   # bool -> checkbox
+        if name not in extras and kind != KIND_HELD:
+            wr.cell(i, AUTO_COL, _auto_json(_b_value(kind, pct, lvl, i, paid),
+                                            bool(lost) if leader else None))
         wr.cell(i, 7, f'=SUMIFS({J},{A},A{i},{K},"*{SUNDAY_NOTE}*")'
                       f'-SUMIFS({J},{A},A{i},{K},"*{SUNDAY_NOTE}*{SPLIT}*")').number_format = MONEY
         if key not in no_comm:
             wr.cell(i, 8, f'=IF(B{i}="","",(C{i}-G{i})*B{i}'
                           f'+G{i}*MAX(B{i},{SUNDAY_INTERNET_PCT}))').number_format = MONEY
-        cb = cust_bonus.get(key, []) if name not in extras else []
+        cb = cust_bonus.get(key, []) if pay else []
         cb_amt = round(sum(a for _l, a in cb), 2) or None
-        if cb_amt:
-            note += " · Customer bonus"
-            wr.cell(i, 5, note)
         for col, v in ((9, g_amt), (10, base), (11, bonus[0] if bonus else None),
                        (12, gas), (13, cb_amt)):
             if v is not None:
@@ -1051,11 +1118,12 @@ def main(src, out, use_board=True, carry_from=None, run_date=None,
             wr.cell(i, col, f'=SUMIFS({X}$C:$C,{X}$A:$A,$A{i},{X}$B:$B,"{typ}")'
                     ).number_format = MONEY
         wr.cell(i, 16).number_format = MONEY          # Extra Bonus: typed in
-        wr.cell(i, 17, f'=IF(AND(D{i}="",O{i}=0,N(P{i})=0,R{i}=0,S{i}=0),"",'
-                       f'N(D{i})+O{i}+N(P{i})+R{i}-ABS(S{i}))').number_format = MONEY
+        # Final Pay leaves NPA / Clawback out (Maud 2026-11-24)
+        wr.cell(i, 17, f'=IF(AND(D{i}="",O{i}=0,N(P{i})=0),"",'
+                       f'N(D{i})+O{i}+N(P{i}))').number_format = MONEY
         results[name] = (pct if not lost else lpct, kind, note, lost, g_amt, base,
                          bonus[0] if bonus else None, gas, cb)
-        if name not in extras and kind != KIND_HELD and not note.startswith(NOTE_NOT_ON):
+        if pay and kind != KIND_HELD and not note.startswith(NOTE_NOT_ON):
             tabbed.append(name)
     n = len(reps) + len(extras) + 1
     t = n + 1
@@ -1064,12 +1132,15 @@ def main(src, out, use_board=True, carry_from=None, run_date=None,
         c = wr[f"{col}{t}"]
         c.value = f"=SUM({col}2:{col}{n})"
         c.number_format, c.font = MONEY, Font(bold=True)
+    wr.cell(1, AUTO_COL, AUTO_HEADER)
+    wr.column_dimensions[get_column_letter(AUTO_COL)].hidden = True
     wr["U1"] = ("Yellow % can be typed over; each rep's tab follows. Level 1-3 "
                 "reps have a Lost Leadership Pay box: ticked = Entry Level 35% "
                 "(the reason is in Level / Rule), untick to pay their level %. Total Payout = "
                 "higher of Commission or Guarantee, + Base Pay + Bonus + Gas Bonus + Customer "
-                "Bonus + Training Bonus. Final Pay = Total Payout + Other + Extra Bonus + "
-                "NPA - Clawback (Other / NPA / Clawback come from the Extra Payouts tab). "
+                "Bonus + Training Bonus. Final Pay = Total Payout + Other + Extra Bonus "
+                "(NPA and Clawback are listed apart, not in Final Pay; Other / NPA / Clawback "
+                "come from the Extra Payouts tab). "
                 "Light yellow = type in. "
                 "Orange = no level, type a %. Purple = new start, paid next week. "
                 "Green = guarantee (not LinkedIn). Grey = DD line with no rep. Pink = lost leadership pay.")
@@ -1193,18 +1264,32 @@ def copy_manual_entries(old_id, new_id):
     pn = pn_ws.get_values(value_render_option="FORMULA")
     names = [r[0] for r in pn[1:] if r and r[0] and r[0] != "TOTAL"]
     row_of = {r[0]: i for i, r in enumerate(pn, 1) if r and r[0]}
+    import json
     head_o = po[0]
+    has_auto = len(head_o) >= AUTO_COL and head_o[AUTO_COL - 1] == AUTO_HEADER
     report, data = [], []
     for r in po[1:]:
         if not r or r[0] not in row_of or r[0] == "TOTAL":
             continue
         i = row_of[r[0]]
         cells = dict(zip(head_o, r))
+        was = {}
+        if has_auto and len(r) >= AUTO_COL and r[AUTO_COL - 1]:
+            was = json.loads(r[AUTO_COL - 1])
         f = cells.get("Lost Leadership Pay")
-        if isinstance(f, bool):
+        f_typed = isinstance(f, bool) and (not has_auto or f != was.get("f"))
+        if f_typed:                               # ticked / unticked by hand
             data.append({"range": f"F{i}", "values": [[f]]})
         b = cells.get("Commission %")
-        if b not in (None, "") and not str(b).startswith("="):
+        new_row = pn[i - 1] + [""] * 5
+        blocked = (str(new_row[4]).startswith("New start")
+                   or "not paid" in str(new_row[4]))
+        if has_auto:                              # typed = differs from what was built
+            b_typed = bool(was) and not _same_cell(b, was.get("b"))
+        else:                                     # older sheet: best guess
+            b_typed = (b not in (None, "") and not str(b).startswith("=")
+                       and str(new_row[1]) != str(b))
+        if b_typed and not blocked:
             data.append({"range": f"B{i}", "values": [[b]]})
             report.append(f"{r[0]}: typed % {b}")
         for label, col in (("Training Bonus", "N"), ("Extra Bonus", "P")):
@@ -1245,6 +1330,30 @@ def copy_manual_entries(old_id, new_id):
         ws.update(values=rows, range_name=f"A2:D{len(rows) + 1}",
                   value_input_option="USER_ENTERED", raw=False)
     return report
+
+
+def remake(old_id, xlsx, name, log=print):
+    """Replace a live RH sheet with a new build and KEEP everything typed or
+    changed by hand on the old one (Maud 2026-11-24): upload -> checkboxes ->
+    copy_manual_entries -> fit -> groups -> board check -> rep tabs -> trash
+    the old one (Drive trash, recoverable). Returns the new sheet id."""
+    from automations.commission_sheet import weekly_drop as W
+    from automations.commission_sheet.drive_auth import service
+    svc = service()
+    made = W.upload(svc, Path(xlsx), name)
+    new = made["id"]
+    log(f"uploaded {name!r}  {made.get('webViewLink', '')}")
+    add_checkboxes(new)
+    for line in copy_manual_entries(old_id, new):
+        log(f"  kept: {line}")
+    fit_columns(new)
+    group_columns(new)
+    sync_from_board(new, log=log)
+    refresh_rep_tabs(new, log=log)
+    svc.files().update(fileId=old_id, body={"trashed": True},
+                       supportsAllDrives=True).execute()
+    log(f"old version {old_id} moved to the Drive trash")
+    return new
 
 
 def fit_columns(sheet_id):
@@ -1371,6 +1480,94 @@ def _same(x, y):
         return str(x if x is not None else "").strip() == str(y if y is not None else "").strip()
 
 
+def sync_from_board(sheet_id, log=print):
+    """Google Sheets: re-read Raf's sales board (levels, LinkedIn, apps, T/X,
+    lateness, guarantee, gas bonus) and update the payout tab — Level / Rule,
+    Guarantee, Gas Bonus, and Commission % / Lost Leadership tick unless typed
+    over by hand (Maud 2026-11-24: "always recheck the sales board"). Rows that
+    would change between held / not held, or that would need a new rep tab, are
+    only reported. Returns the changed rep names."""
+    import json
+    from automations.recruiting_report.fill import open_by_key
+    sh = open_by_key(sheet_id)
+    ws = _payout_ws(sh)
+    rows = ws.get_values(value_render_option="FORMULA")
+    head = rows[0] + [""] * AUTO_COL
+    if head[AUTO_COL - 1] != AUTO_HEADER:
+        log("   board check: sheet has no auto column (made before 11/24) — skipped")
+        return []
+    raw = sh.worksheet(TAB_RAW).get_values()
+    ix = {h.strip(): i for i, h in enumerate(raw[0])}
+    dds = dd_sunday(raw[1:], ix)
+    board = read_board(dds, run_date=dds + dt.timedelta(days=7))
+    ed = sh.worksheet(TAB_EDITED).get_values()
+    eh = {h: i for i, h in enumerate(ed[0])}
+    custs = collections.defaultdict(set)
+    for r in ed[1:]:
+        r = r + [""] * len(eh)
+        if r[eh["Customer Name"]]:
+            custs[_name_key(r[eh["Rep Full Name"]])].add(r[eh["Customer Name"]].strip().lower())
+    apps = {k: len(v) for k, v in custs.items()}
+    data, changed, notes = [], [], []
+    for i, r in enumerate(rows[1:], 2):
+        r = r + [""] * AUTO_COL
+        name, e_cur, auto = str(r[0]).strip(), str(r[4]), r[AUTO_COL - 1]
+        if not name or name == "TOTAL" or e_cur == NOTE_EXTRA:
+            continue
+        key = _name_key(name)
+        pct, kind, note, lost, lvl = rule_for(name, board)
+        held_now = e_cur.startswith("New start")
+        if held_now != (kind == KIND_HELD) or (not auto and kind != KIND_HELD):
+            if held_now != (kind == KIND_HELD):
+                notes.append(f"{name}: board now says {'held' if kind == KIND_HELD else 'not held'}"
+                             " — re-make the sheet to change that")
+            continue
+        if held_now:
+            continue
+        off = key in board.off
+        g_amt = None if off else board.guarantee.get(key, (None, ""))[0]
+        gas = None if off else gas_for(name, board, apps)
+        if g_amt:
+            note += " · Guarantee"
+        if lost:
+            note += f" · {lost}"
+        leader = pct is not None and kind == "leader"
+        want_b = _b_value(kind, pct, lvl, i, pct is not None)
+        want_f = bool(lost) if leader else None
+        was = json.loads(auto)
+        upd = {}
+        if e_cur != note:
+            upd["E"] = note
+        for col, v in (("I", g_amt), ("L", gas)):
+            if not _same_cell(r[ord(col) - 65], v):
+                upd[col] = v if v is not None else ""
+        b_auto = _same_cell(r[1], was["b"])       # B not typed over by hand
+        if b_auto and not _same_cell(r[1], want_b):
+            upd["B"] = want_b                     # follow the board
+        f_cur = r[5] if isinstance(r[5], bool) else (
+            str(r[5]).upper() == "TRUE" if r[5] != "" else None)
+        f_auto = was["f"] is not None and f_cur == was["f"]
+        if f_auto and want_f is not None and f_cur != want_f:
+            upd["F"] = want_f
+        if e_cur.startswith(NOTE_NOT_ON) and not note.startswith(NOTE_NOT_ON):
+            notes.append(f"{name}: now on the board — re-make the sheet for their tab")
+        if not upd:
+            continue
+        upd[get_column_letter(AUTO_COL)] = _auto_json(
+            want_b if b_auto else was["b"],
+            want_f if f_auto and want_f is not None else was["f"])
+        for col, v in upd.items():
+            data.append({"range": f"{col}{i}", "values": [[v]]})
+        changed.append(f"{name} ({', '.join(c for c in upd if c != get_column_letter(AUTO_COL))})")
+    if data:
+        ws.batch_update(data, value_input_option="USER_ENTERED")
+    log(f"   board check: {len(changed)} row(s) updated"
+        + (f": {'; '.join(changed)}" if changed else ""))
+    for n in notes:
+        log(f"   !! {n}")
+    return changed
+
+
 def refresh_rep_tabs(sheet_id, log=print, force=False):
     """Google Sheets: re-lay every rep tab's top block from what's on the sheet
     now — rows back to back, only what applies, one row per Extra Payouts entry
@@ -1428,7 +1625,7 @@ def refresh_rep_tabs(sheet_id, log=print, force=False):
         v = {c: row[i] for c, i in col_ix.items()}
         show = {"B": v["B"] not in (None, ""), "F": v["F"] is True, "D": True,
                 **{c: _nz(v[c]) for c in "CGHIJKLNP"},
-                "Q": any(_nz(v[c]) for c in "OPRS")}
+                "Q": any(_nz(v[c]) for c in "OP")}
         cb = [(a, b) for a, b, _c in cur[1:top]
               if str(a).strip() and str(a) not in STD_LABELS
               and not _extra_type(a) and not str(a).startswith("=")]
@@ -1475,6 +1672,7 @@ def cli(argv=None):
                                          "new starts' sales onto this week")
     a = ap.parse_args(argv)
     if a.refresh:
+        sync_from_board(a.refresh)
         refresh_rep_tabs(a.refresh)
         return
     if not a.out:

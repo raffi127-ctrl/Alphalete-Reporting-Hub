@@ -194,7 +194,8 @@ def run(write: bool, dd_file: Optional[Path], suffix: str) -> int:
 
 
 def refresh(write: bool) -> int:
-    """Every 30 min Wed-Fri: re-lay this week's sheet's rep-tab tops so NPA /
+    """Every 30 min Wed-Fri: re-check Raf's board (levels, apps, T/X, guarantee,
+    gas…) onto the payout tab, then re-lay this week's sheet's rep-tab tops so NPA /
     Clawback / Other / Training / Extra Bonus typed in since show up (Maud
     2026-11-24). Only the newest of OUR sheets; a pass with nothing new is a no-op."""
     from automations.commission_sheet import pct_payout
@@ -211,6 +212,7 @@ def refresh(write: bool) -> int:
     if not write:
         _log("(dry run — add --write)")
         return 0
+    pct_payout.sync_from_board(f["id"], log=_log)
     pct_payout.refresh_rep_tabs(f["id"], log=_log)
     return 0
 
