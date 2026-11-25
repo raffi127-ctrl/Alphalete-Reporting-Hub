@@ -1173,6 +1173,7 @@ def run(office_id, *, names: Optional[List[str]] = None, account: str = "",
         run_deadline = t0 + RUN_BUDGET_MIN * 60
         found_rows: List[Dict] = []
         walled_accounts = 0
+        restarted = False
         shot_dir = (_out_dir() / ("octo-billing-%s" % today.isoformat())) if billing else None
         for pr, its in plan:
             title = pr["title"]
@@ -1197,6 +1198,22 @@ def run(office_id, *, names: Optional[List[str]] = None, account: str = "",
                 continue
             if not cur:
                 ws = octo_start(pr["uuid"], log)
+                if ws is None and "restart application" in last_start_error().lower() and not restarted:
+                    # 2026-11-24: Octo downloaded an update mid-run and from
+                    # then on refused every profile with "Update is available.
+                    # Please restart application." -- for three runs, until a
+                    # person at the office quit and reopened it. Do that here,
+                    # once per run: quit, reopen, try the profile again.
+                    restarted = True
+                    log("    Octo asks to be restarted for an update -- restarting it")
+                    quit_octo(log)
+                    time.sleep(8)
+                    ok2, why2, _ = ensure_octo(log)
+                    if ok2:
+                        time.sleep(10)
+                        ws = octo_start(pr["uuid"], log)
+                    else:
+                        log("    Octo did not come back: %s" % why2)
                 started_here = ws is not None
                 if ws:
                     time.sleep(12)

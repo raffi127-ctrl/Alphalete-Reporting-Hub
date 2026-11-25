@@ -481,6 +481,30 @@ class OctoWouldNotOpenAnything(unittest.TestCase):
         self.assertIn("Update is available", reported[0])
 
 
+class OctoAsksForARestart(unittest.TestCase):
+    def test_the_run_restarts_octo_once_and_goes_on(self):
+        tmp = _tmp()
+        profs = [{"title": "P1", "uuid": "a" * 32, "domains": []}, {"title": "P2", "uuid": "b" * 32, "domains": []}]
+        starts = iter([None, "ws://p1", "ws://p2"])     # refused, then fine after the restart
+        calls = []
+        with mock.patch.object(OL, "_out_dir", return_value=tmp), \
+             mock.patch.object(OL, "_app_dir", return_value=tmp), \
+             mock.patch.object(OL, "profiles", return_value=profs), \
+             mock.patch.object(OL, "wanted", return_value=([], {"snapshot": None, "listed": 0, "skipped_recent": 0})), \
+             mock.patch.object(OL, "ensure_octo", side_effect=lambda log=None: (calls.append("ensure") or (True, "", False))), \
+             mock.patch.object(OL, "quit_octo", side_effect=lambda log=None: calls.append("quit")), \
+             mock.patch.object(OL, "octo_active", return_value=[]), \
+             mock.patch.object(OL, "octo_start", side_effect=lambda uuid, log=None: next(starts)), \
+             mock.patch.object(OL, "octo_stop"), \
+             mock.patch.object(OL, "last_start_error", return_value="Update is available. Please restart application."), \
+             mock.patch.object(OL, "check_billing", return_value={"title": "x", "status": "ok", "hits": [], "shot": "", "error": "", "mail": {}}), \
+             mock.patch.object(OL, "_report"), \
+             mock.patch.object(OL.time, "sleep"):
+            s = OL.run("11580", scheduled=True)
+        self.assertEqual(calls, ["ensure", "quit", "ensure"], "quit + reopen exactly once")
+        self.assertEqual(s["billing"], {"P1": "ok", "P2": "ok"})
+
+
 class ItShips(unittest.TestCase):
     def test_both_files_are_in_both_lists(self):
         from automations.icd_alerts.package import AGENT_FILES
