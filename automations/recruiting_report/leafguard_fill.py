@@ -169,9 +169,12 @@ def ensure_rows(ws, dry_run: bool, logfn=print) -> List[List[str]]:
         if dry_run:
             values.insert(at, ["", label])
             continue
-        # inherit_from_before copies the anchor row's formatting.
+        # Format comes from the row BELOW (New Internets / Mon-Fri ... =
+        # plain numbers). Inheriting from the anchor (2026-11-25) gave
+        # "Badged %" percent format (8 -> 800%) and the knocks header's date
+        # format (162 -> 6/10/00).
         fill._retry(ws.insert_row, ["", label], index=at + 1,
-                    value_input_option="RAW", inherit_from_before=True)
+                    value_input_option="RAW", inherit_from_before=False)
         values = fill._retry(ws.get_all_values)
     return values
 
