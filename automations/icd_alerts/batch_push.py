@@ -42,6 +42,18 @@ TABLE = "#table-batch-resume"
 CONSOLE_URL = "https://applicantstream.com/index.cfm"
 
 _log: Callable[[str], None] = print
+# Where open_batches got to on its last try, for the stats row (11/25: three
+# runs said only "Process in Batches not reached").
+LAST_STEPS: list = []
+
+
+def _step(page, what: str) -> None:
+    try:
+        where = "%s | %s" % ((page.title() or "")[:50], (page.url or "")[-70:])
+    except Exception:  # noqa: BLE001
+        where = "?"
+    LAST_STEPS.append("%s @ %s" % (what, where))
+    _log("[batch] step: %s @ %s" % (what, where))
 
 
 def set_logger(fn) -> None:
@@ -126,6 +138,7 @@ def open_batches(page):
     """Console -> 'Explore Appstream AI' (v2) -> Applicants > Process Emails >
     Process in Batches. Returns the page the table is on, or None."""
     ctx = page.context
+    LAST_STEPS.clear()
     # FROM THE CONSOLE. The walk leaves the page on One App at a time, which
     # has no "Explore Appstream AI" button (Raf 24065, 11:43 on 11/25:
     # "Process in Batches not reached").
@@ -134,9 +147,11 @@ def open_batches(page):
         page.wait_for_timeout(2500)
     except Exception as e:  # noqa: BLE001
         _log("[batch] could not open the console: %s" % type(e).__name__)
+    _step(page, "console")
     before = len(ctx.pages)
     if _click_if_present(page, ["Explore Appstream AI", "Explore AppStream AI"],
                          timeout=10000):
+        LAST_STEPS.append("clicked Explore Appstream AI")
         page.wait_for_timeout(3000)
         if len(ctx.pages) > before:
             page = ctx.pages[-1]
@@ -144,6 +159,9 @@ def open_batches(page):
                 page.wait_for_load_state("domcontentloaded", timeout=20000)
             except Exception:  # noqa: BLE001
                 pass
+    else:
+        LAST_STEPS.append("no Explore Appstream AI button")
+    _step(page, "before menu")
     try:
         page.locator("xpath=//*[normalize-space(.)='Applicants']").first.hover(timeout=8000)
         page.wait_for_timeout(600)
@@ -153,6 +171,7 @@ def open_batches(page):
         _log("[batch] menu hover failed: %s" % type(e).__name__)
     if not _click_if_present(page, ["Process in Batches", "Process In Batches"],
                              timeout=10000):
+        _step(page, "no Process in Batches link")
         _log("[batch] could not find 'Process in Batches'")
         return None
     for _ in range(20):
@@ -305,6 +324,7 @@ def run(page, office: str, profile_dir, live_allowed: bool, net=None) -> dict:
         bpage = open_batches(page)
         if bpage is None:
             out["skipped"] = "Process in Batches not reached"
+            out["steps"] = list(LAST_STEPS)[-6:]
             return out
         out.update(table_counts(bpage))
         out["office"] = office_on_page(bpage, office)
