@@ -88,6 +88,13 @@ class OpensOnce(unittest.TestCase):
         self.assertTrue(_needs_open("runs", "boot1", "boot1 alerts"))
         self.assertFalse(_needs_open("alerts", "boot1", "boot1 alerts"))
 
+    def test_new_look_for_the_photo_opens_it_once_more(self):
+        # Lucy 2 on 2026-11-25: the plain photo was open with no refresh of its
+        # own, so the Christmas page only shows if a new look re-opens it.
+        self.assertTrue(_needs_open("photo", "boot1", "boot1 photo", "abc123"))
+        self.assertFalse(_needs_open("photo", "boot1", "boot1 photo abc123", "abc123"))
+        self.assertTrue(_needs_open("photo", "boot1", "boot1 photo abc123", "def456"))
+
 
 class Runs(unittest.TestCase):
     def test_elapsed_formats(self):

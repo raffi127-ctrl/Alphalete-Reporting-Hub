@@ -10,6 +10,7 @@ adopts the reports' launches (reference_browser_profile_collisions).
 import argparse
 import base64
 import datetime as dt
+import hashlib
 import html
 import json
 import os
@@ -371,10 +372,24 @@ def _idle_seconds() -> float:
     return int(hit.group(1)) / 1e9 if hit else 0
 
 
-def _needs_open(target: str, boot: str, opened: str) -> bool:
-    """Once per restart and per page. "Safari is running" can't stand in for this:
-    Safari was already open on Lucy 3, so her page never appeared (2026-11-01)."""
-    return opened != f"{boot} {target}"
+def _marker(boot: str, target: str, version: str = "") -> str:
+    return f"{boot} {target} {version}".rstrip()
+
+
+def _needs_open(target: str, boot: str, opened: str, version: str = "") -> bool:
+    """Once per restart, per page, and per look of the photo. "Safari is running"
+    can't stand in for this: Safari was already open on Lucy 3, so her page never
+    appeared (2026-11-01)."""
+    return opened != _marker(boot, target, version)
+
+
+def _photo_version(target: str) -> str:
+    """A new look for Lucy 2's photo (Christmas, Jan 2's swap back) opens it once
+    more. The plain page had no refresh of its own, so Safari kept showing the old
+    one until a restart (2026-11-25). The other pages refresh themselves: ""."""
+    if target != PHOTO or not PHOTO_PAGE.exists():
+        return ""
+    return hashlib.sha1(PHOTO_PAGE.read_bytes()).hexdigest()[:10]
 
 
 CHRISTMAS_PAGE = Path(__file__).with_name("christmas.html")
@@ -439,11 +454,12 @@ def keep_open(target: str) -> None:
     opened = OPENED.read_text(encoding="utf-8") if OPENED.exists() else ""
     running = subprocess.run(["pgrep", "-x", "Safari"],
                              stdout=subprocess.DEVNULL).returncode == 0
-    if not running or _needs_open(target, boot, opened):
+    version = _photo_version(target)
+    if not running or _needs_open(target, boot, opened, version):
         url = PAGES[target].as_uri() if target in PAGES else target
         subprocess.run(["open", "-a", "Safari", url], check=False)
         OPENED.parent.mkdir(parents=True, exist_ok=True)
-        OPENED.write_text(f"{boot} {target}", encoding="utf-8")
+        OPENED.write_text(_marker(boot, target, version), encoding="utf-8")
     elif not _report_running() and _idle_seconds() > IDLE_BEFORE_FRONT:
         subprocess.run(["open", "-a", "Safari"], check=False)
 
