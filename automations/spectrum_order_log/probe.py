@@ -18,8 +18,9 @@ Downloads only into memory, writes no Sheet, posts nothing. Prefixed lines so
 
 Runs on a Lucy (Tableau SSO via ownerville). `lucy rerun spectrum_order_log_probe`
 
-2026-11-25: default run now ONLY presses the dashboard's 'EXPORT OPTIONS'
-button and logs what it opens (EXP-* lines). `--all` = the 11/24 sweep.
+2026-11-25: default run reads the order table out of the page's
+bootstrapSession reply (TS-* lines). `--export` = the EXPORT OPTIONS check
+(it does nothing), `--all` = the 11/24 sweep.
 """
 from __future__ import annotations
 
@@ -284,6 +285,133 @@ def export_main() -> int:
     return 0
 
 
+# ---------------------------------------------------------------------------
+# 2026-11-25: EXPORT OPTIONS does nothing (no menu, no download) and Tableau
+# is SCI's — nobody here can turn downloads on. But the table is drawn by the
+# browser, so its data arrives in the page's own bootstrapSession reply
+# (dataDictionary + per-worksheet column indices). Read it from there: full
+# values (the screen cuts long ones to '1000788415..') and every row, not just
+# the ones on screen. 'TS-SHEET:' worksheets, 'TS-COLS:' header, 'TS-ROW:'
+# rows, 'TS-ROWS:' count.
+
+def _split_bootstrap(text: str):
+    """'<len>;{json}<len>;{json}' -> list of parsed json objects."""
+    import json
+    out, i = [], 0
+    while i < len(text):
+        j = text.find(";", i)
+        if j < 0:
+            break
+        try:
+            n = int(text[i:j])
+        except ValueError:
+            break
+        out.append(json.loads(text[j + 1:j + 1 + n]))
+        i = j + 1 + n
+    return out
+
+
+def _tables_from_bootstrap(info: dict) -> dict:
+    """{worksheet: (fields, rows)} out of a bootstrapSession secondaryInfo."""
+    pmm = info["presModelMap"]
+    segs = (pmm["dataDictionary"]["presModelHolder"]
+            ["genDataDictionaryPresModel"]["dataSegments"])
+    full: dict = {}
+    for key in sorted(segs, key=lambda k: int(k)):
+        for col in segs[key]["dataColumns"]:
+            full.setdefault(col["dataType"], []).extend(col["dataValues"])
+    sheets = (pmm["vizData"]["presModelHolder"]
+              ["genPresModelMapPresModel"]["presModelMap"])
+    out = {}
+    for name, holder in sheets.items():
+        try:
+            cols = (holder["presModelHolder"]["genVizDataPresModel"]
+                    ["paneColumnsData"])
+        except (KeyError, TypeError):
+            continue
+        fields, columns = [], []
+        for c in cols.get("vizDataColumns") or []:
+            cap = c.get("fieldCaption")
+            if not cap or not c.get("paneIndices"):
+                continue
+            pane = cols["paneColumnsList"][c["paneIndices"][0]]
+            vp = pane["vizPaneColumns"][c["columnIndices"][0]]
+            dt = c.get("dataType") or "cstring"
+            idx = vp.get("aliasIndices") or vp.get("valueIndices") or []
+            vals = []
+            for k in idx:
+                try:
+                    vals.append(full[dt][k] if k >= 0 else full["cstring"][-k - 1])
+                except (KeyError, IndexError):
+                    vals.append("")
+            fields.append(cap)
+            columns.append(vals)
+        if not fields:
+            continue
+        n = max(len(v) for v in columns)
+        rows = [[(v[i] if i < len(v) else "") for v in columns] for i in range(n)]
+        out[name] = (fields, rows)
+    return out
+
+
+def bootstrap_peek(page) -> int:
+    bodies = []
+
+    def _grab(resp):
+        if "bootstrapSession" in resp.url:
+            try:
+                bodies.append(resp.text())
+            except Exception as e:  # noqa: BLE001
+                print(f"TS-ERR: body: {type(e).__name__}: {e}", flush=True)
+
+    page.context.on("response", _grab)
+    page.goto(ORDERLOG_URL, wait_until="domcontentloaded")
+    viz = page.frame_locator('iframe[title="Data Visualization"]')
+    viz.locator('[data-tb-test-id="viz-viewer-toolbar-button-download"]'
+                ).wait_for(state="visible", timeout=120_000)
+    page.wait_for_timeout(15_000)
+    print(f"TS-BOOT: {len(bodies)} bootstrap reply(s), sizes "
+          f"{[len(b) for b in bodies]}", flush=True)
+    found = 0
+    for b in bodies:
+        try:
+            parts = _split_bootstrap(b)
+        except Exception as e:  # noqa: BLE001
+            print(f"TS-ERR: split: {type(e).__name__}: {str(e)[:150]}", flush=True)
+            continue
+        for part in parts[1:]:
+            try:
+                tables = _tables_from_bootstrap(part["secondaryInfo"])
+            except Exception as e:  # noqa: BLE001
+                print(f"TS-ERR: parse: {type(e).__name__}: {str(e)[:150]} "
+                      f"keys={list(part)[:8]}", flush=True)
+                continue
+            for name, (fields, rows) in tables.items():
+                found += 1
+                print(f"TS-SHEET: {name} ({len(fields)} cols, {len(rows)} rows)",
+                      flush=True)
+                if len(fields) < 5:
+                    continue
+                print(f"TS-COLS: {name} | " + " | ".join(fields), flush=True)
+                for r in rows[:40]:
+                    print("TS-ROW: " + " | ".join(str(c) for c in r)[:900],
+                          flush=True)
+                print(f"TS-ROWS: {name} {len(rows)}", flush=True)
+    if not found:
+        print("TS-NONE: no worksheet data in the bootstrap reply "
+              "(server-rendered table?)", flush=True)
+    return 0 if found else 1
+
+
+def bootstrap_main() -> int:
+    from automations.shared.tableau_patchright import tableau_session
+    with tableau_session(verbose=True) as page:
+        return bootstrap_peek(page)
+
+
 if __name__ == "__main__":
-    # Default = just the EXPORT OPTIONS check (the rest was answered 11/24).
-    sys.exit(main() if "--all" in sys.argv else export_main())
+    # Default = read the order table out of the page's bootstrap reply.
+    # --export = 11/25 EXPORT OPTIONS check; --all = 11/24 sweep.
+    if "--all" in sys.argv:
+        sys.exit(main())
+    sys.exit(export_main() if "--export" in sys.argv else bootstrap_main())
