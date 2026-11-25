@@ -267,7 +267,7 @@ _ORDERLOG_HOST = "https://us-east-1.online.tableau.com/t/sci/views/ATTTRACKER-B2
 _ORDERLOG_UI = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
                 "ATTTRACKER-B2B/ORDERLOG")
 _COMPARE_DAYS = 31        # same window att_order_log/run.py pulls
-_COMPARE_BUDGET_S = 600   # the probe job times out at 15 min; stop starting pulls at 10
+_COMPARE_BUDGET_S = 720   # the probe job times out at 15 min
 # Carlos's Owner & Office spellings as they appear in our own past exports. The
 # cell carries a newline before the "[company]" part (Alex's does too), so the
 # newline spelling goes first. A comma inside a value must be \-escaped for a
@@ -369,7 +369,10 @@ def _compare_views(page, rec) -> None:
     started = time.time()
     rec("")
     rec("=== ORDERLOG variants, last {} days ===".format(_COMPARE_DAYS))
-    for label, base in COMPARE_VARIANTS:
+    # Round 2 settled the owner URL filters (each came back empty: it DOES
+    # replace the owner filter, but the saved rep + date filters still bite).
+    # Keep only the bare pull as the baseline.
+    for label, base in COMPARE_VARIANTS[:1]:
         _summarize_csv(page, rec, label, base + _dates_qs())
     _sweep_custom_views(page, rec, started)
 
@@ -406,6 +409,19 @@ def _sweep_custom_views(page, rec, started) -> None:
         if time.time() - started > _COMPARE_BUDGET_S:
             rec("  (time budget spent — not opening {!r} and the rest)".format(name))
             break
+        # Round 2 (09:39 CT): views saved on OTHER sheets navigated and showed a
+        # GUID in the url, but every ORDERLOG-sheet view left the url at
+        # ORDERLOG?:iid=N after 8s — a same-sheet switch doesn't rewrite the
+        # address right away. So: poll the url longer, and also catch the GUID
+        # from the network calls the switch makes.
+        seen = []
+
+        def _on_req(req, _seen=seen):
+            u = req.url
+            if "customview" in u.lower():
+                _seen.append(u)
+
+        page.on("request", _on_req)
         try:
             page.goto(_ORDERLOG_UI, wait_until="domcontentloaded")
             page.reload(wait_until="domcontentloaded")
@@ -413,20 +429,50 @@ def _sweep_custom_views(page, rec, started) -> None:
             btn.first.click(timeout=10_000)
             page.wait_for_timeout(2500)
             names_loc.nth(i).click(timeout=10_000)
-            page.wait_for_timeout(8000)
             ui = page.url
+            for _ in range(10):
+                page.wait_for_timeout(2500)
+                ui = page.url
+                if re.search(r"/views/ATTTRACKER-B2B/[^/]+/[0-9a-f-]{36}/", ui):
+                    break
+            label = ""
+            try:
+                label = btn.first.inner_text(timeout=5_000).strip()
+            except Exception:  # noqa: BLE001
+                pass
         except Exception as e:  # noqa: BLE001
             rec("")
             rec("--- custom view {!r}: couldn't open ({}: {}) ---".format(
                 name, type(e).__name__, str(e)[:120]))
             continue
-        m = re.search(r"/views/ATTTRACKER-B2B/ORDERLOG/([0-9a-f-]{36})/([^?#/]+)", ui)
-        if not m:
-            rec("")
-            rec("--- custom view {!r}: url has no GUID: {} ---".format(name, ui[:200]))
+        finally:
+            try:
+                page.remove_listener("request", _on_req)
+            except Exception:  # noqa: BLE001
+                pass
+        other = re.search(r"/views/ATTTRACKER-B2B/([^/?#]+)/", ui)
+        if other and other.group(1) != "ORDERLOG":
+            rec("  {!r}: saved on sheet {} — not the order log, skipped".format(
+                name, other.group(1)))
             continue
+        m = re.search(r"/views/ATTTRACKER-B2B/ORDERLOG/([0-9a-f-]{36})/([^?#/]+)", ui)
+        if m:
+            guid, slug = m.group(1), m.group(2)
+        else:
+            guids = [g for u in seen
+                     for g in re.findall(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-"
+                                         r"[0-9a-f]{4}-[0-9a-f]{12}", u)]
+            rec("")
+            rec("--- custom view {!r}: toolbar {!r}, url {} ---".format(
+                name, label, ui[:120]))
+            for u in seen[:4]:
+                rec("    net: {}".format(u[:200]))
+            if not guids:
+                rec("    no GUID found — can't export this one")
+                continue
+            guid, slug = guids[-1], re.sub(r"[^A-Za-z0-9]", "", name)
         csv_url = "{}/{}/{}.csv?:refresh=yes{}".format(
-            _ORDERLOG_HOST, m.group(1), m.group(2), _dates_qs())
+            _ORDERLOG_HOST, guid, slug, _dates_qs())
         _summarize_csv(page, rec, "custom view {!r}".format(name), csv_url)
 
 
