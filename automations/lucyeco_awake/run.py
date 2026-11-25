@@ -46,13 +46,22 @@ def _app_up(page) -> bool:
     return False
 
 
+def _sync_playwright():
+    # The Lucys carry patchright (what every report drives Chrome with), not
+    # plain playwright: Lucy 4's first run died on "No module named 'playwright'".
+    try:
+        from patchright.sync_api import sync_playwright
+    except ImportError:
+        from playwright.sync_api import sync_playwright
+    return sync_playwright
+
+
 def check(wake: bool) -> str:
-    from playwright.sync_api import sync_playwright
-    with sync_playwright() as p:
-        try:
-            browser = p.chromium.launch(headless=True)
-        except Exception:  # noqa: BLE001 — no bundled Chromium on this Lucy
+    with _sync_playwright()() as p:
+        try:  # the real Chrome every Lucy has, hidden
             browser = p.chromium.launch(channel="chrome", headless=True)
+        except Exception:  # noqa: BLE001 — no Chrome: the bundled Chromium
+            browser = p.chromium.launch(headless=True)
         try:
             page = browser.new_page(viewport={"width": 1400, "height": 900})
             page.goto(URL, wait_until="domcontentloaded", timeout=LOAD_MS)
