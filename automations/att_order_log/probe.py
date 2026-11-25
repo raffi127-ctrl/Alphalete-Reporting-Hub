@@ -256,87 +256,178 @@ def _list_views(page, rec) -> None:
 
 # 2026-11-25: the bare ORDERLOG.csv started coming back as ~13KB holding only
 # ANOTHER company's rows (ALEX CENSI [power shift marketing], one rep, one day)
-# — the published default view got saved with a filter on it, and our Start/End
-# URL params don't undo that. Same failure D2D had on 9/29 (fixed there by
-# pulling a custom view). These are the candidate URLs to replace the bare one;
-# --compare-views pulls each and says which still carries Carlos's sales.
+# — the view got saved with owner/rep/date filters on it, and our Start/End URL
+# params don't undo that; neither does :revert=all, and Carlos's
+# CarlosLocalOfficeEXPANDEDCHURN custom view exports EMPTY (round 1, 08:34 CT).
+# Round 2 tries the two remaining levers from Carlos's own session:
+#   1. a URL filter on Owner & Office — Tableau lets a URL REPLACE a field's
+#      filter even though it can't clear one;
+#   2. every custom view Carlos's account can see on ORDERLOG, each exported.
 _ORDERLOG_HOST = "https://us-east-1.online.tableau.com/t/sci/views/ATTTRACKER-B2B/ORDERLOG"
+_ORDERLOG_UI = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
+                "ATTTRACKER-B2B/ORDERLOG")
+_COMPARE_DAYS = 31        # same window att_order_log/run.py pulls
+_COMPARE_BUDGET_S = 600   # the probe job times out at 15 min; stop starting pulls at 10
+# Carlos's Owner & Office spellings as they appear in our own past exports. The
+# cell carries a newline before the "[company]" part (Alex's does too), so the
+# newline spelling goes first. A comma inside a value must be \-escaped for a
+# Tableau URL filter, or it splits into two values.
+_CARLOS_OWNERS = (
+    "CARLOS HIDALGO\n [alphalete specialized marketing inc(tx]",
+    "CARLOS HIDALGO [alphalete specialized marketing inc(tx]",
+    "CARLOS HIDALGO TX[alphalete specialized marketing\\, inc.]",
+)
+
+
+def _owner_filter(values) -> str:
+    from urllib.parse import quote
+    return "&Owner%20%26%20Office=" + ",".join(quote(v, safe="") for v in values)
+
+
 COMPARE_VARIANTS = (
     ("bare (today's URL)", _ORDERLOG_HOST + ".csv?:refresh=yes"),
-    ("bare + :revert=all", _ORDERLOG_HOST + ".csv?:refresh=yes&:revert=all"),
-    ("Carlos custom view 415114d7",
-     _ORDERLOG_HOST + "/415114d7-6d65-4415-a61c-3658fab96f6b/"
-     "CarlosLocalOfficeEXPANDEDCHURN.csv?:refresh=yes"),
+    ("owner filter: all 3 spellings",
+     _ORDERLOG_HOST + ".csv?:refresh=yes" + _owner_filter(_CARLOS_OWNERS)),
+) + tuple(
+    ("owner filter: {!r}".format(o),
+     _ORDERLOG_HOST + ".csv?:refresh=yes" + _owner_filter([o]))
+    for o in _CARLOS_OWNERS
 )
-_COMPARE_DAYS = 31        # same window att_order_log/run.py pulls
 
 
-def _compare_views(page, rec) -> None:
-    """Pull every COMPARE_VARIANTS URL with the same date window and report, for
-    each: bytes, row count, how many rows are Carlos's, the top owners, and the
-    date range. Read-only — nothing is written anywhere but the diag tab."""
+def _summarize_csv(page, rec, label, url) -> None:
+    """Export one URL and say: bytes, rows, how many are Carlos's, top owners,
+    rep count, and the range of every date column. Read-only."""
     import csv
     import io
 
+    rec("")
+    rec("--- {} ---".format(label))
+    rec("  {}".format(url))
+    try:
+        r = page.context.request.get(url, timeout=300_000)
+        body = r.body() or b""
+    except Exception as e:  # noqa: BLE001 — one variant must not stop the rest
+        rec("  FETCH FAILED: {}: {}".format(type(e).__name__,
+                                            (str(e).splitlines() or [""])[0][:160]))
+        return
+    rec("  status={} bytes={:,}".format(r.status, len(body)))
+    if r.status != 200 or len(body) < 50:
+        rec("  head={!r}".format(body[:200].decode("utf-8", "replace")))
+        return
+    rows = list(csv.reader(io.StringIO(body.decode("utf-8-sig", "replace"))))
+    if not rows:
+        return
+    hdr = [str(h or "").strip() for h in rows[0]]
+    data = rows[1:]
+    rec("  rows={:,} cols={}".format(len(data), len(hdr)))
+
+    def col(name):
+        return hdr.index(name) if name in hdr else None
+
+    oi = col("Owner & Office")
+    if oi is not None:
+        owners = collections.Counter(
+            " ".join((row[oi] if oi < len(row) else "").split())
+            for row in data)
+        carlos = sum(n for o, n in owners.items()
+                     if o.upper().startswith("CARLOS HIDALGO"))
+        rec("  CARLOS HIDALGO rows={:,}   distinct owners={}".format(
+            carlos, len(owners)))
+        for o, n in owners.most_common(8):
+            rec("    {:>7,}  {}".format(n, o[:70]))
+    ri = col("Rep")
+    if ri is not None:
+        rec("  distinct reps={}".format(
+            len({row[ri] for row in data if ri < len(row)})))
+    for name in hdr:
+        if "date" not in name.lower():
+            continue
+        i = hdr.index(name)
+        ds = []
+        for row in data:
+            try:
+                ds.append(dt.datetime.strptime(row[i].strip(), "%m/%d/%Y").date())
+            except (ValueError, IndexError):
+                pass
+        if ds:
+            rec("  {:<30} {} .. {}  ({:,} dated)".format(
+                name[:30], min(ds), max(ds), len(ds)))
+
+
+def _dates_qs() -> str:
     today = dt.date.today()
     start = today - dt.timedelta(days=_COMPARE_DAYS)
-    dates = "&Start%20Date={}&End%20Date={}".format(start.isoformat(),
-                                                    today.isoformat())
+    return "&Start%20Date={}&End%20Date={}".format(start.isoformat(),
+                                                   today.isoformat())
+
+
+def _compare_views(page, rec) -> None:
+    """Round 2: URL owner-filter variants, then Carlos's custom views."""
+    import time
+
+    started = time.time()
     rec("")
-    rec("=== ORDERLOG variants, {} .. {} ===".format(start, today))
+    rec("=== ORDERLOG variants, last {} days ===".format(_COMPARE_DAYS))
     for label, base in COMPARE_VARIANTS:
-        rec("")
-        rec("--- {} ---".format(label))
-        rec("  {}".format(base + dates))
+        _summarize_csv(page, rec, label, base + _dates_qs())
+    _sweep_custom_views(page, rec, started)
+
+
+def _sweep_custom_views(page, rec, started) -> None:
+    """Open ORDERLOG in Carlos's session, say which view the toolbar is on (a
+    personal DEFAULT custom view would show its name here instead of
+    'Original'), list his custom views, and export each one."""
+    import re
+    import time
+
+    rec("")
+    rec("=== custom views on ORDERLOG (Carlos's account) ===")
+    page.goto(_ORDERLOG_UI, wait_until="domcontentloaded")
+    viz = page.frame_locator('iframe[title="Data Visualization"]')
+    btn = viz.locator(
+        '[data-tb-test-id="viz-viewer-toolbar-button-manage-customviews"]')
+    btn.first.wait_for(state="visible", timeout=90_000)
+    rec("  toolbar on the bare view reads: {!r}".format(
+        btn.first.inner_text(timeout=5_000).strip()))
+    btn.first.click(timeout=10_000)
+    page.wait_for_timeout(2500)
+    names_loc = viz.locator('[data-tb-test-id="view-name"]')
+    names = []
+    for i in range(names_loc.count()):
         try:
-            r = page.context.request.get(base + dates, timeout=300_000)
-            body = r.body() or b""
-        except Exception as e:  # noqa: BLE001 — one variant must not stop the rest
-            rec("  FETCH FAILED: {}: {}".format(type(e).__name__,
-                                                (str(e).splitlines() or [""])[0][:160]))
-            continue
-        rec("  status={} bytes={:,}".format(r.status, len(body)))
-        if r.status != 200 or len(body) < 50:
-            rec("  head={!r}".format(body[:200].decode("utf-8", "replace")))
-            continue
-        rows = list(csv.reader(io.StringIO(body.decode("utf-8-sig", "replace"))))
-        if not rows:
-            continue
-        hdr = [str(h or "").strip() for h in rows[0]]
-        data = rows[1:]
-        rec("  rows={:,} cols={}".format(len(data), len(hdr)))
+            names.append(" ".join(names_loc.nth(i).inner_text(timeout=3_000).split()))
+        except Exception:  # noqa: BLE001
+            names.append("")
+    rec("  {} custom view(s): {}".format(len(names), names))
+    page.keyboard.press("Escape")
 
-        def col(name):
-            return hdr.index(name) if name in hdr else None
-
-        oi = col("Owner & Office")
-        if oi is not None:
-            owners = collections.Counter(
-                " ".join((row[oi] if oi < len(row) else "").split())
-                for row in data)
-            carlos = sum(n for o, n in owners.items()
-                         if o.upper().startswith("CARLOS HIDALGO"))
-            rec("  CARLOS HIDALGO rows={:,}   distinct owners={}".format(
-                carlos, len(owners)))
-            for o, n in owners.most_common(8):
-                rec("    {:>7,}  {}".format(n, o[:70]))
-        ri = col("Rep")
-        if ri is not None:
-            rec("  distinct reps={}".format(
-                len({row[ri] for row in data if ri < len(row)})))
-        for name in hdr:
-            if "date" not in name.lower():
-                continue
-            i = hdr.index(name)
-            ds = []
-            for row in data:
-                try:
-                    ds.append(dt.datetime.strptime(row[i].strip(), "%m/%d/%Y").date())
-                except (ValueError, IndexError):
-                    pass
-            if ds:
-                rec("  {:<30} {} .. {}  ({:,} dated)".format(
-                    name[:30], min(ds), max(ds), len(ds)))
+    for i, name in enumerate(names):
+        if time.time() - started > _COMPARE_BUDGET_S:
+            rec("  (time budget spent — not opening {!r} and the rest)".format(name))
+            break
+        try:
+            page.goto(_ORDERLOG_UI, wait_until="domcontentloaded")
+            page.reload(wait_until="domcontentloaded")
+            btn.first.wait_for(state="visible", timeout=90_000)
+            btn.first.click(timeout=10_000)
+            page.wait_for_timeout(2500)
+            names_loc.nth(i).click(timeout=10_000)
+            page.wait_for_timeout(8000)
+            ui = page.url
+        except Exception as e:  # noqa: BLE001
+            rec("")
+            rec("--- custom view {!r}: couldn't open ({}: {}) ---".format(
+                name, type(e).__name__, str(e)[:120]))
+            continue
+        m = re.search(r"/views/ATTTRACKER-B2B/ORDERLOG/([0-9a-f-]{36})/([^?#/]+)", ui)
+        if not m:
+            rec("")
+            rec("--- custom view {!r}: url has no GUID: {} ---".format(name, ui[:200]))
+            continue
+        csv_url = "{}/{}/{}.csv?:refresh=yes{}".format(
+            _ORDERLOG_HOST, m.group(1), m.group(2), _dates_qs())
+        _summarize_csv(page, rec, "custom view {!r}".format(name), csv_url)
 
 
 def main(argv=None) -> int:
