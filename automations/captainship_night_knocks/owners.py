@@ -128,7 +128,7 @@ OWNER_EMAILS: Dict[str, str] = {
     # listed twice there. No Office Access yet, so it mails nobody today.
     "Frank Matos":         "fm.peakmanagementinc@gmail.com",
     "Justin Fermin":       "ferminjustin71@gmail.com",
-    "Isaac Amissah":       "amissolutions7@gmail.com",
+    # OUT 2026-11-25 (Jairo, por mail): Isaac Amissah sale de la capitania.
     "Abdallah Ghousheh":   "Ghoushehbusiness@gmail.com",
     # no captainship (run.SOLO_OFFICES). Rafael 2026-10-24, mail "Aaron Nimako
     # - knocking report" — Aaron answered on that thread from this address.

@@ -149,6 +149,8 @@ NOT_ON_TEAM: Dict[str, tuple] = {
     # 2026-11-24 (Blake, por mail): Alex Roberts sale de su capitania. Sin el
     # pin, si Tableau lo sigue filando en "Blake's Team", el gate lo reofrece.
     "Blake": ("Alex Roberts",),
+    # 2026-11-25 (Jairo, por mail): Isaac Amissah sale de su capitania.
+    "Jairo": ("Isaac Amissah",),
 }
 
 

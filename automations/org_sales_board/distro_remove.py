@@ -140,6 +140,11 @@ REMOVALS: dict = {
     "Blake's Captainship": [
         ("Alex Roberts", "robertsalexc14@gmail.com"),
     ],
+    # 2026-11-25 (Jairo, por mail): "can we remove Isaac Amish". Sale de
+    # config.RECIPIENTS["jairo"] tambien.
+    "Jairo's Captainship": [
+        ("Isaac Amissah", "amissolutions7@gmail.com"),
+    ],
     # 2026-09-14 (Eve): Eric Martinez, ver "Chan's Captainship". Su segunda
     # tarjeta (sin nombre, la misma direccion) no esta en ningun grupo.
     "Aug Owner Showdown": [

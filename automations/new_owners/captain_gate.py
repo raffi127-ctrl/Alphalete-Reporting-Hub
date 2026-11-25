@@ -149,6 +149,9 @@ EXCLUDE: Dict[str, tuple] = {
     # 2026-11-24 (Blake, por mail): "Can Alex Roberts be removed from my
     # captainship and from these emails?" Sigue siendo ICD (oficina 17274).
     "Blake":  ("Alex Roberts",),                         # 2026-11-24
+    # 2026-11-25 (Jairo, por mail): "can we remove Isaac Amish". Oficina
+    # AppStream 21190 ya en `skip` (Raf 11/23: "assume shutting down").
+    "Jairo":  ("Isaac Amissah",),                        # 2026-11-25
 }
 
 

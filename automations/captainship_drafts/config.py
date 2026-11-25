@@ -816,7 +816,10 @@ RECIPIENTS: dict = {
     "jairo": [
         "coltenwrightsc@gmail.com", "drewtepp2735@gmail.com",
         "dylanjtwaddle@gmail.com", "fm.peakmanagementinc@gmail.com",
-        "frankmatos1128@gmail.com", "amissolutions7@gmail.com",
+        "frankmatos1128@gmail.com",
+        # OUT 2026-11-25 (Jairo, por mail "can we remove Isaac Amish"): Isaac
+        # Amissah (amissolutions7@) sale de la capitania. Sale tambien del
+        # grupo vivo "Jairo's Captainship" (distro_remove.REMOVALS).
         # IN 2026-08-28 (Eve): Abdallah Ghousheh entra a la capitania de Jairo.
         # Eve ya lo habia agregado A MANO al grupo vivo "Jairo's Captainship",
         # y sin esta linea el alta no sobrevive: seed_groups REHACE el grupo

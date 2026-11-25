@@ -114,6 +114,7 @@ EXCLUDE: set = {
     "eric martinez",        # 2026-11-03 (Chan) — two-week zero rule
     "roberto rodriguez",    # 2026-11-03 (Luis) — two-week zero rule
     "ece buyukozer",        # 2026-11-10 (Country board, ALPHALETE ORG Fiber) — two-week zero rule
+    "isaac amissah",        # 2026-11-25 (Jairo) — sale de la capitania; oficina 21190 cerrando (Raf)
 }
 
 
