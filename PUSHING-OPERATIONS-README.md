@@ -328,6 +328,26 @@ gspread from the mini. A poller-code change still needs `update` +
 
 ## Changelog (auto-appended daily at 7 PM; newest first)
 
+### 2026-11-25 (manual)
+- **First week of the Octo run, read back** (Carlos: "have these automations
+  been working?"): lookups found 1 (11/20), 3 (11/21), 0 (11/22), 2 (11/23),
+  8 (11/24) numbers; billing holds opened/closed on their own — back-live DMs
+  for New Ascendra + Peak (11/20), W Edge (11/21), Raw (11/22, timed off the
+  decline mail); Titanium + Haus went on hold Sun 11/22 ~2:10pm (mail-timed).
+  Two faults found and fixed: (1) a second hold on the same account reused
+  Indeed's OLD decline mail and overlapped the first row (Ascendra 11/21) —
+  now a decline mail dates a hold only if it came after the account last read
+  clean, else the start is halfway between the last clean check and the first
+  flagged one, and a new row never starts before the previous hold's end
+  (release 2026.11.25.14 Lucy 1 side); (2) **Octo asked to be restarted for an
+  update from the 7th profile of the 11/24 5am run and refused every start
+  for three runs** ("Update is available. Please restart application.") —
+  nothing opened on 11/24 1pm and all of 11/25, the quiet tally said so 17
+  times and nobody was told. Now: every account refusing for one reason =
+  one loud `octo-lookup` fault to the office (2026.11.25.14), and the run
+  quits + reopens Octo itself once and carries on (2026.11.25.15). Iron Sales
+  Group's Gmail is signed out in Octo (mail times estimated for it).
+
 ### 2026-11-19 (manual)
 - **Indeed billing holds reach the live-ads numbers and Slack on their own**
   (Carlos: "it needs to somehow communicate when the ads go back live").
