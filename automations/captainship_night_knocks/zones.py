@@ -147,6 +147,9 @@ ICD_TIMEZONES: Dict[str, str] = {
     "Colten Wright":    "America/New_York",              # Doral, FL
     "Jose Velasquez":   "America/Los_Angeles",           # Sacramento, CA
     "Taylor Nickerson": "America/New_York",              # Henrico, VA
+    # Nicholas Weldon 2026-11-25: "Justin Clowdus in Louisville Ky". Louisville
+    # is Eastern (same check as Jennifer Figueroa); not harvested.
+    "Justin Clowdus":   "America/New_York",              # Louisville, KY
     # jairo — the rest of his roster is waiting on Office Access. Maitland is
     # Orange County, next to Orlando: peninsula, Eastern (same check as Doral).
     "Drew Tepper":      "America/New_York",              # Maitland, FL

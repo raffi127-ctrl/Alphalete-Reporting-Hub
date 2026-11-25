@@ -117,6 +117,9 @@ OWNER_EMAILS: Dict[str, str] = {
     "Lj Brown":            "lajaviusbrown@yahoo.com",     # Contacts: "Lajavius Brown"
     "Kyle Campas":         "campas.kyle@gmail.com",
     "Noah Dubale":         "dubalenoah@gmail.com",
+    # IN 2026-11-25 (Nicholas Weldon, mail "EOD summary for OOF"): Justin runs
+    # OOF in Louisville, KY. Address = his Slack profile (Alphalete workspace).
+    "Justin Clowdus":      "highimpactsolutionsjc@gmail.com",
     # jairo
     "Jairo Ruiz":          "jairoruizpmg@gmail.com",
     "Drew Tepper":         "drewtepp2735@gmail.com",
@@ -152,6 +155,11 @@ EXTRA_RECIPIENTS: Dict[str, List[str]] = {
     # Taylor Nickerson 2026-11-24 (mail "Add someone to mail list", Raf sent
     # her to Eve): add her assistant manager to the daily knocks mail.
     "Taylor Nickerson": ["kxmarii@gmail.com"],         # Taylor's asst. manager
+    # Nicholas Weldon 2026-11-25 (mail "EOD summary for OOF"): "add both Colten
+    # and myself to the daily email" — Nicholas is Justin's promoting owner,
+    # Colten his captain.
+    "Justin Clowdus": ["coltenwrightsc@gmail.com",     # Colten Wright
+                       "nweldon0130@gmail.com"],       # Nicholas Weldon
 }
 
 
