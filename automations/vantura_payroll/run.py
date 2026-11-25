@@ -1419,6 +1419,23 @@ def _refresh_and_check(week: dt.date, raw_range: tuple[int, int], *,
     except Exception as exc:  # noqa: BLE001 — the tie-out must never kill payroll
         parts.append(f"tie-out check errored ({exc!r})")
 
+    # Carlos 11/24: last Mon-Sun's apps set this Friday's % -- say who is due
+    # 45% / 50% so it is never missed again (reports only, changes no pay).
+    try:
+        from automations.recruiting_report.fill import open_by_key as _obk
+        from automations.vantura_payroll import cs_tidy as _ct
+        _sh = _obk(sheet_id)
+        _reps = [r[0].strip() for r in _sh.worksheet("Commission").get("A4:A80") if r and r[0].strip()]
+        _reps = _reps[:_reps.index("TOTAL")] if "TOTAL" in _reps else _reps
+        _al = _ct._alias_map(_sh)
+        parts.append("pay levels: " + _ct.levels_report(
+            _ct.levels_due(_sh.worksheet("NDS Sales Board").get("A4:Q40"),
+                           _sh.worksheet("WeekData").get_all_values(), week),
+            _ct.rates_for(_reps, _sh.worksheet("Rates").get_all_values(),
+                          _sh.worksheet("Adjustments").get_all_values(), week, _al), _al))
+    except Exception as exc:  # noqa: BLE001 -- never kills payroll
+        parts.append(f"pay levels not checked ({type(exc).__name__})")
+
     checks = " | ".join(parts[1:])
     log("checks: " + checks)
     return {"summary": parts[0], "checks": checks}
@@ -1500,8 +1517,11 @@ def _snapshot_commission(week: dt.date, *, write: bool, sheet_id: str,
     # Carlos 11/24: first/second-week order counts + training bonuses, and no
     # leftover borders under the TOTAL row. Cosmetic -- never kills payroll.
     try:
-        from automations.vantura_payroll.cs_tidy import finish_cs
+        from automations.vantura_payroll.cs_tidy import (
+            add_payout_column, add_rate_column, finish_cs)
         finish_cs(sh, nws, mat, week, log=log)
+        add_payout_column(sh, nws, mat, log=log)       # before the Rate column: it works on G:O
+        add_rate_column(sh, nws, mat, week, log=log)   # last: shifts E and everything right of it
     except Exception as e:  # noqa: BLE001
         log(f"commission sheet: finish SKIPPED ({type(e).__name__}: {e})")
     log(f"commission sheet: snapped {name} on the board ({len(mat)}x{width} cells)")
