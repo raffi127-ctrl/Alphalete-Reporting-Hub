@@ -172,3 +172,44 @@ def test_the_scheduled_read_is_not_the_showed_up_read_with_a_flag():
     joined = "\n".join(code)
     assert "SCHEDULED_ROW_LABEL" in joined
     assert "dated=True" in joined
+
+
+# ------------------------------------------- several rows, one report load
+
+class _FakePage:
+    def __init__(self, hrefs, shown):
+        self.hrefs, self.shown = hrefs, shown
+
+    def evaluate(self, js, label=None):
+        if label is not None:                        # _week_href
+            return self.hrefs.get(label)
+        return self.shown.strftime("%m/%d/%Y") + " " + self.shown.strftime("%m/%d/%Y")
+
+
+class _FakeApp:
+    def __init__(self, hrefs, shown):
+        self.page = _FakePage(hrefs, shown)
+        self.opens, self.visited = 0, []
+
+    def open_retention_details(self):
+        self.opens += 1
+
+    def _goto_detail(self, href):
+        self.visited.append(href)
+
+
+def test_read_weeks_opens_the_report_once_for_every_row_and_week(monkeypatch):
+    """11/23-11/25 the 2nd-round audit re-opened the report for every (row,
+    week) -- 30 loads an office -- and was killed at its timeout every day."""
+    shown = dt.date(2026, 11, 22)
+    href = "detail.cfm?id=X&dt=11/22/2026&dt2=11/28/2026"
+    app = _FakeApp({"A": href, "B": href.replace("X", "Y")}, shown)
+    monkeypatch.setattr(R, "_detail_rows", lambda app, want: [_row("Ada", "F", "a@x.com")])
+    weeks = [dt.date(2026, 11, 15), shown]
+    got = R.read_weeks(app, "11280", ["A", "B", "Missing"], weeks, log=lambda *a: None)
+    assert app.opens == 1
+    assert len(app.visited) == 4
+    assert "dt=11/15/2026&dt2=11/21/2026" in app.visited[0]
+    assert app.visited[1] == href                     # the shown week is not rebuilt
+    assert got["Missing"] is None                     # unread, never "empty"
+    assert [p["first_name"] for p in got["A"][shown]] == ["Ada"]

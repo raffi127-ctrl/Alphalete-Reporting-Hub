@@ -285,6 +285,43 @@ def read_week(app, office_id: str, week_start: dt.date, log=print, *,
     return people
 
 
+def read_weeks(app, office_id: str, labels, weeks, log=print, *,
+               stage: str = STAGE) -> Dict[str, Optional[Dict[dt.date, List[Dict]]]]:
+    """{label: {week_start: people}} -- several rows x several weeks off ONE
+    load of the report.
+
+    `read_week` opens the report again for every (row, week) it is asked, so
+    a caller that wants five rows over six weeks pays sixty page loads per
+    office. The 2nd-round contacts audit did exactly that and was killed at
+    its timeout three days running (11/23-11/25: 3 of 9 offices read in 20
+    minutes). Every link here comes off the one render and is retargeted the
+    same way `read_week` does for a week the report won't show -- the same
+    reader, asked once.
+
+    A row the report doesn't carry maps to None, not {}: an unread row must
+    never look like an empty one."""
+    from automations.icd_onboarding.board import week_start_of
+
+    app.open_retention_details()
+    shown = _rendered_week(app.page)
+    hrefs = {label: _week_href(app.page, label) for label in labels}
+    out: Dict[str, Optional[Dict[dt.date, List[Dict]]]] = {}
+    for label in labels:
+        href = hrefs[label]
+        if not href:
+            log("  retention: %s has no %r row" % (office_id, label))
+            out[label] = None
+            continue
+        got: Dict[dt.date, List[Dict]] = {}
+        for w in weeks:
+            want = week_start_of(w)
+            app._goto_detail(href if shown == want else _retarget(href, want))
+            got[w] = _as_people(_detail_rows(app, WANT), stage=stage,
+                                week_start=want)
+        out[label] = got
+    return out
+
+
 def read_scheduled_week(app, office_id: str, week_start: dt.date,
                         log=print) -> List[Dict]:
     """Who is SCHEDULED to start in the office that week, with each day.

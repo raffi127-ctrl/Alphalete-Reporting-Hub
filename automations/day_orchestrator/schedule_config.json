@@ -19575,7 +19575,7 @@
    "freshness_target": null,
    "priority": "P3",
    "source_type": "appstream",
-   "timeout_minutes": 20,
+   "timeout_minutes": 50,
    "verify": null,
    "report_id": "linkedin-2nd-round-contacts",
    "_note": "Raf's rules on what the two passes added: not hired / left as a message 7 days after the second round -> removed; new start scheduled but never showed, 3 weeks after -> removed; showed but OwnerVille View Progress under 100% 3 weeks after -> removed (Carlos 2026-10-31: Onboard -> View Progress -> campaign -> search -> Progress 100% = fully onboarded); showed + 100% -> kept for good, terminated later or not (Raf: rehires). State in output/second_round_contacts/state.json."

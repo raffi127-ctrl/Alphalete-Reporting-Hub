@@ -100,14 +100,16 @@ def read_weeks(app, office: str, labels, weeks: List[dt.date],
     owner = app.select_office(office)
     _log("  [%s] %s" % (office, owner))
     out: List[Tuple[str, dt.date, dict]] = []
+    # ONE load of the report per office, not one per (row, week): 5 rows x 6
+    # weeks re-opened the report 30 times an office and the audit was killed
+    # at its timeout 11/23-11/25 having read 3 of 9 offices.
+    got = RET.read_weeks(app, office, labels, weeks, log=lambda *a: None)
     for label in labels:
+        if got.get(label) is None:
+            _log("    %s: no such row on the report" % label)
+            continue
         for week_start in weeks:
-            try:
-                people = RET.read_week(app, office, week_start,
-                                       log=lambda *a: None, row_label=label)
-            except RET.NotOnTheReport:
-                _log("    %s: no such row on the report" % label)
-                break
+            people = got[label].get(week_start) or []
             if not people:
                 continue
             when = min(week_start + dt.timedelta(days=6), today)
