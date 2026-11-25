@@ -933,11 +933,15 @@ def _b_value(kind, pct, lvl, i, paid):
     return pct if pct is not None else ""
 
 
-def _auto_json(rep, lead, pct, f):
+def _auto_json(rep, lead, pct, f, manual=False):
     """Hidden col T: what the system put in B / F for THIS rep — no row
-    numbers in it, so a sort can't make it point at the wrong row."""
+    numbers in it, so a sort can't make it point at the wrong row.
+    manual = the row was added by hand (add_rep), so a re-make re-adds it."""
     import json
-    return json.dumps({"rep": rep, "lead": bool(lead), "pct": pct, "f": f})
+    d = {"rep": rep, "lead": bool(lead), "pct": pct, "f": f}
+    if manual:
+        d["manual"] = True
+    return json.dumps(d)
 
 
 def _auto_load(cell, rep):
@@ -1157,11 +1161,13 @@ def main(src, out, use_board=True, carry_from=None, run_date=None,
         if name not in extras and kind != KIND_HELD:
             wr.cell(i, AUTO_COL, _auto_json(name, leader, lvl if leader else pct,
                                             bool(lost) if leader else None))
-        wr.cell(i, 7, f'=SUMIFS({J},{A},A{i},{K},"*{SUNDAY_NOTE}*")'
-                      f'-SUMIFS({J},{A},A{i},{K},"*{SUNDAY_NOTE}*{SPLIT}*")').number_format = MONEY
+        # $0 -> empty (Maud 2026-11-24)
+        sun = (f'SUMIFS({J},{A},A{i},{K},"*{SUNDAY_NOTE}*")'
+               f'-SUMIFS({J},{A},A{i},{K},"*{SUNDAY_NOTE}*{SPLIT}*")')
+        wr.cell(i, 7, f'=IF({sun}=0,"",{sun})').number_format = MONEY
         if key not in no_comm:
-            wr.cell(i, 8, f'=IF(B{i}="","",(C{i}-G{i})*B{i}'
-                          f'+G{i}*MAX(B{i},{SUNDAY_INTERNET_PCT}))').number_format = MONEY
+            wr.cell(i, 8, f'=IF(B{i}="","",(C{i}-N(G{i}))*B{i}'
+                          f'+N(G{i})*MAX(B{i},{SUNDAY_INTERNET_PCT}))').number_format = MONEY
         cb = cust_bonus.get(key, []) if pay else []
         cb_amt = round(sum(a for _l, a in cb), 2) or None
         for col, v in ((9, g_amt), (10, base), (11, bonus[0] if bonus else None),
@@ -1247,7 +1253,8 @@ def main(src, out, use_board=True, carry_from=None, run_date=None,
         rev = sum(d["Total $ to ICD"] for d in edited if d["Rep Full Name"] == rep)
         sun = sum(d["Total $ to ICD"] for d in edited if d["Rep Full Name"] == rep
                   and SUNDAY_NOTE in str(d[NOTE_COL] or ""))
-        show = {"B": _p is not None, "C": bool(rev), "G": bool(sun), "F": bool(lost),
+        # no commission -> no Commission % row either (Maud 2026-11-24)
+        show = {"B": bool(rev) and _p is not None, "C": bool(rev), "G": bool(sun), "F": bool(lost),
                 "H": bool(rev) and _p is not None, "I": bool(g_amt), "J": bool(base),
                 "K": bool(bonus), "L": bool(gas), "D": True}
         show["Q"] = False                        # nothing typed in yet
@@ -1316,6 +1323,13 @@ def copy_manual_entries(old_id, new_id):
     from automations.recruiting_report.fill import open_by_key
     old, new = open_by_key(old_id), open_by_key(new_id)
     po = _payout_ws(old).get_values(value_render_option="FORMULA")
+    report = []
+    have = {r[0] for r in _payout_ws(new).get_values("A:A") if r}
+    for r in po[1:]:                              # reps added by hand: add again
+        r = r + [""] * AUTO_COL
+        if r[0] and r[0] not in have and _auto_load(r[AUTO_COL - 1], r[0]).get("manual"):
+            add_rep(new_id, r[0], log=lambda m: None)
+            report.append(f"{r[0]}: added by hand last time — added again")
     pn_ws = _payout_ws(new)
     pn = pn_ws.get_values(value_render_option="FORMULA")
     names = [r[0] for r in pn[1:] if r and r[0] and r[0] != "TOTAL"]
@@ -1323,7 +1337,7 @@ def copy_manual_entries(old_id, new_id):
     import json
     head_o = po[0]
     has_auto = len(head_o) >= AUTO_COL and head_o[AUTO_COL - 1] == AUTO_HEADER
-    report, data = [], []
+    data = []
     for oi, r in enumerate(po[1:], 2):
         if not r or r[0] not in row_of or r[0] == "TOTAL":
             continue
@@ -1385,6 +1399,82 @@ def copy_manual_entries(old_id, new_id):
         ws.update(values=rows, range_name=f"A2:D{len(rows) + 1}",
                   value_input_option="USER_ENTERED", raw=False)
     return report
+
+
+def add_rep(sheet_id, name, log=print):
+    """Google Sheets: add a rep who isn't on this week's DD (e.g. someone only
+    getting a Training Bonus — Maud 2026-11-24, Brian Sigman) — a payout row
+    in alphabetical order with the same formulas as everyone else, the board's
+    % / Level / Rule, and their own tab. Type their bonus in afterwards.
+    Flagged in the hidden auto record, so a re-make adds them again."""
+    from automations.recruiting_report.fill import open_by_key
+    sh = open_by_key(sheet_id)
+    ws = _payout_ws(sh)
+    rows = ws.get_values(value_render_option="FORMULA")
+    names = [str(r[0]).strip() if r else "" for r in rows]
+    if name in names:
+        log(f"{name} is already on the payout tab")
+        return None
+    raw = sh.worksheet(TAB_RAW).get_values()
+    ix = {h.strip(): i for i, h in enumerate(raw[0])}
+    dds = dd_sunday(raw[1:], ix)
+    board = read_board(dds, run_date=dds + dt.timedelta(days=7))
+    pct, kind, note, lost, lvl = rule_for(name, board)
+    if kind == KIND_HELD:                         # nothing to hold: no sales
+        pct, kind, note = None, KIND_MISSING, "New start (no sales this week)"
+    leader = pct is not None and kind == "leader"
+    total = names.index("TOTAL") + 1
+    reps = [(i, n) for i, n in enumerate(names[:total - 1], 1)
+            if i > 1 and n and str((rows[i - 1] + [""] * 5)[4]) != NOTE_EXTRA]
+    # a plain row of the same sort to copy formulas + look from
+    def plain(i):
+        r = rows[i - 1] + [""] * AUTO_COL
+        return (str(r[3]).startswith("=") and not r[8]
+                and str(r[1]).startswith("=IF(F") == leader and r[1] not in ("", None))
+    ref = next((i for i, _n in reps if plain(i)), reps[0][0])
+    at = next((i for i, n in reps if n.lower() > name.lower()), reps[-1][0])
+    at = max(at, 3)                               # inside the TOTAL sums
+    if ref >= at:
+        ref += 1
+    sid = ws.id
+    rng = lambda r: {"sheetId": sid, "startRowIndex": r - 1, "endRowIndex": r,
+                     "startColumnIndex": 0, "endColumnIndex": AUTO_COL}
+    sh.batch_update({"requests": [
+        {"insertDimension": {"range": {"sheetId": sid, "dimension": "ROWS",
+                                       "startIndex": at - 1, "endIndex": at},
+                             "inheritFromBefore": True}},
+        {"copyPaste": {"source": rng(ref), "destination": rng(at),
+                       "pasteType": "PASTE_NORMAL"}}]})
+    i = at
+    b = _b_value(kind, pct, lvl, i, pct is not None)
+    vals = [{"range": f"A{i}", "values": [[name]]},
+            {"range": f"B{i}", "values": [[b]]},
+            {"range": f"E{i}", "values": [[note]]},
+            {"range": f"F{i}", "values": [[bool(lost) if leader else ""]]},
+            {"range": f"I{i}:N{i}", "values": [[""] * 6]},
+            {"range": f"P{i}", "values": [[""]]},
+            {"range": f"{get_column_letter(AUTO_COL)}{i}",
+             "values": [[_auto_json(name, leader, lvl if leader else pct,
+                                    bool(lost) if leader else None, manual=True)]]}]
+    ws.batch_update(vals, value_input_option="USER_ENTERED")
+    if not leader:                                # no checkbox for non-leaders
+        sh.batch_update({"requests": [{"setDataValidation": {"range": {
+            "sheetId": sid, "startRowIndex": i - 1, "endRowIndex": i,
+            "startColumnIndex": 5, "endColumnIndex": 6}}}]})
+    # their tab, in name order among the rep tabs
+    tabs = sh.worksheets()
+    title = safe_title(name, {w.title.lower() for w in tabs})
+    after = [w for w in tabs if w.title not in NOT_REP_TABS and w.title.lower() < title.lower()]
+    index = (after[-1].index + 1) if after else len(tabs)
+    wt = sh.add_worksheet(title=title, rows=60, cols=12, index=index)
+    wt.update(values=[["Rep", name]], range_name="A1:B1")
+    sh.batch_update({"requests": [{"updateDimensionProperties": {
+        "range": {"sheetId": wt.id, "dimension": "COLUMNS", "startIndex": c,
+                  "endIndex": c + 1}, "properties": {"pixelSize": w},
+        "fields": "pixelSize"}} for c, w in ((0, 220), (1, 240), (2, 220))]})
+    refresh_rep_tabs(sheet_id, log=log)
+    log(f"added {name} on row {i} ({note or 'no rule'}) + tab {title!r}")
+    return i
 
 
 def remake(old_id, xlsx, name, log=print):
@@ -1613,7 +1703,8 @@ def sync_from_board(sheet_id, log=print):
             upd[get_column_letter(AUTO_COL)] = _auto_json(
                 name, leader if b_auto else was["lead"],
                 (lvl if leader else pct) if b_auto else was["pct"],
-                want_f if f_auto and want_f is not None else was["f"])
+                want_f if f_auto and want_f is not None else was["f"],
+                manual=was.get("manual", False))
         for col, v in upd.items():
             data.append({"range": f"{col}{i}", "values": [[v]]})
         changed.append(f"{name} ({', '.join(c for c in upd if c != get_column_letter(AUTO_COL))})")
@@ -1681,7 +1772,7 @@ def refresh_rep_tabs(sheet_id, log=print, force=False):
             log(f"   refresh: {rep!r} not on the payout tab — tab left alone")
             continue
         v = {c: row[i] for c, i in col_ix.items()}
-        show = {"B": v["B"] not in (None, ""), "F": v["F"] is True, "D": True,
+        show = {"B": v["B"] not in (None, "") and _nz(v["H"]), "F": v["F"] is True, "D": True,
                 **{c: _nz(v[c]) for c in "CGHIJKLNP"},
                 "Q": any(_nz(v[c]) for c in "OP")}
         cb = [(a, b) for a, b, _c in cur[1:top]
