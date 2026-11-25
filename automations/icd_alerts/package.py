@@ -350,6 +350,12 @@ AGENT_FILES = [
     "automations/blueink_docs/blueink.py",
     "automations/blueink_docs/config.py",
     "automations/office_admin/config.py",
+    # `eco_steps.from_ownerville` refreshes the WEEK-3 board as well as this
+    # week's, and `wk3.start_week_for` is the one place that arithmetic
+    # lives. Its heavy imports (fdot, the board, the fillers) are all inside
+    # functions the office machine never calls, so shipping it costs one
+    # small module.
+    "automations/office_admin/wk3.py",
     "automations/shared/workbooks.py",
     "automations/shared/new_start_eligibility.py",
     "automations/shared/hub_autopublish.py",

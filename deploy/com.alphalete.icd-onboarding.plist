@@ -39,12 +39,12 @@
          fires on the hour and drives the same OwnerVille. Two runs sharing a
          browser profile wedge it (obcl_ov_sweep keeps its own profile for
          exactly that reason), so the two are kept half an hour apart. -->
-    <!-- GENERATED FROM automations/icd_onboarding/cadence.BANDS -- do not
+    <!-- GENERATED FROM automations/icd_onboarding/cadence.BANDS — do not
          hand-edit. 15 minutes 8am-noon, 30 noon-3pm, hourly the rest
          (Megan, 2026-11-24). The agent fires on the band's own minutes
          and the MODULE decides whether a pass is due, because launchd
          has no "every N minutes between these hours". Re-generate with
-         `python -m automations.icd_onboarding.cadence --plist`. -->
+         `python -m automations.icd_onboarding.cadence —plist`. -->
     <key>StartCalendarInterval</key>
     <array>
         <dict><key>Hour</key><integer>0</integer><key>Minute</key><integer>0</integer></dict>

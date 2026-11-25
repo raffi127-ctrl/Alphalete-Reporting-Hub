@@ -340,6 +340,32 @@ REMOVAL_REASONS: Sequence[str] = ("Terminated", "Failed BG", "No Show",
 # a count stops meaning anything.
 NO_SHOW_REASON = "No show to first day"
 
+# THE SECOND REASON A MACHINE MAY WRITE, and it is held to the same rule.
+#
+# Megan, 2026-11-25: "if they aren't owner submitted in OV by the time they
+# should be getting the drug test we can move them to terminated on our OBCL
+# extension for that week for 'Onboarding Not Completed'".
+#
+# WHY THIS IS NOT THE MACHINE DECIDING SOMEBODY HAS LEFT. Owner Submit is the
+# end of onboarding: it is what the whole board is working towards, and it is
+# the office's OWN press. Three weeks after somebody started, an unpressed
+# Owner Submit is not a lag -- every gate in front of it has had time, and the
+# office has had three weeks to press it. So the board is recording a fact
+# about ITSELF ("this onboarding never finished"), not a judgement about a
+# person's employment, which is why the reason says exactly that and no more.
+#
+# IT IS WHAT MAKES THE BOARD ANSWER "IS THIS PERSON STILL HERE". Until now the
+# board recorded how onboarding ENDED and never moved again, so on one real
+# cohort it reported two departures where the office's sales board reported
+# eight. Somebody who drifts away in week two is never owner submitted, and
+# this is what turns that silence into a row the board can see.
+#
+# THE ADMIN STILL OVERRULES IT. Nothing a person typed is overwritten, the row
+# stays on the board in the removal section, and un-terminating is a cell
+# edit. Megan, in the same breath: "the person running it should be able to
+# uncheck them to not send if they know they were terminated."
+NOT_COMPLETED_REASON = "Onboarding Not Completed"
+
 GREEN = {"red": 0.71, "green": 0.87, "blue": 0.66}
 
 # A SUGGESTION, NOT AN ANSWER. Gender is pre-filled from the first name where

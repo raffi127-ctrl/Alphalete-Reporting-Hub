@@ -902,8 +902,38 @@ def from_ownerville(office_key: str, week_start: dt.date, *,
         if said:
             v["OV BG Status"] = said
         verdicts[name] = v
-    return F.apply_anywhere(office_key, week_start, "ownerville",
-                            verdicts, dry_run=dry_run, log=log)
+    # THE OLDER TAB GETS THE SAME ANSWER. Megan, 2026-11-25: "if we had
+    # someone start this last monday and not be owner submitted until this
+    # coming tuesday, I could go to the OBCL ext for this week and they would
+    # show they did get ownersubmitted?" -- and until now, no.
+    #
+    # The hourly run only ever processes THIS week (run.main defaults the week
+    # to today), so a tab stopped being updated the moment its week ended. An
+    # Owner Submit pressed a fortnight late landed on the current week's board
+    # and never on the one that actually carries that person. The week-3 check
+    # then read a frozen column and would have marked them "Onboarding Not
+    # Completed" when the office had finished them days before.
+    #
+    # ONE OWNERVILLE READ, TWO BOARDS. `read_table` already returns the WHOLE
+    # roster in one call, so a second week costs a Sheets write and no extra
+    # page load. The week-3 week is the one that matters because it is the one
+    # being judged; `wk3.start_week_for` owns that arithmetic so the refresh
+    # and the judgement can never disagree about which week they mean.
+    from automations.office_admin import wk3 as _W
+    weeks = [week_start]
+    older = _W.start_week_for(week_start)
+    if older != week_start:
+        weeks.append(older)
+    wrote = 0
+    for wk in weeks:
+        n = F.apply_anywhere(office_key, wk, "ownerville",
+                             verdicts, dry_run=dry_run, log=log)
+        if wk != week_start and n:
+            log("  ownerville: %d cell(s) also refreshed on the week-3 board "
+                "(%s), so a late Owner Submit reaches the tab that carries "
+                "that person" % (n, wk))
+        wrote += n
+    return wrote
 
 
 def owner_submit(office_key: str, week_start: dt.date, *,

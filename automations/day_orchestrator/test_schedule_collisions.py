@@ -326,3 +326,32 @@ class WhatWeSayTheClockIs(unittest.TestCase):
         self.assertEqual(
             missing, [],
             "fires at 21:15 but never says so in: %s" % ", ".join(missing))
+
+
+class EveryPlistIsWellFormedXml(unittest.TestCase):
+    """A plist the XML parser gives up on is a plist this file cannot read.
+
+    Found 2026-11-25. Two deploy plists carried "--" inside an XML comment,
+    where it is illegal. `plutil -lint` accepts it and launchd loads it, so
+    nothing on a machine complained -- but expat stops at the first one, so
+    `_fire_minutes` read NO times out of either file and the collision check
+    above silently had nothing to compare. It was hiding a real overlap: the
+    OBCL names job and the hourly board run fired at nearly the same minutes
+    and the overlap guard was skipping one of them.
+
+    So the collision test is only as good as the parse, and this is the
+    parse. It is cheap and it fails loudly on the exact mistake, which a
+    comment asking people not to type "--" would not.
+    """
+
+    def test_every_deploy_plist_parses(self):
+        import plistlib
+        bad = []
+        for f in sorted(DEPLOY.glob("*.plist")):
+            try:
+                plistlib.loads(f.read_bytes())
+            except Exception as e:                      # noqa: BLE001
+                bad.append("%s: %s" % (f.name, str(e)[:70]))
+        self.assertEqual(bad, [], "\n".join(
+            ["these plists are not well-formed XML (a '--' inside an XML "
+             "comment is the usual cause; use an em dash):"] + bad))
