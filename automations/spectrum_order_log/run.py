@@ -89,17 +89,23 @@ def _print_filters(obj, depth: int = 0) -> None:
             _print_filters(v, depth + 1)
 
 
-# Last 30 days, like the AT&T log (Eve 2026-11-25). The dashboard opens on
+# Same window as the AT&T log (uploaded.order_log START_DATE/END_DATE): from
+# the same day last month through YESTERDAY, by sale date (Eve 2026-11-25).
+# The dashboard opens on
 # the current Sale Week only; a URL filter widens it. Sale Week = the Saturday
 # that closes a Sun-Sat week, and ONLY yyyy-mm-dd works in the URL (probe
 # --weeks: m/d/yyyy and mm/dd/yyyy came back with this week only).
-DAYS_BACK = 30
+def window(today: dt.date) -> "tuple[dt.date, dt.date]":
+    """(first, last) sale date kept — AT&T's 'last month -> yesterday'."""
+    from dateutil.relativedelta import relativedelta
+    end = today - dt.timedelta(days=1)
+    return end - relativedelta(months=1), end
 
 
 def sale_weeks(today: dt.date) -> "list[dt.date]":
-    """Every Sale Week (Saturday) with a day inside the last DAYS_BACK days."""
-    sat = today + dt.timedelta(days=(5 - today.weekday()) % 7)
-    first = today - dt.timedelta(days=DAYS_BACK)
+    """Every Sale Week (Saturday) that has a day inside window(today)."""
+    first, end = window(today)
+    sat = end + dt.timedelta(days=(5 - end.weekday()) % 7)
     out = []
     while sat >= first:
         out.append(sat)
@@ -395,7 +401,12 @@ def main(argv=None) -> int:
 
     today = dt.date.today()
     fields, rows = pull(today)
-    recs = shape(fields, rows)
+    first, end = window(today)
+    recs = [r for r in shape(fields, rows)
+            if (_parse_date(r["Sale Date"]) or first) >= first
+            and (_parse_date(r["Sale Date"]) or end) <= end]
+    print(f"  window {first:%m/%d/%Y} - {end:%m/%d/%Y}: kept {len(recs)} "
+          f"of {len(rows)} line(s)")
     counts: dict = {}
     for r in recs:
         counts[r["Status"]] = counts.get(r["Status"], 0) + 1
