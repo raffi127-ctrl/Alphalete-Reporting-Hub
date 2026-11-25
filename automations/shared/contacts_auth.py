@@ -145,15 +145,39 @@ def expand_groups(group_names: List[str]) -> Tuple[List[str], List[str]]:
     for i in range(0, len(member_rns), 200):              # getBatchGet caps at 200
         chunk = member_rns[i:i + 200]
         resp = svc.people().getBatchGet(
-            resourceNames=chunk, personFields="emailAddresses").execute()
+            resourceNames=chunk, personFields="names,emailAddresses").execute()
         for r in resp.get("responses", []):
-            for e in (r.get("person", {}).get("emailAddresses") or []):
-                val = (e.get("value") or "").strip()
-                if val and _norm(val) not in seen:
-                    seen.add(_norm(val))
-                    emails.append(val)
-                    break                                 # one email per person
+            val = _person_email(r.get("person", {}))
+            if val and _norm(val) not in seen:
+                seen.add(_norm(val))
+                emails.append(val)
     return emails, missing
+
+
+def _person_email(person: dict) -> str:
+    """One real address for a contact, or '' (with a warning).
+
+    A value with no '@' is never an address: sent as-is it lands in the To
+    header as junk ("Hasan", "Salame") and that person gets nothing. That's
+    what happened 2026-11-25: Hasan Salame's contact had name and email
+    swapped (email field 'Hasan Salame', name 'hsalame1124@gmail.com'). If
+    the name holds the address, use it and say so; otherwise skip loudly."""
+    raw = [(e.get("value") or "").strip()
+           for e in (person.get("emailAddresses") or [])]
+    for val in raw:
+        if "@" in val and " " not in val:
+            return val
+    for n in (person.get("names") or []):
+        cand = (n.get("displayName") or "").strip()
+        if "@" in cand and " " not in cand:
+            print(f"WARNING contact {person.get('resourceName')}: email field "
+                  f"{raw!r} isn't an address; using the address in its name "
+                  f"({cand}). Fix the contact in Google Contacts.")
+            return cand
+    if raw:
+        print(f"WARNING contact {person.get('resourceName')}: email field {raw!r} "
+              f"isn't an address - skipped. Fix the contact in Google Contacts.")
+    return ""
 
 
 def main(argv=None) -> int:
