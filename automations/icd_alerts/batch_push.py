@@ -33,7 +33,7 @@ from pathlib import Path
 from typing import Callable, Optional
 
 # office -> "dry" | "live". Live only after a dry run has been read.
-BATCH_OFFICES = {}   # OFF 2026-11-25 12:20: Raf's computer showed an AppStream sign-in after the batch moved its page; batch had not yet reached Process in Batches once
+BATCH_OFFICES = {"24065": "live"}   # back on 2026-11-25 (Megan: "yes turn it back on"); Thanksgiving pause covers it via quiet_window
 BATCH_LIMIT = 10
 EXTRACT_CAP_S = 240
 OFF_AFTER_BLOCKS = 2
