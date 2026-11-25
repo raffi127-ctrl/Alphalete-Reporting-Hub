@@ -118,6 +118,40 @@ def _fetch_csv(page, url: str, log=print) -> bytes:
     raise empty or last
 
 
+# 2026-11-25: the direct ORDERLOG.csv stopped returning the Order Log table. It
+# answers 13,711 bytes = 32 rows of ONE other company's rep on ONE day (ALEX
+# CENSI [power shift marketing]), whatever Start/End, :revert=all or owner URL
+# filter we send — while the same view opened by hand in Carlos's account reads
+# 'Vista: Original', every filter '(Todo)', every owner on screen. The .csv of a
+# dashboard hands back one of its worksheets, and it is no longer this one.
+# Download -> Crosstab -> 'Order Log' (the person's way) returns the real table:
+# 31 days = 27,209 rows / 77 owners / dates honoured, measured on Lucy 2 that
+# afternoon (att_order_log_probe --crosstab-check). clean.load_grid already reads
+# the crosstab's tab-delimited UTF-16 shape, so nothing downstream changes.
+CROSSTAB_SHEET = "Order Log"
+
+
+def _crosstab_ui_url(today: dt.date) -> str:
+    start = today - dt.timedelta(days=WINDOW_DAYS)
+    return ("https://us-east-1.online.tableau.com/#/site/sci/views/"
+            "ATTTRACKER-B2B/ORDERLOG?:iid=1&Start%20Date={}&End%20Date={}").format(
+                start.isoformat(), today.isoformat())
+
+
+def _crosstab(page, today: dt.date, dest: Path, log=print) -> Path:
+    """Download -> Crosstab -> 'Order Log' into dest, in the already-authed page."""
+    from automations.recruiting_report.opt_phase import drive_crosstab_dialog
+
+    url = _crosstab_ui_url(today)
+    log("  [crosstab] {}".format(url))
+    drive_crosstab_dialog(page, url, CROSSTAB_SHEET, dest, verbose=False)
+    size = dest.stat().st_size
+    log("  [crosstab] {:,} bytes".format(size))
+    if size < 1000:
+        raise RuntimeError("order-log crosstab came back empty ({} bytes)".format(size))
+    return dest
+
+
 def _pull(today: dt.date, dest: Path, log=print) -> Path:
     """Download the order-log crosstab through Carlos's real-Chrome session."""
     import time
@@ -141,9 +175,7 @@ def _pull(today: dt.date, dest: Path, log=print) -> Path:
                 tp._ensure_tableau_authenticated(page, verbose=False,
                                                  allow_form_login=True)
                 log("  [cdp] auth OK")
-                body = _fetch_csv(page, _csv_url(today), log=log)
-                dest.parent.mkdir(parents=True, exist_ok=True)
-                dest.write_bytes(body)
+                _crosstab(page, today, dest, log=log)
                 return dest
         finally:
             try:

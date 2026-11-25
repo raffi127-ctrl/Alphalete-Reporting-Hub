@@ -230,6 +230,11 @@ _NOT_A_REPORT = frozenset({
 # A name here is a promise that the report DOES NOT RUN — keep it in step with
 # on_scheduler:false + cadence weekdays [] in schedule_config, both doors.
 _RETIRED: frozenset = frozenset({
+    # ATT B2B Order Log (Carlos). Eve 2026-11-25: Carlos sells NDS now; the
+    # B2B ORDERLOG had 1 sale of his in 31 days, so every run failed 'no rows
+    # to write'. att_order_log.run._pull stays — b2b_metrics uses it for
+    # Eveliz. Revive = delete these lines + on_scheduler true + weekdays.
+    "att_order_log", "att-order-log",
     # Daily Update Fill. Carlos 2026-11-03: "good to be discontinued! i dont
     # need it anymore". The 8:45 PM on its card never had a timer behind it, so
     # the 11 owner boards stopped at 8/21-22. Module stays on disk: raf_daily_update
