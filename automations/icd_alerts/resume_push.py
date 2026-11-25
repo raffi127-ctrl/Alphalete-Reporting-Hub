@@ -1342,9 +1342,18 @@ WALL_RUNS = 2
 # Chrome is quit after the run; the next one starts fresh, which is what
 # clears a stale session. Lucy's own profile only.
 RESTART_AFTER_WALLS = 4
+# ONLY A STALE CHROME (Megan 2026-11-25 evening: "it's blocking a lot of human
+# clears"). Restarting every 4th walled run also quit Chromes that had just
+# been restarted or just been ticked -- a fresh Chrome always meets a new
+# check, and the tick a person made went with it (Raf: restarted ~2:55pm,
+# every run after walled). The week-old, self-updated Chrome was the case
+# this was for, so only one up this long is restarted.
+RESTART_MIN_AGE_MIN = 24 * 60
 
 
-def restart_due(streak: int) -> bool:
+def restart_due(streak: int, chrome_up_min: Optional[int] = None) -> bool:
+    if chrome_up_min is None or chrome_up_min < RESTART_MIN_AGE_MIN:
+        return False
     return streak > 0 and streak % RESTART_AFTER_WALLS == 0
 
 
@@ -1811,7 +1820,8 @@ def push(live: bool, scheduled: bool = False) -> int:
             _note_wall(bool(out.get("walled")))
             if out.get("walled"):
                 result = "walled"
-                if restart_due(int(_state().get("wall_streak") or 0)):
+                if restart_due(int(_state().get("wall_streak") or 0),
+                               _chrome_up_min()):
                     restart_chrome = True
             # LEAVE CHROME RUNNING, minimized. The next tick reuses it, so the
             # session and the security check it already passed carry over.

@@ -68,9 +68,16 @@ class ChromeAge(unittest.TestCase):
 
 class WalledChromeRestarts(unittest.TestCase):
     """Raf 11/24-25: a week-old Chrome walled every run with no box shown."""
-    def test_every_fourth_walled_run(self):
-        self.assertEqual([n for n in range(1, 13) if RP.restart_due(n)], [4, 8, 12])
-        self.assertFalse(RP.restart_due(0))
+    def test_every_fourth_walled_run_on_a_day_old_chrome(self):
+        old = 25 * 60
+        self.assertEqual([n for n in range(1, 13) if RP.restart_due(n, old)], [4, 8, 12])
+        self.assertFalse(RP.restart_due(0, old))
+
+    def test_a_young_or_unknown_chrome_is_never_restarted(self):
+        # 11/25 evening: restarts were throwing away fresh human ticks
+        self.assertFalse(RP.restart_due(4, 21))
+        self.assertFalse(RP.restart_due(8, 23 * 60))
+        self.assertFalse(RP.restart_due(4, None))
 
 
 if __name__ == "__main__":
