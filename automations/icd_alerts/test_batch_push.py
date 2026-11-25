@@ -9,7 +9,7 @@ from automations.icd_alerts import batch_push as BP
 
 class BatchTrial(unittest.TestCase):
     def test_only_24065(self):
-        self.assertEqual(BP.BATCH_OFFICES, {"24065": "live"})
+        self.assertEqual(BP.BATCH_OFFICES, {})  # paused 11/25
         self.assertIsNone(BP.mode_for("11280"))
         self.assertLessEqual(BP.BATCH_LIMIT, 10)
 
@@ -21,7 +21,8 @@ class BatchTrial(unittest.TestCase):
 
     def test_no_extension_means_no_browser_work(self):
         page = mock.MagicMock()
-        out = BP.run(page, "24065", tempfile.mkdtemp(), live_allowed=True)
+        with mock.patch.dict(BP.BATCH_OFFICES, {"24065": "live"}):
+            out = BP.run(page, "24065", tempfile.mkdtemp(), live_allowed=True)
         self.assertEqual(out["skipped"], "extension not installed")
         page.locator.assert_not_called()
 
