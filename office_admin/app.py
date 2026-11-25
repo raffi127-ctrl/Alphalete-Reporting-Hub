@@ -373,8 +373,13 @@ def _drug_section(admin, reqs, ws) -> None:
                            "before sending." % err)
             left = sum(1 for q in people if q.get("gone"))
             if left:
-                st.caption("%d of these %d are off the board already — "
-                           "unticked below." % (left, len(people)))
+                st.caption("%d of these %d are off the OBCL for that week — "
+                           "unticked below. Untick anyone else you know has "
+                           "left; the board only knows what it was told."
+                           % (left, len(people)))
+            else:
+                st.caption("All %d are still on the OBCL for that week. "
+                           "Untick anyone you know has left." % len(people))
             st.write("Tick who should get a drug test (read %s):" % found["at"])
             picked = []
             for i, p in enumerate(people):

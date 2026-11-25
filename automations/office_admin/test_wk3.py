@@ -229,3 +229,58 @@ class DotCoIsATypo(unittest.TestCase):
         self.assertEqual(got[0]["email"], "chrisjen2828@gmail.com")
         self.assertEqual(got[0]["email_was"], "chrisjen2828@gmail.co")
         self.assertNotIn("email_was", got[1])
+
+
+class StillOnTheObclIsTheTest(unittest.TestCase):
+    """Megan, 2026-11-25: "if they are still on the OBCL that we built for
+    that week" -- and then "the person running it should be able to uncheck
+    them to not send if they know they were terminated".
+
+    So the board pre-answers and the admin has the last word. TWO ways to be
+    off it, and the second is the one the first version missed.
+    """
+
+    def _find(self, rows):
+        import datetime as _dt
+        from unittest import mock
+        from automations.office_admin import wk3 as W, config as C
+        people = [{"first_name": "Kip", "last_name": "Wilson"},
+                  {"first_name": "Ada", "last_name": "Fournier"},
+                  {"first_name": "Mia", "last_name": "Reyes"}]
+        o = C.Office(key="raf", owner="Raf", appstream_id="11280")
+        with mock.patch("automations.office_admin.fdot.read_week",
+                        return_value=people), \
+             mock.patch("automations.icd_onboarding.fillers.rows_anywhere",
+                        return_value=rows), \
+             mock.patch("automations.applicant_tracker.applicantstream.session"):
+            got = W.find(o, today=_dt.date(2026, 11, 25), log=lambda *a: None,
+                         session=mock.MagicMock())
+        return {("%s %s" % (p["first_name"], p["last_name"])): p.get("gone")
+                for p in got}
+
+    def _row(self, first, last, term=""):
+        from automations.icd_onboarding import board as B
+        return {"Name": first, "Last Name": last,
+                B.TERMINATED_AT: term, B.REMOVED_WHY: "Quit" if term else ""}
+
+    def test_on_the_board_and_not_terminated_is_active(self):
+        got = self._find([self._row("Kip", "Wilson"),
+                          self._row("Ada", "Fournier"),
+                          self._row("Mia", "Reyes")])
+        self.assertEqual(set(v for v in got.values()), {None})
+
+    def test_a_terminated_row_is_off_with_its_reason(self):
+        got = self._find([self._row("Kip", "Wilson"),
+                          self._row("Ada", "Fournier", term="2026-11-18"),
+                          self._row("Mia", "Reyes")])
+        self.assertIsNone(got["Kip Wilson"])
+        self.assertEqual(got["Ada Fournier"], "Quit")
+
+    def test_NOT_ON_THE_BOARD_AT_ALL_is_also_off(self):
+        """The one the first version missed: somebody deleted from the board
+        came back with no flag and arrived TICKED, which is the opposite of
+        what the board was being asked."""
+        got = self._find([self._row("Kip", "Wilson")])
+        self.assertIsNone(got["Kip Wilson"])
+        self.assertEqual(got["Ada Fournier"], "not on the OBCL for that week")
+        self.assertEqual(got["Mia Reyes"], "not on the OBCL for that week")

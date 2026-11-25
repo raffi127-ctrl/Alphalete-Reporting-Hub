@@ -44,7 +44,7 @@ re-send is exactly the person a filter would hide.
 from __future__ import annotations
 
 import datetime as dt
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 # Week 1 is the week they started; week 3 begins 14 days later. One constant,
 # because "three weeks" is said as a number of weeks and written as a number
@@ -72,8 +72,16 @@ def start_week_for(day: Optional[dt.date] = None) -> dt.date:
     return week_start_of(day or dt.date.today()) - dt.timedelta(days=DAYS_BEFORE)
 
 
-def gone_by_now(office_key: str, start_week: dt.date, log=print) -> Dict[str, str]:
-    """{folded name: why} for the week-3 people the board says are OFF.
+def board_state(office_key: str, start_week: dt.date,
+                log=print) -> Tuple[Dict[str, str], set]:
+    """({folded name: why} for people who are OFF, {folded name} still on it).
+
+    STILL ON THE OBCL FOR THAT WEEK IS THE TEST. Megan, 2026-11-25: "if they
+    are still on the OBCL that we built for that week". So there are TWO ways
+    to be off it and both matter: carrying a Terminated date, and not being on
+    the tab at all. The second is the one the first version missed -- somebody
+    deleted from the board came back with no `gone` flag and arrived TICKED,
+    which is the opposite of what the board was being asked.
 
     MOST OF A THREE-WEEK-OLD COHORT IS NOT STILL SELLING. Megan, 2026-11-25:
     "it's likely a lot that were onboarded won't still be active reps". The
@@ -118,14 +126,19 @@ def gone_by_now(office_key: str, start_week: dt.date, log=print) -> Dict[str, st
                            "who is still active could not be read -- %s"
                            % (office_key, start_week, why))
     out: Dict[str, str] = {}
+    on: set = set()
     for r in rows:
+        name = ("%s %s" % (r.get("Name", ""), r.get("Last Name", ""))).strip()
+        if not name:
+            continue
+        key = B._fold(name)
+        on.add(key)
         if str(r.get(B.TERMINATED_AT) or "").strip():
-            name = ("%s %s" % (r.get("Name", ""), r.get("Last Name", ""))).strip()
-            if name:
-                out[B._fold(name)] = (str(r.get(B.REMOVED_WHY) or "").strip()
-                                      or "off the board")
-    log("  the board says %d of that week are off" % len(out))
-    return out
+            out[key] = (str(r.get(B.REMOVED_WHY) or "").strip()
+                        or "off the board")
+    log("  the board has %d name(s) for that week; %d marked off"
+        % (len(on), len(out)))
+    return out, on
 
 
 def find(office, *, today: Optional[dt.date] = None, session=None,
@@ -148,10 +161,11 @@ def find(office, *, today: Optional[dt.date] = None, session=None,
         rows = fdot.read_week(app, office.appstream_id, sunday, log=log)
 
     gone: Dict[str, str] = {}
+    on_board: set = set()
     board_error = ""
     if check_board:
         try:
-            gone = gone_by_now(office.key, sunday, log=log)
+            gone, on_board = board_state(office.key, sunday, log=log)
         except Exception as e:  # noqa: BLE001
             board_error = "%s: %s" % (type(e).__name__, str(e)[:140])
             log("  (could not read the board: %s)" % board_error)
@@ -164,7 +178,11 @@ def find(office, *, today: Optional[dt.date] = None, session=None,
         if board_error:
             p["board_error"] = board_error
         else:
-            why = gone.get(B._fold(name))
+            key = B._fold(name)
+            # OFF THE BOARD TWO WAYS: marked terminated, or simply not on it.
+            why = gone.get(key)
+            if not why and key not in on_board:
+                why = "not on the OBCL for that week"
             if why:
                 p["gone"] = why
         out.append(p)
