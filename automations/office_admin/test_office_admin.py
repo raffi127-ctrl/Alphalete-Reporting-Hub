@@ -723,3 +723,54 @@ class OfficeComputer(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ------------------- new starts -> Apex, in two presses
+
+def test_the_look_up_asks_for_a_preview_and_nothing_else(monkeypatch):
+    """It must not be able to create anybody: a look-up opens nothing."""
+    from automations.office_admin import actions, config as C
+
+    sent = {}
+
+    from automations.office_admin import relay_client
+    monkeypatch.setattr(relay_client, "request_job",
+                        lambda office, kind, payload, mode=None: (
+                            sent.update({"office": office, "kind": kind,
+                                         "payload": payload}) or "job-1"))
+    monkeypatch.setattr(actions.S, "add_request", lambda *a, **k: "r1")
+    monkeypatch.setattr(actions, "_row_of", lambda ws, rid: None)
+    actions.apex_look(None, {"username": "amy"}, C.office("raf"), "2026-11-22")
+    assert sent["kind"] == "apex_week"
+    assert sent["payload"]["preview"] is True
+    assert "genders" not in sent["payload"]
+    assert "people" not in sent["payload"]
+
+
+def test_the_send_carries_the_confirmed_genders(monkeypatch):
+    from automations.office_admin import actions, config as C
+
+    sent = {}
+
+    from automations.office_admin import relay_client
+    monkeypatch.setattr(relay_client, "request_job",
+                        lambda office, kind, payload, mode=None: (
+                            sent.update(payload) or "job-2"))
+    monkeypatch.setattr(actions.S, "add_request", lambda *a, **k: "r2")
+    monkeypatch.setattr(actions, "_row_of", lambda ws, rid: None)
+    actions.apex_send(None, {"username": "amy"}, C.office("raf"), "2026-11-22",
+                      {"Kimble Townsend": "Male"})
+    assert sent["genders"] == {"Kimble Townsend": "Male"}
+    assert not sent.get("preview")
+    assert "people" not in sent
+
+
+def test_a_send_with_nothing_confirmed_is_refused(monkeypatch):
+    """Apex will not take a record without a gender, so a blank one here
+    would be a person held back after the send -- which is the thing the
+    pop-up exists to prevent."""
+    import pytest
+    from automations.office_admin import actions, config as C
+    with pytest.raises(ValueError):
+        actions.apex_send(None, {"username": "amy"}, C.office("raf"),
+                          "2026-11-22", {"Kimble Townsend": ""})

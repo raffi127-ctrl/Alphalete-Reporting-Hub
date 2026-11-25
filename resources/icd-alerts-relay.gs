@@ -2412,12 +2412,35 @@ function _admApexWeek(sess, office, a) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(week)) {
     return {ok: false, error: 'week_start must look like 2026-11-02.'};
   }
+  // TWO SHAPES. A PREVIEW opens nothing and saves nothing: it reads the
+  // office's own calendar and answers with the week's names and the gender
+  // that would be used, which is what the admin is shown before they press
+  // Send (Megan, 2026-11-24). A SEND carries the genders they confirmed.
+  //
+  // THE GENDERS ARE THE ONLY THING THAT TRAVELS IN. Who is in the week is
+  // still read on the office's computer when the job runs -- a name cannot
+  // be posted in from outside, only a gender answered for one. Each value
+  // has to be a word, so nothing but a word can reach the form.
+  var preview = !!a.preview;
+  var genders = {};
+  var given = a.genders || {};
+  for (var name in given) {
+    if (!Object.prototype.hasOwnProperty.call(given, name)) continue;
+    var g = String(given[name] || '').trim();
+    if (g !== 'Male' && g !== 'Female') {
+      return {ok: false, error: 'gender for ' + name + ' must be Male or Female.'};
+    }
+    genders[String(name).slice(0, 120)] = g;
+  }
   // ONE AT A TIME, PER OFFICE. This job CREATES PAYROLL RECORDS, so a second
   // press while the first is still running must not queue a second run --
   // both would read the same calendar and both would try to create the same
   // people. The duplicate check on the Apex side is the second line of
   // defence; not queuing it twice is the first.
-  var sh = _book().getSheetByName(OFFICE_JOBS_TAB);
+  // A PREVIEW IS NOT A SEND, so it is not what this check is protecting
+  // against -- it creates nothing, and refusing a second look-up would
+  // leave the admin staring at a button that does nothing.
+  var sh = preview ? null : _book().getSheetByName(OFFICE_JOBS_TAB);
   if (sh) {
     var rows = sh.getDataRange().getValues();
     for (var i = 1; i < rows.length; i++) {
@@ -2428,13 +2451,15 @@ function _admApexWeek(sess, office, a) {
       var p = {};
       try { p = JSON.parse(String(r[OJ.PAYLOAD] || '{}')); } catch (err) {}
       if (String(p.week_start || '') !== week) continue;
+      if (p.preview) continue;                 // a look-up is not a send
       return {ok: true, job_id: String(r[OJ.ID]), already_running: true,
               status: String(r[OJ.STATUS])};
     }
   }
   var o = _admOffice(sess, office);
   return _officeJobEnqueue({office: office, kind: 'apex_week', mode: o.mode,
-                            payload: {week_start: week, by: sess.username}});
+                            payload: {week_start: week, by: sess.username,
+                                      preview: preview, genders: genders}});
 }
 
 // VOLUME CHECK (Megan 2026-11-08): a send much bigger than this office's usual

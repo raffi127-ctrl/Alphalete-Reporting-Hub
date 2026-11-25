@@ -292,6 +292,122 @@ def _bgc_section(admin, reqs, ws) -> None:
             st.caption(res["error"])
 
 
+def _apex_section(admin, reqs, ws) -> None:
+    """New starts -> Apex, in two presses: look up, then send.
+
+    THE POP-UP IS THE WHOLE POINT. Megan, 2026-11-24: "when someone pushes
+    the button to send to apex - we should pop up the names and gender we
+    assume - then the admin/icd sending can change if they want before
+    hitting send." Gender is guessed from the first name, and the guesser
+    deliberately leaves a name it will not call BLANK rather than flip a
+    coin onto a payroll record -- so the blanks are what this list is for.
+
+    AND NOTHING IS TYPED IN APEX AFTERWARDS (Megan, same day: "no, I
+    shouldn't have to fill anything on apex"). Whatever is confirmed here
+    is typed with every other value when the job runs.
+    """
+    import datetime as _dt
+    from automations.office_admin import actions, relay_client
+    office = C.office(admin["office"])
+    st.subheader("🧾 New starts → Apex")
+    mode = (office.apex_mode or "off")
+    if mode == "off":
+        st.caption("Not switched on for your office yet.")
+        return
+    if not relay_client.configured(office.key):
+        st.warning("This computer isn't connected to your office's Lucy yet. "
+                   "Ask Lucy's team to finish setting it up.")
+        return
+    st.caption("Everyone who started training this week, onto payroll. "
+               "You'll see the list before anything is sent.")
+
+    # THE WEEK, AS THE BOARD COUNTS IT -- Sunday to Saturday, the same
+    # week_start every other onboarding step uses, so "this week" means one
+    # thing across the whole system.
+    from automations.icd_onboarding import board as _B
+    this_week = _B.week_start_of(_dt.date.today())
+    week = st.date_input("Week starting", value=this_week, key="apex-week")
+
+    looks = _mine(reqs, office.key, C.APEX_LOOK)
+    last_look = looks[0] if looks else None
+    if last_look and last_look.get("Status") == C.AT_OFFICE:
+        last_look = actions.refresh_send(ws, last_look)
+    sends = _mine(reqs, office.key, C.APEX_SEND)
+    last_send = sends[0] if sends else None
+    if last_send and last_send.get("Status") == C.AT_OFFICE:
+        last_send = actions.refresh_send(ws, last_send)
+    busy = bool(last_send and last_send.get("Status") in C.OPEN_STATUSES)
+    looking = bool(last_look and last_look.get("Status") in C.OPEN_STATUSES)
+
+    if st.button("🔎 Look up this week's new starts", use_container_width=True,
+                 disabled=busy or looking):
+        try:
+            actions.apex_look(ws, admin, office, week)
+        except Exception as e:  # noqa: BLE001
+            st.error(str(e)[:300])
+        st.rerun()
+
+    if looking:
+        st.info("Reading your office's calendar… press R to refresh.")
+        return
+
+    people = []
+    if last_look:
+        res = S.loads(last_look.get("Result"))
+        people = list(res.get("people") or [])
+        if res.get("error"):
+            st.error(res["error"][:400])
+
+    if not people:
+        if last_look and last_look.get("Status") == C.DONE:
+            st.write("Nobody started training that week.")
+        return
+
+    st.markdown("**Check the gender on each one, then send.**")
+    st.caption("Guessed from the first name. A name we won't guess is blank "
+               "— those are the ones to look at.")
+    said = {}
+    unknown = 0
+    for i, p in enumerate(people):
+        name = str(p.get("name") or "")
+        was = str(p.get("gender") or "")
+        where = str(p.get("from") or "")
+        cols = st.columns([3, 2])
+        label = name if where != "unknown" else "%s — needs a gender" % name
+        cols[0].markdown(("**%s**" % label) if where == "unknown" else label)
+        pick = cols[1].selectbox(
+            "Gender for %s" % name, ["", "Male", "Female"],
+            index=(["", "Male", "Female"].index(was) if was in ("Male", "Female") else 0),
+            key="apex-g-%d" % i, label_visibility="collapsed")
+        if pick:
+            said[name] = pick
+        else:
+            unknown += 1
+
+    if unknown:
+        st.warning("%d still need a gender. Apex won't take a record without "
+                   "one, so they'd be held back." % unknown)
+    if st.button("📤 Send %d to Apex" % len(said), type="primary",
+                 use_container_width=True,
+                 disabled=busy or bool(unknown) or not said):
+        try:
+            actions.apex_send(ws, admin, office, week, said)
+        except Exception as e:  # noqa: BLE001
+            st.error(str(e)[:300])
+        st.rerun()
+
+    if last_send:
+        st.markdown("**Last send**")
+        _status_line(last_send)
+        res = S.loads(last_send.get("Result"))
+        if res.get("added"):
+            st.caption("Added: %s" % ", ".join(res["added"]))
+        for b in res.get("needs_hand") or []:
+            st.warning("%s — %s" % (b.get("name", "?"), b.get("why", "")))
+        if res.get("error"):
+            st.caption(res["error"][:300])
+
+
 def main() -> None:
     _setup()
     if not _login():
@@ -313,6 +429,7 @@ def main() -> None:
     _bgc_section(admin, reqs, ws)
     st.divider()
     _bob_section(admin)
+    _apex_section(admin, reqs, ws)
 
 
 main()

@@ -70,7 +70,15 @@ US_STATES = (
 # Request actions -- one per button.
 FIND_BGC = "find_bgc"
 SEND_BGC = "send_bgc"
-ACTIONS = (FIND_BGC, SEND_BGC)
+# New starts -> Apex, in two presses. The LOOK UP press opens nothing and
+# saves nothing: it comes back with the week's names and the gender that
+# would be used, which is what the admin is shown before they send (Megan,
+# 2026-11-24: "we should pop up the names and gender we assume - then the
+# admin/icd sending can change if they want before hitting send"). The SEND
+# press carries their answers.
+APEX_LOOK = "apex_look"
+APEX_SEND = "apex_send"
+ACTIONS = (FIND_BGC, SEND_BGC, APEX_LOOK, APEX_SEND)
 
 # Request statuses, in the order a row moves through them.
 QUEUED = "queued"

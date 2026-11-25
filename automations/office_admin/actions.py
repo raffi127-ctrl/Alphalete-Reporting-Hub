@@ -138,3 +138,77 @@ def _row_of(ws, rid: str) -> Optional[int]:
         if r.get("Request ID") == rid:
             return r["_row"]
     return None
+
+
+# ------------------------------------------- new starts -> Apex, in two presses
+
+def apex_look(ws, admin: Dict, office: C.Office, week_start) -> str:
+    """Ask the office's computer WHO is in the week and what gender we assume.
+
+    Opens nothing and saves nothing: `run_week(preview=True)` reads the
+    office's own training calendar and comes back with a name and a gender
+    per person. That list is what the admin is shown before they press Send
+    (Megan, 2026-11-24).
+
+    WHY IT RUNS THERE AND NOT HERE. Only the office's computer holds that
+    office's ApplicantStream and Blue Ink. The admin holds neither, and a
+    list typed on this machine is a list that can be edited before it is
+    sent -- so who is in the week is never decided on this side.
+    """
+    from automations.office_admin import relay_client
+    week = str(week_start)
+    rid = S.add_request(ws, username=admin["username"], office_key=office.key,
+                        action=C.APEX_LOOK, details={"week_start": week})
+    row = _row_of(ws, rid)
+    try:
+        jid = relay_client.request_job(office.key, "apex_week",
+                                       {"week_start": week, "preview": True,
+                                        "request_id": rid},
+                                       mode=office.apex_mode)
+    except Exception as e:
+        if row:
+            S.update_request(ws, row, Status=C.FAILED, Result=str(e)[:300])
+        raise
+    if row:
+        S.update_request(ws, row, Status=C.AT_OFFICE, Job_ID=jid,
+                         Result="Reading your office's calendar.")
+    return jid
+
+
+def apex_send(ws, admin: Dict, office: C.Office, week_start,
+              genders: Dict[str, str]) -> str:
+    """Send the week into Apex, with the genders the admin confirmed.
+
+    THE GENDERS ARE THE ONLY THING THIS SIDE DECIDES. Who is in the week is
+    read again on the office's computer when the job runs, off the same
+    calendar the look-up read -- so a name cannot be added or removed from
+    this machine, only a gender answered. `run_week` takes these over
+    anything the guesser would say, and never re-guesses an answer.
+
+    EVERY NAME NEEDS ONE. `gender_suggest` leaves a name it will not call
+    blank rather than flip a coin, and Apex will not take a record without
+    a gender -- so a blank here would be a person held back after the send,
+    which is exactly what the pop-up exists to prevent.
+    """
+    from automations.office_admin import relay_client
+    week = str(week_start)
+    said = {str(k): str(v) for k, v in (genders or {}).items() if str(v).strip()}
+    if not said:
+        raise ValueError("Pick a gender for each person first.")
+    rid = S.add_request(ws, username=admin["username"], office_key=office.key,
+                        action=C.APEX_SEND,
+                        details={"week_start": week, "genders": said})
+    row = _row_of(ws, rid)
+    try:
+        jid = relay_client.request_job(office.key, "apex_week",
+                                       {"week_start": week, "genders": said,
+                                        "request_id": rid},
+                                       mode=office.apex_mode)
+    except Exception as e:
+        if row:
+            S.update_request(ws, row, Status=C.FAILED, Result=str(e)[:300])
+        raise
+    if row:
+        S.update_request(ws, row, Status=C.AT_OFFICE, Job_ID=jid,
+                         Result="Sent to your office computer.")
+    return jid

@@ -190,3 +190,47 @@ def test_the_phone_lookups_road_is_wired_end_to_end():
     # Nothing on this road removes a row or an applicant.
     section = src[src.index("// --- PHONE LOOKUPS"):src.index("// --- OFFICE ADMINS")]
     assert "deleteRow" not in section and ".clear(" not in section
+
+
+# ------------- the pop-up: look up, confirm the genders, then send
+
+# Megan, 2026-11-24: "when someone pushes the button to send to apex - we
+# should pop up the names and gender we assume - then the admin/icd sending
+# can change if they want before hitting send."
+
+def _relay_src():
+    import pathlib
+    return pathlib.Path("resources/icd-alerts-relay.gs").read_text()
+
+
+def test_apex_week_carries_preview_and_genders():
+    src = _relay_src()
+    body = src.split("function _admApexWeek(", 1)[1].split("\nfunction ", 1)[0]
+    assert "preview: preview" in body, "a look-up must reach the office"
+    assert "genders: genders" in body, "the confirmed answers must ride along"
+
+
+def test_a_gender_has_to_be_a_word():
+    """The only thing that travels in from the admin's machine is a gender,
+    so nothing but a word may reach the form."""
+    src = _relay_src()
+    body = src.split("function _admApexWeek(", 1)[1].split("\nfunction ", 1)[0]
+    assert "g !== 'Male' && g !== 'Female'" in body
+
+
+def test_a_look_up_is_not_blocked_by_the_one_at_a_time_rule():
+    """That rule stops two SENDS creating the same people twice. A preview
+    creates nothing, and refusing it leaves a button that does nothing."""
+    src = _relay_src()
+    body = src.split("function _admApexWeek(", 1)[1].split("\nfunction ", 1)[0]
+    assert "preview ? null :" in body
+    assert "if (p.preview) continue;" in body
+
+
+def test_who_is_in_the_week_is_still_read_at_the_office():
+    """A name must not be postable from the admin's machine -- only a
+    gender answered for one."""
+    src = _relay_src()
+    body = src.split("function _admApexWeek(", 1)[1].split("\nfunction ", 1)[0]
+    assert "a.people" not in body
+    assert "people:" not in body
