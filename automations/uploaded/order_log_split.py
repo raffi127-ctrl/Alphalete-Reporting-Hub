@@ -160,7 +160,8 @@ def split(xlsx_path: Path, out_dir: Path) -> List[Tuple[str, Path]]:
     return out
 
 
-def rep_files(letter_xlsx: Path, out_dir: Path) -> List[Tuple[str, Path]]:
+def rep_files(letter_xlsx: Path, out_dir: Path,
+              skip=NON_REP_TABS) -> List[Tuple[str, Path]]:
     """[(rep, path)] — one tiny .xlsx per rep tab of a letter file, holding
     only that rep's tab (name banner already on it). Posted as one thread
     reply per rep under the letter's post (Raf 2026-10-31, option 2:
@@ -168,7 +169,7 @@ def rep_files(letter_xlsx: Path, out_dir: Path) -> List[Tuple[str, Path]]:
     from openpyxl import load_workbook
     out_dir.mkdir(parents=True, exist_ok=True)
     reps = sorted((n for n in load_workbook(letter_xlsx, read_only=True).sheetnames
-                   if n not in NON_REP_TABS), key=str.lower)
+                   if n not in skip), key=str.lower)
     out: List[Tuple[str, Path]] = []
     for rep in reps:
         wb = load_workbook(letter_xlsx)
@@ -182,7 +183,8 @@ def rep_files(letter_xlsx: Path, out_dir: Path) -> List[Tuple[str, Path]]:
 
 
 def post_threads(client, channel: str, parts: List[Tuple[str, Path]],
-                 out_dir: Path, today_label: str) -> List[dict]:
+                 out_dir: Path, today_label: str, title_text: str = "Order Log",
+                 emoji: str = "📋", skip=NON_REP_TABS) -> List[dict]:
     """One parent post per letter. In its thread, per rep: a text reply with
     their NAME, then their one-tab file right under it. The thread's FIRST
     reply is an INDEX: every name links to that rep's name message, so the
@@ -241,8 +243,10 @@ def post_threads(client, channel: str, parts: List[Tuple[str, Path]],
         # same thread + index, just one post with every rep.
         whole = label == WHOLE
         span = "" if whole else f" {label.replace('-', '–')}"
-        title = (f"📋 *Order Log {today_label}*" if whole
-                 else f"📋 *Order Log {today_label} — reps{span}*")
+        # title_text/emoji/skip: another log reusing the same thread + index
+        # (Spectrum Order Log, Raf 2026-11-25). Defaults = the AT&T log.
+        title = (f"{emoji} *{title_text} {today_label}*" if whole
+                 else f"{emoji} *{title_text} {today_label} — reps{span}*")
         ts = _text(None, f"{title}\nOpen the thread 👇 and tap your name")
         # The index is the FIRST reply (Eve 2026-11-01). Its names link to messages
         # that do not exist yet, so it goes up as a placeholder and is filled at the end.
@@ -250,9 +254,9 @@ def post_threads(client, channel: str, parts: List[Tuple[str, Path]],
         full_ts = _with_file(ts, f"*All reps{span}* (one file)",
                              path, path.name)
         links = []
-        for rep, rpath in rep_files(path, out_dir / "reps" / label):
+        for rep, rpath in rep_files(path, out_dir / "reps" / label, skip):
             name_ts = _with_file(ts, f"*{rep}*", rpath,
-                                 f"{rep} - Order Log {today_label}.xlsx")
+                                 f"{rep} - {title_text} {today_label}.xlsx")
             links.append((rep, _link(name_ts)))
             time.sleep(1)
         index = "\n".join(f"• <{url}|{rep}>" for rep, url in links)

@@ -15,8 +15,8 @@ WHERE THE DATA COMES FROM
   them from there — full values, every row.
 
     python -m automations.spectrum_order_log.run              # dry run: build, post nothing
-    python -m automations.spectrum_order_log.run --sample     # DM the .xlsx to Eve only
-    python -m automations.spectrum_order_log.run --post       # reply in today's Metrics thread
+    python -m automations.spectrum_order_log.run --sample     # DM the same thread to Eve only
+    python -m automations.spectrum_order_log.run --post       # #alphalete-sales post: name index + one reply per rep
 
 Runs on a Lucy with Raf's Tableau (rhidalgo): Lucy 1, 3 or 4.
 """
@@ -37,6 +37,8 @@ OUT_DIR = REPO_ROOT / "output" / "spectrum_order_log"
 
 SHEET = "Order Log Raw"
 EVE_SLACK_ID = "U088E2KJEV8"   # resources/owner-slack-ids.md
+METRICS_CHANNEL = "C068PH3RFSM"   # #alphalete-sales (same as the AT&T log)
+NON_REP_TABS = {"Order Log", "By Rep"}
 
 # (Tableau field, header in the .xlsx) — order mirrors the AT&T Order Log:
 # who, when, customer, what, status, then the pay drivers.
@@ -144,6 +146,142 @@ def shape(fields: list, rows: list) -> "list[dict]":
 
 
 # ------------------------------------------------------------------ xlsx
+# Columns on each rep's own tab (Raf 2026-11-25: "Can we do a tab per rep?").
+# Rep is in the tab name and Sale Week is in each section banner, so both drop.
+REP_TAB_COLUMNS = [
+    "Sale Date", "Customer Name", "Package", "Product Type", "Status",
+    "Account Number", "Order #", "City", "Zip", "PIA $", "Gig+",
+    "Auto Bill Pay", "Usage",
+]
+_BAD_SHEET_CHARS = str.maketrans({c: " " for c in r":\/?*[]"})
+
+
+def _parse_date(v):
+    try:
+        return dt.datetime.strptime(str(v), "%m/%d/%Y").date()
+    except ValueError:
+        return None
+
+
+def _cell_value(h: str, v):
+    """Tableau text -> what the cell holds: real dates, PIA as a number,
+    Gig+ as Yes/No, everything else text (account #s keep leading zeros)."""
+    if h in ("Sale Date", "Sale Week"):
+        return _parse_date(v) or v
+    if h == "Gig+":
+        s = str(v).lower()
+        return "Yes" if s == "true" else ("No" if s == "false" else v)
+    if h == "PIA $":
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return v
+    return "" if v is None else str(v)
+
+
+def _sheet_title(name: str, used: set) -> str:
+    """Excel tab name: no :\\/?*[] , max 31 chars, unique in the workbook."""
+    base = " ".join(str(name).translate(_BAD_SHEET_CHARS).split())[:31] or "Rep"
+    title, n = base, 2
+    while title.lower() in {u.lower() for u in used}:
+        sfx = f" ({n})"
+        title, n = base[:31 - len(sfx)] + sfx, n + 1
+    used.add(title)
+    return title
+
+
+def _add_rep_tabs(wb, recs: "list[dict]", border, head_font) -> int:
+    """One tab per rep, laid out like the AT&T log's rep tabs: a section per
+    Sale Week with the INSTALLED lines (earliest week first), then one
+    'Pending / Canceled' section. Returns how many tabs were added."""
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.utils import get_column_letter
+
+    center = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    week_fill = PatternFill("solid", fgColor="2563EB")
+    open_fill = PatternFill("solid", fgColor="C55A11")
+    head_fill = PatternFill("solid", fgColor="434343")
+    ncol = len(REP_TAB_COLUMNS)
+    used = {ws.title for ws in wb.worksheets}
+
+    per_rep: dict = {}
+    for rec in recs:
+        rep = str(rec["Rep"] or "").strip()
+        if not rep:
+            continue
+        b = per_rep.setdefault(rep, {"weeks": {}, "open": []})
+        if str(rec["Status"]).lower() == "installed":
+            b["weeks"].setdefault(_parse_date(rec["Sale Week"]) or dt.date.min,
+                                  []).append(rec)
+        else:
+            b["open"].append(rec)
+
+    def banner(sh, r, text, fill):
+        c = sh.cell(row=r, column=1, value=text)
+        c.fill, c.font, c.alignment, c.border = fill, head_font, center, border
+        sh.merge_cells(start_row=r, start_column=1, end_row=r, end_column=ncol)
+
+    def header(sh, r):
+        for i, h in enumerate(REP_TAB_COLUMNS, 1):
+            c = sh.cell(row=r, column=i, value=h)
+            c.fill, c.font, c.alignment, c.border = head_fill, head_font, center, border
+
+    def line(sh, r, rec):
+        st = str(rec["Status"]).lower()
+        for i, h in enumerate(REP_TAB_COLUMNS, 1):
+            c = sh.cell(row=r, column=i, value=_cell_value(h, rec[h]))
+            c.border, c.alignment = border, center
+            if isinstance(c.value, dt.date):
+                c.number_format = "m/d/yyyy"
+            elif h == "PIA $" and isinstance(c.value, float):
+                c.number_format = "$#,##0.00"
+            if h == "Status":
+                if st in STATUS_FILL:
+                    c.fill = PatternFill("solid", fgColor=STATUS_FILL[st])
+                if st in STATUS_TEXT:
+                    c.font = Font(bold=True, color=STATUS_TEXT[st])
+
+    def by_date(rec):
+        return _parse_date(rec["Sale Date"]) or dt.date.min
+
+    for rep in sorted(per_rep, key=str.lower):
+        b = per_rep[rep]
+        sh = wb.create_sheet(_sheet_title(rep, used))
+        r = 1
+        for wk in sorted(b["weeks"]):
+            rows = sorted(b["weeks"][wk], key=by_date)
+            start = wk - dt.timedelta(days=6) if wk != dt.date.min else None
+            label = (f"Week {start:%m/%d} to {wk:%m/%d}" if start
+                     else "Week ?")
+            banner(sh, r, f"{label}  •  {len(rows)} installed", week_fill)
+            header(sh, r + 1)
+            r += 2
+            for rec in rows:
+                line(sh, r, rec)
+                r += 1
+            r += 1
+        if b["open"]:
+            rows = sorted(b["open"], key=lambda x: (
+                STATUS_ORDER.get(str(x["Status"]).lower(), 9), by_date(x)))
+            banner(sh, r, f"Pending / Canceled  •  {len(rows)} line(s)", open_fill)
+            header(sh, r + 1)
+            r += 2
+            for rec in rows:
+                line(sh, r, rec)
+                r += 1
+        for i, h in enumerate(REP_TAB_COLUMNS, 1):
+            col = get_column_letter(i)
+            data = [len(str(rec[h] or "")) for bk in
+                    (list(b["weeks"].values()) + [b["open"]]) for rec in bk]
+            sh.column_dimensions[col].width = min(
+                max([len(h)] + data) + 3, 40)
+        # Big black name band on top, same as the AT&T rep tabs: Slack's
+        # phone preview never shows the tab name.
+        from automations.uploaded.order_log_split import _name_banner
+        _name_banner(sh, rep)
+    return len(per_rep)
+
+
 def to_xlsx(recs: "list[dict]", path: Path, today: dt.date) -> Path:
     from openpyxl import Workbook
     from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
@@ -163,25 +301,7 @@ def to_xlsx(recs: "list[dict]", path: Path, today: dt.date) -> Path:
         c.fill, c.font, c.alignment, c.border = head_fill, head_font, center, border
     status_col = headers.index("Status") + 1
     for rec in recs:
-        vals = []
-        for h in headers:
-            v = rec[h]
-            if h in ("Sale Date", "Sale Week"):
-                try:
-                    v = dt.datetime.strptime(str(v), "%m/%d/%Y").date()
-                except ValueError:
-                    pass
-            elif h in ("Gig+",):
-                v = "Yes" if str(v).lower() == "true" else ("No" if str(v).lower() == "false" else v)
-            elif h == "PIA $":
-                try:
-                    v = float(v)
-                except (TypeError, ValueError):
-                    pass
-            else:
-                v = "" if v is None else str(v)   # account #s stay text
-            vals.append(v)
-        ws.append(vals)
+        ws.append([_cell_value(h, rec[h]) for h in headers])
         r = ws.max_row
         st = str(rec["Status"]).lower()
         for c in ws[r]:
@@ -230,6 +350,8 @@ def to_xlsx(recs: "list[dict]", path: Path, today: dt.date) -> Path:
     for col in "BCDE":
         by.column_dimensions[col].width = 12
 
+    _add_rep_tabs(wb, recs, border, head_font)
+
     path.parent.mkdir(parents=True, exist_ok=True)
     wb.save(path)
     return path
@@ -240,9 +362,9 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     g = ap.add_mutually_exclusive_group()
     g.add_argument("--sample", action="store_true",
-                   help="DM the .xlsx to Eve only (preview)")
+                   help="DM the same thread to Eve only (preview)")
     g.add_argument("--post", action="store_true",
-                   help="reply in today's Metrics thread (#alphalete-sales)")
+                   help="#alphalete-sales: one thread, name index + a file per rep")
     args = ap.parse_args(argv)
 
     today = dt.date.today()
@@ -261,33 +383,62 @@ def main(argv=None) -> int:
     print(f"  saved {path}")
     comment = "📡 Spectrum Order Log"
 
+    # Same shape as Raf's AT&T log (Eve 2026-11-25): a channel post whose
+    # thread opens with a "Tap your name" index, then one reply per rep with
+    # their one-tab file — a rep finds their part from the phone without
+    # scrolling. Few Spectrum reps, so ONE thread (no A-F / G-M / N-Z split).
+    from automations.uploaded import order_log_split as ols
+    stamp = f"{today:%m-%d-%Y}"
+    split_dir = OUT_DIR / "threads" / stamp
+
+    def _thread(client, channel):
+        return ols.post_threads(client, channel, [(ols.WHOLE, path)], split_dir,
+                                stamp, title_text="Spectrum Order Log",
+                                emoji="📡", skip=NON_REP_TABS)
+
     if args.sample:
-        from automations.shared.slack_metrics_post import dm_user_with_file
-        # as_bot=False: the Lucys sign with the 'Lucy Reporting' USER token;
-        # the bot-app token only exists on Lucy 2 (failed on Lucy 4 11/25).
-        res = dm_user_with_file(
-            path, user=EVE_SLACK_ID, file_name=name, as_bot=False,
-            comment=(f"SAMPLE — {comment} ({len(recs)} lines). This is what "
-                     f"will post in the Metrics thread once you say go."))
-        print(f"  ✓ sample DM'd to Eve: {res}")
-        return 0 if res.get("ok") else 1
+        from automations.shared.slack_metrics_post import _client
+        # Lucy USER token: the bot-app token only exists on Lucy 2 (failed on
+        # Lucy 4 11/25). DM Lucy <-> Eve, nobody else.
+        client = _client()
+        ch = client.conversations_open(users=EVE_SLACK_ID)["channel"]["id"]
+        client.chat_postMessage(
+            channel=ch, text=(f"SAMPLE — {comment} ({len(recs)} lines). The "
+                              f"post below is what goes in #alphalete-sales "
+                              f"once you say go 👇"))
+        _thread(client, ch)
+        print(f"  ✓ sample thread DM'd to Eve ({ch})")
+        return 0
     if args.post:
         from automations.shared.slack_metrics_post import (
-            SlackPostError, post_reply_text_only, post_reply_with_file)
-        try:
-            if not recs:
+            SlackPostError, _client, mirror_channels, post_reply_text_only)
+        if not recs:
+            try:
                 post_reply_text_only(
                     f"{comment} — {today:%b} {today.day} — No data available",
                     react_emoji="satellite_antenna")
-            else:
-                post_reply_with_file(path, comment=comment, file_name=name,
-                                     react_emoji="satellite_antenna")
+            except SlackPostError as e:
+                print(f"  ⚠ Slack post failed: {e}")
+                return 1
+            return 0
+        failed = False
+        try:   # a line in the Metrics thread points at the channel post
+            post_reply_text_only(f"{comment} — posted in the channel 👇 "
+                                 f"(open it and tap your name)",
+                                 react_emoji="satellite_antenna")
         except SlackPostError as e:
-            print(f"  ⚠ Slack post failed: {e}")
-            return 1
-        print("  ✓ posted in today's Metrics thread")
-        return 0
-    print("  dry run — posted nothing (--sample = DM Eve, --post = Metrics thread)")
+            print(f"  ⚠ Metrics-thread pointer failed: {e}")
+            failed = True
+        client = _client()
+        for ch in [METRICS_CHANNEL] + mirror_channels(METRICS_CHANNEL):
+            try:
+                _thread(client, ch)
+                print(f"  ✓ Spectrum Order Log thread posted in {ch}")
+            except Exception as e:  # noqa: BLE001
+                print(f"  ⚠ Spectrum Order Log thread failed in {ch}: {e}")
+                failed = True
+        return 1 if failed else 0
+    print("  dry run — posted nothing (--sample = DM Eve, --post = #alphalete-sales)")
     return 0
 
 
