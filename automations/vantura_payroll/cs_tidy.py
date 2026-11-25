@@ -401,6 +401,8 @@ def rate_requests(sid, total_row: int) -> list:
         {"updateBorders": {"range": _rng(sid, top, total_row + 1, 0, 6), "top": _EDGE, "bottom": _EDGE,
                            "left": _EDGE, "right": _EDGE, "innerHorizontal": _GRID, "innerVertical": _GRID}},
         {"updateBorders": {"range": _rng(sid, top, top + 1, 0, 6), "bottom": _EDGE}},
+        # The copied filter is A:D only: sorting the table left Rate (and NPA's) behind (11/25).
+        {"setBasicFilter": {"filter": {"range": _rng(sid, top, total_row, 0, 6)}}},
     ]
 
 
@@ -424,7 +426,9 @@ def add_rate_column(sh, ws, mat, week: dt.date, *, log) -> dict:
                       sh.worksheet("Adjustments").get_all_values(), week, al)
     sh.batch_update({"requests": rate_requests(ws.id, t)})
     sh.batch_update({"requests": gap_requests(ws.id, ws.row_count, 17)})      # R, after both new columns
-    ws.update(range_name=f"E3:E{t}", values=[[RATE_HDR]] + [[rates.get(r, "")] for r in reps],
+    # Match on the names as they sit NOW: Carlos may sort the new tab while this runs.
+    now = [str(r[0]).strip() if r else "" for r in ws.get(f"A4:A{t}")]
+    ws.update(range_name=f"E3:E{t}", values=[[RATE_HDR]] + [[rates.get(r, "")] for r in now],
               value_input_option="RAW")
     log(f"commission sheet: Rate column added ({len(reps)} reps)")
     try:
