@@ -195,6 +195,7 @@ def _press(office_key: str, week_start: dt.date, *, column: str, what: str,
     """
     from automations.icd_onboarding import sessions as OVA
     from automations.icd_onboarding import ov_misses as OVM
+    from automations.icd_onboarding import press_hiccups as HIC
     from automations.obcl_ov_sweep import config as OVC
     # `config`, not `run`: `run` imports gspread, which an office
     # machine has no use for and no credentials for.
@@ -240,6 +241,8 @@ def _press(office_key: str, week_start: dt.date, *, column: str, what: str,
     budget = OVC.SEARCH_BUDGET_S if budget_s is None else budget_s
     verdicts: Dict[str, Dict[str, object]] = {}
     failures: List = []
+    hiccups: List = []
+    reached: List[str] = []
     missing: List[str] = []
     found: List[str] = []
     t0 = time.monotonic()
@@ -269,12 +272,31 @@ def _press(office_key: str, week_start: dt.date, *, column: str, what: str,
                 missing.append(name)
             else:
                 found.append(name)
+            if outcome == "refused" and HIC.is_hiccup(detail):
+                hiccups.append((name, detail))
+                continue
+            reached.append(name)
             if outcome in ("submitted", "requested", "already"):
                 verdicts[name] = {column: True}
             elif real and outcome == "refused" and not is_not_ready(detail):
                 failures.append((name, detail.split(": ", 1)[-1]))
     OVM.remember(office_key, week_start, missing)
     OVM.forget(office_key, week_start, found)
+
+    # A TIMEOUT GETS ONE MORE PASS (press_hiccups, Eve 2026-11-25): only the
+    # same person timing out twice in a row goes to the channel.
+    if hiccups:
+        again = set(HIC.settle(office_key, what, [n for n, _ in hiccups],
+                               reached))
+        for name, detail in hiccups:
+            if name in again:
+                if real:
+                    failures.append((name, detail.split(": ", 1)[-1]))
+            else:
+                log("    %s: OwnerVille was slow — retrying next pass before "
+                    "anyone is told" % name)
+    else:
+        HIC.settle(office_key, what, [], reached)
 
     if real:
         _alert(office_key, what, failures, log=log)
