@@ -1272,9 +1272,14 @@ def group_columns(sheet_id):
     reqs = [{"addDimensionGroup": {"range": {
         "sheetId": ws.id, "dimension": "COLUMNS", "startIndex": a, "endIndex": b}}}
         for a, b in PAYOUT_GROUPS if (a, b) not in have]
-    if reqs:
-        sh.batch_update({"requests": reqs})
-    return len(reqs)
+    # The +/- sits at the START of each group, over its first column (Maud
+    # 2026-11-24: "the other way" — Sheets puts it after the group by default).
+    reqs.append({"updateSheetProperties": {
+        "properties": {"sheetId": ws.id,
+                       "gridProperties": {"columnGroupControlAfter": False}},
+        "fields": "gridProperties.columnGroupControlAfter"}})
+    sh.batch_update({"requests": reqs})
+    return len(reqs) - 1
 
 
 def add_checkboxes(sheet_id):
