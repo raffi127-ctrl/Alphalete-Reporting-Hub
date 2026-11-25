@@ -8515,6 +8515,27 @@
    },
    "timeout_minutes": 20
   },
+  "spectrum_order_log": {
+   "on_scheduler": false,
+   "_off_scheduler_note": "Spectrum Order Log (Raf). Maud 2026-11-24 asked; Eve 2026-11-25: works like the AT&T Order Log, posts in #alphalete-sales inside the day's Metrics thread, SAMPLE to Eve first. Reads the Charter D2D Sales Metrics > Order Log dashboard's 'Order Log Raw' worksheet out of the page's bootstrap reply (downloads are off there). No args = dry run; `lucy rerun spectrum_order_log --sample` DMs the .xlsx to Eve; `--post` replies in the Metrics thread. NOT scheduled until Eve OKs the sample.",
+   "display_name": "Spectrum Order Log (Raf) -> Metrics thread",
+   "source_type": "tableau",
+   "data_sources": [],
+   "command": [
+    "automations.spectrum_order_log.run"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": {
+    "type": "not_configured"
+   },
+   "timeout_minutes": 20
+  },
   "disable_carlos_captainship_bonus_agent": {
    "on_scheduler": false,
    "_off_scheduler_note": "RETIRE the standalone Tuesday-10am launchd now that Carlos B2B Captainship Bonus runs in the Lucy 2 Tuesday 4am flow (readiness-gated on tableau:captainship_bonus_carlos, 10am fail-open floor). `lucy rerun disable_carlos_captainship_bonus_agent --machine \"Lucy 2\"` boots out + stashes com.alphalete.carlos-captainship-bonus-tue.plist -> .disabled so it doesn't ALSO fire at 10am (which would re-DM a duplicate PDF). REVERSIBLE: re-run install_carlos_captainship_bonus_agent + set cadence.weekdays []. Read-only w.r.t. Sheet data.",
