@@ -979,8 +979,16 @@ def is_sunday_internet(rec):
     return bool(d and d.weekday() == 6 and NEW_INTERNET.match(str(rec["Product"]).strip()))
 
 
+#: Description Detail note on a DD line moved to another rep by hand (Maud
+#: 2026-11-24: Joshua Mascorro's sale should have been a transfer to Amjad
+#: Malhas). A re-make reads these back off the old sheet (hand_moves).
+MOVED_NOTE = "Moved by hand from "
+
+
 def main(src, out, use_board=True, carry_from=None, run_date=None,
-         pending_file=None, transfers=True, write_transfers=False):
+         pending_file=None, transfers=True, write_transfers=False, moves=None):
+    """moves: [{"customer", "to", optional "from" / "product" / "sale_date"}] —
+    DD lines moved to another rep by hand (see MOVED_NOTE)."""
     rows = read_crosstab(Path(src))
     h = rows[0]
     ix = {n.strip(): i for i, n in enumerate(h)}
@@ -1061,6 +1069,24 @@ def main(src, out, use_board=True, carry_from=None, run_date=None,
                       f"{T.C.TAB_TRANSFERS!r}")
         except Exception as e:                          # noqa: BLE001
             print(f"!! could not read ATT Sales Transfers ({type(e).__name__}: {e})")
+    for mv in moves or []:                       # moved by hand (after transfers)
+        hit = 0
+        for d in edited:
+            if str(d.get("Customer Name") or "").strip().lower() != mv["customer"].strip().lower():
+                continue
+            if mv.get("from") and _name_key(d["Rep Full Name"]) != _name_key(mv["from"]):
+                continue
+            if mv.get("product") and str(d["Product"]).strip().lower() != mv["product"].strip().lower():
+                continue
+            if mv.get("sale_date") and _date(d["Sale Date"]) != _date(mv["sale_date"]):
+                continue
+            if d["Rep Full Name"] == mv["to"]:
+                continue
+            d[NOTE_COL] = _add_note(d[NOTE_COL], MOVED_NOTE + d["Rep Full Name"])
+            d["Rep Full Name"] = mv["to"]
+            hit += 1
+        print(f"   moved by hand: {mv['customer']} -> {mv['to']} ({hit} line(s))"
+              + ("" if hit else "  !! no DD line matched"))
     edited.sort(key=lambda d: (d["Rep Full Name"].lower(), d["Product"].lower()))
     names_by_key = {_name_key(n): n for n in
                     list(board.names.values()) + [d["Rep Full Name"] for d in edited]}
@@ -1477,6 +1503,33 @@ def add_rep(sheet_id, name, log=print):
     return i
 
 
+def hand_moves(sheet_id):
+    """DD lines moved by hand on a sheet (MOVED_NOTE in Description Detail),
+    as `moves` for main() — so a re-make keeps them."""
+    from automations.recruiting_report.fill import open_by_key
+    ed = open_by_key(sheet_id).worksheet(TAB_EDITED).get_values()
+    h = {c: i for i, c in enumerate(ed[0])}
+    out = []
+    for r in ed[1:]:
+        r = r + [""] * len(h)
+        note = r[h[NOTE_COL]]
+        if MOVED_NOTE in note:
+            src = note.split(MOVED_NOTE, 1)[1].split(" · ")[0].strip()
+            out.append({"customer": r[h["Customer Name"]], "from": src,
+                        "to": r[h["Rep Full Name"]], "product": r[h["Product"]],
+                        "sale_date": r[h["Sale Date"]]})
+    return out
+
+
+def rebuild(old_id, dd, out, name, order_log=None, carry_from=None,
+            moves=(), log=print):
+    """Re-make a live sheet from the DD: keeps its hand moves (plus any new
+    `moves`), then remake() keeps every other hand entry."""
+    mv = hand_moves(old_id) + list(moves)
+    main(dd, out, carry_from=carry_from, pending_file=order_log, moves=mv)
+    return remake(old_id, out, name, log=log)
+
+
 def remake(old_id, xlsx, name, log=print):
     """Replace a live RH sheet with a new build and KEEP everything typed or
     changed by hand on the old one (Maud 2026-11-24): upload -> checkboxes ->
@@ -1820,7 +1873,7 @@ def cli(argv=None):
     ap.add_argument("--carry-from", help="last week's RH sheet id: carry its held "
                                          "new starts' sales onto this week")
     a = ap.parse_args(argv)
-    if a.refresh:
+    if a.refresh:  # noqa: SIM102
         sync_from_board(a.refresh)
         refresh_rep_tabs(a.refresh)
         return
