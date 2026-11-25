@@ -149,11 +149,15 @@ def fill(rh_sheet_id, write=False, log=_log):
     ix = {h.strip(): i for i, h in enumerate(raw[0])}
     dds = P.dd_sunday(raw[1:], ix)
     label = f"WE {dds.month}/{dds.day}"
+    # columns by header; Got Paid = Final Pay, which leaves out Bonus (from RAF
+    # PNL), NPA and Clawback (Maud 2026-11-24)
+    c_rev, c_rule, c_fin = (P._hcol(pay[0], h) for h in
+                            ("Revenue Brought In", "Level / Rule", "Final Pay"))
     reps = []
     for r in pay[1:]:
-        r = list(r) + [""] * 20
-        if r[0] and r[0] != "TOTAL" and str(r[4]) != P.NOTE_EXTRA:
-            reps.append((str(r[0]).strip(), _num(r[2]), _num(r[16]), str(r[4])))
+        r = list(r) + [""] * 25
+        if r[0] and r[0] != "TOTAL" and str(r[c_rule]) != P.NOTE_EXTRA:
+            reps.append((str(r[0]).strip(), _num(r[c_rev]), _num(r[c_fin]), str(r[c_rule])))
 
     sh = open_by_key(ALL_IN_ONE_RAF)
     tabs = load(sh)
@@ -228,8 +232,8 @@ def fill(rh_sheet_id, write=False, log=_log):
                 writes.setdefault(t, []).append((f"A{i}", [["N"]]))
                 leader.append(f"{nm}: N (terminated last week, no money this week)")
 
-    extra_dd = round(sum(_num(r[2]) for r in pay[1:]
-                         if len(r) > 4 and str(r[4]) == P.NOTE_EXTRA), 2)
+    extra_dd = round(sum(_num(r[c_rev]) for r in pay[1:]
+                         if len(r) > c_rule and str(r[c_rule]) == P.NOTE_EXTRA), 2)
     sw = sh.worksheet(SUMMARY_TAB)
     top = sw.get_values("1:1")
     top = top[0] if top else []
@@ -250,7 +254,7 @@ def fill(rh_sheet_id, write=False, log=_log):
         log(f"   rep PNL: Extra on DD ({label}) = ${extra_dd:,.2f}"
             + ("" if summary else " (already there)"))
 
-    tot = next((_num(r[2]) for r in pay[1:] if r and r[0] == "TOTAL"), 0)
+    tot = next((_num(r[c_rev]) for r in pay[1:] if r and r[0] == "TOTAL"), 0)
     placed = sum(b for nm, b, _g, _r in reps
                  if not any(nm.startswith(u.split(" (")[0]) for u in unplaced))
     log(f"   rep PNL check: on rep tabs ${placed:,.2f} + Extra on DD ${extra_dd:,.2f}"
@@ -296,7 +300,8 @@ def _prev_off(dds, log=_log):
         if not prev:
             return set()
         v = P._payout_ws(open_by_key(prev[0]["id"])).get_values()
-        return {P._name_key(r[0]) for r in v[1:] if len(r) > 4 and OFF in str(r[4])}
+        e = P._hcol(v[0], "Level / Rule")
+        return {P._name_key(r[0]) for r in v[1:] if len(r) > e and OFF in str(r[e])}
     except Exception as e:                          # noqa: BLE001
         log(f"   rep PNL: last week's sheet not read ({type(e).__name__}: {e})")
         return set()
