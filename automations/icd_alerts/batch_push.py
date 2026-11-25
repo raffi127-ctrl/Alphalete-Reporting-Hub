@@ -33,7 +33,7 @@ from pathlib import Path
 from typing import Callable, Optional
 
 # office -> "dry" | "live". Live only after a dry run has been read.
-BATCH_OFFICES = {"24065": "dry"}
+BATCH_OFFICES = {"24065": "live"}   # Megan 2026-11-25: "just switch it to live now"
 BATCH_LIMIT = 10
 EXTRACT_CAP_S = 240
 OFF_AFTER_BLOCKS = 2

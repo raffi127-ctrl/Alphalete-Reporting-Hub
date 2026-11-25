@@ -8,8 +8,8 @@ from automations.icd_alerts import batch_push as BP
 
 
 class BatchTrial(unittest.TestCase):
-    def test_only_24065_and_dry(self):
-        self.assertEqual(BP.BATCH_OFFICES, {"24065": "dry"})
+    def test_only_24065(self):
+        self.assertEqual(BP.BATCH_OFFICES, {"24065": "live"})
         self.assertIsNone(BP.mode_for("11280"))
         self.assertLessEqual(BP.BATCH_LIMIT, 10)
 
