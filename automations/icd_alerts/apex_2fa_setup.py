@@ -27,6 +27,8 @@ from __future__ import annotations
 import datetime as dt
 import sys
 import time
+import traceback
+from typing import Tuple
 
 from automations.icd_alerts import apex_login as L
 
@@ -135,26 +137,64 @@ def _office_key() -> str:
     return ""
 
 
-def tell_us(what: str, log=print) -> None:
+def tell_us(what: str, log=print, detail: str = "") -> None:
     """Best effort, never raises: the telling is never the work."""
     try:
         from automations.icd_alerts import relay as R
         R.report_fault(SETUP_STAGE, "Apex setup %s: %s"
                        % (dt.datetime.now().strftime("%H:%M"), what),
-                       office_key=_office_key(), log=log)
+                       detail=detail, office_key=_office_key(), log=log)
     except Exception:  # noqa: BLE001
         pass
 
 
+def crash_line(where: str, e: BaseException) -> Tuple[str, str]:
+    """(summary, detail) for a crash. The summary carries the error's first
+    line: "finish crashed (Error)" alone told us nothing (Jairo 2026-11-25,
+    13:32) -- the helper runs with no console, so the traceback was gone."""
+    first = (str(e).strip().splitlines() or [""])[0][:160]
+    summary = "%s crashed (%s%s)" % (where, type(e).__name__,
+                                     ": " + first if first else "")
+    detail = "".join(traceback.format_exception(type(e), e, e.__traceback__))
+    return summary, detail[-1500:]
+
+
+# THE PROFILE CAN STILL BE BUSY. pnl's hourly check reads Apex headless in this
+# same profile, closes it, and opens this window a second later -- Chrome can
+# still be letting go of the profile then. Jairo's finish window crashed in 3
+# seconds that way (2026-11-25 13:32), right after the check. Wait it out.
+LAUNCH_TRIES = 4
+LAUNCH_WAIT_S = 10
+
+
+def launch_window(p, profile_dir, G, log=print, tries: int = LAUNCH_TRIES,
+                  wait_s: float = LAUNCH_WAIT_S):
+    last = None
+    for i in range(tries):
+        try:
+            return p.chromium.launch_persistent_context(
+                str(profile_dir), headless=False,
+                args=["--disable-sync"] + BIG_WINDOW, no_viewport=True,
+                **G.launch_args())
+        except Exception as e:  # noqa: BLE001 -- profile still busy: retry
+            last = e
+            log("apex window: launch try %d failed: %s"
+                % (i + 1, (str(e).splitlines() or [""])[0][:160]))
+            if i + 1 < tries:
+                time.sleep(wait_s)
+    raise last
+
+
 def run(log=print, ask=None) -> int:
     end = ["stopped before the end, no reason recorded"]
+    detail = [""]
     try:
         return _run(log, ask, end)
     except BaseException as e:  # noqa: BLE001 -- said, then raised as before
-        end[0] = "Lucy's setup crashed (%s)" % type(e).__name__
+        end[0], detail[0] = crash_line("Lucy's setup", e)
         raise
     finally:
-        tell_us(end[0], log=log)
+        tell_us(end[0], log=log, detail=detail[0])
 
 
 def _run(log, ask, end) -> int:
@@ -186,10 +226,7 @@ def _run(log, ask, end) -> int:
         pass
     try:
         with sync_playwright() as p:
-            ctx = p.chromium.launch_persistent_context(
-                str(AS.APEX_PROFILE_DIR), headless=False,
-                args=["--disable-sync"] + BIG_WINDOW, no_viewport=True,
-                **G.launch_args())
+            ctx = launch_window(p, AS.APEX_PROFILE_DIR, G, log=log)
             guard = G.install(ctx, "watch")
             browser_banner.attach(ctx, WAIT, WAIT_DETAIL)
             try:
@@ -349,13 +386,14 @@ def _payroll_opens(page) -> bool:
 
 def finish(log=print, ask=None) -> int:
     end = ["finish stopped before the end, no reason recorded"]
+    detail = [""]
     try:
         return _finish(log, ask, end)
-    except BaseException as e:  # noqa: BLE001
-        end[0] = "finish crashed (%s)" % type(e).__name__
+    except BaseException as e:  # noqa: BLE001 -- said, then raised as before
+        end[0], detail[0] = crash_line('finish', e)
         raise
     finally:
-        tell_us(end[0], log=log)
+        tell_us(end[0], log=log, detail=detail[0])
 
 
 def _finish(log, ask, end) -> int:
@@ -379,10 +417,7 @@ def _finish(log, ask, end) -> int:
     ok = False
     try:
         with sync_playwright() as p:
-            ctx = p.chromium.launch_persistent_context(
-                str(AS.APEX_PROFILE_DIR), headless=False,
-                args=["--disable-sync"] + BIG_WINDOW, no_viewport=True,
-                **G.launch_args())
+            ctx = launch_window(p, AS.APEX_PROFILE_DIR, G, log=log)
             guard = G.install(ctx, "watch")
             browser_banner.attach(ctx, WAIT, WAIT_DETAIL)
             try:
