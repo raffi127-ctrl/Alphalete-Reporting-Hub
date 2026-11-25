@@ -1204,6 +1204,7 @@ def main(src, out, use_board=True, carry_from=None, run_date=None,
         for col, typ in ((15, "Other"), (18, "NPA"), (19, "Clawback")):
             wr.cell(i, col, f'=SUMIFS({X}$C:$C,{X}$A:$A,$A{i},{X}$B:$B,"{typ}")'
                     ).number_format = MONEY
+        wr.cell(i, 14).number_format = MONEY          # Training Bonus: typed in, $
         wr.cell(i, 16).number_format = MONEY          # Extra Bonus: typed in
         # Final Pay leaves NPA / Clawback out (Maud 2026-11-24)
         wr.cell(i, 17, f'=IF(AND(D{i}="",O{i}=0,N(P{i})=0),"",'
@@ -1854,7 +1855,19 @@ def refresh_rep_tabs(sheet_id, log=print, force=False):
         sh.batch_update({"requests": reqs})
     log(f"   refresh: {len(changed)} rep tab(s) re-laid"
         + (f": {', '.join(changed)}" if changed else " (nothing new)"))
+    update_rep_pnl(sheet_id, log)
     return changed
+
+
+def update_rep_pnl(sheet_id, log=print):
+    """Same change onto Bas / MJ / OG / Algemar PNL tabs (Brought In, Got Paid,
+    new reps on their trainer's tab) — every build / re-make / refresh (Maud's
+    Loom 2026-11-24). A failure here is reported, never stops the sheet work."""
+    try:
+        from automations.commission_sheet.rep_pnl import fill
+        fill(sheet_id, write=True, log=log)
+    except Exception as e:                          # noqa: BLE001
+        log(f"   !! rep PNL not updated ({type(e).__name__}: {e})")
 
 
 def cli(argv=None):
