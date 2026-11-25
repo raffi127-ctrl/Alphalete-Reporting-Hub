@@ -1,0 +1,150 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<!-- Lucy 2's screen, Nov 25 - Jan 1 (Megan 2026-11-25: "a girly christmas
+version of lucy ... a pink santa hat"). run.write_photo() swaps __PHOTO__ for
+the photo itself; the refresh picks up a new version without a restart. -->
+<meta http-equiv="refresh" content="600">
+<title>Lucy</title>
+<style>
+html,body{height:100%;margin:0;overflow:hidden}
+body{background:radial-gradient(ellipse at 50% 45%,#fff6f9 0%,#fde1ea 45%,#f6bfd3 100%);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  font-family:-apple-system,Helvetica,sans-serif}
+#lights{position:fixed;top:0;left:0;width:100%;height:110px;z-index:3}
+.bulb{animation:twinkle 2.4s ease-in-out infinite}
+@keyframes twinkle{0%,100%{opacity:1}50%{opacity:.35}}
+#lucy{height:76vh;width:auto;position:relative;z-index:2;margin-top:6vh;
+  filter:drop-shadow(0 14px 24px rgba(194,24,91,.22))}
+h1{font-family:"Snell Roundhand","Brush Script MT",cursive;font-weight:700;
+  font-size:9vh;line-height:1;margin:0;color:#c2185b;position:relative;z-index:2;
+  text-shadow:0 2px 0 #fff,0 0 18px rgba(255,255,255,.9),2px 3px 0 #e8b64c}
+.flake{position:fixed;top:-5vh;color:#fff;z-index:1;pointer-events:none;
+  text-shadow:0 0 2px rgba(194,24,91,.55),0 0 8px rgba(232,85,143,.45);animation:fall linear infinite}
+@keyframes fall{to{transform:translateY(112vh) rotate(360deg)}}
+.spark{position:fixed;color:#e8b64c;z-index:1;animation:twinkle 3s ease-in-out infinite}
+</style></head>
+<body>
+
+<svg id="lights" viewBox="0 0 1000 110" preserveAspectRatio="none" aria-hidden="true">
+  <path d="M0 18 Q62 66 125 18 Q187 66 250 18 Q312 66 375 18 Q437 66 500 18 Q562 66 625 18 Q687 66 750 18 Q812 66 875 18 Q937 66 1000 18"
+        fill="none" stroke="#3d6b4f" stroke-width="2.5"/>
+  <g id="bulbs"></g>
+</svg>
+
+<svg id="lucy" viewBox="-34 -150 532 705" aria-label="Lucy in a pink Santa hat">
+  <defs>
+    <clipPath id="round"><circle cx="232" cy="232" r="232"/></clipPath>
+    <linearGradient id="velvet" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffa8c9"/><stop offset=".55" stop-color="#f06598"/>
+      <stop offset="1" stop-color="#c93a74"/>
+    </linearGradient>
+    <linearGradient id="sheen" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#fff" stop-opacity="0"/>
+      <stop offset=".5" stop-color="#fff" stop-opacity=".45"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <radialGradient id="fur" cx=".4" cy=".35" r=".7">
+      <stop offset="0" stop-color="#fff"/><stop offset=".75" stop-color="#fff6f9"/>
+      <stop offset="1" stop-color="#f3d9e3"/>
+    </radialGradient>
+    <linearGradient id="ribbon" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ff9cc2"/><stop offset="1" stop-color="#e0447f"/>
+    </linearGradient>
+  </defs>
+
+  <!-- frame: gold edge, then a pink-and-white candy-cane ring -->
+  <circle cx="232" cy="232" r="252" fill="none" stroke="#e8b64c" stroke-width="5"/>
+  <circle cx="232" cy="232" r="242" fill="none" stroke="#fff" stroke-width="16"/>
+  <circle cx="232" cy="232" r="242" fill="none" stroke="#f06598" stroke-width="16"
+          stroke-dasharray="19 19"/>
+  <image href="__PHOTO__" x="0" y="0" width="464" height="464" clip-path="url(#round)"/>
+
+  <!-- pink Santa hat, tipped a little -->
+  <g transform="rotate(-9 236 98)">
+    <path d="M146 96 C150 22 196 -58 268 -92 C326 -118 392 -98 420 -40
+             C430 -18 424 2 410 12 C396 -16 372 -40 344 -36
+             C322 -2 322 52 330 96 Z" fill="url(#velvet)"/>
+    <path d="M196 70 C204 10 236 -50 286 -78" fill="none" stroke="url(#sheen)"
+          stroke-width="20" stroke-linecap="round"/>
+    <g fill="#fff" opacity=".85">
+      <circle cx="230" cy="20" r="3"/><circle cx="276" cy="-34" r="2.5"/>
+      <circle cx="300" cy="30" r="2.5"/><circle cx="252" cy="62" r="2"/>
+      <circle cx="338" cy="-72" r="2.5"/><circle cx="214" cy="-14" r="2"/>
+    </g>
+    <g fill="#e8b64c">
+      <circle cx="262" cy="0" r="2.5"/><circle cx="310" cy="-60" r="2"/>
+      <circle cx="286" cy="74" r="2"/>
+    </g>
+    <!-- fluffy brim -->
+    <g fill="url(#fur)">
+      <rect x="126" y="78" width="224" height="44" rx="22"/>
+      <circle cx="136" cy="100" r="23"/><circle cx="164" cy="94" r="22"/>
+      <circle cx="194" cy="104" r="22"/><circle cx="224" cy="94" r="23"/>
+      <circle cx="254" cy="105" r="22"/><circle cx="284" cy="94" r="22"/>
+      <circle cx="314" cy="104" r="22"/><circle cx="342" cy="98" r="22"/>
+    </g>
+    <!-- pom-pom -->
+    <g fill="url(#fur)">
+      <circle cx="416" cy="22" r="30"/><circle cx="398" cy="10" r="16"/>
+      <circle cx="436" cy="10" r="15"/><circle cx="432" cy="42" r="15"/>
+      <circle cx="398" cy="38" r="14"/>
+    </g>
+  </g>
+
+  <!-- holly + bow at the bottom of the frame -->
+  <g transform="translate(232 478)">
+    <path d="M-34 4 C-70 -18 -104 -8 -122 10 C-104 8 -96 22 -80 22 C-66 28 -52 18 -34 4Z" fill="#3d8b5a"/>
+    <path d="M34 4 C70 -18 104 -8 122 10 C104 8 96 22 80 22 C66 28 52 18 34 4Z" fill="#3d8b5a"/>
+    <circle cx="-30" cy="-12" r="8" fill="#d81b60"/><circle cx="-16" cy="-22" r="7" fill="#d81b60"/>
+    <circle cx="30" cy="-12" r="8" fill="#d81b60"/><circle cx="16" cy="-22" r="7" fill="#d81b60"/>
+    <path d="M-8 6 L-34 62 L-18 56 L-12 72 L4 12Z" fill="url(#ribbon)"/>
+    <path d="M8 6 L34 62 L18 56 L12 72 L-4 12Z" fill="url(#ribbon)"/>
+    <path d="M0 0 C-30 -44 -86 -30 -74 4 C-66 30 -24 18 0 0Z" fill="url(#ribbon)"/>
+    <path d="M0 0 C30 -44 86 -30 74 4 C66 30 24 18 0 0Z" fill="url(#ribbon)"/>
+    <path d="M-12 -4 C-34 -26 -62 -20 -60 0" fill="none" stroke="#fff" stroke-opacity=".5" stroke-width="4" stroke-linecap="round"/>
+    <path d="M12 -4 C34 -26 62 -20 60 0" fill="none" stroke="#fff" stroke-opacity=".5" stroke-width="4" stroke-linecap="round"/>
+    <ellipse cx="0" cy="2" rx="15" ry="13" fill="#e0447f"/>
+    <ellipse cx="-4" cy="-2" rx="6" ry="4" fill="#fff" opacity=".45"/>
+  </g>
+</svg>
+
+<h1>Merry Christmas</h1>
+
+<script>
+// twinkle lights along the garland
+var colors = ["#ff7eb3", "#e8b64c", "#fff", "#f06598", "#9fd8c0", "#ffc2d9"];
+var g = document.getElementById("bulbs"), ns = "http://www.w3.org/2000/svg";
+for (var i = 0; i < 24; i++) {
+  var x = 21 + i * 41.5, seg = (x % 125) / 125;
+  var y = 18 + 48 * 2 * seg * (1 - seg) * 1.0 + 10;
+  var b = document.createElementNS(ns, "ellipse");
+  b.setAttribute("cx", x); b.setAttribute("cy", y);
+  b.setAttribute("rx", 7); b.setAttribute("ry", 11);
+  b.setAttribute("fill", colors[i % colors.length]);
+  b.setAttribute("class", "bulb");
+  b.style.animationDelay = (i % 5) * 0.45 + "s";
+  b.style.filter = "drop-shadow(0 0 6px " + colors[i % colors.length] + ")";
+  g.appendChild(b);
+}
+// gentle snow + a few gold sparkles
+for (var j = 0; j < 36; j++) {
+  var f = document.createElement("div");
+  f.className = "flake"; f.textContent = j % 3 ? "❄" : "•";
+  f.style.left = Math.random() * 100 + "vw";
+  f.style.fontSize = 14 + Math.random() * 20 + "px";
+  f.style.opacity = 0.75 + Math.random() * 0.25;
+  f.style.animationDuration = 9 + Math.random() * 10 + "s";
+  f.style.animationDelay = -Math.random() * 18 + "s";
+  document.body.appendChild(f);
+}
+var spots = [[12, 30], [86, 26], [8, 70], [90, 66], [20, 88], [80, 90], [30, 18], [70, 15]];
+spots.forEach(function (p, k) {
+  var s = document.createElement("div");
+  s.className = "spark"; s.textContent = "✦";
+  s.style.left = p[0] + "vw"; s.style.top = p[1] + "vh";
+  s.style.fontSize = 16 + (k % 3) * 8 + "px";
+  s.style.animationDelay = k * 0.4 + "s";
+  document.body.appendChild(s);
+});
+</script>
+</body></html>

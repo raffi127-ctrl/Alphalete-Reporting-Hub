@@ -377,14 +377,32 @@ def _needs_open(target: str, boot: str, opened: str) -> bool:
     return opened != f"{boot} {target}"
 
 
-def write_photo() -> None:
+CHRISTMAS_PAGE = Path(__file__).with_name("christmas.html")
+
+
+def is_christmas(today: dt.date) -> bool:
+    """Nov 25 through Jan 1. Megan 2026-11-25: a girly Christmas Lucy, pink Santa
+    hat, on Lucy 2's screen. Jan 2 she goes back to the everyday photo by herself."""
+    return (today.month, today.day) >= (11, 25) or (today.month, today.day) <= (1, 1)
+
+
+def write_photo(today: Optional[dt.date] = None) -> None:
     # Inside the page: Safari won't load a local image from another folder, so a
     # file:// src drew nothing on Lucy 2 (2026-11-01).
+    PHOTO_PAGE.parent.mkdir(parents=True, exist_ok=True)
+    if is_christmas(today or dt.date.today()):
+        raw = (REPO / "resources" / "lucy-photo-hires.png").read_bytes()
+        img = "data:image/png;base64," + base64.b64encode(raw).decode()
+        page = CHRISTMAS_PAGE.read_text(encoding="utf-8").replace("__PHOTO__", img)
+        PHOTO_PAGE.write_text(page, encoding="utf-8")
+        return
     raw = (REPO / "resources" / "lucy-avatar.png").read_bytes()
     img = "data:image/png;base64," + base64.b64encode(raw).decode()
-    PHOTO_PAGE.parent.mkdir(parents=True, exist_ok=True)
+    # The refresh lets a new version of this page (and Jan 2's swap back) show up
+    # without waiting for a restart: keep_open only re-opens Safari after one.
     PHOTO_PAGE.write_text(
-        '<!doctype html><html><head><meta charset="utf-8"><title>Lucy</title><style>'
+        '<!doctype html><html><head><meta charset="utf-8">'
+        '<meta http-equiv="refresh" content="600"><title>Lucy</title><style>'
         "html,body{height:100%;margin:0;background:#faf6ea}"
         "body{display:flex;align-items:center;justify-content:center}"
         f'img{{height:80vh;border-radius:50%}}</style></head><body><img src="{img}">'
