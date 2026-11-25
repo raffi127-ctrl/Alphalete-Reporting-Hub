@@ -73,6 +73,19 @@ _CSV_TIME_BUDGET = 480
 
 
 def _fetch_csv(page, url: str, log=print) -> bytes:
+    """The ORDERLOG export as comma-CSV bytes, in the direct-.csv shape.
+
+    Since 2026-11-25 the bare ATTTRACKER-B2B/ORDERLOG.csv returns a different
+    worksheet (see CROSSTAB_SHEET below), so a bare-ORDERLOG url is served from
+    Download -> Crosstab instead and converted back to the shape every caller
+    already parses (captainship_boards, b2b_captainship_activations, pull_b2b +
+    its backfills, carlos_captainship_bonus). Any other url: unchanged GET."""
+    if _is_bare_orderlog_csv(url):
+        return _orderlog_csv_via_crosstab(page, url, log=log)
+    return _fetch_direct_csv(page, url, log=log)
+
+
+def _fetch_direct_csv(page, url: str, log=print) -> bytes:
     """GET the ORDERLOG export, retried in the SAME authed session.
 
     Raises the last error when every attempt failed, so the caller's behaviour on
@@ -150,6 +163,110 @@ def _crosstab(page, today: dt.date, dest: Path, log=print) -> Path:
     if size < 1000:
         raise RuntimeError("order-log crosstab came back empty ({} bytes)".format(size))
     return dest
+
+
+_BARE_ORDERLOG_CSV = "/t/sci/views/ATTTRACKER-B2B/ORDERLOG.csv"
+# The four measures the direct .csv un-pivots into 'Measure Names' rows, spelled
+# EXACTLY as that export did (note the double space — sheet.MEASURES keys on it).
+# The crosstab carries them as columns; matched space-insensitively, emitted in
+# this spelling.
+_MEASURES = ("Unit Count", "Total Volume", "Total Activations",
+             "Sales (All)  (non pmts) (60-120)")
+# The callers' "no rows yet" guards key on this exact wording (captainship_boards
+# _EMPTY_RE, pull_b2b's "status=200"): an empty Monday window must keep saying it.
+_EMPTY_MSG = "order-log export failed: status=200 bytes=1 (crosstab: {})"
+
+
+def _is_bare_orderlog_csv(url: str) -> bool:
+    return _BARE_ORDERLOG_CSV + "?" in url
+
+
+def _window_from_url(url: str):
+    from urllib.parse import parse_qs, urlsplit
+    q = parse_qs(urlsplit(url).query)
+    start = dt.date.fromisoformat(q["Start Date"][0])
+    end = dt.date.fromisoformat(q["End Date"][0])
+    return start, end
+
+
+def _crosstab_to_long_csv(grid) -> bytes:
+    """Crosstab grid -> the direct-.csv shape: every row-header cell filled, and
+    one row per (line, measure) with 'Measure Names' / 'Measure Values'.
+
+    Back-fill: the crosstab blanks a row header on continuation rows (Owner,
+    Rep, Lead Rep ID, Rep Number, Customer, Order Date/Time, SPM… — the left,
+    nested block). A row's first non-blank column is where its group changed,
+    so every column left of it repeats the row above. clean.load_grid fills the
+    7 compute._GROUP_COLS; this also covers the ones it doesn't."""
+    import csv
+    import io
+
+    if not grid:
+        raise RuntimeError(_EMPTY_MSG.format("empty grid"))
+    hdr = [str(h or "").strip().lstrip("﻿") for h in grid[0]]
+    norm = [" ".join(h.split()) for h in hdr]
+    canon = {" ".join(m.split()): m for m in _MEASURES}
+    mcols = [i for i, h in enumerate(norm) if h in canon]
+    if "Measure Names" in hdr:
+        mcols = []                       # already long — pass through
+    elif not mcols:
+        raise RuntimeError("order-log crosstab: none of the measure columns "
+                           "{} in header {}".format(_MEASURES, hdr))
+    dcols = [i for i in range(len(hdr)) if i not in mcols]
+    rows = []
+    prev = None
+    for r in grid[1:]:
+        r = [str(c if c is not None else "") for c in r]
+        r += [""] * (len(hdr) - len(r))
+        if not any(c.strip() for c in r):
+            continue
+        if prev is not None:
+            k = next(i for i, c in enumerate(r) if c.strip())
+            for i in range(k):
+                r[i] = prev[i]
+        prev = r
+        rows.append(r)
+    if not rows:
+        raise RuntimeError(_EMPTY_MSG.format("no data rows"))
+    buf = io.StringIO()
+    w = csv.writer(buf, lineterminator="\n")
+    if not mcols:
+        w.writerow(hdr)
+        w.writerows(rows)
+    else:
+        w.writerow([hdr[i] for i in dcols] + ["Measure Names", "Measure Values"])
+        for r in rows:
+            dims = [r[i] for i in dcols]
+            for i in mcols:
+                w.writerow(dims + [canon[norm[i]], r[i].replace(",", "")])
+    return buf.getvalue().encode("utf-8")
+
+
+def _orderlog_csv_via_crosstab(page, url: str, log=print) -> bytes:
+    from automations.recruiting_report.opt_phase import drive_crosstab_dialog
+    from . import clean
+
+    start, end = _window_from_url(url)
+    ui = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
+          "ATTTRACKER-B2B/ORDERLOG?:iid=1&Start%20Date={}&End%20Date={}").format(
+              start.isoformat(), end.isoformat())
+    dest = OUTPUT_DIR / "_crosstab" / "orderlog_{}_{}.csv".format(start, end)
+    log("  [csv→crosstab] {} .. {}".format(start, end))
+    try:
+        drive_crosstab_dialog(page, ui, CROSSTAB_SHEET, dest, verbose=False)
+    except Exception as e:  # noqa: BLE001
+        msg = str(e)
+        # A window with no rows renders no Order Log worksheet at all, so the
+        # dialog lists only the other thumbs (9/29: "saw 1 thumb(s): ['Last
+        # Refresh']"). That is the old 200/1-byte "empty", not an outage.
+        if "thumb" in msg and CROSSTAB_SHEET not in msg.split("saw", 1)[-1]:
+            log("  [csv→crosstab] no Order Log sheet in the dialog — empty window")
+            raise RuntimeError(_EMPTY_MSG.format("no rows in window")) from e
+        raise
+    body = _crosstab_to_long_csv(clean.load_grid(dest))
+    log("  [csv→crosstab] {:,} bytes crosstab -> {:,} bytes csv".format(
+        dest.stat().st_size, len(body)))
+    return body
 
 
 def _pull(today: dt.date, dest: Path, log=print) -> Path:
