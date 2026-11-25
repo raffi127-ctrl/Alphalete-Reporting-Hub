@@ -74,6 +74,17 @@ def valid_people(people) -> List[Dict]:
             fixed = fix_email(email)
             rec = {"first_name": first, "last_name": last, "email": fixed,
                    "phone": str(p.get("phone") or "").strip()}
+            # WHICH COHORT THIS PRESS WAS FOR. `wk3.find` stamps every person
+            # with the training week they belong to, and this used to drop it
+            # -- so the 'Admin Requests' row recorded WHO was sent and never
+            # WHICH WEEK, and `drug_nudge.already_sent` had nothing to match
+            # on but the date the row was written. That fallback then read a
+            # two-person hand-picked send on 2026-11-25 as "the whole week-3
+            # cohort has been done", and the nudge went quiet for a cohort
+            # nobody had touched.
+            week = str(p.get("start_week") or "").strip()
+            if week:
+                rec["start_week"] = week
             if fixed != email:
                 rec["email_was"] = email
             out.append(rec)
