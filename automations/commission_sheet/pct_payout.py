@@ -226,7 +226,7 @@ REP_DETAILS = [
 ]
 #: Rep-tab top block (Maud 2026-11-24): rows back to back, only what applies;
 #: one row per Extra Payouts entry right under Total Payout, its note in
-#: column C (left, bordered). Typed-in values appear on the next refresh
+#: column C (left, no border). Typed-in values appear on the next refresh
 #: (refresh_rep_tabs — every 30 min Wed-Fri on the mini, or by hand).
 REP_EXTRA_AFTER = "D"                  # Extra Payouts rows go under Total Payout
 REP_SKIP = {"R", "S", "O"}             # shown per entry instead of as totals
@@ -250,14 +250,25 @@ def top_spec(rep, show, cb, extras):
         if col in REP_SKIP or not show.get(col):
             continue
         if col == "F":
-            rows.append((label, f'=IFERROR(IF({idx}=TRUE,"Yes — Entry Level 35%",""),"")', ""))
+            # the Level / Rule reason (col E), not a plain "Yes" (Maud 11/24)
+            why = idx.replace(f"${col}:${col}", "$E:$E")
+            rows.append((label, f'=IFERROR(IF({idx}=TRUE,IF({why}="","Lost leadership pay",{why}),""),"")', ""))
         else:
             rows.append((label, f'=IFERROR({idx},"")', ""))
         if col == REP_EXTRA_AFTER:
             order = {t: i for i, t in enumerate(EXTRA_TYPES)}
             for typ, amt, note in sorted(extras, key=lambda e: order.get(e[0], 9)):
-                rows.append((typ, -abs(amt) if typ == "Clawback" else amt, note))
+                # "Clawback - Movie": the reason right beside the type (Maud 11/24)
+                rows.append((f"{typ} - {note}" if note else typ,
+                             -abs(amt) if typ == "Clawback" else amt, ""))
     return rows
+
+
+def _extra_type(label):
+    """'Clawback - Movie' / 'NPA' -> the Extra Payouts type, else None."""
+    label = str(label or "")
+    return next((t for t in EXTRA_TYPES
+                 if label == t or label.startswith(t + " - ")), None)
 
 
 def _top_kind(r, label):
@@ -267,7 +278,7 @@ def _top_kind(r, label):
         return "total"
     if label == "Final Pay":
         return "final"
-    if label in EXTRA_TYPES:
+    if _extra_type(label):
         return "extra"
     return "plain"
 
@@ -280,10 +291,11 @@ def _top_fmt(label):
 
 
 #: kind -> (A fill, B fill, font color, size); None = no fill / default.
+#: Maud's mock-up 2026-11-24: Total Payout + Final Pay cyan, extra rows grey.
 TOP_LOOK = {"name": ("1F4E78", "1F4E78", "FFFFFF", 14),
-            "total": ("C6EFCE", "C6EFCE", "006100", 13),
-            "final": ("E7E6E6", "E7E6E6", "000000", 13),
-            "extra": ("DDEBF7", None, None, None),
+            "total": ("00FFFF", "00FFFF", "000000", 13),
+            "final": ("00FFFF", "00FFFF", "000000", 13),
+            "extra": ("D9D9D9", "D9D9D9", None, None),
             "plain": ("DDEBF7", None, None, None)}
 
 
@@ -762,11 +774,6 @@ def style_workbook(wb):
             fmt = _top_fmt(label)
             if fmt and r > 1:
                 ws.cell(r, 2).number_format = fmt
-            if kind == "extra":                   # the note, left of the amount's row
-                n = ws.cell(r, 3)
-                n.alignment = Alignment(horizontal="left", vertical="center")
-                n.border = BORDER
-                n.font = Font(italic=True)
         ws.row_dimensions[1].height = 24
         pend = next((r for r in range(hdr, ws.max_row + 1)
                      if str(ws.cell(r, 1).value or "").startswith(PENDING_BANNER)), None)
@@ -1346,8 +1353,7 @@ def _api_top_row(r, a, b, c):
     fmt = _top_fmt(a) if r > 1 else None
     cells = [_api_cell(a, fill=fa, bold=True, size=size, color=color),
              _api_cell(b, fmt=fmt, fill=fb, bold=strong, size=size, color=color)]
-    cells.append(_api_cell(c, italic=True, left=True) if kind == "extra"
-                 else {})                       # {} + the fields mask = cleared
+    cells.append({})                        # col C: {} + the fields mask = cleared
     return {"values": cells}
 
 
@@ -1365,13 +1371,14 @@ def _same(x, y):
         return str(x if x is not None else "").strip() == str(y if y is not None else "").strip()
 
 
-def refresh_rep_tabs(sheet_id, log=print):
+def refresh_rep_tabs(sheet_id, log=print, force=False):
     """Google Sheets: re-lay every rep tab's top block from what's on the sheet
     now — rows back to back, only what applies, one row per Extra Payouts entry
     (NPA / Clawback / Other) with its note in column C (Maud 2026-11-24).
     Rows are inserted / deleted above the sales so nothing below moves out of
     place. A tab that already matches is left alone, so a pass with nothing
-    new typed in changes nothing. Returns the tabs it changed."""
+    new typed in changes nothing (force=True re-writes every tab, e.g. after
+    a look change). Returns the tabs it changed."""
     from automations.recruiting_report.fill import open_by_key
     sh = open_by_key(sheet_id)
     pv = _payout_ws(sh).get_values(value_render_option="UNFORMATTED_VALUE")
@@ -1397,6 +1404,15 @@ def refresh_rep_tabs(sheet_id, log=print):
     got = sh.values_batch_get([f"'{w.title}'!A1:C60" for w in tabs],
                               params={"valueRenderOption": "FORMULA"})["valueRanges"]
     reqs, changed = [], []
+    # Sheets made before 11/24 had label-fill conditional rules on the rep
+    # tabs' top rows; they'd paint over the cyan / grey -> drop them.
+    meta = sh.fetch_sheet_metadata({"fields": "sheets(properties(sheetId),conditionalFormats)"})
+    tab_ids = {w.id for w in tabs}
+    for sheet in meta["sheets"]:
+        sid = sheet["properties"]["sheetId"]
+        if sid in tab_ids:
+            for k in reversed(range(len(sheet.get("conditionalFormats", [])))):
+                reqs.append({"deleteConditionalFormatRule": {"sheetId": sid, "index": k}})
     for w, vr in zip(tabs, got):
         cur = [(list(r) + ["", "", ""])[:3] for r in vr.get("values", [])]
         if not cur or cur[0][0] != "Rep":
@@ -1415,9 +1431,9 @@ def refresh_rep_tabs(sheet_id, log=print):
                 "Q": any(_nz(v[c]) for c in "OPRS")}
         cb = [(a, b) for a, b, _c in cur[1:top]
               if str(a).strip() and str(a) not in STD_LABELS
-              and str(a) not in EXTRA_TYPES and not str(a).startswith("=")]
+              and not _extra_type(a) and not str(a).startswith("=")]
         want = top_spec(rep, show, cb, extras.get(rep, []))
-        if len(want) == top and all(
+        if not force and len(want) == top and all(
                 _same(x, y) for wr, cr in zip(want, cur[:top]) for x, y in zip(wr, cr)):
             continue
         sid = w.id
