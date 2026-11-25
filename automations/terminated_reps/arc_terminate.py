@@ -46,7 +46,7 @@ from pathlib import Path
 
 from automations.shared.names import base_name, norm_name
 
-LIVE = True                      # Raf OK 11/24 on the Roderick Evans test (Eve 11/25)
+LIVE = False                     # off again: Eve 11/25 wants an approval gate first
 ACCOUNT = "raf"
 OFFICE_ID = 2556                 # 'Alphalete Marketing, Inc.'
 OWNER_NAMES = {"rafael hidalgo", "raf hidalgo"}
