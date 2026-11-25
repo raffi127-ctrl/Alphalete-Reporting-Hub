@@ -208,7 +208,7 @@ def screenshot(day: dt.date, office: str, out_png) -> Dict:
         # in a picture of the whole week. Rows are matched by the date in
         # cell 0, the same way _band_rows reads them.
         page.evaluate(
-            """(dstr) => {
+            r"""(dstr) => {
                  document.querySelectorAll('tr').forEach(tr => {
                    const tds = [...tr.querySelectorAll('td')];
                    if (tds.length < 7) return;

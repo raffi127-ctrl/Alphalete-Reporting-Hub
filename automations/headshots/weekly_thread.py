@@ -1,9 +1,15 @@
-"""The Monday headshot thread in #rafs-office-recruiting-11280.
+"""The headshot thread in #rafs-office-recruiting-11280 — on any start day.
 
-Megan 2026-08-23: start a thread each Monday asking people to reply with the
-headshot photo INCLUDING the person's name, so the bot knows who they are.
-The bot (run.py) then watches the replies of that thread — not loose channel
-posts, since this is a busy office channel.
+Megan 2026-08-23: start a thread asking people to reply with the headshot
+photo INCLUDING the person's name, so the bot knows who they are. The bot
+(run.py) then watches the replies of that thread — not loose channel posts,
+since this is a busy office channel.
+
+NOT MONDAYS ONLY, since 2026-11-24. It was built when new starts began on a
+Monday and the agent fired Monday 8:30am, so a Wednesday start got no thread
+at all — Megan: the thread goes up "any day that there's new starts
+scheduled". The morning of a start is what triggers it now; the day of the
+week decides nothing.
 
 Idempotency lives in the thread itself, same as new_start_followup: the post
 carries a stable marker line, and before posting we look for this week's
@@ -12,7 +18,7 @@ marker in the channel. No state file to drift out of sync with Slack.
     # preview the exact post, send nothing:
     python -m automations.headshots.weekly_thread --dry-run
 
-    # live (scheduled Monday mornings; safe to re-run — never double-posts):
+    # live (scheduled each weekday morning; safe to re-run — never double-posts):
     python -m automations.headshots.weekly_thread
 
 Python 3.9-safe (runs on the mini): no runtime `X | Y`, no 3.10+ syntax.
