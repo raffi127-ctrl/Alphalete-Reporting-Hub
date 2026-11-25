@@ -1713,7 +1713,7 @@
   },
   "leafguard_spencer": {
    "on_scheduler": true,
-   "_note": "MONDAYS + TUESDAYS (Eve/Maud 2026-11-25). Spencer Brown sells LeafGuard, which no other Hub source carries; Starr reads his tab in her Monday 1on1. Fills 4 rows on his ATT Program - Focus Report tab, inserting them once if missing (found by column-B label): 'LeafGuard Total Sales' + 'LeafGuard Valid Sales' under 'Badged %' (Maud: two rows, valid AND total), 'LeafGuard Leads' (Raw leads) + 'LeafGuard Demos' under 'WEEKLY KNOCKS DATA' (LeafGuard tracks no doors knocked). Source: Tableau sci workbook 'Leaf Guard D2D Reporting.V2' (4359662), .csv of LeadandCloserMetrics + CloserRepSalesTracker + LeadGenRepMetricsDDBased pinned with ?Weekending Date=<Sunday>. Fills the last 2 finished weeks every run (Tableau's sales data trails a day, Tuesday catches Monday's gaps). `lucy rerun leafguard_spencer --backfill` fills every week on the tab. No machine: needs only the Tableau login.",
+   "_note": "MONDAYS + TUESDAYS (Eve/Maud 2026-11-25). Spencer Brown sells LeafGuard, which no other Hub source carries; Starr reads his tab in her Monday 1on1. Fills 4 rows on his ATT Program - Focus Report tab, inserting them once if missing (found by column-B label): 'LeafGuard Total Sales' + 'LeafGuard Valid Sales' under 'Badged %' (Maud: two rows, valid AND total), 'LeafGuard Leads' (Raw leads) + 'LeafGuard Demos' under 'WEEKLY KNOCKS DATA' (LeafGuard tracks no doors knocked). Source: Tableau sci workbook 'Leaf Guard D2D Reporting.V2' (4359662), .csv of LeadandCloserMetrics + CloserRepSalesTracker + LeadGenRepMetricsDDBased pinned with ?Weekending Date=<Sunday>. Fills the last 2 finished weeks every run (Tableau's sales data trails a day, Tuesday catches Monday's gaps). `lucy rerun leafguard_spencer --backfill` fills every week on the tab (~25s a week, ~16 min for the whole tab; weeks before his first LeafGuard number, WE 6/7/26, stay blank). No machine: needs only the Tableau login.",
    "display_name": "LeafGuard fill - Spencer Brown",
    "source_type": "tableau",
    "data_sources": [],
@@ -1734,7 +1734,7 @@
     "att_focus_raf"
    ],
    "verify": null,
-   "timeout_minutes": 15,
+   "timeout_minutes": 30,
    "order": 37.7
   },
   "lumen_owners": {

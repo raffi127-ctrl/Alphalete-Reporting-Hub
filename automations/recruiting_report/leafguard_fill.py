@@ -200,6 +200,7 @@ def run(sheet_id: Optional[str], tab: str, weeks: Optional[int],
     with tableau_session(verbose=False) as page:
         session = requests_session_from_page(page)
         updates = []
+        started = False   # weeks before his first LeafGuard number stay blank
         for d in sundays:
             try:
                 nums = fetch_week(session, d)
@@ -208,7 +209,13 @@ def run(sheet_id: Optional[str], tab: str, weeks: Optional[int],
                       f"({type(e).__name__}: {str(e)[:120]})")
                 continue
             logfn(f"  WE {d}: " + ", ".join(
-                f"{k.replace('LeafGuard ', '')} {v}" for k, v in nums.items()))
+                f"{k.replace('LeafGuard ', '')} {v}" for k, v in nums.items()),
+                flush=True)
+            # Backfill: before 2026-06-07 every week is all 0 — he wasn't on
+            # LeafGuard yet, so a 0 there would read as "worked, sold nothing".
+            started = started or any(nums.values()) or weeks is not None
+            if not started:
+                continue
             for label, v in nums.items():
                 r = labels[label.lower()]
                 updates.append({"range": rowcol_to_a1(r, cols[d]),
