@@ -310,7 +310,7 @@ def _once_a_day(today: dt.date, text: str, logfn, flag: str = "arc_login_dm") ->
 # ---------------------------------------------------------------------- main
 
 def run(today: dt.date, *, apply: bool, emails: dict | None = None,
-        logfn=print) -> list[ArcResult]:
+        approve: list | None = None, logfn=print) -> list[ArcResult]:
     """Never raises. `emails` = {folded name: OwnerVille email} from step two."""
     from automations.terminated_reps.board import to_date, week_sunday
     from automations.terminated_reps.tracker import TAB, TRACKER_SHEET_ID, _open
@@ -329,6 +329,10 @@ def run(today: dt.date, *, apply: bool, emails: dict | None = None,
         return []
     gate = load_gate() if apply else {"asks": [], "told": []}
     ok = approved_keys(gate, today, logfn) if apply else set()
+    # --arc-approve: Eve's go given in chat (11/25, Roderick Evans).
+    by_hand = {norm_name(n) for n in (approve or [])}
+    ok |= {gate_key(r.name, r.term_date) for r in reps
+           if apply and (norm_name(r.name) in by_hand or base_name(r.name) in by_hand)}
     logfn(f"  ARC: checking {len(reps)} terminated rep(s) "
           f"({len(ok)} approved by Eve)")
     out: list[ArcResult] = []

@@ -106,6 +106,11 @@ def main(argv=None) -> int:
     ap.add_argument("--no-arc", dest="no_arc", action="store_true",
                     help="skip the ARC (Credico) termination step "
                          "(arc_terminate.py)")
+    ap.add_argument("--arc-approve", dest="arc_approve", action="append", default=[],
+                    metavar="NAME",
+                    help="Eve's go given in chat instead of the ✅: terminate this "
+                         "rep in ARC on THIS run (repeatable). Still needs a "
+                         "match on this/last week's tracker rows.")
     ap.add_argument("--back-weeks", dest="back_weeks", type=int, default=1,
                     help="how many PREVIOUS week tabs to read as well "
                          "(default 1 — Monday's new tab leaves the weekend's "
@@ -264,7 +269,8 @@ def main(argv=None) -> int:
             from automations.terminated_reps.board import norm_name
             from automations.terminated_reps.auto_deactivate import Outcome
             emails = {norm_name(o.name): o.email for o in (outcomes or []) if o.email}
-            arc = arc_terminate.run(today, apply=not dry, emails=emails)
+            arc = arc_terminate.run(today, apply=not dry, emails=emails,
+                                    approve=args.arc_approve)
             if arc:
                 if outcomes is None:
                     outcomes = []
