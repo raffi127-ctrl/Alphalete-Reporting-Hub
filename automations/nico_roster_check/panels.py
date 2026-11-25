@@ -112,14 +112,28 @@ def tab_reps(grid) -> Dict[str, float]:
     return out
 
 
+def itemized_columns(grid) -> tuple:
+    """(rep column, description column) of a WE tab's itemized block, found by
+    its 'REP Name' / 'Description' header, so a column added left of it (the
+    spacer Carlos asked Nico for, 11/24) does not matter. Old layout: G and J."""
+    for r in grid:
+        cells = [str(c).strip().lower() for c in r]
+        if "rep name" in cells:
+            rep = cells.index("rep name")
+            desc = [k for k, c in enumerate(cells) if k > rep and c == "description"]
+            return rep, (desc[0] if desc else rep + 3)
+    return 6, 9
+
+
 def tab_training_bonuses(grids: List[list], names, aliases=None) -> Dict[str, str]:
-    """Training bonus numbers named in the itemized lines (col G rep, col J
-    description, col K detail) of the given (earlier) WE tabs."""
+    """Training bonus numbers named in the itemized lines of the given
+    (earlier) WE tabs."""
     got = {n: {} for n in names}
     for g in grids:
+        cr, cd = itemized_columns(g)
         for r in g:
-            r = list(r) + [""] * (15 - len(r))
-            rep, desc = str(r[6]).strip(), str(r[9]).strip()
+            r = list(r) + [""] * (cd + 1 - len(r))
+            rep, desc = str(r[cr]).strip(), str(r[cd]).strip()
             if not rep or not desc.lower().startswith("training bonus"):
                 continue
             for n in names:
@@ -258,13 +272,13 @@ def run(write: bool, log) -> dict:
     ws = tabs[-1]
     y, mo, d = _week_key(ws.title)
     week = dt.date(y, mo, d)
-    grid = ws.get("A1:O" + str(ws.row_count))
+    grid = ws.get("A1:T" + str(ws.row_count))
     al = _alias_map(master)
     panels = build(
         week, tab_reps(grid), roll_call_people(master.worksheet("Roll Call").get_all_values()),
         board_field_weeks(master.worksheet("Verizon Sales Board").get("A1:T80")),
         master.worksheet("Verizon Order Log").get_all_values(),
-        [w.get("A1:O" + str(w.row_count)) for w in tabs[:-1]], al)
+        [w.get("A1:T" + str(w.row_count)) for w in tabs[:-1]], al)
     log(f"panels for {ws.title}: no revenue {panels['norev']}; revenue-not-active {panels['revnot']}; "
         f"first/second {panels['fs']}")
     rows = rows_for(panels)

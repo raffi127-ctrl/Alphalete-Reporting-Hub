@@ -84,6 +84,13 @@ class Panels(unittest.TestCase):
         self.assertEqual(P.tab_training_bonuses(g, ["Bee November"]), {"Bee November": "#1 and #2"})
         self.assertEqual(P.tab_training_bonuses(g[:1], ["Bee November"]), {"Bee November": "Yes (no # noted)"})
 
+    def test_itemized_block_found_by_header_after_a_spacer_column(self):
+        g = [["Rep", "Brought In", "Commission", "Profit/Loss", "Rate", "NPA's", "", "REP Name", "Sale Date",
+              "Week", "Description", "Product"],
+             [""] * 7 + ["Jay Mid Foxtrot", "", "", "Training Bonus \u2014 training bonus #1 and #2", ""]]
+        self.assertEqual(P.itemized_columns(g), (7, 10))
+        self.assertEqual(P.tab_training_bonuses([g], ["Jay Mid Foxtrot"]), {"Jay Mid Foxtrot": "#1 and #2"})
+
 
 if __name__ == "__main__":
     unittest.main()
