@@ -37,6 +37,7 @@ are readable from any machine without shelling into the mini.
 from __future__ import annotations
 
 import collections
+import re
 import datetime as dt
 import traceback
 from pathlib import Path
@@ -338,6 +339,11 @@ def _summarize_rows(rec, rows) -> None:
                      if o.upper().startswith("CARLOS HIDALGO"))
         rec("  CARLOS HIDALGO rows={:,}   distinct owners={}".format(
             carlos, len(owners)))
+        # 11/25 crosstab: 70 owners, zero 'CARLOS HIDALGO' — so name every owner
+        # that could be his office under another spelling.
+        for o, n in sorted(owners.items()):
+            if re.search(r"hidalgo|alphalete|vantura|carlos", o, re.I):
+                rec("    maybe-Carlos {:>6,}  {!r}".format(n, o[:90]))
         for o, n in owners.most_common(8):
             rec("    {:>7,}  {}".format(n, o[:70]))
     ri = col("Rep")
@@ -372,7 +378,7 @@ def _crosstab_check(page, rec) -> None:
     from automations.vantura_churn import compute
 
     today = dt.date.today()
-    start = today - dt.timedelta(days=3)
+    start = today - dt.timedelta(days=_COMPARE_DAYS)   # round 5: full window
     url = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
            "ATTTRACKER-B2B/ORDERLOG?:iid=1&Start%20Date={}&End%20Date={}").format(
                start.isoformat(), today.isoformat())
