@@ -275,8 +275,24 @@ def new_rows(rows: List[dict], existing: Iterable[Tuple]) -> List[dict]:
 
 # --------------------------------------------------------------- Slack copy
 
+def _ordinal(n: int) -> str:
+    """24 -> "24th". 11th, 12th and 13th are the ones a naive rule gets wrong."""
+    if 10 <= (n % 100) <= 20:
+        return "%dth" % n
+    return "%d%s" % (n, {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th"))
+
+
 def parent_text(day: dt.date) -> str:
-    return f"*Daily Update {day.month}/{day.day}*"
+    """The thread's header.
+
+    Megan, 2026-11-24: it "should read 'Daily Update Tuesday 24th'" -- the
+    day NAMED, not 11/24. A date tells somebody scrolling a channel nothing
+    about whether they already read it; a weekday does.
+
+    `%A` and a built ordinal rather than any `%-d`, which is not a thing on
+    Windows -- every report here has to run on both.
+    """
+    return "*Daily Update %s %s*" % (day.strftime("%A"), _ordinal(day.day))
 
 
 CONGRATS_ASK = ("Hey Team! Can we text all the people hired and congratulate "

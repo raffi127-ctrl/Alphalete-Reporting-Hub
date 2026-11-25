@@ -759,7 +759,20 @@ def slack_ids(rows: List[dict], client=None) -> Dict[str, str]:
 def _existing_parent(client, channel: str, day: dt.date) -> str:
     """ts of a Daily Update M/D a recruiter already posted today, or ''."""
     start = dt.datetime.combine(day, dt.time(0), CENTRAL).timestamp()
-    want = re.compile(rf"daily update\s+{day.month}/{day.day}\b", re.I)
+    # BOTH WORDINGS. Ours became "Daily Update Tuesday 24th" on 2026-11-24
+    # (Megan: it "should read 'Daily Update Tuesday 24th'"), and a finder
+    # that only knew "Daily Update 11/24" would have stopped recognising
+    # OUR OWN post -- so a rerun would add a second parent, and
+    # daily_focus_post's booked replies, which hang off this same lookup,
+    # would fall out of the thread Raf asked for on 2026-11-18.
+    #
+    # Recruiters still type the old shape by hand, so both are matched:
+    # "11/24" and "Tuesday 24th" / "Tue 24" / "24th".
+    want = re.compile(
+        r"daily update\s+(?:%d/%d\b|(?:%s|%s)?\s*%d(?:st|nd|rd|th)?\b)"
+        % (day.month, day.day, day.strftime("%A"), day.strftime("%a"),
+           day.day),
+        re.I)
     try:
         msgs = client.conversations_history(channel=channel, oldest=str(start),
                                             limit=200)["messages"]

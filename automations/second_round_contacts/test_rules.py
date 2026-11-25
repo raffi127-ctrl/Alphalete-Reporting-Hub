@@ -17,10 +17,24 @@ class RemovalsHeldForAnOfficeThatMayNotMark(unittest.TestCase):
     the office hires nobody.
     """
 
-    def test_a_held_office_is_named_with_its_reason(self):
-        why = rules.removals_held("Cyrus Wade")
-        self.assertTrue(why, "Cyrus Wade should be held")
-        self.assertIn("check whether the office marks", why)
+    def test_nobody_is_held_now(self):
+        """Megan, 2026-11-24: "as long as eve has rules in place you can
+        remove", then "take cy live as well for removals". Cyrus Wade's
+        hold is lifted -- OVERRULED, not answered: nothing established
+        whether that office marks BOB. What protects them now is `decide`,
+        not this list, and if cards come off their phone that should not
+        have, this is the first place to look."""
+        self.assertEqual(rules.HOLD_REMOVALS, {})
+        self.assertEqual(rules.removals_held("Cyrus Wade"), "")
+
+    def test_the_hold_still_works_if_somebody_is_put_back_on_it(self):
+        """The list is empty, not deleted. A future office that reads empty
+        next to two reading full can be held the same way."""
+        rules.HOLD_REMOVALS["Test Office"] = "because"
+        try:
+            self.assertEqual(rules.removals_held("Test Office"), "because")
+        finally:
+            rules.HOLD_REMOVALS.pop("Test Office", None)
 
     def test_everybody_else_is_not_held(self):
         for owner in ("Rafael Hidalgo", "Omar Mohamad", "Hasan Salame"):

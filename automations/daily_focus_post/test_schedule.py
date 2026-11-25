@@ -98,7 +98,9 @@ def _ok(*oids):
 
 
 class BookedReplies(unittest.TestCase):
-    """Raf 2026-11-18: one post per funnel, in the Daily Update thread."""
+    """Raf 2026-11-18: into the Daily Update thread. Megan 2026-11-24: ONE
+    picture, a column per funnel -- so the three text replies that used to
+    go in the thread are now a single image, and El Paso is its own."""
     def setUp(self):
         self.state = {}
         p = [mock.patch.object(R, "_load_state", lambda: dict(self.state)),
@@ -118,48 +120,69 @@ class BookedReplies(unittest.TestCase):
         self.assertNotIn("24332", self.funnels)   # Vincent
         self.assertEqual(self.funnels[-1], roster.RAF.linkedin_office)
 
-    def test_one_reply_per_funnel_then_picture_into_daily_update(self):
+    def test_one_picture_in_the_thread_and_el_paso_in_als_channel(self):
         with mock.patch.object(S, "read", return_value=_ok(*self.funnels)) as rd, \
                 mock.patch.object(R.smp, "post_reply_text_only") as txt, \
-                mock.patch.object(R, "_post_in_own_channel") as own, \
+                mock.patch.object(R, "_booked_png", return_value="x.png"), \
                 mock.patch.object(R.smp, "post_reply_with_image") as img:
             out = R.booked_office(roster.RAF, FRI, "DF.1", dry_run=False)
         rd.assert_called_once_with(dt.date(2026, 11, 16), self.funnels)
-        self.assertEqual(txt.call_count, 3)
-        heads = [c.args[0].split("\n")[0] for c in txt.call_args_list]
-        in_thread = [f for f in roster.RAF.booked_funnels if f[0] != "23965"]
-        for (oid, label), head in zip(in_thread, heads):
-            self.assertIn(f"{label.upper()} FUNNEL* ({oid})", head)
-        # Raf 2026-11-19: El Paso goes to Al's channel, top level.
-        own.assert_called_once()
-        self.assertIn("EL PASO FUNNEL* (23965)", own.call_args.args[0])
-        self.assertEqual(own.call_args.args[1], "C0CFLK9MK4H")
-        for c in txt.call_args_list + img.call_args_list:
-            self.assertEqual(c.kwargs["thread_ts"], "DU.1")
-        img.assert_called_once()
+        txt.assert_not_called()
+
+        # Al's picture goes TOP LEVEL in his own channel; the shared one is
+        # a reply in the Daily Update thread. Plus the LinkedIn calendar.
+        als = [c for c in img.call_args_list
+               if c.kwargs.get("channel_id") == "C0CFLK9MK4H"]
+        self.assertEqual(len(als), 1)
+        self.assertTrue(als[0].kwargs["top_level"])
+        self.assertIn("El Paso", als[0].kwargs["comment"])
+
+        in_thread = [c for c in img.call_args_list
+                     if c.kwargs.get("thread_ts") == "DU.1"]
+        self.assertTrue(in_thread)
+        shared = [c for c in in_thread if "Interviews booked" in
+                  (c.kwargs.get("comment") or "")]
+        self.assertEqual(len(shared), 1, "one picture for the thread")
+        # and El Paso is NOT in it (Megan, 2026-11-24: "El paso needs to go
+        # to Al's channel only")
+        self.assertNotIn("El Paso", shared[0].kwargs["comment"])
+        for label in ("Main", "AI", "LinkedIn"):
+            self.assertIn(label, shared[0].kwargs["comment"])
+
         self.assertNotIn("error", out)
         again = R.booked_office(roster.RAF, FRI, "DF.1", dry_run=False)
         self.assertEqual(again, {"skipped": True})
 
     def test_one_bad_funnel_retries_alone(self):
+        """A funnel whose calendar could not be read is NOT drawn as an
+        empty column -- an empty column reads as "nobody booked". It is
+        reported, left unmarked, and picked up on its own next tick."""
         data = _ok("11280", "24065", "24226")
         data["23965"] = {"error": "TimeoutError: calendar"}
         with mock.patch.object(S, "read", return_value=data), \
-                mock.patch.object(R.smp, "post_reply_text_only") as txt, \
-                mock.patch.object(R.smp, "post_reply_with_image"):
+                mock.patch.object(R, "_booked_png", return_value="x.png"), \
+                mock.patch.object(R.smp, "post_reply_with_image") as img:
             out = R.booked_office(roster.RAF, FRI, "DF.1", dry_run=False)
         self.assertIn("El Paso (23965)", out["error"])
-        self.assertEqual(txt.call_count, 3)
         self.assertNotIn("raf|booked|23965", self.state)
+        # the other three still went, in one picture
+        shared = [c for c in img.call_args_list if "Interviews booked" in
+                  (c.kwargs.get("comment") or "")]
+        self.assertEqual(len(shared), 1)
+        self.assertNotIn("El Paso", shared[0].kwargs["comment"])
+
         with mock.patch.object(S, "read", return_value=_ok("23965")) as rd, \
-                mock.patch.object(R.smp, "post_reply_text_only") as txt, \
-                mock.patch.object(R, "_post_in_own_channel") as own, \
+                mock.patch.object(R, "_booked_png", return_value="x.png"), \
                 mock.patch.object(R.smp, "post_reply_with_image") as img:
             R.booked_office(roster.RAF, FRI, "DF.1", dry_run=False)
         rd.assert_called_once_with(dt.date(2026, 11, 16), ["23965"])
-        txt.assert_not_called()
-        own.assert_called_once()
-        img.assert_not_called()
+        als = [c for c in img.call_args_list
+               if c.kwargs.get("channel_id") == "C0CFLK9MK4H"]
+        self.assertEqual(len(als), 1, "El Paso retried into Al's channel")
+        # and nothing goes back into the thread: the other three were
+        # already posted and marked, so the retry touches only Al's channel.
+        self.assertFalse([c for c in img.call_args_list
+                          if c.kwargs.get("thread_ts")])
 
     def test_appstream_down_is_reported_not_raised(self):
         with mock.patch.object(S, "read", side_effect=RuntimeError("login")), \
@@ -230,3 +253,67 @@ class LinkedInCaption(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ------------------- the booked post is a picture now, not four text blocks
+
+# Megan, 2026-11-24: "1 picture for all 4 and it should just have 1 column
+# per funnel", and "El paso needs to go to Al's channel only".
+
+class BookedPictureTests(unittest.TestCase):
+
+    def test_el_paso_can_never_reach_the_shared_picture(self):
+        """A combined image cannot be split after the fact, so the funnels
+        that belong to somebody else's channel have to be separated BEFORE
+        the draw. This is the line that does it."""
+        import inspect
+        from automations.daily_focus_post import run as R
+        body = inspect.getsource(R.booked_office)
+        self.assertIn("(mine if oid in own_channels else shared)", body)
+        # and the shared picture is drawn from `shared` alone
+        after = body.split("if shared:", 1)[1]
+        self.assertIn("for _oid, d in shared", after)
+        self.assertNotIn("own_channels", after.split("_booked_png", 1)[0])
+
+    def test_one_picture_for_the_thread_not_one_per_funnel(self):
+        import inspect
+        from automations.daily_focus_post import run as R
+        body = inspect.getsource(R.booked_office)
+        # just the shared-picture block: the LinkedIn calendar screenshot
+        # below it posts its own image and is not what this counts.
+        block = body.split("if shared:", 1)[1].split("if li_owed:", 1)[0]
+        self.assertEqual(block.count("post_reply_with_image"), 1)
+
+    def test_an_own_channel_funnel_posts_top_level(self):
+        """Al's channel has no Daily Update thread to hang off."""
+        import inspect
+        from automations.daily_focus_post import run as R
+        body = inspect.getsource(R.booked_office)
+        mine = body.split("for oid, drawn in mine:", 1)[1].split("if shared:", 1)[0]
+        self.assertIn("top_level=True", mine)
+
+    def test_the_caption_still_says_the_counts_in_text(self):
+        """A picture is not searchable and does not open on a watch."""
+        import datetime as dt
+        from automations.daily_focus_post import run as R
+        cap = R._booked_caption(dt.date(2026, 11, 24), [
+            {"label": "Main", "first": [("8:15 AM", 10)],
+             "second": [("9:00 AM", 3)]}])
+        self.assertIn("Main 10/3", cap)
+        self.assertIn("11/24", cap)
+
+    def test_a_booking_with_no_time_is_kept_not_dropped(self):
+        from automations.daily_focus_post import run as R
+        got = R._slots({"first": {"8:15 AM": 2, "?": 4}}, "first")
+        self.assertIn(("no time", 4), got)
+        self.assertIn(("8:15 AM", 2), got)
+
+    def test_a_funnel_that_failed_to_read_is_not_drawn_as_empty(self):
+        """An empty column reads as "nobody booked"; a read that failed is a
+        different thing and belongs in the errors."""
+        import inspect
+        from automations.daily_focus_post import run as R
+        body = inspect.getsource(R.booked_office)
+        head = body.split("drawn = {", 1)[0]
+        self.assertIn('if d.get("error"):', head)
+        self.assertIn("continue", head)

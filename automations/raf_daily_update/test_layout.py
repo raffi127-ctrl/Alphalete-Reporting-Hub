@@ -132,3 +132,39 @@ class NextStep(unittest.TestCase):
     def test_build_rows_fills_it(self):
         row = L.build_rows([cand("a", bob="BOB", orient="11/23/2026 1:00 PM")])[0]
         self.assertEqual(row["next_step"], "Starts 11/23")
+
+
+def test_the_thread_header_names_the_day():
+    """Megan, 2026-11-24: it "should read 'Daily Update Tuesday 24th'". A
+    date tells somebody scrolling a channel nothing about whether they have
+    already read it; a weekday does."""
+    import datetime as dt
+    assert L.parent_text(dt.date(2026, 11, 24)) == "*Daily Update Tuesday 24th*"
+
+
+def test_the_ordinal_handles_the_teens():
+    """11th, 12th and 13th are the three a naive last-digit rule gets wrong."""
+    import datetime as dt
+    assert L.parent_text(dt.date(2026, 11, 11)).endswith("11th*")
+    assert L.parent_text(dt.date(2026, 11, 12)).endswith("12th*")
+    assert L.parent_text(dt.date(2026, 11, 13)).endswith("13th*")
+    assert L.parent_text(dt.date(2026, 11, 1)).endswith("1st*")
+    assert L.parent_text(dt.date(2026, 11, 2)).endswith("2nd*")
+    assert L.parent_text(dt.date(2026, 11, 3)).endswith("3rd*")
+    assert L.parent_text(dt.date(2026, 11, 22)).endswith("22nd*")
+
+
+def test_the_header_uses_no_platform_only_strftime():
+    """`%-d` is not a thing on Windows and every report runs on both."""
+    import ast, inspect, textwrap
+    src = ""
+    for fn in (L.parent_text, L._ordinal):
+        tree = ast.parse(textwrap.dedent(inspect.getsource(fn)))
+        # The docstrings NAME the directive they avoid, so strip them --
+        # the same trap test_fillers warns about in its own comment.
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.Module)) and \
+                    ast.get_docstring(node):
+                node.body = node.body[1:]
+        src += ast.unparse(tree)
+    assert "%-d" not in src and "%-m" not in src

@@ -154,11 +154,22 @@ def restore(entry: dict, facts: dict, today: dt.date) -> Tuple[bool, str]:
 #
 # TAKE AN OFFICE OFF THIS LIST once --check-marks shows it marking, or once
 # somebody has asked them. Do not take one off because the list looks long.
-HOLD_REMOVALS = {
-    "Cyrus Wade": "restored 0 of 91 on 2026-11-23 while other offices "
-                  "restored 27 and 19 -- check whether the office marks BOB "
-                  "in ApplicantStream before taking 23 cards off the phone",
-}
+# EMPTY, AND THAT IS A DECISION. Megan, 2026-11-24: "as long as eve has
+# rules in place you can remove", and then "take cy live as well for
+# removals". Cyrus Wade was held because the office restored 0 of 91 on
+# 2026-11-23 while two others restored 27 and 19, which looked like an
+# office that does not mark BOB in ApplicantStream -- and every removal
+# rule reads those marks. That question was not settled by evidence; it
+# was overruled, so the hold goes rather than sitting here looking like a
+# rule nobody remembers switching off.
+#
+# WHAT STILL PROTECTS THEM is `decide` below, not this list: an unreadable
+# OwnerVille reads WAIT and never DELETE, a scheduled start WAITS, and
+# hired-and-badged is kept for good. An office that marks nothing still
+# loses cards after NOT_HIRED_DAYS, which is the risk that was being held
+# against -- if people come off Cyrus Wade's phone who should not have,
+# this is the first place to look.
+HOLD_REMOVALS = {}
 
 
 def removals_held(owner: str) -> str:

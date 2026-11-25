@@ -168,6 +168,82 @@ def _booked_keys(office: "roster.FocusOffice") -> List[str]:
     return keys
 
 
+def _daily_update_thread(office, today, *, dry_run: bool):
+    """(thread_ts, where) for the Daily Focus Report itself.
+
+    ONE PARENT A DAY. Megan, 2026-11-24: the header is "daily update" "so it
+    includes all of the day's updates". The Focus Report used to raise its
+    own "Daily Focus Report" parent beside the Daily Update in the SAME
+    channel -- two threads, same day, same room, and a reader had to know
+    which one to open.
+
+    THE SAME FINDER THE BOOKED REPLIES ALREADY USE, deliberately: the funnel
+    numbers moved under the Daily Update on 2026-11-18 and this is the lookup
+    they go through, so the Focus Report cannot end up in a different thread
+    from the numbers that belong with it.
+
+    AND IT STILL POSTS WHEN THERE IS NO DAILY UPDATE. Whoever runs first
+    wins -- if the Daily Update has not gone out yet, the Focus Report keeps
+    its own thread rather than being held, because a report nobody can see
+    is worse than one in the wrong place.
+    """
+    if dry_run:
+        return None, "Daily Update thread (dry run: not looked up)"
+    try:
+        from automations.raf_daily_update.run import _existing_parent
+        ts = _existing_parent(smp._client(), office.channel_id, today)
+    except Exception as e:  # noqa: BLE001 -- fall back, never drop the post
+        print(f"[{office.key}] !! couldn't look for today's Daily Update "
+              f"thread: {type(e).__name__}: {e}")
+        ts = ""
+    if ts:
+        return ts, f"Daily Update thread {ts}"
+    parent = smp.ensure_named_thread(
+        roster.THREAD_TITLE, today, dry_run=False,
+        channel_id=office.channel_id)
+    print(f"[{office.key}] no Daily Update {today.month}/{today.day} in "
+          f"{office.channel_name} yet -- the Focus Report keeps its own thread")
+    return parent.get("thread_ts"), "Daily Focus thread (no Daily Update yet)"
+
+
+def _slots(data: dict, key: str):
+    """schedule.read's {time: n} -> [(time, n)] for the picture.
+
+    "?" is AppStream's own marker for a booking with no time on it, and it
+    stays as a readable row rather than being dropped: a booking nobody can
+    see is worse than an ugly one (schedule.format_funnel calls it the same
+    thing, "no time").
+    """
+    slots = (data.get(key) or {})
+    return [("no time" if t == "?" else t, n) for t, n in slots.items()]
+
+
+def _booked_caption(day, drawn) -> str:
+    """The line above the picture.
+
+    A PICTURE IS NOT SEARCHABLE and does not open on a watch, so the counts
+    are said in text too -- the thread still scans without tapping anything.
+    """
+    bits = ", ".join(
+        "%s %d/%d" % (d["label"], sum(n for _t, n in d["first"]),
+                      sum(n for _t, n in d["second"]))
+        for d in drawn)
+    return ("*Interviews booked for %s %d/%d* \u2014 1st/2nd: %s"
+            % (day.strftime("%a"), day.month, day.day, bits))
+
+
+def _booked_file(day, what: str) -> str:
+    return "Interviews booked %s %d.%d.png" % (what, day.month, day.day)
+
+
+def _booked_png(office, today, day, drawn, stem: str):
+    """Draw the picture and return its path."""
+    from automations.daily_focus_post import booked_png as BP
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    out = OUTPUT_DIR / ("booked-%s-%s.png" % (stem, today.isoformat()))
+    return BP.draw(day, office.label, drawn, out)
+
+
 def _booked_thread(office: "roster.FocusOffice", today: dt.date,
                    focus_ts: Optional[str], *, dry_run: bool):
     """(thread_ts, where) for the interviews-booked replies.
@@ -239,6 +315,15 @@ def booked_office(office: "roster.FocusOffice", today: dt.date,
             data = schedule.read(day, [oid for oid, _ in todo])
         except Exception as e:  # noqa: BLE001 -- AppStream down for all of them
             data = {oid: {"error": f"{type(e).__name__}: {e}"} for oid, _ in todo}
+
+        # ONE PICTURE FOR THE THREAD, one per office that owns its own
+        # channel. Megan, 2026-11-24: "1 picture for all 4 and it should
+        # just have 1 column per funnel", and then "El paso needs to go to
+        # Al's channel only". A combined image cannot be split after the
+        # fact, so a funnel routed to somebody else's channel is drawn on
+        # its OWN picture and never appears in the shared one -- the split
+        # has to happen before the draw, not after the post.
+        shared, mine = [], []
         for oid, label in todo:
             d = data.get(oid) or {"error": "not read"}
             if d.get("error"):
@@ -246,26 +331,59 @@ def booked_office(office: "roster.FocusOffice", today: dt.date,
                 print(f"[{office.key}] !! BOOKED {label} ({oid}) FAILED: "
                       f"{d['error']}")
                 continue
-            text = schedule.format_funnel(day, label, oid, d)
-            own = own_channels.get(oid)
+            drawn = {"label": label, "office": oid,
+                     "first": _slots(d, "first"),
+                     "second": _slots(d, "second")}
+            (mine if oid in own_channels else shared).append((oid, drawn))
+
+        for oid, drawn in mine:
+            ch, name = own_channels[oid]
             try:
-                if own:
-                    _post_in_own_channel(text, own[0], dry_run=dry_run)
-                else:
-                    smp.post_reply_text_only(text, today=today, dry_run=dry_run,
-                                             channel_id=office.channel_id,
-                                             thread_ts=ts)
+                png = _booked_png(office, today, day, [drawn],
+                                  "%s-%s" % (office.key, oid))
+                # TOP LEVEL in their own channel -- that channel has no
+                # Daily Update thread to hang off, which is why the text
+                # version posted top level too.
+                smp.post_reply_with_image(
+                    png, comment=_booked_caption(day, [drawn]), today=today,
+                    dry_run=dry_run, channel_id=ch, top_level=True,
+                    file_name=_booked_file(day, drawn["label"]))
             except Exception as e:  # noqa: BLE001
-                errors.append(f"booked {label} ({oid}): {type(e).__name__}: {e}")
+                errors.append("booked %s (%s): %s: %s"
+                              % (drawn["label"], oid, type(e).__name__, e))
                 continue
-            dest = f"{own[1]} ({own[0]}), top level" if own else where
             print(f"[{office.key}] {'WOULD POST' if dry_run else 'POSTED'} "
-                  f"booked {label} ({oid}) for {day} -> {dest}:\n{text}")
+                  f"booked {drawn['label']} ({oid}) for {day} -> "
+                  f"{name} ({ch}), top level")
             posted.append(oid)
             if not dry_run:
                 st = _load_state()
                 st[f"{office.key}|booked|{oid}"] = iso
                 _save_state(st)
+
+        if shared:
+            drawn = [d for _oid, d in shared]
+            try:
+                png = _booked_png(office, today, day, drawn, office.key)
+                smp.post_reply_with_image(
+                    png, comment=_booked_caption(day, drawn), today=today,
+                    dry_run=dry_run, channel_id=office.channel_id,
+                    thread_ts=None if dry_run else ts,
+                    file_name=_booked_file(day, "all funnels"))
+            except Exception as e:  # noqa: BLE001
+                errors.append("booked picture: %s: %s" % (type(e).__name__, e))
+            else:
+                names = ", ".join(d["label"] for d in drawn)
+                print(f"[{office.key}] {'WOULD POST' if dry_run else 'POSTED'} "
+                      f"booked {names} for {day} -> {where}")
+                if not dry_run:
+                    st = _load_state()
+                    for oid, _d in shared:
+                        st[f"{office.key}|booked|{oid}"] = iso
+                        posted.append(oid)
+                    _save_state(st)
+                else:
+                    posted.extend(oid for oid, _d in shared)
 
     if li_owed:
         png = OUTPUT_DIR / f"daily-focus-{office.key}-linkedin-{iso}.png"
@@ -351,16 +469,15 @@ def post_office(office: "roster.FocusOffice", spreadsheet, *,
           f"{tab_title!r} -> {png} ({size:,} bytes)")
 
     caption = _caption(today, office)
-    parent = smp.ensure_named_thread(
-        roster.THREAD_TITLE, today,
-        dry_run=dry_run, channel_id=office.channel_id)
+    thread_ts, where = _daily_update_thread(office, today, dry_run=dry_run)
+    print(f"[{office.key}] focus report -> {where}")
     reply = smp.post_reply_with_image(
         png,
         comment=caption,
         today=today,
         dry_run=dry_run,
         channel_id=office.channel_id,
-        thread_ts=None if dry_run else parent.get("thread_ts"),
+        thread_ts=None if dry_run else thread_ts,
         file_name=f"Daily Focus — {office.label} {today.month}.{today.day}.png",
     )
 
@@ -370,26 +487,26 @@ def post_office(office: "roster.FocusOffice", spreadsheet, *,
         state = _load_state()
         state[office.key] = today.isoformat()
         _save_state(state)
+    # The booked replies go through their OWN finder, which looks for the
+    # Daily Update first and falls back to whatever thread this report used
+    # -- so the two never split up.
     booked = booked_office(office, today,
-                           None if dry_run else parent.get("thread_ts"),
+                           None if dry_run else thread_ts,
                            dry_run=dry_run, force=force)
     texts = text_office(office, png, today, dry_run=dry_run, force=force)
 
     if dry_run:
-        print(f"[{office.key}] DRY RUN — would start/reuse thread "
-              f"{roster.THREAD_TITLE!r} in {office.channel_name} "
-              f"({office.channel_id}) and reply with the PNG above.")
-        print(f"[{office.key}]   parent header: "
-              f"{parent.get('header_text', '(existing thread)')}")
+        print(f"[{office.key}] DRY RUN — would reply in {where} in "
+              f"{office.channel_name} ({office.channel_id}) with the PNG above.")
         print(f"[{office.key}]   reply comment: {caption}")
         if keep_png:
             print(f"[{office.key}]   PNG kept at {png}")
         return {"office": office.key, "dry_run": True, "png": str(png),
-                "parent": parent, "reply": reply, "texts": texts,
-                "booked": booked}
+                "parent": {"thread_ts": thread_ts, "where": where},
+                "reply": reply, "texts": texts, "booked": booked}
 
     print(f"[{office.key}] POSTED to {office.channel_name} "
-          f"thread={parent.get('thread_ts')} existed={parent.get('existed')}")
+          f"thread={thread_ts} ({where})")
     errs = list(texts["errors"])
     if booked.get("error"):
         errs.append(booked["error"])
