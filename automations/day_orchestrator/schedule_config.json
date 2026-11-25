@@ -4975,6 +4975,27 @@
    "depends_on": [],
    "verify": null
   },
+  "install_lucyeco_awake": {
+   "on_scheduler": true,
+   "machine": "Lucy 4",
+   "_note": "MANUAL: `lucy rerun install_lucyeco_awake` installs com.alphalete.lucyeco-awake: every 3 hours a hidden browser visits the public LucyEco page (lucyeco.streamlit.app/lucyeco) and presses Streamlit's wake button if it fell asleep (automations/lucyeco_awake/run.py). Megan 2026-11-25: found asleep for every ICD and on Lucy 1's screen. On Lucy 4, not Lucy 1, so the page stays up even when the Lucy that SHOWS it is down. Exit 1 = asleep and would not wake.",
+   "display_name": "Install LucyEco keep-awake (Lucy 4)",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.day_orchestrator.install_agent"
+   ],
+   "base_args": [
+    "lucyeco-awake"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null
+  },
   "install_new_start_thread_scan_agent": {
    "on_scheduler": true,
    "_note": "MANUAL: `lucy rerun install_new_start_thread_scan_agent` installs com.alphalete.new-start-thread-replies (every day, every 30 min, 8am-8pm CST) on THIS machine. Each firing enqueues `rerun new_start_thread_replies` for the poller. Runs all week, not just the weekend: people ask Lucy things midweek. weekdays [] = manual only.",

@@ -31,12 +31,17 @@ STATUS_TAB = "Screen Status"
 STALE_AFTER = 300
 PHOTO = "photo"
 PHOTO_PAGE = REPO / "output" / "lucy_screens" / "photo.html"
-PAGES = {ALERTS: ALERTS_PAGE, RUNS: RUNS_PAGE, PHOTO: PHOTO_PAGE}
+# Lucy 1: the live LucyEco page inside a pink frame. The page itself is public
+# (ICDs open it), so it keeps its own look; only this screen gets the frame.
+LUCYECO = "lucyeco"
+LUCYECO_URL = "https://lucyeco.streamlit.app/lucyeco"
+LUCYECO_PAGE = REPO / "output" / "lucy_screens" / "lucyeco.html"
+PAGES = {ALERTS: ALERTS_PAGE, RUNS: RUNS_PAGE, PHOTO: PHOTO_PAGE, LUCYECO: LUCYECO_PAGE}
 OPENED = REPO / "output" / "lucy_screens" / "opened.txt"
 SCREENS = {
     # Measured 2026-11-03 20:10-20:16 CT with Lucy 1 OFF this page: the app
     # stalled exactly as often. One open tab here costs it nothing.
-    "Lucy 1": "https://lucyeco.streamlit.app/lucyeco",
+    "Lucy 1": LUCYECO,
     "Lucy 2": PHOTO,
     "Lucy 3": RUNS,
     "Lucy 4": ALERTS,
@@ -128,6 +133,47 @@ def read_channel() -> List[dict]:
             return [m for m in msgs if float(m["ts"]) >= cutoff]
 
 
+# Pink, every screen. Megan 2026-11-25: "can we make the others have more
+# pink/girly screens". Problems stay true red and done stays green, so the
+# pink never hides what a screen is saying.
+PINK_BG = ("radial-gradient(ellipse at 50% 30%,#fff6f9 0%,#fde4ec 55%,#f8cddd 100%)"
+           " fixed")
+_BULBS = ("#ff7eb3", "#e8b64c", "#ffffff", "#f06598", "#9fd8c0", "#ffc2d9")
+
+
+def lights(now: float) -> str:
+    """Twinkle lights along the top while Lucy 2 shows Christmas Lucy (Nov 25 -
+    Jan 1), so the four screens match. Empty the rest of the year."""
+    if not is_christmas(dt.date.fromtimestamp(now)):
+        return ""
+    bulbs = "".join(
+        f'<i style="background:{_BULBS[k % 6]};box-shadow:0 0 8px {_BULBS[k % 6]};'
+        f'animation-delay:{(k % 5) * 0.45:.2f}s"></i>' for k in range(32))
+    return ('<style>.lights{position:fixed;top:0;left:0;right:0;height:22px;display:flex;'
+            'justify-content:space-around;border-top:2px solid #3d6b4f;pointer-events:none;z-index:5}'
+            '.lights i{width:10px;height:15px;border-radius:50%;margin-top:2px;'
+            'animation:tw 2.4s ease-in-out infinite}@keyframes tw{50%{opacity:.35}}</style>'
+            f'<div class="lights">{bulbs}</div>')
+
+
+def lucyeco_page(now: float) -> str:
+    """Refreshes hourly: picks up the lights coming and going, and a fresh read."""
+    return f"""<!doctype html><html><head><meta charset="utf-8">
+<meta http-equiv="refresh" content="3600"><title>LucyEco</title><style>
+html,body{{height:100%;margin:0;overflow:hidden}}
+body{{background:{PINK_BG};display:flex;flex-direction:column;padding:30px 26px 22px;box-sizing:border-box}}
+h1{{margin:0 0 12px;text-align:center;font:700 44px "Snell Roundhand","Brush Script MT",cursive;line-height:1;color:#c2185b}}
+iframe{{flex:1;width:100%;border:0;border-radius:18px;background:#fff;
+box-shadow:0 0 0 6px #fff,0 0 0 9px #f39bbd,0 12px 30px rgba(194,24,91,.18)}}
+</style></head><body>{lights(now)}<h1>LucyEco &#127872;</h1>
+<iframe src="{LUCYECO_URL}?embed=true"></iframe></body></html>"""
+
+
+def write_lucyeco() -> None:
+    LUCYECO_PAGE.parent.mkdir(parents=True, exist_ok=True)
+    LUCYECO_PAGE.write_text(lucyeco_page(time.time()), encoding="utf-8")
+
+
 def _age(ts: float, now: float) -> str:
     mins = int((now - ts) // 60)
     if mins < 60:
@@ -169,17 +215,18 @@ def page(alerts: Optional[List[dict]], now: float) -> str:
                 f'<h2 class="work">Being worked on ({len(working)})</h2>{_rows(working, now)}')
     return f"""<!doctype html><html><head><meta charset="utf-8">
 <meta http-equiv="refresh" content="60"><title>Alerts</title><style>
-body{{margin:0;background:#faf6ea;color:#2b2415;font:bold 24px Georgia,serif;padding:28px 36px}}
-h1{{margin:0 0 4px;font-size:46px}} .good{{color:#2f7a3d}} .bad{{color:#a8281e}} .work{{color:#7a5c0c}}
-h2{{font-size:28px;margin:26px 0 10px;padding-bottom:6px;border-bottom:2px solid #e3d6ad}}
-.sub{{color:#8a6d1f;font-size:20px;margin-bottom:20px}} .stale{{display:none;color:#a8281e}}
-.row{{display:flex;align-items:center;gap:18px;background:#fff;border:1px solid #e3d6ad;
-border-radius:10px;padding:12px 18px;margin-bottom:8px}}
-.t{{flex:1}} .age{{color:#8a6d1f;min-width:60px;text-align:right}}
-.none{{color:#8a6d1f;font-weight:normal;padding:4px 18px}}
-.who{{font-size:18px;padding:5px 14px;border-radius:99px;background:#f3e6b8;color:#7a5c0c;white-space:nowrap}}
-</style></head><body><h1 class="{cls}">{html.escape(big)}</h1>
-<div class="sub">#claudecorrections-and-requests &middot; updated {stamp}
+html{{min-height:100%}}
+body{{margin:0;background:{PINK_BG};color:#4a1f33;font:bold 24px Georgia,serif;padding:40px 36px 28px}}
+h1{{margin:0 0 4px;font-size:46px}} .good{{color:#2f7a3d}} .bad{{color:#b3122e}} .work{{color:#a3164f}}
+h2{{font-size:28px;margin:26px 0 10px;padding-bottom:6px;border-bottom:2px solid #f3bfd3}}
+.sub{{color:#b0477a;font-size:20px;margin-bottom:20px}} .stale{{display:none;color:#b3122e}}
+.row{{display:flex;align-items:center;gap:18px;background:#fff;border:1px solid #f3bfd3;
+border-radius:14px;padding:12px 18px;margin-bottom:8px;box-shadow:0 2px 8px rgba(224,90,141,.10)}}
+.t{{flex:1}} .age{{color:#b0477a;min-width:60px;text-align:right}}
+.none{{color:#b0477a;font-weight:normal;padding:4px 18px}}
+.who{{font-size:18px;padding:5px 14px;border-radius:99px;background:#fbd3e2;color:#a3164f;white-space:nowrap}}
+</style></head><body>{lights(now)}<h1 class="{cls}">{html.escape(big)}</h1>
+<div class="sub">&#127872; #claudecorrections-and-requests &middot; updated {stamp}
 <span class="stale" id="s"> &middot; THIS SCREEN STOPPED UPDATING</span></div>{sections}
 <script>if(Date.now()-{int(now * 1000)}>600000)document.getElementById("s").style.display="inline"</script>
 </body></html>"""
@@ -326,20 +373,20 @@ def runs_page(fleet: dict, now: float) -> str:
     return f"""<!doctype html><html><head><meta charset="utf-8">
 <meta http-equiv="refresh" content="60"><title>Reports Today</title><style>
 html,body{{height:100%}}
-body{{margin:0;background:#faf6ea;color:#2b2415;font:bold 15px Georgia,serif;padding:18px 22px;box-sizing:border-box;overflow:hidden}}
-h1{{margin:0;font-size:34px}} .sub{{color:#8a6d1f;margin:2px 0 12px}}
-.stale{{display:none;color:#a8281e}} .cols{{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;height:calc(100% - 70px)}}
-.col{{background:#fff;border:1px solid #e3d6ad;border-radius:10px;padding:10px 12px;overflow:hidden}}
-h2{{margin:0 0 6px;font-size:24px;color:#8a6d1f}} .n{{margin:4px 0 8px}}
-.bar{{height:14px;background:#efe6c8;border-radius:99px;overflow:hidden}} .bar i{{display:block;height:100%;background:#b8962e}}
-.live{{background:#fbf3d6;border-radius:8px;padding:6px 8px;margin-bottom:6px}} .r{{display:flex;justify-content:space-between;gap:8px}}
-.move{{height:6px;margin-top:5px;border-radius:9px;background:repeating-linear-gradient(90deg,#b8962e 0 18px,#efe6c8 18px 36px);background-size:72px 6px;animation:m 2s linear infinite}}
+body{{margin:0;background:{PINK_BG};color:#4a1f33;font:bold 15px Georgia,serif;padding:28px 22px 18px;box-sizing:border-box;overflow:hidden}}
+h1{{margin:0;font:700 40px "Snell Roundhand","Brush Script MT",cursive;line-height:1;color:#c2185b}} .sub{{color:#b0477a;margin:2px 0 10px}}
+.stale{{display:none;color:#b3122e}} .cols{{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;height:calc(100% - 80px)}}
+.col{{background:#fff;border:1px solid #f3bfd3;border-radius:14px;padding:10px 12px;overflow:hidden;box-shadow:0 2px 10px rgba(224,90,141,.12)}}
+h2{{margin:0 0 6px;font-size:24px;color:#d6337f}} .n{{margin:4px 0 8px}}
+.bar{{height:14px;background:#f8d7e4;border-radius:99px;overflow:hidden}} .bar i{{display:block;height:100%;background:linear-gradient(90deg,#f39bbd,#e05a8d)}}
+.live{{background:#fdeaf1;border-radius:10px;padding:6px 8px;margin-bottom:6px}} .r{{display:flex;justify-content:space-between;gap:8px}}
+.move{{height:6px;margin-top:5px;border-radius:9px;background:repeating-linear-gradient(90deg,#e05a8d 0 18px,#f8d7e4 18px 36px);background-size:72px 6px;animation:m 2s linear infinite}}
 @keyframes m{{to{{background-position:72px 0}}}}
-.idle{{color:#8a6d1f;margin-bottom:6px}} .off{{color:#a8281e;font-size:20px}}
-.list{{border-top:1px solid #e3d6ad;padding-top:6px;margin-top:6px;font-size:13px;line-height:15px}}
+.idle{{color:#b0477a;margin-bottom:6px}} .off{{color:#b3122e;font-size:20px}}
+.list{{border-top:1px solid #f3bfd3;padding-top:6px;margin-top:6px;font-size:13px;line-height:15px}}
 .l{{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}
-.l:before{{content:"● "}} .ok:before{{color:#2f7a3d}} .wait:before{{color:#c9b98a}} .bad{{color:#a8281e}}
-</style></head><body><h1>Reports Today</h1>
+.l:before{{content:"● "}} .ok:before{{color:#2f7a3d}} .wait:before{{color:#c9bcc2}} .bad{{color:#b3122e}}
+</style></head><body>{lights(now)}<h1>Reports Today &#127872;</h1>
 <div class="sub">Red = problem &middot; grey = still to run &middot; green = done &middot; updated {stamp}
 <span class="stale" id="s"> &middot; THIS SCREEN STOPPED UPDATING</span></div>
 <div class="cols">{cols}</div>
@@ -419,7 +466,7 @@ def write_photo(today: Optional[dt.date] = None) -> None:
     PHOTO_PAGE.write_text(
         '<!doctype html><html><head><meta charset="utf-8">'
         '<meta http-equiv="refresh" content="600"><title>Lucy</title><style>'
-        "html,body{height:100%;margin:0;background:#faf6ea}"
+        "html,body{height:100%;margin:0;background:#fde4ec}"
         "body{display:flex;align-items:center;justify-content:center}"
         f'img{{height:80vh;border-radius:50%}}</style></head><body><img src="{img}">'
         "</body></html>", encoding="utf-8")
@@ -455,14 +502,15 @@ def _viewer_running() -> bool:
                           stdout=subprocess.DEVNULL).returncode == 0
 
 
-def viewer() -> Optional[Path]:
-    """The full-screen window Lucy 2's photo shows in (viewer.js), built on this
-    Mac once per version. Megan 2026-11-25: in Safari it "is showing as a webpage
-    and not just a fully screen desktop like image". None = Safari, as before."""
+def viewer(page_file: Path) -> Optional[Path]:
+    """The full-screen window this Lucy's page shows in (viewer.js), built on this
+    Mac once per version and page. Megan 2026-11-25: in Safari Lucy 2 "is showing
+    as a webpage and not just a fully screen desktop like image", then "the others"
+    the same. None = Safari, as before."""
     if sys.platform != "darwin":
         return None
     src = VIEWER_SRC.read_text(encoding="utf-8").replace(
-        "__PAGE__", json.dumps(str(PHOTO_PAGE)))
+        "__PAGE__", json.dumps(str(page_file)))
     sha = hashlib.sha1(src.encode("utf-8")).hexdigest()[:10]
     built = VIEWER_STAMP.read_text(encoding="utf-8") if VIEWER_STAMP.exists() else ""
     if built == sha and (VIEWER_APP / "Contents" / "MacOS").is_dir():
@@ -488,26 +536,32 @@ def keep_open(target: str) -> None:
     covered. Megan 2026-11-01: Lucy 1 kept leaving the page as automations ran.
     Holds back while a report runs (a covered Chrome can stall its capture) and
     while a person is using the machine. Plain `open -a` so no new tab each tick.
-    The photo shows full screen in its own window (viewer), not a Safari tab."""
+    Each page shows full screen in its own window (viewer), not a Safari tab.
+
+    The viewer keeps ITSELF in front (Megan 2026-11-25: "we need these screens to
+    run up front all the time - the working screens are mostly all I see"), so
+    here it is only started when it isn't running. Never `open` a running one:
+    that re-shows it over a person using the machine. It floats over the reports
+    without holding them back -- measured 2026-11-25: a real Chrome under it
+    stayed 'visible' and kept drawing ~60 frames/s, never throttled."""
+    app = viewer(PAGES[target]) if target in PAGES else None
+    if app is not None:
+        if not _viewer_running():
+            subprocess.run(["open", str(app)], check=False)
+        return
     boot = subprocess.run(["sysctl", "-n", "kern.boottime"], stdout=subprocess.PIPE,
                           text=True).stdout.strip()
     opened = OPENED.read_text(encoding="utf-8") if OPENED.exists() else ""
-    app = viewer() if target == PHOTO else None
-    if app is not None:
-        running = _viewer_running()
-        launch = front = ["open", str(app)]  # running: brings it back in front
-    else:
-        running = subprocess.run(["pgrep", "-x", "Safari"],
-                                 stdout=subprocess.DEVNULL).returncode == 0
-        url = PAGES[target].as_uri() if target in PAGES else target
-        launch, front = ["open", "-a", "Safari", url], ["open", "-a", "Safari"]
+    running = subprocess.run(["pgrep", "-x", "Safari"],
+                             stdout=subprocess.DEVNULL).returncode == 0
     version = _photo_version(target)
     if not running or _needs_open(target, boot, opened, version):
-        subprocess.run(launch, check=False)
+        url = PAGES[target].as_uri() if target in PAGES else target
+        subprocess.run(["open", "-a", "Safari", url], check=False)
         OPENED.parent.mkdir(parents=True, exist_ok=True)
         OPENED.write_text(_marker(boot, target, version), encoding="utf-8")
     elif not _report_running() and _idle_seconds() > IDLE_BEFORE_FRONT:
-        subprocess.run(front, check=False)
+        subprocess.run(["open", "-a", "Safari"], check=False)
 
 
 def main() -> int:
@@ -534,6 +588,8 @@ def main() -> int:
         write_runs()
     elif target == PHOTO:
         write_photo()
+    elif target == LUCYECO:
+        write_lucyeco()
     keep_display_on()
     keep_open(target)
     return 0
