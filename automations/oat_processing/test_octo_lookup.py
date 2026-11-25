@@ -460,6 +460,27 @@ class TheBillingMail(unittest.TestCase):
         self.assertIn('"billing_mail":{"X":{"declined":"2026-11-18 19:05"', rf.call_args_list[0][0][2])
 
 
+class OctoWouldNotOpenAnything(unittest.TestCase):
+    def test_every_profile_refusing_is_one_loud_fault(self):
+        tmp = _tmp()
+        profs = [{"title": "P%d" % i, "uuid": chr(97 + i) * 32, "domains": []} for i in range(5)]
+        reported = []
+        with mock.patch.object(OL, "_out_dir", return_value=tmp), \
+             mock.patch.object(OL, "_app_dir", return_value=tmp), \
+             mock.patch.object(OL, "profiles", return_value=profs), \
+             mock.patch.object(OL, "wanted", return_value=([], {"snapshot": None, "listed": 0, "skipped_recent": 0})), \
+             mock.patch.object(OL, "ensure_octo", return_value=(True, "", False)), \
+             mock.patch.object(OL, "octo_active", return_value=[]), \
+             mock.patch.object(OL, "octo_start", return_value=None), \
+             mock.patch.object(OL, "last_start_error", return_value="Update is available. Please update"), \
+             mock.patch.object(OL, "_report", side_effect=lambda *a, **k: reported.append(k.get("loud", ""))), \
+             mock.patch.object(OL.time, "sleep"):
+            s = OL.run("11580", scheduled=True)
+        self.assertEqual(set(s["billing"].values()), {"could not start (Update is available. Please update)"})
+        self.assertIn("Octo Browser on the office computer would not open any account", reported[0])
+        self.assertIn("Update is available", reported[0])
+
+
 class ItShips(unittest.TestCase):
     def test_both_files_are_in_both_lists(self):
         from automations.icd_alerts.package import AGENT_FILES

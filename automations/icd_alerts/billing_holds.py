@@ -127,10 +127,29 @@ def _open_row(ws, name: str) -> Optional[int]:
     return None
 
 
+def _last_closed(ws, name: str) -> Optional[dt.datetime]:
+    """When the account's most recent CLOSED hold ended, or None."""
+    ends = []
+    for r in ws.get_all_values()[1:]:
+        r = r + [""] * (4 - len(r))
+        if r[0].strip().lower() == name.lower() and r[2].strip():
+            d = _parse(r[2])
+            if d:
+                ends.append(d)
+    return max(ends) if ends else None
+
+
 def open_hold(ws, name: str, start: dt.datetime, note: str) -> int:
+    """Append a hold row unless one is open. A new episode never starts
+    before the previous one ended -- two rows overlapping would count the
+    same hours twice in Days Down (Ascendra, 11/21-11/25)."""
     row = _open_row(ws, name)
     if row:
         return row
+    prev = _last_closed(ws, name)
+    if prev and start < prev:
+        start = prev
+        note = note + " | start moved to the previous hold's end"
     ws.append_row([name, _sheet_ts(start), "", note], value_input_option="USER_ENTERED")
     return _open_row(ws, name) or 0
 
@@ -176,13 +195,25 @@ def run(day: Optional[dt.date] = None, *, send: bool = False, book=None, dash=No
             name = LIVE_ADS_NAME.get(acct, acct)
             mail = mail_all.get(acct) or {}
             cur = opens.get(key)
+            last_ok = _parse((st.get("last_ok") or {}).get(key))
             if status.startswith("PROBLEM"):
                 if cur:
                     continue                                   # still on hold, nothing new
                 start, src = when, "billing check %s (estimated)" % _hm12(when)
                 dec = _parse(mail.get("declined"))
-                if dec and 0 <= (when - dec).days <= MAX_MAIL_GAP_DAYS:
+                # The newest decline mail dates THIS hold only if it came after
+                # the account last read clean; an older one belongs to the
+                # previous episode (Ascendra 11/21: Indeed sent no new mail).
+                if (dec and 0 <= (when - dec).days <= MAX_MAIL_GAP_DAYS
+                        and (last_ok is None or dec > last_ok)):
                     start, src = dec, "Indeed 'Payment declined' mail %s" % _hm12(dec)
+                elif last_ok and last_ok < when:
+                    # Indeed's declines land in the evening; the first check that
+                    # sees one is the next 5am. Halfway between the last clean
+                    # check and this one is a better guess than either end.
+                    start = last_ok + (when - last_ok) / 2
+                    src = ("between the last clean check %s and the first flagged one %s (estimated)"
+                           % (_hm12(last_ok), _hm12(when)))
                 act = {"office": office, "account": acct, "event": "hold", "start": start.isoformat(timespec="minutes"), "source": src}
                 if send:
                     if dash is None:
@@ -194,6 +225,7 @@ def run(day: Optional[dt.date] = None, *, send: bool = False, book=None, dash=No
                 log("HOLD   %-28s from %s (%s)" % (acct, _hm12(start), src))
                 did.append(act)
             elif status == "ok":
+                st.setdefault("last_ok", {})[key] = when.isoformat(timespec="minutes")
                 if not cur:
                     continue                                   # clean and was clean
                 since = _parse(cur.get("since")) or when

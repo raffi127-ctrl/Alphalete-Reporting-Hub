@@ -1286,8 +1286,18 @@ def run(office_id, *, names: Optional[List[str]] = None, account: str = "",
         except OSError:
             pass
         loud = ""
+        stuck = [t for t, v in summary["accounts"].items() if str(v).startswith("could not start")]
+        if stuck and len(stuck) >= max(3, len(summary["accounts"]) - 3):
+            # 2026-11-25: every profile answered "Update is available. Please
+            # update" from Octo's local API, nothing opened, the quiet tally
+            # said so seventeen times and nobody was told.
+            why = str(summary["accounts"][stuck[0]])[len("could not start ("):].rstrip(")")[:140]
+            loud = ("Octo Browser on the office computer would not open any account this morning "
+                    "(%d of %d): \"%s\". Open Octo Browser there and apply the update it is asking "
+                    "for; the lookups and the billing check pick up again on the next run."
+                    % (len(stuck), len(summary["accounts"]), why))
         named = [pr["title"] for pr, _ in plan if groups.get(pr["title"])]
-        if named and walled_accounts == len(named):
+        if not loud and named and walled_accounts == len(named):
             loud = ("Every Indeed account with a name to look up hit a 'Verify you are human' box "
                     "this morning, so no phone number was read (the box is never clicked by Lucy). "
                     "It usually passes by itself; if it is still there tomorrow, open one of the "

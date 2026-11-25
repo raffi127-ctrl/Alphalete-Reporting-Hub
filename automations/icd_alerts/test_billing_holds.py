@@ -100,6 +100,24 @@ class HoldsTest(unittest.TestCase):
         did = BH.run(dt.date(2026, 11, 19), send=False, book=FakeBook(faults), dash=FakeDash(tab), dm=lambda k, t: None, log=lambda m: None)
         self.assertEqual(len(did), 1); self.assertEqual(len(tab.rows), 1, "preview writes nothing")
 
+    def test_a_second_episode_never_reuses_the_old_decline_mail_or_overlaps(self):
+        """Ascendra, 11/20-11/21: back live at the 5am check, flagged again a day
+        later with Indeed's old 11/18 decline mail still the newest -- the hold
+        must start at the check that saw it flagged again, after the previous
+        hold's end, never at the old mail."""
+        tab = FakeTab([["Ascendra", "11/18/2026 19:12", "11/20/2026 05:00", "first episode"]])
+        mail = {"New Ascendra": {"declined": "2026-11-18 19:12", "signed_in": True}}
+        faults = [_row("2026-11-20", "05:00", {"New Ascendra": "ok"}, mail),
+                  _row("2026-11-20", "13:01", {"New Ascendra": "ok"}, mail),
+                  _row("2026-11-21", "05:00", {"New Ascendra": "PROBLEM: x"}, mail)]
+        did = []
+        for d in ("2026-11-20", "2026-11-21"):
+            did += BH.run(dt.date.fromisoformat(d), send=True, book=FakeBook(faults), dash=FakeDash(tab), dm=lambda k, t: None, log=lambda m: None)
+        self.assertEqual([(a["event"], a["start"]) for a in did], [("hold", "2026-11-20T21:00")])
+        self.assertEqual(len(tab.rows), 3)
+        self.assertEqual(tab.rows[2][:3], ["Ascendra", "11/20/2026 21:00", ""])
+        self.assertIn("estimated", did[0]["source"])
+
     def test_the_poster_calls_it_inside_a_try(self):
         src = (Path(P.__file__)).read_text()
         i = src.index("billing_holds.run(day, send=args.send)")
