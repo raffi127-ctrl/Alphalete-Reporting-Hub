@@ -57,7 +57,6 @@ MANUAL = {
         "Recruiting Bonuses (Aisha)": "Apex",
         "Zach's Pay (overrides)": "you fill it",
         "Zach's Pay (true up + taxes)": "Slack DM Raf ↔ Zach, last one sent",   # label's "- 22/24" part changes
-        "Profit Share": "blank — only filled the week a period's profit share is paid (Running TOTALS 2026 table)",
     },
 }
 # Rows kept as copied from last week but worth a look.
@@ -188,11 +187,17 @@ def carlos_red_rows(week: dt.date) -> tuple[dict, list]:
                     if hit:
                         left.remove(hit)
         rent = round(sum(a for _, a in pays), 2) if pays is not None else in_tab
+        # Nico's weekly management fee — High Value Acquisitions pays Carlos (started 11/3/2026). It's marked
+        # Carlos-only in the month tab as a credit (negative), so it moves OUT of Investment onto its own row.
+        fee = sum(r[3] for r in v if isinstance(r[2], (int, float)) and r[2] > 40000 and str(r[4]).strip().lower() == "x"
+                  and isinstance(r[3], (int, float)) and "high value acq" in _n(r[1]) and re.search(r"manag|mngmt", _n(r[1]))
+                  and lo <= EPOCH + dt.timedelta(days=int(r[2])) <= week)
         if rent:
             notes.append(f"Carlos Rent/Utilities: {rent:,.2f} paid to the landlord in {want}")
         out = {"Indeed Charges": round(indeed, 2), "Outside Deals": -round(outside, 2), "ARS - interviewers": -850,
                "Rent/Utilities": -round(rent, 2) if rent else 0, "Food/Team Nights": round(food, 2), "Travel/Entertainment": round(travel, 2),
-               "Investment into local office": round(-(co + travel + indeed - 850 - in_tab), 2)}
+               "Nico's Management Fee": round(-fee, 2),
+               "Investment into local office": round(-(co - fee + travel + indeed - 850 - in_tab), 2)}
         print(f"  {tab} {want} -> red rows {out}")
         return out, notes
     notes.append(f"Carlos red rows: no month tab has {want} yet — kept last week's placeholders")
@@ -251,6 +256,9 @@ def raf_indeed(we: dt.date) -> tuple[dict, dict, list]:
     prev = {"Indeed": -round(abs(ind[old]), 2)} if old in ind else {}
     print(f"  Double Entry Indeed: wk {new} {ind[new]:,.2f}" + (f", wk {old} {ind[old]:,.2f}" if prev else ""))
     return cur, prev, []
+
+
+PROFIT_SHARE = "ATT - NDS 2% Profit Share"   # Raf row (renamed from "Profit Share" by Maud 2026-11-20)
 
 
 def raf_profit_share(we: dt.date) -> tuple[dict, list]:
@@ -457,11 +465,11 @@ def pull(we: dt.date) -> Path:
         data["prior"]["raf"].setdefault(hdr(prior), {}).update(ind_prev)
     ps, n3 = raf_profit_share(we)
     notes += n3
-    for wk, amt in ps.items():   # blank (turquoise) unless a period's profit share was paid that week
-        if wk == we:
-            r["Profit Share"] = amt
-        else:
-            data["prior"]["raf"].setdefault(hdr(wk), {})["Profit Share"] = amt
+    # row 'ATT - NDS 2% Profit Share': 0 every week except the week a period's profit share is paid (~every 4 weeks)
+    r[PROFIT_SHARE] = ps.get(we, 0)
+    for wk, amt in ps.items():
+        if wk != we:
+            data["prior"]["raf"].setdefault(hdr(wk), {})[PROFIT_SHARE] = amt
     r["NC over rides"] = 0
     r["ATT Program over ride"] = 0
     # a Bas override lands every 4 weeks (8.2, 8.30, 9.27, 10.25 …): leave that week blank for Maud, else 0
