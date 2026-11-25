@@ -25,7 +25,11 @@ The proof sign-in runs under the lock in "block" mode, like every Lucy run.
 from __future__ import annotations
 
 import datetime as dt
+import os
+import signal
+import subprocess
 import sys
+import threading
 import time
 import traceback
 from typing import Tuple
@@ -167,9 +171,61 @@ LAUNCH_TRIES = 4
 LAUNCH_WAIT_S = 10
 
 
+def _ancestors():
+    """This process and its parents (the sudo/launchctl that started it carry
+    the module name too -- ending one of those would end this window)."""
+    mine, pid = {os.getpid()}, os.getppid()
+    for _ in range(10):
+        if pid <= 1 or pid in mine:
+            break
+        mine.add(pid)
+        try:
+            pid = int(subprocess.run(["ps", "-o", "ppid=", "-p", str(pid)],
+                                     stdout=subprocess.PIPE,
+                                     stderr=subprocess.DEVNULL,
+                                     timeout=10).stdout.decode().strip() or 0)
+        except Exception:  # noqa: BLE001
+            break
+    return mine
+
+
+def _pgrep(pattern: str, skip=frozenset()):
+    try:
+        out = subprocess.run(["pgrep", "-f", "--", pattern],
+                             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                             timeout=10).stdout.decode()
+    except Exception:  # noqa: BLE001 -- no pgrep: nothing found
+        return []
+    return [int(x) for x in out.split() if x.isdigit() and int(x) not in skip]
+
+
+def free_profile(profile_dir, log=print) -> int:
+    """A window from an EARLIER try still holds the profile. Jairo's Mac,
+    2026-11-25: the 12:27 finish window sat on a dialog nobody clicked, kept
+    Chrome open, and the 13:32 and 14:37 windows crashed into it ("Opening
+    in existing browser session"). pnl only offers a window when no live one
+    is on file, so whatever holds the profile now is left over: end the old
+    Lucy helper and the Chrome on this profile. Mac/Linux only."""
+    if os.name == "nt":
+        return 0
+    skip = _ancestors()
+    pids = sorted(set(_pgrep("automations.icd_alerts.apex_2fa_setup", skip)
+                      + _pgrep("automations.icd_alerts.apex_signin", skip)
+                      + _pgrep("user-data-dir=%s" % profile_dir, skip)))
+    for pid in pids:
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except OSError:
+            pass
+    if pids:
+        log("apex window: ended %d leftover process(es) on the profile" % len(pids))
+    return len(pids)
+
+
 def launch_window(p, profile_dir, G, log=print, tries: int = LAUNCH_TRIES,
-                  wait_s: float = LAUNCH_WAIT_S):
+                  wait_s: float = LAUNCH_WAIT_S, free=None):
     last = None
+    free = free_profile if free is None else free
     for i in range(tries):
         try:
             return p.chromium.launch_persistent_context(
@@ -180,9 +236,27 @@ def launch_window(p, profile_dir, G, log=print, tries: int = LAUNCH_TRIES,
             last = e
             log("apex window: launch try %d failed: %s"
                 % (i + 1, (str(e).splitlines() or [""])[0][:160]))
+            if i == 0:
+                free(profile_dir, log=log)
             if i + 1 < tries:
                 time.sleep(wait_s)
     raise last
+
+
+# A box must never hold the window open. The banner in the browser already
+# says whose turn it is; the box is a second voice, so it does not wait --
+# except the backup-codes photo, which gets up to ten minutes.
+BACKUP_WAIT_S = 600
+
+
+def say(ask, body: str, error: bool = False, wait_s: float = 0):
+    kw = {"error": True} if error else {}
+    t = threading.Thread(target=ask.message, args=(body,), kwargs=kw,
+                         daemon=True)
+    t.start()
+    if wait_s:
+        t.join(wait_s)
+    return t
 
 
 def run(log=print, ask=None) -> int:
@@ -221,7 +295,7 @@ def _run(log, ask, end) -> int:
 
     AS.APEX_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
     try:
-        AS.APEX_SIGNIN_LOCK.write_text(dt.datetime.now().isoformat())
+        AS.mark_open()
     except OSError:
         pass
     try:
@@ -241,7 +315,7 @@ def _run(log, ask, end) -> int:
                     _fill_user_pass(page, user, pwd, log=log)
                     browser_banner.show(page, TURN_CODE, TURN_CODE_DETAIL,
                                         browser_banner.GREEN)
-                    ask.message(SAY_TEXT_CODE)
+                    say(ask, SAY_TEXT_CODE)
                     deadline = time.time() + SIGNIN_WAIT_S
                     while time.time() < deadline and not L._past_login(page):
                         time.sleep(3)
@@ -250,7 +324,7 @@ def _run(log, ask, end) -> int:
                     end[0] = ("email + password typed, but Apex sign-in was "
                               "not finished in 5 min (text code not entered, "
                               "or wrong password)")
-                    ask.message("Nobody signed in, so nothing changed. "
+                    say(ask, "Nobody signed in, so nothing changed. "
                                 "Lucy will ask again another day.")
                     return 1
                 browser_banner.show(page, WAIT, WAIT_DETAIL)
@@ -267,7 +341,7 @@ def _run(log, ask, end) -> int:
                     end[0] = ("signed in, but Lucy found no setup key on "
                               "Apex's page (%s) -- needs us"
                               % page.url.split("?")[0])
-                    ask.message("Lucy could not find the setup key on that page, "
+                    say(ask, "Lucy could not find the setup key on that page, "
                                 "so nothing changed. Lucy's team will look at it.",
                                 error=True)
                     return 1
@@ -276,7 +350,7 @@ def _run(log, ask, end) -> int:
                 filled = time.time()
                 browser_banner.show(page, TURN_VERIFY, TURN_VERIFY_DETAIL,
                                     browser_banner.GREEN)
-                ask.message(SAY_VERIFY)
+                say(ask, SAY_VERIFY)
 
                 # 3. he presses Verify; a code that went stale is replaced
                 deadline = time.time() + VERIFY_WAIT_S
@@ -292,7 +366,7 @@ def _run(log, ask, end) -> int:
                     log("  Apex setup: Verify was not pressed")
                     end[0] = ("signed in, code typed by Lucy, but Verify was "
                               "not pressed in 5 min")
-                    ask.message("Verify was not pressed, so nothing changed. "
+                    say(ask, "Verify was not pressed, so nothing changed. "
                                 "Lucy will ask again another day.")
                     return 1
 
@@ -304,7 +378,7 @@ def _run(log, ask, end) -> int:
                 if "recoverycodes" in page.url.lower().replace("-", ""):
                     browser_banner.show(page, TURN_PHOTO, TURN_PHOTO_DETAIL,
                                         browser_banner.GREEN)
-                    ask.message(SAY_BACKUP)
+                    say(ask, SAY_BACKUP, wait_s=BACKUP_WAIT_S)
                     browser_banner.show(page, WAIT, WAIT_DETAIL)
             finally:
                 guard.save()
@@ -320,7 +394,7 @@ def _run(log, ask, end) -> int:
                       "code app on + login saved, but Lucy's own test "
                       "sign-in did not work yet (%s)"
                       % (L._state().get("last") or "no step recorded"))
-        ask.message(SAY_DONE if ok else SAY_SAVED_NOT_PROVEN)
+        say(ask, SAY_DONE if ok else SAY_SAVED_NOT_PROVEN)
         return 0
     finally:
         try:
@@ -411,7 +485,7 @@ def _finish(log, ask, end) -> int:
         return 1
     AS.APEX_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
     try:
-        AS.APEX_SIGNIN_LOCK.write_text(dt.datetime.now().isoformat())
+        AS.mark_open()
     except OSError:
         pass
     ok = False
@@ -427,7 +501,7 @@ def _finish(log, ask, end) -> int:
                 signed, step = L.sign_in(page, login, log=log)
                 if not signed:
                     end[0] = "finish: Lucy's sign-in %s" % step
-                    ask.message(SAY_FINISH_NOT, error=True)
+                    say(ask, SAY_FINISH_NOT, error=True)
                     return 1
                 if _payroll_opens(page):
                     end[0] = "finish: payroll already opens -- nothing to press"
@@ -440,14 +514,14 @@ def _finish(log, ask, end) -> int:
                     maximize(page)
                     browser_banner.show(page, TURN_PICK, TURN_PICK_DETAIL,
                                         browser_banner.GREEN)
-                    ask.message(SAY_PICK)
+                    say(ask, SAY_PICK)
                     deadline = time.time() + PICK_WAIT_S
                     while (time.time() < deadline
                            and TWO_FA_PATH.lower() in page.url.lower()):
                         time.sleep(2)
                     if TWO_FA_PATH.lower() in page.url.lower():
                         end[0] = 'finish: "Use Authenticator" not pressed in 5 min'
-                        ask.message("Nothing was pressed, so nothing changed.")
+                        say(ask, "Nothing was pressed, so nothing changed.")
                         return 1
                     page.wait_for_timeout(3000)
                     browser_banner.show(page, WAIT, WAIT_DETAIL)
@@ -459,7 +533,7 @@ def _finish(log, ask, end) -> int:
                         except ValueError:
                             end[0] = ("finish: configure page without a key [%s]"
                                       % L.where(page))
-                            ask.message(SAY_FINISH_NOT, error=True)
+                            say(ask, SAY_FINISH_NOT, error=True)
                             return 1
                         same = L.clean_key(key) == L.clean_key(login["totp_key"])
                         key_note = "same key" if same else "NEW key"
@@ -467,7 +541,7 @@ def _finish(log, ask, end) -> int:
                         filled = time.time()
                         browser_banner.show(page, TURN_VERIFY, TURN_VERIFY_DETAIL,
                                             browser_banner.GREEN)
-                        ask.message(SAY_VERIFY)
+                        say(ask, SAY_VERIFY)
                         deadline = time.time() + VERIFY_WAIT_S
                         while time.time() < deadline and not _verified(page):
                             time.sleep(2)
@@ -480,7 +554,7 @@ def _finish(log, ask, end) -> int:
                         if not _verified(page):
                             end[0] = ("finish: pressed Use Authenticator (%s), but "
                                       "Verify not pressed in 5 min" % key_note)
-                            ask.message("Verify was not pressed. Lucy's team will "
+                            say(ask, "Verify was not pressed. Lucy's team will "
                                         "look at it.", error=True)
                             return 1
                         if not same:
@@ -490,7 +564,7 @@ def _finish(log, ask, end) -> int:
                         if "recoverycodes" in page.url.lower().replace("-", ""):
                             browser_banner.show(page, TURN_PHOTO, TURN_PHOTO_DETAIL,
                                                 browser_banner.GREEN)
-                            ask.message(SAY_BACKUP)
+                            say(ask, SAY_BACKUP, wait_s=BACKUP_WAIT_S)
                             browser_banner.show(page, WAIT, WAIT_DETAIL)
                     # 4. the real proof: the payroll page opens
                     ok = _payroll_opens(page)
@@ -503,7 +577,7 @@ def _finish(log, ask, end) -> int:
                     ctx.close()
                 except Exception:  # noqa: BLE001
                     pass
-        ask.message(SAY_FINISH_DONE if ok else SAY_FINISH_NOT)
+        say(ask, SAY_FINISH_DONE if ok else SAY_FINISH_NOT)
         return 0 if ok else 1
     finally:
         try:

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import datetime as dt
 import sys
+import os
 import time
 
 from automations.icd_alerts import config as C
@@ -35,12 +36,36 @@ BANNER_DETAIL = ("Sign in here the way you always do, with your 2-step code if "
                  "it asks. This window closes by itself when it is done.")
 
 
-def signin_open(now=None) -> bool:
-    """A sign-in window is up (or died less than ten minutes ago)."""
+def mark_open() -> None:
+    """Say a window is up: when, and WHICH process holds it. Raises OSError."""
+    APEX_SIGNIN_LOCK.write_text("%s %d" % (dt.datetime.now().isoformat(),
+                                           os.getpid()))
+
+
+def _pid_alive(pid: int) -> bool:
+    if os.name == "nt":      # os.kill(pid, 0) on Windows is a Ctrl+C, not a look
+        return True
     try:
-        was = dt.datetime.fromisoformat(APEX_SIGNIN_LOCK.read_text().strip())
-    except (OSError, ValueError):
+        os.kill(pid, 0)
+    except PermissionError:
+        return True
+    except OSError:
         return False
+    return True
+
+
+def signin_open(now=None) -> bool:
+    """A sign-in window is up. With the holder's pid on file: as long as that
+    process lives, however long (Jairo's finish window sat an hour+ on a box
+    on 2026-11-25 and the next window crashed into its profile twice). Old
+    lock without a pid: the ten-minute rule."""
+    try:
+        parts = APEX_SIGNIN_LOCK.read_text().split()
+        was = dt.datetime.fromisoformat(parts[0])
+    except (OSError, ValueError, IndexError):
+        return False
+    if len(parts) > 1 and parts[1].isdigit() and os.name != "nt":
+        return _pid_alive(int(parts[1]))
     return (now or dt.datetime.now()) - was < dt.timedelta(
         minutes=APEX_SIGNIN_LOCK_MINUTES)
 
@@ -69,7 +94,7 @@ def run(log=print) -> int:
     log("")
     APEX_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
     try:
-        APEX_SIGNIN_LOCK.write_text(dt.datetime.now().isoformat())
+        mark_open()
     except OSError:
         pass          # not being able to say so must not stop them signing in
     try:
