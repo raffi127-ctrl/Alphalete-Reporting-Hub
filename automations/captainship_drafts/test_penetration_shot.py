@@ -65,7 +65,7 @@ class T(unittest.TestCase):
         u = unquote(P.view_url("x@y.com", ["Kash Rai", "Trang Canavan"]))
         self.assertIn("Penetration View=Market Expectations", u)
         self.assertIn("Account Captain Email=x@y.com", u)
-        self.assertIn("Owner Name=Kash Rai,Trang Canavan", u)
+        self.assertIn("Account_Owner_Name__c=Kash Rai,Trang Canavan", u)
 
     def test_section_is_preview_only(self):
         from automations.captainship_drafts import config

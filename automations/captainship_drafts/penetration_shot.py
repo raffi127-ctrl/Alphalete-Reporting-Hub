@@ -45,7 +45,10 @@ T_OWNER = "Account_Owner_Name__c"
 T_CAPTAIN = "Account Captain Email"
 P_VIEW = "Penetration View"
 P_VIEW_VALUE = "Market Expectations"
-P_OWNER = "Owner Name"
+# The quick filter is titled "Owner Name", but binding that name emptied the
+# board twice (11/26 samples 3-4: every other filter read "(None)"). The data
+# field itself is Account_Owner_Name__c (the crosstab header), so filter on it.
+P_OWNER = T_OWNER
 
 # captain key -> the captain's OWN office as Tableau spells it (left out of the
 # shot). Checked against the 11/23 crosstab.
