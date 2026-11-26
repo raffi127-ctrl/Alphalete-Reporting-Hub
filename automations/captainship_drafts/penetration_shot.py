@@ -150,9 +150,13 @@ def team_owners(key: str, groups: Dict[str, List[str]]) -> tuple:
 
 
 def view_url(email: str, owners: List[str]) -> str:
+    # NO Account Captain Email param: on this view it lands out of domain —
+    # "(raffi127@gmail.com)" and an empty board in samples 3-5 (11/26), with
+    # the value exactly as the crosstab spells it. The owner list already IS
+    # the captain split (it comes from that column in the crosstab), so the
+    # owner filter alone gives the same board. `email` stays for the log.
     names = ",".join(quote(o) for o in owners)
     return (f"{BASE_VIEW}?{quote(P_VIEW)}={quote(P_VIEW_VALUE)}"
-            f"&{quote(T_CAPTAIN)}={quote(email)}"
             f"&{quote(P_OWNER)}={names}&:iid=1")
 
 
@@ -215,12 +219,13 @@ def captain_penetration_shot(captain_key: str, today: dt.date, out_dir: Path,
         png = ts._shoot_rendered(page, spec, out_dir, verbose=verbose)
         shown = _filter_texts(page)
         logfn(f"   · penetration {captain_key}: filters {shown}")
-        cap_box = next((v for k, v in shown.items()
-                        if k.lower() == T_CAPTAIN.lower()), None)
-        if cap_box is None or cap_box.lower() != email.lower():
+        # An empty board reads "(None)" in every other filter box.
+        others = [v for k, v in shown.items()
+                  if k.lower() not in (T_CAPTAIN.lower(), "owner name")]
+        if others and all(v == "(None)" for v in others):
             png.unlink(missing_ok=True)
-            raise RuntimeError(f"the {T_CAPTAIN} filter shows {cap_box!r}, not "
-                               f"{email} — the URL filter did not bind")
+            raise RuntimeError(f"the board came back EMPTY (filters {shown}) — "
+                               f"the owner filter did not bind")
     return png
 
 
