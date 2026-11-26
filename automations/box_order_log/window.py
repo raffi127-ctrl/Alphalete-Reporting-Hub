@@ -1081,13 +1081,23 @@ def release_owner_filter(page, viz, verbose: bool = True) -> dict:
     run_owner prints 'Owners present in this pull' and exits 1."""
     out = {}
     for field in OWNER_FILTERS:
-        try:
-            shape = _release_dropdown(page, viz, field, verbose)
-        except Exception as exc:                            # noqa: BLE001
-            if verbose:
-                print("  ⚠ BOX filter {!r} release failed ({!r})".format(
-                    field, exc), flush=True)
-            shape = "error"
+        # TWO TRIES, like release_pinned_filters (2026-11-26): Roshan's 7:00
+        # pass found Apply still disabled 10s after the (All) tick, returned
+        # 'stuck' on the first try and posted a "filter is pinned" ticket —
+        # while the very next attempt released it cleanly.
+        for attempt in range(2):
+            if attempt and verbose:
+                print("  -> BOX filter {!r} release retry".format(field),
+                      flush=True)
+            try:
+                shape = _release_dropdown(page, viz, field, verbose)
+            except Exception as exc:                        # noqa: BLE001
+                if verbose:
+                    print("  ⚠ BOX filter {!r} release failed ({!r})".format(
+                        field, exc), flush=True)
+                shape = "error"
+            if shape in ("released", "absent"):
+                break
         if shape == "absent":
             if verbose:
                 print("  -> BOX filter {!r} not on this view — no owner "

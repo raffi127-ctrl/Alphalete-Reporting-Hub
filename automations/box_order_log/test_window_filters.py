@@ -502,6 +502,16 @@ class OwnerFilterTest(unittest.TestCase):
         self.assertEqual(verdicts, {"Owner & Office": "stuck"})
         self.assertNotIn(verdicts["Owner & Office"], window.CONFIRMED_CLEAN)
 
+    def test_owner_dropdown_gets_a_second_try(self):
+        """2026-11-26: Apply was still disabled on Roshan's first try; the
+        second released it. One slow click must not read as a pinned filter."""
+        from unittest import mock
+        with mock.patch.object(window, "_release_dropdown",
+                               side_effect=["stuck", "released"]) as rel:
+            verdicts = window.release_owner_filter(None, None, verbose=False)
+        self.assertEqual(verdicts, {"Owner & Office": "released"})
+        self.assertEqual(rel.call_count, 2)
+
     def _hook_calls(self, **kw):
         import datetime as dt
         from unittest import mock
