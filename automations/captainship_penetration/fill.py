@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import datetime as dt
 import time
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from automations.new_internet_churn import fill as _shared
 
@@ -272,15 +272,32 @@ def style_requests(sheet_id: int, box: dict, n_cols: int, color_hex: str) -> lis
     return reqs
 
 
+def sort_request(sheet_id: int, box: dict, n_cols: int) -> Optional[dict]:
+    """Pure: owner rows sorted by today's % (column B), highest first (Eve
+    11/26). Whole rows move, so each owner's history stays with them; Sheets
+    puts blanks last. Rows are found by label every run, so order is free."""
+    rows = list(box["rep_rows"].values())
+    if len(rows) < 2:
+        return None
+    return {"sortRange": {
+        "range": {"sheetId": sheet_id, "startRowIndex": min(rows) - 1,
+                  "endRowIndex": max(rows), "startColumnIndex": 0,
+                  "endColumnIndex": n_cols},
+        "sortSpecs": [{"dimensionIndex": 1, "sortOrder": "DESCENDING"}]}}
+
+
 def style(ws, slug: str, *, logfn=print) -> None:
-    """Apply style_requests over the days actually filled (min 7 columns)."""
+    """Sort owners by today's % (highest first), then apply style_requests
+    over the days actually filled (A-I minimum)."""
     box = find_boxes(ws)[BOX]
     grid = _shared._retry(ws.get_all_values)
     hdr = grid[box["header_row"] - 1] if len(grid) >= box["header_row"] else []
     days = sum(1 for v in hdr[1:] if (v or "").strip())
     n_cols = max(MIN_COLS, 1 + days)
-    ws.spreadsheet.batch_update({"requests": style_requests(
-        ws.id, box, n_cols, captain_color(slug))})
+    sort = sort_request(ws.id, box, min(n_cols, ws.col_count))
+    ws.spreadsheet.batch_update({"requests": ([sort] if sort else []) +
+                                 style_requests(ws.id, box, n_cols,
+                                                captain_color(slug))})
 
 
 def plan(grid: List[List[str]], box: dict, today: dt.date,

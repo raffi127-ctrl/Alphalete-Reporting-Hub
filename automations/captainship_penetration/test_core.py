@@ -118,3 +118,13 @@ class Style(unittest.TestCase):
         from automations.captainship_penetration import core
         for k in core.CAPTAIN_OWNER:
             self.assertTrue(fill.captain_color(k).startswith("#"))
+
+
+class Sort(unittest.TestCase):
+    def test_sorts_owner_rows_only_by_today_desc(self):
+        b = fill.find_boxes_in(Sheet.COL_A)["penetration"]
+        r = fill.sort_request(7, b, 9)["sortRange"]
+        self.assertEqual((r["range"]["startRowIndex"], r["range"]["endRowIndex"]),
+                         (4, 6))            # rows 5-6: owners, not avg/header
+        self.assertEqual(r["sortSpecs"], [{"dimensionIndex": 1,
+                                           "sortOrder": "DESCENDING"}])
