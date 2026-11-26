@@ -28,14 +28,20 @@ class T(unittest.TestCase):
     def setUp(self):
         self.g = P.owners_by_email(_ct(ROWS))
 
+    def test_email_keeps_tableau_spelling(self):
+        # first spelling wins; case variants fold into it
+        self.assertIn("RHidalgo@thesmartcircle.com", self.g)
+        self.assertEqual(P.team_owners("rafael", self.g)[0],
+                         "RHidalgo@thesmartcircle.com")
+
     def test_groups(self):
-        self.assertEqual(self.g["rhidalgo@thesmartcircle.com"],
+        self.assertEqual(self.g["RHidalgo@thesmartcircle.com"],
                          ["Kash Rai", "Rafael Hidalgo", "Trang Canavan"])
         self.assertNotIn("", self.g)
 
     def test_captain_left_out(self):
         email, owners = P.team_owners("rafael", self.g)
-        self.assertEqual(email, "rhidalgo@thesmartcircle.com")
+        self.assertEqual(email, "RHidalgo@thesmartcircle.com")
         self.assertEqual(owners, ["Kash Rai", "Trang Canavan"])
         self.assertEqual(P.team_owners("wayne", self.g)[1], ["Bill Fischer"])
 

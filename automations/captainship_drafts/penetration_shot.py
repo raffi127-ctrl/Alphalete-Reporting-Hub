@@ -84,13 +84,18 @@ def owners_by_email(text: str) -> Dict[str, List[str]]:
     except ValueError:
         raise KeyError(f"crosstab has no {T_OWNER!r} / {T_CAPTAIN!r} column: "
                        f"{rows[0]}") from None
+    # Keyed by the email AS TABLEAU SPELLS IT: the URL filter is case-sensitive,
+    # and a lower-cased value lands out of domain — "(raffi127@…)" and an empty
+    # board (third sample, 11/26). Case variants fold onto the first spelling.
     out: Dict[str, set] = {}
+    spelled: Dict[str, str] = {}
     for r in rows[1:]:
         if len(r) <= max(i_o, i_c):
             continue
-        owner, email = r[i_o].strip(), r[i_c].strip().lower()
+        owner, email = r[i_o].strip(), r[i_c].strip()
         if not owner or owner.lower() in ("total", "grand total") or "@" not in email:
             continue
+        email = spelled.setdefault(email.lower(), email)
         out.setdefault(email, set()).add(owner)
     return {e: sorted(o) for e, o in out.items()}
 
@@ -106,10 +111,14 @@ def captain_email(key: str, groups: Dict[str, List[str]]) -> str:
     else the one group the captain's own office is in.
     Ambiguous or missing -> raise, never a guess."""
     if key in CAPTAIN_EMAIL:
-        return CAPTAIN_EMAIL[key].lower()
+        want = CAPTAIN_EMAIL[key].lower()
+        for e in groups:
+            if e.lower() == want:
+                return e
+        raise ValueError(f"{key}: pinned {CAPTAIN_EMAIL[key]} not in the crosstab")
     full = CAPTAIN_OWNER[key].lower().split()
     first, last = full[0], full[-1]
-    local = {e: re.sub(r"[^a-z]", "", e.split("@")[0]) for e in groups}
+    local = {e: re.sub(r"[^a-z]", "", e.split("@")[0].lower()) for e in groups}
     for test in (lambda l: first in l and last in l,
                  lambda l: first in l,
                  lambda l: l.startswith(first[0]) and last in l,
@@ -205,7 +214,7 @@ def captain_penetration_shot(captain_key: str, today: dt.date, out_dir: Path,
         logfn(f"   · penetration {captain_key}: filters {shown}")
         cap_box = next((v for k, v in shown.items()
                         if k.lower() == T_CAPTAIN.lower()), None)
-        if cap_box is None or cap_box.lower() != email:
+        if cap_box is None or cap_box.lower() != email.lower():
             png.unlink(missing_ok=True)
             raise RuntimeError(f"the {T_CAPTAIN} filter shows {cap_box!r}, not "
                                f"{email} — the URL filter did not bind")
