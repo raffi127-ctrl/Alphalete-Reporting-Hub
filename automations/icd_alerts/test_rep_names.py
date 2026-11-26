@@ -169,3 +169,17 @@ class StandingSoldUnder(unittest.TestCase):
                                            "ESMERALDA GONZALEZ"), "")
         self.assertEqual(RN.sold_under_for("carlos-b2batt", "2026-11-25",
                                            "JACOB ORTEGA"), "")
+
+
+class OneLinePerPerson(unittest.TestCase):
+    """Carlos 2026-11-25: Jacob's own login + Esmeralda's = one Jacob line."""
+
+    def test_swapped_login_and_own_login_sum(self):
+        sales = {"JACOB ISAIAH ORTEGA": {"NL": 2}, "ESMERALDA GONZALEZ": {"NL": 2},
+                 "ANNETT CLIMACO": {"NL": 4}}
+        show = RN.day_resolver(lambda n: n.title(), "carlos-b2batt", "2026-11-25")
+        text = post.scoreboard_text(sales, ["ESMERALDA GONZALEZ"], "att", show)
+        jacob = [l for l in text.splitlines() if "Jacob" in l]
+        self.assertEqual(len(jacob), 1, text)
+        self.assertIn("4", jacob[0])
+        self.assertNotIn("Esmeralda", text)

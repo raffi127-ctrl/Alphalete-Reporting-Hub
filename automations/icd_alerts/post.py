@@ -559,9 +559,31 @@ def scoreboard_text(sales: Dict, fired: List[str], campaign=None,
     if names != ("Int", "Int Up", "DTV", "NL"):
         return ""
     from automations.alphalete_sales_board import notify as N
-    named = {(show(rep) if show else rep): dict(m or {})
-             for rep, m in (sales or {}).items()}
-    flames = [(show(r) if show else r) for r in (fired or [])]
+    # ONE LINE PER PERSON (Carlos 2026-11-25): a rep selling under someone
+    # else's login (rep_names.SOLD_UNDER) shows as the real seller, and the
+    # real seller's own login is a second row -- "Jacob Isaiah Ortega 2" and
+    # "Jacob Ortega 2". Rows whose shown names are the same first + last are
+    # summed under the longest spelling.
+    named, alias = {}, {}
+    for rep, m in (sales or {}).items():
+        shown = show(rep) if show else rep
+        k = _rep_key(shown) or shown
+        if k in alias:
+            keep = alias[k]
+            if len(shown) > len(keep):
+                named[shown] = named.pop(keep)
+                alias[k] = keep = shown
+            tot = named[keep]
+            for metric, v in dict(m or {}).items():
+                try:
+                    tot[metric] = int(tot.get(metric, 0) or 0) + int(v or 0)
+                except (TypeError, ValueError):
+                    tot.setdefault(metric, v)
+        else:
+            alias[k] = shown
+            named[shown] = dict(m or {})
+    flames = [alias.get(_rep_key(f) or f, f)
+              for f in ((show(r) if show else r) for r in (fired or []))]
     if not any(N.rep_total(m) for m in named.values()):
         return ""
     # `teams` = the office's own sales-board team book (Raf's, 2026-11-05:
