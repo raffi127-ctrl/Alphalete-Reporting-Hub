@@ -253,8 +253,15 @@ def save_login(timeout_min: int = 10, verbose: bool = True,
                   "it so you get the login screen and a fresh 14 days.",
                   flush=True)
             page.evaluate(f"localStorage.removeItem({json.dumps(AUTH_KEY)})")
-            page.goto(DASHBOARD, wait_until="domcontentloaded")
-            page.reload(wait_until="domcontentloaded")
+            # DASHBOARD is a #hash route, so goto() is a same-page no-op and
+            # the reload is what actually drops to the login screen. A slow
+            # reload (2026-11-26: 30s timeout) must not kill the login: the
+            # human only needs the window, and the loop below waits anyway.
+            try:
+                page.reload(wait_until="commit", timeout=60000)
+            except Exception as e:  # noqa: BLE001
+                print(f"   (reload slow: {type(e).__name__} — carrying on)",
+                      flush=True)
         deadline = timeout_min * 60
         waited = 0
         while waited < deadline:
