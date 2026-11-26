@@ -203,6 +203,7 @@ def run(sheet_id: Optional[str], tab: str, weeks: Optional[int],
     with tableau_session(verbose=False) as page:
         session = requests_session_from_page(page)
         updates = []
+        missed = []
         started = False   # weeks before his first LeafGuard number stay blank
         for d in sundays:
             try:
@@ -210,6 +211,7 @@ def run(sheet_id: Optional[str], tab: str, weeks: Optional[int],
             except Exception as e:  # noqa: BLE001 — leave that week alone
                 logfn(f"  WE {d}: Tableau failed, week left as is "
                       f"({type(e).__name__}: {str(e)[:120]})")
+                missed.append(d)
                 continue
             logfn(f"  WE {d}: " + ", ".join(
                 f"{k.replace('LeafGuard ', '')} {v}" for k, v in nums.items()),
@@ -227,7 +229,31 @@ def run(sheet_id: Optional[str], tab: str, weeks: Optional[int],
           + (" — dry-run, nothing written" if dry_run else ""))
     if updates and not dry_run:
         fill._retry(ws.batch_update, updates, value_input_option="USER_ENTERED")
+    if missed:
+        # Exit non-zero so the Hub shows it; the next run re-pulls those weeks.
+        raise RuntimeError("Tableau failed for WE " + ", ".join(
+            str(d) for d in missed) + " — those weeks were left as is")
+    if not dry_run and not sheet_id:
+        _record_delivery(ws.title, len(updates), len(sundays))
     return len(updates)
+
+
+def _record_delivery(tab: str, cells: int, weeks: int) -> None:
+    """Today's manifest = the proof shared/delivery_check looks for.
+
+    2026-11-25: standalone-leafguard_spencer stayed open after a clean
+    re-run — "ran clean, but nothing can confirm it DELIVERED" — because this
+    fill wrote no manifest. Only a production pass where every week came back
+    from Tableau records one (a sandbox --sheet-id or --dry-run never does).
+    Never raises."""
+    try:
+        from automations.shared import run_manifest
+        run_manifest.write_manifest(
+            "leafguard_spencer", succeeded=[tab],
+            note=f"{cells} cell(s) over {weeks} week(s) on '{tab}'")
+    except Exception as e:  # noqa: BLE001 — the proof must never fail the run
+        print(f"manifest skipped: {type(e).__name__}: {str(e)[:120]} — the "
+              "tab is written, but a failure ticket won't close itself")
 
 
 def main() -> None:

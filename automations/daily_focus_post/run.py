@@ -515,8 +515,8 @@ def post_office(office: "roster.FocusOffice", spreadsheet, *,
         # the Hub shows it — the next tick retries only what missed.
         raise RuntimeError("Slack posted, but: " + "; ".join(errs))
     return {"office": office.key, "dry_run": False, "png": str(png),
-            "parent": parent, "reply": reply, "texts": texts,
-            "booked": booked}
+            "parent": {"thread_ts": thread_ts, "where": where},
+            "reply": reply, "texts": texts, "booked": booked}
 
 
 def main(argv: Optional[List[str]] = None) -> int:

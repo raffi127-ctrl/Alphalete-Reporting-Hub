@@ -1733,7 +1733,10 @@
    "after": [
     "att_focus_raf"
    ],
-   "verify": null,
+   "verify": {
+    "type": "manifest",
+    "report_id": "leafguard_spencer"
+   },
    "timeout_minutes": 30,
    "order": 37.7
   },
