@@ -466,7 +466,12 @@ def _capture_one(captain: config.Captain, today: dt.date, render_dir: Path,
     penetration = None
     if "penetration" in kinds_today and not skip_tableau:
         try:
-            from automations.captainship_drafts import penetration_shot
+            from automations.captainship_drafts import (penetration_shot,
+                                                        sheet_render)
+            # Same trap as _tableau_shots: §1's renderer holds a live sync
+            # playwright in this thread; a second one dies with "Sync API
+            # inside the asyncio loop" (first sample, 11/26).
+            sheet_render.close_renderer()
             penetration = penetration_shot.captain_penetration_shot(
                 captain.key, today, render_dir, logfn=logfn)
         except Exception as e:  # noqa: BLE001
