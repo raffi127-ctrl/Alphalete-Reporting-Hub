@@ -304,6 +304,9 @@ OWNER_ANSWERS = {
     # Kingdavid Mayberry said "Salik Mallick"; Raf 11/13: Salik's sales and
     # recruiting funnel all go under Hammad.
     "U0C10KJT4SW": "Hammad Haque",
+    # MJ = Amjad Malhas (Raf's office team) answered "Rafael Hidalgo" 11/26 after the
+    # Nov 25 11:55 AM recording.
+    "U0488R0E9D5": "Rafael Hidalgo",
 }
 
 
