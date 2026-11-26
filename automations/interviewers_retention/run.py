@@ -334,7 +334,7 @@ def scheduled_gate(now_ct: dt.datetime, sent_flag: Path) -> Optional[str]:
 def run(*, week: Optional[str] = None, date: Optional[dt.date] = None,
         fixture: Optional[Path] = None, dry_run: bool = False,
         production: bool = False, scheduled: bool = False, preview: bool = False,
-        logfn=print) -> int:
+        web_sheet: str = "", logfn=print) -> int:
     from zoneinfo import ZoneInfo
     now_ct = dt.datetime.now(ZoneInfo("America/Chicago"))
     sent_flag = OUT_DIR / f"sent-{now_ct:%Y-%m-%d}.txt"
@@ -406,9 +406,12 @@ def run(*, week: Optional[str] = None, date: Optional[dt.date] = None,
     # ---- offices: AppStream (Camila 11/11), the weekly tab only as a fallback
     off_src = "weekly tab"
     off_week_txt = build.week_span(wk)
+    datos_all: List[build.DayRow] = []
+    org_boards = None
     if datos:
         # Camila's offices = the owners on the newest week box of her tab.
         roster = sorted({r.owner for r in weeks[0].rows})
+        datos_all = datos
         datos, missing = build.match_offices(datos, roster)
         logfn(f"  AppStream offices matched to the roster: {len({r.office_id for r in datos})} "
               f"(roster: {len(roster)} owners)")
@@ -424,6 +427,17 @@ def run(*, week: Optional[str] = None, date: Optional[dt.date] = None,
         off_lines = build.office_days_datos(datos, days)
         off_src = "AppStream"
         off_week_txt = pod_off.subtitle.split(" · ")[0]
+        # The web's "Our org" view (Raf 11/20): every org office, same weeks.
+        from automations.interviewers_retention import web_export
+        org = web_export.Org()
+        orows = web_export.org_rows(datos_all, datos, org)
+        if orows:
+            o_labels, o_hist = build.office_history_datos(orows, ow)
+            org_boards = (
+                build.week_board(build.office_days_datos(orows, days), days, last_week,
+                                 ("LAST" if last_week else "THIS") + " WEEK BY DAY · OFFICES",
+                                 "Office", o_hist, o_labels, source="AppStream"),
+                build.office_podium_datos(orows, ow))
         logfn(f"  offices from AppStream: week of {build.md(ow)}, "
               f"4 weeks {', '.join(pod_off.history_labels)}")
     else:
@@ -507,6 +521,21 @@ def run(*, week: Optional[str] = None, date: Optional[dt.date] = None,
         (out / "not-matched.txt").write_text("\n".join(lines_out) + "\n", encoding="utf-8")
         logfn(f"  (list saved to {out / 'not-matched.txt'}; confirmed pairs go in "
               f"automations/interviewers_retention/name-aliases.json)")
+    # ---- the web (Raf 11/20): same four boards, as data for the ARS web's tab
+    from automations.interviewers_retention import web_export
+    doc = web_export.to_json(service=(wk_int, wk_off, pod_int, pod_off), org_boards=org_boards,
+                             org=web_export.Org(), intro=intro, notes=notes,
+                             generated=dt.datetime.now())
+    (out / "web.json").write_text(json.dumps(doc, ensure_ascii=False, indent=1), encoding="utf-8")
+    for v in doc["views"].values():
+        logfn(f"  web view '{v['label']}': "
+              + ", ".join(f"{b['title']} {len(b['lines'])}" for b in v["boards"]))
+    if web_sheet:
+        try:
+            web_export.write(doc, web_sheet, logfn=logfn)
+        except Exception as e:                       # noqa: BLE001
+            # The web is extra: a failed write never stops the email.
+            logfn(f"  web: could NOT write to sheet {web_sheet}: {e}")
     if preview:
         page = write_preview(msg, out / "interviewers-retention-preview.html")
         logfn(f"[preview] nothing sent. Preview page: {page}")
@@ -535,10 +564,14 @@ def main(argv=None) -> int:
                     help="send nothing: save the email as an .html page and open it in the browser")
     ap.add_argument("--scheduled", action="store_true",
                     help="the LaunchAgent's pass: send only at 6 PM Central, once a day")
+    ap.add_argument("--web-sheet", default="",
+                    help="also write the boards for the ARS web to this Google Sheet ID "
+                         "(tab 'Retention Report'). Sandbox copy while testing.")
     a = ap.parse_args(argv)
     return run(week=a.week, date=dt.date.fromisoformat(a.date) if a.date else None,
                fixture=Path(a.fixture) if a.fixture else None, dry_run=a.dry_run,
-               production=a.production, scheduled=a.scheduled, preview=a.preview)
+               production=a.production, scheduled=a.scheduled, preview=a.preview,
+               web_sheet=a.web_sheet)
 
 
 if __name__ == "__main__":

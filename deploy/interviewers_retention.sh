@@ -28,7 +28,7 @@ LOG_FILE="$LOG_DIR/interviewers-retention-$(date +%Y-%m-%d).log"
 echo "[$(date)] interviewers-retention starting (args: $*)" >> "$LOG_FILE"
 
 if [ $# -eq 0 ]; then
-  "$VENV_PY" -m automations.interviewers_retention.run --scheduled --production >> "$LOG_FILE" 2>&1
+  "$VENV_PY" -m automations.interviewers_retention.run --scheduled --production --web-sheet 1hdsOTlu-HLVjybwOzDPVg07EgvXTHZfQhgsTTu7q8mY >> "$LOG_FILE" 2>&1
 else
   "$VENV_PY" -m automations.interviewers_retention.run "$@" >> "$LOG_FILE" 2>&1
 fi

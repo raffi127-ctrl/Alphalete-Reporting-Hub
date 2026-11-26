@@ -19,6 +19,7 @@ const TABS = [
   {id:"showed", label:"2nd Rd Showed", c:"#3D85C6"},
   {id:"offered", label:"Offered / BOB", c:"#A64D79"},
   {id:"conversion", label:"Conversion Numbers", c:"#BF9000"},
+  {id:"retention", label:"Interviewers Retention", c:"#3D85C6"},
   {id:"ads", label:"Ad Titles", c:"#6b6b6b"},
   {id:"stars", label:"Ads \u00d7 Stars", c:"#6b6b6b"},
   {id:"users", label:"Users", c:"#2f4bc4", admin:true}
@@ -31,6 +32,7 @@ const S = {db:null, canWrite:true, offices:[], office:null, rows:[], weekDocs:ne
   tab:"entrada", week:null, goal:0.5, adMap:{}, unsub:null,
   ints:[], ent:{month:"", who:"", q:"", d2:"", city:"", page:0}, ads:{month:"", q:"", view:(function(){try{return localStorage.getItem("ars.adview")||"overall"}catch(e){return "overall"}})(), wsort:"T"}, st:{month:"", min:10, sort:"avg", view:(function(){try{return localStorage.getItem("ars.stview")||"overall"}catch(e){return "overall"}})(), wmin:3, wsort:"avg"}};
 try{ S.hideDays=!!localStorage.getItem("ars.hideDays"); }catch(e){}
+S.ret={data:null, loading:false, err:"", view:(function(){try{return localStorage.getItem("ars.retview")||"service"}catch(e){return "service"}})()};
 try{ const t=localStorage.getItem("ars.tab"); if(t && TABS.some(x=>x.id===t)) S.tab=t; const g=localStorage.getItem("ars.goal"); if(g) S.goal=+g; }catch(e){}
 if(location.hash && TABS.some(x=>"#"+x.id===location.hash)) S.tab=location.hash.slice(1);
 
@@ -419,6 +421,59 @@ function applyNA(tr){
     const col=on?"":(VCOL[c.dataset.f]||{})[low(c.value)]||""; const tdc=c.closest("td"); tdc.classList.remove("v-g","v-r","v-o","v-b","v-v","v-y"); if(col) tdc.classList.add("v-"+col); const td=c.closest("td"); td.classList.toggle("na",on); c.disabled=on||!S.canWrite; c.tabIndex=on?-1:0; if(on) c.title="Not applicable"; else c.removeAttribute("title"); });
 }
 
+// ---------- Interviewers Retention (Raf 11/20) ----------
+// The daily 6 PM email's 4 tables, written by a Lucy into the 'Retention Report'
+// tab. Two views: the offices that use our interviewing service (= the email),
+// or every office in our org (offices from AppStream; interviewer rows only
+// exist for the service). Same for every office, so the Office menu does nothing here.
+async function loadRetention(){
+  S.ret.loading=true; S.ret.err="";
+  try{ const t=await api("getRetention"); S.ret.data=t?JSON.parse(t):{}; }
+  catch(e){ S.ret.err=e.message; }
+  S.ret.loading=false; if(S.tab==="retention") render();
+}
+function retCls(v){ if(v==null) return "z"; return Math.round(v*100)>=Math.round((S.ret.data.goal||0.5)*100)?"ok":"bad"; }
+function retPct(v){ return `<td class="${retCls(v)}">${v==null?"–":fp(v)}</td>`; }
+function retName(l){ return `${esc(l.name)}${l.detail&&l.detail.length&&!l.owner?`<div style="font-weight:400;font-size:11px;color:var(--muted)">${esc(l.detail.join(", "))}</div>`:""}`; }
+function retBoard(b){
+  const owner=b.header==="Interviewer", days=b.days||null, hl=b.history_labels||[];
+  const cols=2+(owner?1:0)+(days?days.length*3+3:3)+hl.length;
+  let h=`<div class="card scroll pal-s"><table class="rpt"><thead><tr class="ttl"><th colspan="${cols}"><span style="position:sticky;left:8px">${esc(b.title)}</span> <span style="font-weight:400;text-transform:none;letter-spacing:0">· ${esc(b.subtitle)}</span></th></tr>`;
+  h+=`<tr class="grp"><th></th><th class="name"></th>${owner?"<th></th>":""}`;
+  if(days) days.forEach(d=>h+=`<th class="sep" colspan="3">${DAYN[(toD(d).getUTCDay()+6)%7]||""} ${md(d)}</th>`);
+  h+=`<th class="sep" colspan="3">${days?"WEEK":"TOTAL"}</th>${hl.length?`<th class="sep" colspan="${hl.length}">LAST ${hl.length} WEEKS</th>`:""}</tr>`;
+  h+=`<tr class="sub"><th>#</th><th class="name">${esc(b.header)}</th>${owner?`<th class="l">Owner</th>`:""}`;
+  const bsp=()=>`<th class="sep">B</th><th>S</th><th>%</th>`;
+  if(days) days.forEach(()=>h+=bsp());
+  h+=bsp(); hl.forEach((l,i)=>h+=`<th class="${i?"":"sep"}">${esc(l)}</th>`); h+=`</tr></thead><tbody>`;
+  if(!b.lines.length) h+=`<tr><td colspan="${cols}" class="l" style="color:var(--muted)">No 2nd rounds recorded.</td></tr>`;
+  b.lines.forEach((l,i)=>{
+    h+=`<tr><td>${i+1}</td><td class="name">${retName(l)}</td>${owner?`<td class="l">${esc(l.owner)}</td>`:""}`;
+    if(days) l.days.forEach(([bk,sh])=>{ const v=bk?sh/bk:null; h+=`<td class="sep${bk?"":" z"}">${bk}</td><td class="${sh?"":"z"}">${sh}</td>${bk?retPct(v):`<td class="z"></td>`}`; });
+    h+=`<td class="sep">${l.booked}</td><td>${l.showed}</td>${retPct(l.pct)}`;
+    (l.history||[]).forEach((v,j)=>h+=`<td class="${retCls(v)}${j?"":" sep"}">${v==null?"–":fp(v)}</td>`);
+    h+=`</tr>`;
+  });
+  return h+`</tbody></table></div>`;
+}
+function renderRetention(){
+  if(!S.ret.data && !S.ret.loading && !S.ret.err) loadRetention();
+  if(S.ret.err) return `<div class="card empty"><p>Couldn't load the report: ${esc(S.ret.err)}</p><button class="btn" data-act="retReload">Try again</button></div>`;
+  if(!S.ret.data) return `<div class="card empty"><p>Loading the Interviewers Retention report…</p></div>`;
+  const d=S.ret.data, views=d.views||{};
+  if(!Object.keys(views).length) return `<div class="card empty"><h2>No report yet</h2><p>The Interviewers Retention report shows up here after its next daily run.</p></div>`;
+  if(!views[S.ret.view]) S.ret.view=Object.keys(views)[0];
+  const v=views[S.ret.view], g=fp(d.goal||0.5);
+  let h=`<div class="head"><h2>Interviewers Retention</h2><p>2nd rounds showed / booked · updated ${esc(d.generated||"")}</p>
+    <span class="legend"><span class="pill ok">≥ ${g}</span><span class="pill bad">&lt; ${g}</span></span></div>
+    <div class="filters"><div class="ctl"><label for="retView">Show</label><select id="retView">${Object.keys(views).map(k=>`<option value="${k}" ${k===S.ret.view?"selected":""}>${esc(views[k].label)}</option>`).join("")}</select></div></div>`;
+  v.boards.forEach(b=>h+=retBoard(b));
+  if(d.notes&&d.notes.length) h+=`<p style="font-size:11.5px;color:var(--muted);margin:0">${d.notes.map(esc).join("<br>")}${S.ret.view==="org"?"<br>Our org: every office on the Hub's office lists, 2nd rounds from AppStream. Interviewer rows exist only for offices that use our interviewing service.":""}</p>`;
+  return h;
+}
+document.addEventListener("change",e=>{ if(e.target.id==="retView"){ S.ret.view=e.target.value; try{localStorage.setItem("ars.retview",S.ret.view);}catch(x){} render(); } });
+document.addEventListener("click",e=>{ if(e.target.closest("[data-act=retReload]")){ S.ret.err=""; S.ret.data=null; render(); } });
+
 // ---------- render ----------
 function renderTabs(){
   $("#tabs").innerHTML=TABS.filter(t=>!t.admin||S.role==="admin").map(t=>`<button class="tab" role="tab" aria-selected="${t.id===S.tab}" data-tab="${t.id}" style="--tc:${t.c}">${t.label}</button>`).join("");
@@ -431,7 +486,7 @@ function renderWeeks(){
 }
 function render(){
   renderTabs();
-  $("#weekCtl").style.visibility=(S.tab==="entrada"||(S.tab==="ads"&&S.ads.view!=="week")||(S.tab==="stars"&&S.st.view!=="week")||S.tab==="users")?"hidden":"visible";
+  $("#weekCtl").style.visibility=(S.tab==="entrada"||S.tab==="retention"||(S.tab==="ads"&&S.ads.view!=="week")||(S.tab==="stars"&&S.st.view!=="week")||S.tab==="users")?"hidden":"visible";
   $("#goal").value=String(S.goal);
   $("#office").innerHTML=S.offices.length?S.offices.map(o=>`<option value="${o.id}" ${o.id===S.office?.id?"selected":""}>${esc(o.name)}</option>`).join(""):`<option>No offices</option>`;
   const adm=S.role==="admin"; $("#addOffice").hidden=!adm; $("#importBtn").hidden=!adm; $("#manageOffices").hidden=!adm;
@@ -440,6 +495,7 @@ function render(){
   $("#sub").textContent=S.office? `${S.office.name} \u00b7 ${S.rows.length.toLocaleString("en-US")} interviews`: (S.loaded?"No offices":"Loading\u2026");
   const m=$("#main");
   if(S.tab==="users"){ if(S.role!=="admin") S.tab="entrada"; else { m.innerHTML=renderUsers(); return; } }
+  if(S.tab==="retention"){ m.innerHTML=renderRetention(); return; }
   if(!S.office || (!S.rows.length && S.tab!=="entrada")) { m.innerHTML=emptyData(); return; }
   if(S.tab==="entrada"){ m.innerHTML=renderEntry(); m.querySelectorAll("tr[data-id],#addRow").forEach(applyNA); }
   else if(S.tab==="ads") m.innerHTML=renderAdsMain();

@@ -312,3 +312,17 @@ function changePassword(token, oldPw, newPw) {
     return true;
   });
 }
+
+/* ---------- Interviewers Retention (Raf 2026-11-20) ----------
+ * A Lucy writes the daily Interviewers Retention report (the 4 tables of the
+ * 6 PM email) into the 'Retention Report' tab as JSON, split over column A
+ * (automations/interviewers_retention/web_export.py). Nobody edits that tab by
+ * hand; this only reads it. */
+var RET_TAB = 'Retention Report';
+function getRetention(token) {
+  who_(token);
+  var s = ss_().getSheetByName(RET_TAB);
+  if (!s || s.getLastRow() < 2) return '';
+  return s.getRange(2, 1, s.getLastRow() - 1, 1).getValues()
+    .map(function (r) { return String(r[0] || ''); }).join('');
+}
