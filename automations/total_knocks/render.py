@@ -2670,9 +2670,14 @@ CONSUMER_BOARD_COLUMNS = ["Consumer Talk To", "Consumer Presentation",
 B2B_HIDDEN_COLUMNS = (COL_B2B_QUALIFYING_QS,)
 
 # Business column <- the consumer tally folded into it (Jamis 2026-11-18).
-# Total Talk to stays BUSINESS-ONLY on purpose: consumer doors are not in
-# Total Knocks, so folding consumer talk to's into it put "% Talk To's per
-# Knocks" over 100% (Noah 162.5% on the 11/14 preview).
+# Jamis 2026-11-25: "count consumer tallies towards overall dispos total".
+# A consumer contact is logged as a consumer Talk To, so that is the consumer
+# DOOR count, and it goes into Total Leads Knocked, Total Knocks AND Total
+# Talk to together -- all three or none. Folding it into Total Talk to alone
+# (11/18 preview) put "% Talk To's per Knocks" over 100% (Noah 162.5%),
+# because the doors behind it were missing from Total Knocks.
+CONSUMER_DOOR_TOTALS = (COL_TOTAL_LEADS_KNOCKED, COL_TOTAL_KNOCKS,
+                        COL_TOTAL_TALK_TO)
 CONSUMER_COMBINE = [(COL_B2B_TALKED_TO_OWNER, "Consumer Talk To"),
                     (COL_B2B_PRESENTED_OWNER, "Consumer Presentation"),
                     (COL_B2B_SARA_CREDIT, "Consumer Sara Plus (Credit Check)")]
@@ -2680,6 +2685,9 @@ CONSUMER_COMBINED_LABELS = {
     COL_B2B_TALKED_TO_OWNER: "Talked To (Bus + Cons)",
     COL_B2B_PRESENTED_OWNER: "Presented (Bus + Cons)",
     COL_B2B_SARA_CREDIT: "Sara Plus Credit Check (Bus + Cons)",
+    COL_TOTAL_LEADS_KNOCKED: "Total Leads Knocked (Bus + Cons)",
+    COL_TOTAL_KNOCKS: "Total Knocks (Bus + Cons)",
+    COL_TOTAL_TALK_TO: "Total Talk to (Bus + Cons)",
 }
 
 
@@ -2694,6 +2702,11 @@ def combine_consumer(rows: "list[dict]"):
             if col in r and cons in r:
                 r[col] = int(r.get(col) or 0) + int(r.get(cons) or 0)
                 touched.add(col)
+        doors = int(r.get("Consumer Talk To") or 0)
+        if "Consumer Talk To" in r and all(c in r for c in CONSUMER_DOOR_TOTALS):
+            for c in CONSUMER_DOOR_TOTALS:
+                r[c] = int(r.get(c) or 0) + doors
+                touched.add(c)
         out.append(r)
     names = {c: CONSUMER_COMBINED_LABELS[c] for c in touched}
     return out, names, tuple(sorted(touched))
