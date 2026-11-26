@@ -115,6 +115,7 @@ class WeekBlock(unittest.TestCase):
 
 
 class SoldUnderWeek(unittest.TestCase):
+    @mock.patch.dict("automations.icd_alerts.rep_names.SOLD_UNDER_FROM", {}, clear=True)
     def test_a_login_carrying_someone_elses_week_counts_for_the_real_seller(self):
         from automations.icd_alerts import rep_names as RN
         g = _grid()

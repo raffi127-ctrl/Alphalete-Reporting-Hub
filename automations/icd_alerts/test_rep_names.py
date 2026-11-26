@@ -131,6 +131,7 @@ class WhatGoesOut(unittest.TestCase):
 class SoldUnder(unittest.TestCase):
     """2026-11-19: Jacob rang his sales under Esmeralda's SaraPlus login."""
 
+    @mock.patch.dict("automations.icd_alerts.rep_names.SOLD_UNDER_FROM", {}, clear=True)
     def test_today_only_and_this_office_only(self):
         import datetime as dt
         from automations.icd_alerts import rep_names as RN
@@ -150,3 +151,21 @@ class SoldUnder(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class StandingSoldUnder(unittest.TestCase):
+    """Carlos 2026-11-25: Esmeralda's login is Jacob's from 11/16 on, no end."""
+
+    def test_after_the_dated_week(self):
+        self.assertEqual(RN.sold_under_for("carlos-b2batt", "2026-11-25",
+                                           "ESMERALDA GONZALEZ"), "Jacob Ortega")
+        self.assertEqual(RN.day_resolver(None, "carlos-b2batt", "2026-12-03")(
+            "Esmeralda Gonzalez"), "Jacob Ortega")
+
+    def test_not_before_it_started_or_other_offices(self):
+        self.assertEqual(RN.sold_under_for("carlos-b2batt", "2026-11-15",
+                                           "ESMERALDA GONZALEZ"), "")
+        self.assertEqual(RN.sold_under_for("raf", "2026-11-25",
+                                           "ESMERALDA GONZALEZ"), "")
+        self.assertEqual(RN.sold_under_for("carlos-b2batt", "2026-11-25",
+                                           "JACOB ORTEGA"), "")

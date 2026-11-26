@@ -541,8 +541,8 @@ SOLD_UNDER_PAYROLL = [
     # (from rep as the order log spells it, to rep as RAW spells it,
     #  first order date, last order date, why)
     ("Esmeralda Gonzalez", "Jacob Isaiah Ortega",
-     dt.date(2026, 11, 16), dt.date(2026, 11, 22),
-     "Jacob sold under Esmeralda's SaraPlus login, week of 11/16 (Carlos 11/19)"),
+     dt.date(2026, 11, 16), None,   # None = no end (Carlos 11/25: "jacob is using esmeraldas login")
+     "Jacob sells under Esmeralda's SaraPlus login since 11/16 (Carlos 11/19, standing 11/25)"),
 ]
 ORDER_LOG_TAB = "NDS Order Log"
 _TRANSFERS_NOTE: list = []          # this run's applied transfers, for the kickoff DM
@@ -695,6 +695,7 @@ def sync_sold_under(sh, *, write: bool, log=_log, today=None) -> list:
                 for r in rules_from_values(vals, log=lambda m: None)}
         stamp = (today or dt.date.today()).strftime("%m/%d/%Y")
         for frm, to, start, end, why in SOLD_UNDER_PAYROLL:
+            end = end or (today or dt.date.today())   # None = standing, up to today
             found = sold_under_customers(ol, frm, start, end)
             log(f"sold-under: {frm} -> {to}, orders {start:%m/%d}-{end:%m/%d}: "
                 f"{len(found)} customer(s) on {ORDER_LOG_TAB!r}")

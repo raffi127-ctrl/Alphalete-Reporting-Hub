@@ -120,13 +120,32 @@ SOLD_UNDER = {
     **{("carlos-b2batt", "2026-11-%02d" % d): {"ESMERALDA": "Jacob Ortega"}
        for d in range(16, 23)},
 }
+# STANDING swaps, from a start day with no end (same display-only rule).
+# Carlos 2026-11-25: "remember esmeralda is jacob so list as jacob" / "jacob
+# is using esmeraldas login" -- every sale under Esmeralda's login is Jacob's.
+#   {office key: [("YYYY-MM-DD" first day, "WORDS IN THE SARAPLUS NAME", "Real Seller")]}
+SOLD_UNDER_FROM = {
+    "carlos-b2batt": [("2026-11-16", "ESMERALDA", "Jacob Ortega")],
+}
+
+
+def _swaps(office: str, iso: str) -> dict:
+    """Every swap in force for this office on this day: the dated ones plus
+    the standing ones that have started."""
+    key = str(office or "").strip().lower()
+    out = {}
+    for start, pat, real in SOLD_UNDER_FROM.get(key, ()):
+        if iso >= start:
+            out[pat] = real
+    out.update(SOLD_UNDER.get((key, iso)) or {})
+    return out
 
 
 def sold_under_for(office: str, day, name: str) -> str:
     """The real seller when `name` (any spelling) rang under someone else's
     login on `day` for this office, else ''."""
     iso = day.isoformat() if hasattr(day, "isoformat") else str(day)
-    swaps = SOLD_UNDER.get((str(office or "").strip().lower(), iso)) or {}
+    swaps = _swaps(office, iso)
     words = set(str(name or "").upper().split())
     for pat, real in swaps.items():
         need = set(str(pat).upper().split())
@@ -140,7 +159,7 @@ def day_resolver(show: Optional[Callable[[str], str]], office: str,
     """`show` with today's SOLD_UNDER entries for this office laid over it;
     `show` itself (None included) when there are none."""
     iso = day.isoformat() if hasattr(day, "isoformat") else str(day)
-    swaps = SOLD_UNDER.get((str(office or "").strip().lower(), iso))
+    swaps = _swaps(office, iso)
     if not swaps:
         return show
     pats = [(set(str(k).upper().split()), v) for k, v in swaps.items()]

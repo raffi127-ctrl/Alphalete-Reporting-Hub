@@ -1029,6 +1029,7 @@ if __name__ == "__main__":
 class SoldUnderRow(unittest.TestCase):
     """Carlos 2026-11-19: Esmeralda's login is Jacob's the week of 11/16 on the board."""
 
+    @mock.patch.dict("automations.icd_alerts.rep_names.SOLD_UNDER_FROM", {}, clear=True)
     def test_swap_days_land_on_the_real_sellers_row(self):
         import datetime as dt
         from unittest import mock
