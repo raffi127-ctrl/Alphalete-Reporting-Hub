@@ -39,6 +39,14 @@ class T(unittest.TestCase):
         self.assertEqual(owners, ["Kash Rai", "Trang Canavan"])
         self.assertEqual(P.team_owners("wayne", self.g)[1], ["Bill Fischer"])
 
+    def test_nickname_email_falls_back_to_own_office(self):
+        rows = [r if r[1] != "Kash Rai" else r for r in ROWS]
+        rows = [(a, b, "raffi1@x.com" if "hidalgo" in c.lower() else c, d, e)
+                for a, b, c, d, e in rows]
+        g = P.owners_by_email(_ct(rows))
+        self.assertEqual(P.team_owners("rafael", g),
+                         ("raffi1@x.com", ["Kash Rai", "Trang Canavan"]))
+
     def test_unknown_captain_raises(self):
         with self.assertRaises(ValueError):
             P.captain_email("chan", self.g)

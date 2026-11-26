@@ -102,7 +102,8 @@ def all_owners(text: str) -> int:
 def captain_email(key: str, groups: Dict[str, List[str]]) -> str:
     """The Account Captain Email value for this captain. Pinned in
     CAPTAIN_EMAIL wins; else the ONE email whose local part matches the
-    captain's name (first+last, first, initial+last, last — first unique hit).
+    captain's name (first+last, first, initial+last, last — first unique hit),
+    else the one group the captain's own office is in.
     Ambiguous or missing -> raise, never a guess."""
     if key in CAPTAIN_EMAIL:
         return CAPTAIN_EMAIL[key].lower()
@@ -118,6 +119,13 @@ def captain_email(key: str, groups: Dict[str, List[str]]) -> str:
             return hits[0]
         if len(hits) > 1:
             raise ValueError(f"{key}: several captain emails match: {hits}")
+    # No name in the address (Raf's is a nickname, 11/26 sample): the group his
+    # OWN office sits in. One captain per owner, so this is unique or nothing.
+    own = CAPTAIN_OWNER[key].lower()
+    hits = [e for e, owners in groups.items()
+            if own in {o.lower() for o in owners}]
+    if len(hits) == 1:
+        return hits[0]
     raise ValueError(f"{key}: no Account Captain Email matches "
                      f"{CAPTAIN_OWNER[key]!r} (emails: {sorted(groups)})")
 
