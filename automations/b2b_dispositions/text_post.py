@@ -38,6 +38,28 @@ from automations.b2b_dispositions import config as cfg
 from automations.shared import messages_lock
 
 
+# QUIET DAYS (Carlos 2026-11-26, Thanksgiving): "Stop the rest of the texts
+# today on my text chains unless it's a sale post". On a listed day every text
+# to the listed chats is skipped (reported ok + muted, so callers don't retry
+# or raise a corrections ticket) unless the caller says it is a sale post --
+# only icd_alerts' live sales standings pass sale_post=True. Slack is untouched.
+MUTED_NON_SALE = {
+    "2026-11-26": ("new a players", "att b2b leaders"),
+}
+
+
+def _muted(name: str, resolved: str = "", sale_post: bool = False,
+           today: "Optional[str]" = None) -> bool:
+    if sale_post:
+        return False
+    import datetime as _dt
+    chats = MUTED_NON_SALE.get(today or _dt.date.today().isoformat())
+    if not chats:
+        return False
+    names = {str(n or "").strip().lower() for n in (name, resolved)}
+    return any(c in names for c in chats)
+
+
 class GroupTextError(RuntimeError):
     """Raised when a group can't be resolved, or Messages refuses the send."""
 
@@ -337,7 +359,8 @@ def _record_delivery(group: str, text: str) -> None:
 def send_to_group(name: str, text: str, image_paths: Sequence,
                   *, dry_run: bool = True,
                   allow_textonly: bool = False,
-                  dest: Optional[Dict] = None) -> Dict:
+                  dest: Optional[Dict] = None,
+                  sale_post: bool = False) -> Dict:
     """Send one posting — its Slack text, then its image(s) — to a named group.
 
     Text first so the images arrive under a labelled header, matching how Slack
@@ -367,6 +390,12 @@ def send_to_group(name: str, text: str, image_paths: Sequence,
 
     if dry_run:
         result["ok"] = True
+        return result
+
+    if _muted(name, info.get("name", ""), sale_post):
+        result["ok"] = True
+        result["muted"] = True
+        print("text_post: MUTED today (non-sale) -> %r" % name)
         return result
 
     if not images and not allow_textonly:
@@ -410,7 +439,8 @@ def send_to_group(name: str, text: str, image_paths: Sequence,
 
 
 def send_text_to_group(name: str, text: str, *, dry_run: bool = True,
-                       dest: Optional[Dict] = None) -> Dict:
+                       dest: Optional[Dict] = None,
+                       sale_post: bool = False) -> Dict:
     """Send a TEXT-ONLY message to a named group.
 
     send_to_group refuses image-less sends because for the disposition posts
@@ -431,6 +461,11 @@ def send_text_to_group(name: str, text: str, *, dry_run: bool = True,
     result["participants"] = info["participants"]
     if dry_run:
         result["ok"] = True
+        return result
+    if _muted(name, info.get("name", ""), sale_post):
+        result["ok"] = True
+        result["muted"] = True
+        print("text_post: MUTED today (non-sale) -> %r" % name)
         return result
 
     cid = info["id"].replace("\\", "\\\\").replace('"', '\\"')

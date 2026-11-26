@@ -2020,11 +2020,13 @@ class _TextSender:
     def _one(self, item) -> None:
         key, what, group, text, dest = item
         send = self._sender
+        extra = {}
         if send is None:
             from automations.b2b_dispositions import text_post as tp
             send = tp.send_text_to_group
+            extra = {"sale_post": True}     # live sales: never muted
         try:
-            send(group, text, dry_run=not self._send, dest=dest)
+            send(group, text, dry_run=not self._send, dest=dest, **extra)
             self.sent += 1
             self._log("%-10s %s -> text group %r%s"
                       % (key, what, group, "" if self._send else "  (dry run)"))
