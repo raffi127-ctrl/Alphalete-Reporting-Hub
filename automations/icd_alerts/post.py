@@ -47,6 +47,11 @@ RELAY_TAB = "ICD Relay"
 
 CHANNELS_TAB = "Office Channels"
 FAULTS_TAB = "ICD Faults"
+# DAYS THE APEX SETUP LINES STAY QUIET. Offices are closed, so a "not pressed
+# in 5 min" means nobody is there, not that something broke (Eve 2026-11-26,
+# Thanksgiving: "podemos pausar estos avisos hoy?"). The row is still marked
+# handled on the ICD Faults tab, so nothing piles up for the next day.
+APEX_SETUP_QUIET_DAYS = frozenset({dt.date(2026, 11, 26)})
 # The fault row, written by the laptop except for the last column, which
 # is ours and is what stops one problem being announced twice.
 F_OFFICE, F_DAY, F_STAGE, F_SUMMARY, F_DETAIL = 0, 1, 2, 3, 4
@@ -3650,6 +3655,14 @@ def notify_faults(day: Optional[dt.date] = None, *, send: bool = False,
         if f["stage"] == "apex-setup":
             office = O.get(f["office"])
             label = office.label if office else f["office"]
+            if day in APEX_SETUP_QUIET_DAYS:
+                log("QUIET  %-10s apex-setup -- holiday, not sent: %s"
+                    % (f["office"], f["summary"]))
+                try:
+                    tab.update_cell(f["rownum"], F_POSTED + 1, stamp)
+                except Exception as e:  # noqa: BLE001
+                    log("could not mark the apex setup row: %s" % type(e).__name__)
+                continue
             try:
                 _group_dm(list(O.APPROVERS), "%s -- %s" % (label, f["summary"]))
                 tab.update_cell(f["rownum"], F_POSTED + 1, stamp)
