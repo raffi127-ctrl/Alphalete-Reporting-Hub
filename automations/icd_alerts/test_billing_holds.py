@@ -45,11 +45,14 @@ class FakeBook:
 
 
 class FakeDash:
-    def __init__(self, tab):
-        self.tab = tab
+    def __init__(self, tab, live_ads=None):
+        self.tab, self.live_ads = tab, live_ads
     def worksheet(self, name):
         if name == BH.HOLDS_TAB:
             return self.tab
+        if name == BH.LIVE_ADS_TAB and self.live_ads is not None:
+            rows = [["Week Ending", "Date Posted", "Closed Date", "Indeed Account"]] + self.live_ads
+            return mock.Mock(get_all_values=lambda: [list(r) for r in rows])
         raise KeyError(name)
 
 
@@ -142,6 +145,40 @@ class HoldsTest(unittest.TestCase):
         part = BH._tolerant_json(harsh[:6000])["billing"]
         self.assertTrue(0 < len(part) < 40, len(part))
         self.assertTrue(all(v == hit * 3 for v in part.values()))
+
+    def test_closing_the_ads_clears_the_page_but_is_not_a_payment(self):
+        """11/25: Carlos closed every held account's ads. Indeed's alert sits on
+        the job, so the next check reads those pages clean with no payment.
+        That must end the hold at the close time, quietly -- no 'back live'."""
+        tab = FakeTab([["Kinetic Marketing Partners", "11/18/2026 19:05", "", "opened"],
+                       ["Peak Sales Strategies", "11/23/2026 14:03", "", "opened"],
+                       ["Iron Sales Group", "11/24/2026 14:06", "", "opened"]])
+        live = [["11/29/2026", "11/13/2026 6:39 PM", "11/25/2026 6:57 PM", "Kinetic Marketing Partners"],
+                ["11/29/2026", "10/27/2026 6:29 PM", "11/25/2026 7:01 PM", "Peak Sales Strategies"],
+                ["11/29/2026", "11/4/2026 12:56 PM", "11/25/2026 7:01 PM", "Peak Sales Strategies"],
+                ["11/29/2026", "11/4/2026 10:00 AM", "", "Iron Sales Group"],
+                ["11/22/2026", "11/13/2026 6:39 PM", "", "Kinetic Marketing Partners"]]
+        BH._save_state({"open": {"11580|Kinetic Marketing Partners": {"since": "2026-11-18T19:05"},
+                                 "11580|Peak Sales Strategies": {"since": "2026-11-23T14:03"},
+                                 "11580|Iron Sales Group": {"since": "2026-11-24T14:06"}}})
+        mail = {"Peak Sales Strategies": {"paid": "2026-11-26 04:10", "signed_in": True},
+                "Kinetic Marketing Partners": {"declined": "2026-11-25 14:05", "signed_in": True}}
+        faults = [_row("2026-11-26", "05:00", {"Kinetic Marketing Partners": "ok", "Peak Sales Strategies": "ok",
+                                               "Iron Sales Group": "ok"}, mail)]
+        dms = []
+        did = BH.run(dt.date(2026, 11, 26), send=True, book=FakeBook(faults), dash=FakeDash(tab, live),
+                     dm=lambda k, t: dms.append(t), log=lambda m: None)
+        ev = {a["account"]: a for a in did}
+        self.assertEqual(ev["Kinetic Marketing Partners"]["event"], "closed-no-ads")
+        self.assertEqual(ev["Kinetic Marketing Partners"]["end"], "2026-11-25T18:57", "ends when the ad was closed")
+        self.assertEqual(tab.rows[1][2], "11/25/2026 18:57")
+        self.assertIn("NOT confirmed paid", tab.rows[1][3])
+        self.assertEqual(ev["Peak Sales Strategies"]["event"], "paid-no-ads")
+        self.assertEqual(ev["Iron Sales Group"]["event"], "live", "an ad still open = back live, as before")
+        self.assertEqual(len(dms), 2)
+        self.assertTrue(any("payment went through" in t and "No ads are open" in t and "Peak" in t for t in dms))
+        self.assertTrue(any("back live" in t and "Iron Sales Group" in t for t in dms))
+        self.assertFalse(any("Kinetic" in t for t in dms), "no DM for ads that were closed, not paid")
 
     def test_the_poster_calls_it_inside_a_try(self):
         src = (Path(P.__file__)).read_text()

@@ -21,6 +21,12 @@ when a check row is newer than the last one handled):
     payment' mail after the start if the check carried one, else the check
     time (estimated). The row's Hold Until is filled, and the office's group
     DM gets one line: ads back live, since when, how long.
+    UNLESS no ad is open on the account (newest week block of 'carlos' live
+    ads'): Indeed's alert sits on a JOB, so closing the job clears the page
+    without any payment (Carlos closed every held account's ads 11/25). No
+    payment mail -> the hold ends at the ads' close time, noted "not a
+    payment", and nobody is told the ads are live. A payment mail -> the DM
+    says the payment went through and that no ads are open.
   * walled / in use / could not start: no information; nothing moves.
 
 State: ~/.config/recruiting-report/billing_holds_state.json
@@ -49,6 +55,41 @@ LIVE_ADS_NAME = {"New Ascendra": "Ascendra", "VividReach - Active": "VividReach"
 OFFICE_KEY = {"11580": "carlos"}          # office id on the tally -> relay office key (the DM)
 STATE_PATH = Path.home() / ".config" / "recruiting-report" / "billing_holds_state.json"
 MAX_MAIL_GAP_DAYS = 4                      # a decline older than this is not this hold's
+LIVE_ADS_TAB = "carlos' live ads"          # A Week Ending | B Date Posted | C Closed Date | D Indeed Account
+
+
+def ads_on_accounts(dash) -> Optional[Dict[str, Dict]]:
+    """{account (lower case): {"open": n, "closed": newest close datetime or None}}
+    off the NEWEST week block of the live-ads tab, or None when the tab can't
+    be read (the caller then behaves as before)."""
+    try:
+        vals = dash.worksheet(LIVE_ADS_TAB).get_all_values()[1:]
+    except Exception:  # noqa: BLE001
+        return None
+    rows = []
+    for r in vals:
+        r = list(r) + [""] * (4 - len(r))
+        try:
+            we = dt.datetime.strptime(r[0].strip(), "%m/%d/%Y").date()
+        except ValueError:
+            continue
+        if r[3].strip():
+            rows.append((we, r[2].strip(), r[3].strip().lower()))
+    if not rows:
+        return None
+    newest = max(we for we, _c, _a in rows)
+    out: Dict[str, Dict] = {}
+    for we, closed, acct in rows:
+        if we != newest:
+            continue
+        rec = out.setdefault(acct, {"open": 0, "closed": None})
+        if not closed:
+            rec["open"] += 1
+        else:
+            d = _parse(closed)
+            if d and (rec["closed"] is None or d > rec["closed"]):
+                rec["closed"] = d
+    return out
 
 
 def _load_state() -> Dict:
@@ -214,6 +255,8 @@ def run(day: Optional[dt.date] = None, *, send: bool = False, book=None, dash=No
     if not rows:
         return []
     ws = None
+    ads: Optional[Dict] = None
+    ads_read = False
     did: List[Dict] = []
     for r in rows:
         office, body = r["office"], r["body"]
@@ -266,28 +309,59 @@ def run(day: Optional[dt.date] = None, *, send: bool = False, book=None, dash=No
                 since = _parse(cur.get("since")) or when
                 end, src = when, "billing check %s (estimated)" % _hm12(when)
                 paid = _parse(mail.get("paid"))
-                if paid and paid > since and paid <= when + dt.timedelta(hours=1):
+                paid_ok = bool(paid and paid > since and paid <= when + dt.timedelta(hours=1))
+                if paid_ok:
                     end, src = paid, "Indeed 'We received your payment' mail %s" % _hm12(paid)
+                if not ads_read:
+                    ads_read = True
+                    try:
+                        if dash is None:
+                            from automations.recruiting_report.fill import open_by_key
+                            dash = open_by_key(DASHBOARD_ID)
+                        ads = ads_on_accounts(dash)
+                    except Exception as e:  # noqa: BLE001 -- unreadable = behave as before
+                        log("live-ads tab not read (%s); treating a clean page as back live" % type(e).__name__)
+                        ads = None
+                on = ads.get(name.lower()) if ads is not None else None
+                no_ads = ads is not None and (on is None or on["open"] == 0)
+                event, note, text = "live", "closed by the billing check: " + src, None
+                if no_ads and not paid_ok:
+                    closed = on["closed"] if on else None
+                    if closed and since <= closed <= when:
+                        end, src = closed, "ads closed %s, not a payment" % _hm12(closed)
+                    else:
+                        end, src = when, "no ad open at the %s check, not a payment (estimated)" % _hm12(when)
+                    event = "closed-no-ads"
+                    note = ("closed by the billing check: %s -- the page reads clean because no job is open; "
+                            "billing NOT confirmed paid" % src)
+                elif no_ads:
+                    event = "paid-no-ads"
+                    text = (":white_check_mark: *%s* — Indeed payment went through (%s). No ads are open on it right now."
+                            % (acct, _hm12(paid)))
                 hours = max(0.0, (end - since).total_seconds() / 3600)
-                act = {"office": office, "account": acct, "event": "live", "since": cur.get("since"),
+                act = {"office": office, "account": acct, "event": event, "since": cur.get("since"),
                        "end": end.isoformat(timespec="minutes"), "source": src, "hours": round(hours, 1)}
-                text = (":white_check_mark: *%s* — Indeed ads are back live (seen at the %s check). "
-                        "On hold since %s, about %s. The live-ads sheet's Days Down has it."
-                        % (acct, _hm12(when), _hm12(since),
-                           ("%.0f hours" % hours) if hours < 48 else ("%.1f days" % (hours / 24))))
+                if event == "live":
+                    text = (":white_check_mark: *%s* — Indeed ads are back live (seen at the %s check). "
+                            "On hold since %s, about %s. The live-ads sheet's Days Down has it."
+                            % (acct, _hm12(when), _hm12(since),
+                               ("%.0f hours" % hours) if hours < 48 else ("%.1f days" % (hours / 24))))
                 if send:
                     if dash is None:
                         from automations.recruiting_report.fill import open_by_key
                         dash = open_by_key(DASHBOARD_ID)
                     ws = ws or _holds_ws(dash)
-                    act["row"] = close_hold(ws, name, end, "closed by the billing check: " + src)
-                    try:
-                        (dm or _dm_office)(OFFICE_KEY.get(office, office), text)
-                        act["dm"] = True
-                    except Exception as e:  # noqa: BLE001 -- the telling, never the sheet
-                        log("could not DM the back-live note: %s" % type(e).__name__)
+                    act["row"] = close_hold(ws, name, end, note)
+                    if text:
+                        try:
+                            (dm or _dm_office)(OFFICE_KEY.get(office, office), text)
+                            act["dm"] = True
+                        except Exception as e:  # noqa: BLE001 -- the telling, never the sheet
+                            log("could not DM the back-live note: %s" % type(e).__name__)
                 opens.pop(key, None)
-                log("LIVE   %-28s back live at %s (%s); was down since %s" % (acct, _hm12(end), src, _hm12(since)))
+                log("%-6s %-28s hold ended %s (%s); was down since %s"
+                    % ({"live": "LIVE", "paid-no-ads": "PAID", "closed-no-ads": "NOADS"}[event], acct,
+                       _hm12(end), src, _hm12(since)))
                 did.append(act)
             # walled / in use / could not start: no information, nothing moves
         handled.add(r["key"])
