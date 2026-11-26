@@ -336,6 +336,7 @@
       "sheet_tab": "Sarah Park - NDS",
       "as_owner": "Sarah Park",
       "promote_when_visible": true,
+      "promote_office_id": "23359",
       "reason": "2026-11-20: Maud asked AppStream for access (Eve). Moved out of skip so the next AppStream pull promotes her by itself and backfills recruiting. If the name does not match, pin it with promote_office_id. Mirrored onto the ATT Program as 'Sarah Park (NDS)' (mirror_nds_tab)."
     }
   ]
