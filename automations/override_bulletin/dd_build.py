@@ -692,14 +692,19 @@ def _icd_total_row(rows, n_weeks):
     """TOTAL row closing the All-ICDs table — one sum per week column plus the
     2026 total (Raf 2026-11-12: "add the total number at the bottom ... have it
     there moving forward"). Sums exactly the rows printed above it; Tracked
-    Separately stays out, as it does everywhere else."""
+    Separately stays out, as it does everywhere else.
+
+    Labelled 'TOTAL (active ICDs)' (Eve 2026-11-26): the Sheet's 'Total - Raf'
+    also sums the Active=NO rows, which this table never shows, so the two
+    figures differ by exactly the inactive owners' money. The label says so
+    instead of folding hidden rows into the sum."""
     sums = [0.0] * n_weeks
     for r in rows:
         for j, v in enumerate(list(r["weeks"])[:n_weeks]):
             sums[j] += D.money(v)
     total = sum(D.money(r["total"]) for r in rows)
     wk = "".join(f"<td>{_fmt(s)}</td>" for s in sums)
-    return (f'<tr class="tot"><td></td><td class="icd">TOTAL</td>'
+    return (f'<tr class="tot"><td></td><td class="icd">TOTAL (active ICDs)</td>'
             f'{wk}<td class="t26">{_fmt(total)}</td></tr>')
 
 
