@@ -118,6 +118,31 @@ class HoldsTest(unittest.TestCase):
         self.assertEqual(tab.rows[2][:3], ["Ascendra", "11/20/2026 21:00", ""])
         self.assertIn("estimated", did[0]["source"])
 
+    def test_a_tally_cut_by_the_relay_still_reads(self):
+        hit = "PROBLEM: Action required for your AT&T Wireless Associate (Spanish Required) job"
+        billing = {"Acct %02d" % i: (hit if i % 2 else "ok") for i in range(17)}
+        mail = {"Acct %02d" % i: {"signed_in": True, "declined": "2026-11-24 14:0%d" % (i % 10),
+                                  "paid": "2026-11-16 19:00", "live": "2026-11-0%d 11:01" % (i % 9 + 1),
+                                  "note": "x" * 300} for i in range(17)}
+        row = _row("2026-11-25", "17:32", billing, mail)
+        full = row[P.F_DETAIL]
+        self.assertGreater(len(full), 6000)
+        row[P.F_DETAIL] = full[:6000]                      # relay._scrub keeps the first 6000
+        got = BH.octo_rows(FakeBook([row]), dt.date(2026, 11, 25))
+        self.assertEqual(len(got), 1)
+        body = got[0]["body"]
+        self.assertEqual(body["billing"], billing, "the statuses came before the cut and read whole")
+        self.assertEqual(body["at"], "17:32")
+        self.assertTrue(body.get("cut"))
+        self.assertIn("Acct 00", body["billing_mail"])
+        self.assertLess(len(body["billing_mail"]), 17, "the cut ones are left out, not guessed")
+        self.assertEqual(BH._tolerant_json(full), json.loads(full), "an uncut row reads as before")
+        # the cut inside the statuses themselves: the whole entries still read
+        harsh = json.dumps({"office": "11580", "at": "05:00", "billing": {"A%02d" % i: hit * 3 for i in range(40)}})
+        part = BH._tolerant_json(harsh[:6000])["billing"]
+        self.assertTrue(0 < len(part) < 40, len(part))
+        self.assertTrue(all(v == hit * 3 for v in part.values()))
+
     def test_the_poster_calls_it_inside_a_try(self):
         src = (Path(P.__file__)).read_text()
         i = src.index("billing_holds.run(day, send=args.send)")

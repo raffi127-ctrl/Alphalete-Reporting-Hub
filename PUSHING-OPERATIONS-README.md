@@ -165,6 +165,24 @@ owner (Carlos's Slack id is on his ICD Signup row) + helpers + Megan/Eve
 wait-for-repeat). The ruling: "Sponsored Job benefits are unavailable until
 you add payment information" COUNTS (Carlos 11/16) — do not add it to
 `BILLING_IGNORE`.
+AN EXTRA RUN, ON REQUEST (11/25, Carlos: "try now", with Octo refusing every
+account since Monday's update): the office computer takes no commands, so a
+run-now request travels WITH THE CODE — `oat_processing/octo_kick.json`
+{id, asked, lookups, billing}. A new `id`, pulled with a release bump, runs
+once on the next tick (`octo_lookup.kick_request` → `maybe_kick`; env
+`OAT_OCTO_KICK` lands in the tally's `ran.kick`), the id is kept in the state
+file so no later tick repeats it, and a request older than 6 h (a machine
+that was off that day) runs nothing. Release 2026.11.25.16.
+THE RESTART THAT DID NOTHING (first try-now run, 11/25 5:14pm, 36 seconds, every
+account still refused): the .15 restart quit Octo with `osascript`, and a
+background agent may not send Apple events on macOS, so nothing quit and the
+run went on as if it had. Release 2026.11.25.19: `quit_octo` asks through
+NSRunningApplication's terminate (resume_push's ctypes helper -- the Dock's
+Quit, the path an app installs a downloaded update on), waits for the local
+API to go silent, then SIGTERM, then SIGKILL; Octo's own `GET /api/update`
+({current, latest, update_required}) is read before and after, and an app
+that comes back still wanting the update is asked through `POST /api/update`
+(the Restart button's road). Every step lands in the tally (`ran.restart`).
 
 **Changed: 11580 moved from Lucy 2 to Carlos's office computer (10/20, release
 2026.10.20.3); Atef (23467) and Khalil (11901) followed on 10/29.**
@@ -329,6 +347,27 @@ gspread from the mini. A poller-code change still needs `update` +
 ## Changelog (auto-appended daily at 7 PM; newest first)
 
 ### 2026-11-25 (manual)
+- **Run-now request for the Octo job** (Carlos 4:15pm: "Try now"):
+  `octo_kick.json` ships with the code; a new id + release bump makes the
+  office computer run the lookups/billing once outside the 5am/1pm slots
+  (release 2026.11.25.16, Fix 2 above). First use: the 11/25 try-now run —
+  RESULT: pass one (5:14pm) changed nothing -- the .15 restart quit Octo with
+  osascript, a no-op for a background agent; pass two (5:32pm, release .19)
+  quit it through NSRunningApplication + SIGTERM, reopened it, found it still
+  on 3.1.3 wanting 3.2.7, asked through `POST /api/update` ("update to 3.2.7
+  triggerred successfully"), Octo went down and came back on 3.2.7, and all
+  17 accounts opened: 1 of 1 numbers found, billing 9 live / 8 on hold (Iron,
+  Peak, Titanium, W Edge, Haus, Magma, Kinetic, Ascendra), 7 group DMs. TWO
+  MORE FAULTS it showed: (a) the tally row was over the relay's 6000-character
+  cut, Lucy 1's json.loads failed and no hold opened -- Lucy 1 now reads a cut
+  row (`billing_holds._tolerant_json`) and the office side sends a tally that
+  fits (the alert's own clause, no `billing_problems` twin; release .20);
+  (b) Indeed re-sends 'Payment declined' every afternoon while an account is
+  unpaid, so the newest mail dates nothing -- `mail_times.declined_first`
+  (the first after the last payment) dates the hold from .20 on. Octo's
+  `GET /api/update` {current, latest, update_required} is the state behind
+  the refusal. The run-now request can wait on the agent: .16 was pushed
+  4:22pm and ran at 5:14pm, after a teammate's .17 landed (why, unknown).
 - **First week of the Octo run, read back** (Carlos: "have these automations
   been working?"): lookups found 1 (11/20), 3 (11/21), 0 (11/22), 2 (11/23),
   8 (11/24) numbers; billing holds opened/closed on their own — back-live DMs

@@ -34,6 +34,7 @@ from __future__ import annotations  # Lucy 1 / mini run Python 3.9
 import argparse
 import datetime as dt
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -82,6 +83,38 @@ def _hm12(d: dt.datetime) -> str:
 
 
 # --- the relay rows --------------------------------------------------------
+def _tolerant_json(detail: str) -> Dict:
+    """The row's JSON, or what is still whole in a cut one. The relay cuts a
+    Detail at 6000 characters (relay._scrub); on 2026-11-25 eight accounts on
+    hold made the tally longer than that, json.loads failed, and no hold
+    opened and nobody was told. Each top-level value is decoded from its own
+    key (the type that follows tells the key apart from a same-named one
+    inside `ran`); a dict cut in the middle keeps its whole entries."""
+    try:
+        d = json.loads(detail or "{}")
+        return d if isinstance(d, dict) else {}
+    except ValueError:
+        pass
+    dec = json.JSONDecoder()
+    out: Dict = {"cut": True}
+    typed = {"office": '"', "date": '"', "at": '"', "ran": "{", "accounts": "{", "billing": "{", "billing_mail": "{"}
+    for key, t in typed.items():
+        m = re.search(r'"%s":\s*(?=[%s])' % (key, re.escape(t)), detail)
+        if not m:
+            continue
+        try:
+            out[key], _ = dec.raw_decode(detail, m.end())
+        except ValueError:
+            part: Dict = {}
+            for k, v in re.findall(r'"([^"]+)":\s*("(?:[^"\\]|\\.)*"|\{[^{}]*\})', detail[m.end():]):
+                try:
+                    part[k] = json.loads(v)
+                except ValueError:
+                    pass
+            out[key] = part
+    return out
+
+
 def octo_rows(book, day: dt.date) -> List[Dict]:
     """Every probe-octo-lookup row of the day, oldest first: [{office, at,
     key, body}] where key = '<date> <at>' identifies the run."""
@@ -96,10 +129,7 @@ def octo_rows(book, day: dt.date) -> List[Dict]:
             continue
         if P._day_key(r[P.F_DAY]) != day.isoformat():
             continue
-        try:
-            body = json.loads(r[P.F_DETAIL] or "{}")
-        except ValueError:
-            continue
+        body = _tolerant_json(r[P.F_DETAIL])
         if not isinstance(body, dict) or not body.get("billing"):
             continue
         at = str(body.get("at") or "")
@@ -200,9 +230,14 @@ def run(day: Optional[dt.date] = None, *, send: bool = False, book=None, dash=No
                 if cur:
                     continue                                   # still on hold, nothing new
                 start, src = when, "billing check %s (estimated)" % _hm12(when)
-                dec = _parse(mail.get("declined"))
-                # The newest decline mail dates THIS hold only if it came after
-                # the account last read clean; an older one belongs to the
+                # Indeed re-sends 'Payment declined' every afternoon while an
+                # account stays unpaid (Titanium 11/22 and 11/24, Peak 11/23 and
+                # 11/25), so the FIRST one after the last payment dates the hold
+                # (declined_first, office side since 2026.11.25.20); the newest
+                # is the fallback for older tallies.
+                dec = _parse(mail.get("declined_first") or mail.get("declined"))
+                # A decline mail dates THIS hold only if it came after the
+                # account last read clean; an older one belongs to the
                 # previous episode (Ascendra 11/21: Indeed sent no new mail).
                 if (dec and 0 <= (when - dec).days <= MAX_MAIL_GAP_DAYS
                         and (last_ok is None or dec > last_ok)):

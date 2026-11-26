@@ -1007,8 +1007,13 @@ def _mail_when(text) -> Optional[str]:
 def mail_times(rows: List[Dict]) -> Dict:
     """The newest decline, the newest payment received, and the newest
     'job visible / live' mail among Gmail search rows: {declined, paid,
-    live} as 'YYYY-MM-DD HH:MM' (missing when none)."""
-    out: Dict = {}
+    live} as 'YYYY-MM-DD HH:MM' (missing when none) -- plus declined_first,
+    the OLDEST decline newer than the newest payment: Indeed re-sends
+    'Payment declined' every afternoon while an account stays unpaid
+    (2026-11-25: Titanium 11/22 + 11/24, Peak 11/23 + 11/25), so the newest
+    one dates nothing; the first after the last payment is when the hold
+    began."""
+    seen: Dict[str, List[str]] = {"declined": [], "paid": [], "live": []}
     for r in rows or []:
         subj = str(r.get("subject") or "").lower()
         when = _mail_when(r.get("when"))
@@ -1017,9 +1022,26 @@ def mail_times(rows: List[Dict]) -> Dict:
         key = ("declined" if "payment declined" in subj else
                "paid" if "received your payment" in subj else
                "live" if ("is live on indeed" in subj or "make your job visible" in subj) else "")
-        if key and (key not in out or when > out[key]):
-            out[key] = when
+        if key:
+            seen[key].append(when)
+    out: Dict = {k: max(v) for k, v in seen.items() if v}
+    after = [d for d in seen["declined"] if d > out.get("paid", "")]
+    if after:
+        out["declined_first"] = min(after)
     return out
+
+
+def _short_hit(hit: str) -> str:
+    """The alert's own clause for the tally -- 'Action required for your X
+    job' when the page says so, else the first 90 characters. The loud fault
+    keeps the whole quote; the tally has to fit the relay's 6000-character
+    Detail with 17 accounts on it (2026-11-25: eight alerts made it too long
+    for Lucy 1 to read, and no hold opened)."""
+    for part in str(hit).split("|"):
+        part = part.strip()
+        if part.lower().startswith("action required"):
+            return part[:120]
+    return str(hit).strip()[:90]
 
 
 def read_billing_mail(ctx, log=_log, days: int = 45) -> Dict:
@@ -1185,7 +1207,7 @@ def _report(office_id: str, summary: Dict, loud: str = "", log=_log) -> None:
         from automations.icd_alerts import relay as R
         body = {k: summary.get(k) for k in ("office", "date", "at", "ran", "snapshot", "listed",
                                             "skipped_recent", "found", "missing",
-                                            "accounts", "billing", "billing_problems",
+                                            "accounts", "billing",     # billing_problems: in the loud faults, not here (it is the same text twice)
                                             "billing_mail", "csv_rows", "elapsed_min")}
         R.report_fault(STAGE_QUIET, "octo lookup %s: %d found, %d not"
                        % (office_id, len(summary.get("found") or []),
@@ -1381,9 +1403,9 @@ def run(office_id, *, names: Optional[List[str]] = None, account: str = "",
                 b = check_billing(ws, title, shot_dir, log)
                 if b.get("mail"):
                     summary["billing_mail"][title] = {k: v for k, v in b["mail"].items()
-                                                      if k in ("declined", "paid", "live", "signed_in")}
+                                                      if k in ("declined", "declined_first", "paid", "live", "signed_in")}
                 if b["status"] == "problem":
-                    summary["billing"][title] = "PROBLEM: " + b["hits"][0]
+                    summary["billing"][title] = "PROBLEM: " + _short_hit(b["hits"][0])
                     summary["billing_problems"].append([title, b["hits"][0]])
                     log("[octo] %s: BILLING ALERT -- %s" % (title, b["hits"][0][:160]))
                 elif b["status"] == "ok":

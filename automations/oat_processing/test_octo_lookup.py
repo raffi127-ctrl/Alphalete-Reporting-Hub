@@ -408,7 +408,7 @@ class TheWholeMorning(unittest.TestCase):
         self.assertEqual(stop.call_count, 2, "every profile started here is stopped")
         self.assertEqual(s["found"], [["Edgar Hendricks", "peaksalesstrategiestx.com"]])
         self.assertEqual(s["billing"], {"Peak Sales Strategies": "ok",
-                                        "W Edge": "PROBLEM: Action required | add payment information"})
+                                        "W Edge": "PROBLEM: Action required"})
         self.assertEqual(s["billing_problems"], [["W Edge", "Action required | add payment information"]])
         self.assertEqual(s["accounts"], {"Peak Sales Strategies": "1 of 1 found", "W Edge": "billing only"})
         self.assertEqual(s["result"], "1 found, 0 not; billing: 2 account(s) read, 1 alert(s)")
@@ -476,7 +476,23 @@ class TheBillingMail(unittest.TestCase):
 
     def test_newest_of_each_kind(self):
         t = OL.mail_times(self.ROWS)
-        self.assertEqual(t, {"declined": "2026-11-18 19:05", "paid": "2026-11-17 19:35", "live": "2026-11-19 09:14"})
+        self.assertEqual(t, {"declined": "2026-11-18 19:05", "paid": "2026-11-17 19:35", "live": "2026-11-19 09:14",
+                             "declined_first": "2026-11-18 19:05"})
+
+    def test_the_first_decline_after_the_last_payment_dates_the_hold(self):
+        rows = [{"subject": "Payment declined: Update your billing information", "when": "Wed, Nov 25, 2026, 2:04 PM"},
+                {"subject": "Payment declined: Update your billing information", "when": "Mon, Nov 23, 2026, 2:03 PM"},
+                {"subject": "We received your payment of $100", "when": "Sat, Nov 21, 2026, 2:20 PM"},
+                {"subject": "Payment declined: Update your billing information", "when": "Wed, Nov 18, 2026, 7:05 PM"}]
+        got = OL.mail_times(rows)
+        self.assertEqual(got["declined"], "2026-11-25 14:04")
+        self.assertEqual(got["declined_first"], "2026-11-23 14:03", "the 11/18 one is the previous episode")
+        self.assertEqual(got["paid"], "2026-11-21 14:20")
+
+    def test_the_tally_keeps_the_alerts_own_clause(self):
+        hit = "Post a job | Action required for your AT&T Wireless Associate job | Your Sponsored Job benefits are unavailable until you add payment information or update your plan."
+        self.assertEqual(OL._short_hit(hit), "Action required for your AT&T Wireless Associate job")
+        self.assertEqual(OL._short_hit("Your payment was declined"), "Your payment was declined")
 
     def test_unreadable_dates_are_skipped(self):
         self.assertEqual(OL.mail_times([{"subject": "Payment declined", "when": "7:05 PM"}]), {})
