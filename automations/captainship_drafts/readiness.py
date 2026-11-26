@@ -106,7 +106,7 @@ def _sources(captains) -> List[Callable]:
     """Every open_ws the build will call for these captains, one per tab."""
     seen, out = set(), []
     for c in captains:
-        for src in list(c.boxes or []) + list(c.churn or []):
+        for src in list(c.boxes_shown()) + list(c.churn or []):
             # BoxSource.cache_key is per TAB within a captain ('cancel' for both
             # cancel boxes); a ChurnSource is one tab on its own.
             key = (c.key, getattr(src, "cache_key", None) or src.label)

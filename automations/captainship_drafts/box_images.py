@@ -28,7 +28,8 @@ def render_captain(captain: Captain, today: dt.date, out_dir: Path,
                    *, logfn=print) -> Dict[str, Path]:
     """Render every configured box for `captain`. Returns {slot: png_path},
     missing slots meaning 'couldn't be produced'."""
-    if not captain.boxes:
+    boxes = captain.boxes_shown(today)
+    if not boxes:
         return {}
     out_dir.mkdir(parents=True, exist_ok=True)
     sub_dir = out_dir / f"{captain.key}_boxes"
@@ -39,7 +40,7 @@ def render_captain(captain: Captain, today: dt.date, out_dir: Path,
     out: Dict[str, Path] = {}
     fg = contrast_fg(captain.title_bg)
 
-    for src in captain.boxes:
+    for src in boxes:
         try:
             key = src.cache_key
             if key not in ws_cache:
@@ -66,5 +67,5 @@ def render_captain(captain: Captain, today: dt.date, out_dir: Path,
             logfn(f"  ⚠ {captain.key}/{src.slot}: not rendered "
                   f"({type(e).__name__}: {e})")
 
-    logfn(f"  {captain.key}: rendered {len(out)}/{len(captain.boxes)} metric box(es)")
+    logfn(f"  {captain.key}: rendered {len(out)}/{len(boxes)} metric box(es)")
     return out

@@ -38,7 +38,7 @@ import datetime as dt
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Dict, List, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 from automations.captainship_churn import fill as _cap
 from automations.owners_metrics_churn import fill as _own
@@ -72,8 +72,8 @@ _INTRO = {
         "30-60 Day Ongoing Activation Rate 🚀",
         "Ongoing 6+ Days Sales Rate 🤝🏻",
         # Raf's Loom 11/26 ("Penetration Rate per Fiber Owner"): item 10 of
-        # the body — Tableau Market Expectations filtered by Account Captain
-        # Email, WITHOUT the captain's own office. penetration_shot.py.
+        # the body. Eve 11/26: a daily ONGOING box like the activation ones
+        # (captainship_penetration fills it), captain's own office left out.
         "Penetration Report 📍",
         # 2026-08-23 evening (Raf's Slack: "add the daily knocks to everyones
         # captainship emails … and have Chan's comparison in there"): the
@@ -105,8 +105,8 @@ _INTRO = {
         "30-60 Day Ongoing Activation Rate 🚀",
         "Ongoing 6+ Days Sales Rate 🤝🏻",
         # Raf's Loom 11/26 ("Penetration Rate per Fiber Owner"): item 10 of
-        # the body — Tableau Market Expectations filtered by Account Captain
-        # Email, WITHOUT the captain's own office. penetration_shot.py.
+        # the body. Eve 11/26: a daily ONGOING box like the activation ones
+        # (captainship_penetration fills it), captain's own office left out.
         "Penetration Report 📍",
         # LOS DOS BLOQUES DE KNOCKS VOLVIERON AL FLAVOR FIBER (Eve 2026-08-25),
         # ahora con COBERTURA PARCIAL explícita. Historia corta: entraron el
@@ -202,7 +202,7 @@ SECTION_KINDS = {
                "box:cancel-0-30", "box:cancel-30-60",
                "churn_ni", "churn_wireless",
                "box:abp", "box:activation-0-30", "box:activation-30-60",
-               "box:six-days", "penetration",
+               "box:six-days", "box:penetration",
                "daily_knocks", "knock_dispo"],
     # daily_knocks + knock_dispo joined fiber 2026-08-23 (Megan: Raf's
     # captains ARE the fiber flavor). NOT b2b/nds: their offices knock other
@@ -216,7 +216,7 @@ SECTION_KINDS = {
                "box:cancel-0-30", "box:cancel-30-60",
                "churn_ni", "churn_wireless",
                "box:abp", "box:activation-0-30", "box:activation-30-60",
-               "box:six-days", "penetration",
+               "box:six-days", "box:penetration",
                "daily_knocks", "knock_dispo"],
     # churn_WIRELESS since 2026-08-19: the four B2B tabs are filled from the
     # wireless slice now, so render_captain labels their buckets "Wireless
@@ -300,8 +300,8 @@ ATTACHMENT_ONLY_KINDS = {"knock_dispo", "daily_knocks"}
 # var below. Rolling out = deleting the flavor's entry here.
 PREVIEW_KINDS: Dict[str, set] = {
     # Penetration Report (Raf 11/26): samples to Raf first, then roll out.
-    "rafael": {"penetration"},
-    "fiber": {"penetration"},
+    "rafael": {"box:penetration"},
+    "fiber": {"box:penetration"},
     "b2b": {"daily_knocks", "knock_dispo"},     # 2026-09-28
 }
 PREVIEW_ENV = "CAPTAINSHIP_PREVIEW_KINDS"
@@ -378,6 +378,7 @@ def _fiber_boxes(slug: str) -> List[BoxSource]:
     from automations.captainship_cancel_rate import fill as _cx, captains as _cxc
     from automations.captainship_activation_rate import fill as _ax
     from automations.captainship_abp_6days import fill as _bx
+    from automations.captainship_penetration import fill as _px
 
     cancel_tab = _cxc.BY_SLUG[slug].tab
     return [
@@ -393,6 +394,9 @@ def _fiber_boxes(slug: str) -> List[BoxSource]:
                   "ABP % ONGOING REPORT", "abp", "abp"),
         BoxSource(partial(_bx.open_ws, slug), _bx.find_boxes, "6days",
                   "ONGOING 6+ DAYS SALES RATE", "six-days", "abp"),
+        # Raf 11/26 — held in PREVIEW_KINDS until Eve's roll out.
+        BoxSource(partial(_px.open_ws, slug), _px.find_boxes, "penetration",
+                  "ONGOING PENETRATION RATE", "penetration", "penetration"),
     ]
 
 
@@ -442,6 +446,7 @@ def _rafael_boxes() -> List[BoxSource]:
     from functools import partial
     from automations.captainship_abp_6days import fill as _bx
     from automations.captainship_raf_metrics import fill as _rx
+    from automations.captainship_penetration import fill as _px
 
     # cache_key is per TAB: unlike the fiber layout, only the two cancel boxes
     # and the two activation boxes share a worksheet here.
@@ -463,6 +468,9 @@ def _rafael_boxes() -> List[BoxSource]:
         BoxSource(partial(_raf_ws, RAFAEL_TABS["six_days"]), _rx.find_boxes,
                   "6days", "ONGOING 6+ DAYS SALES RATE", "six-days",
                   "raf-six-days"),
+        BoxSource(partial(_px.open_ws, "rafael"), _px.find_boxes,
+                  "penetration", "ONGOING PENETRATION RATE", "penetration",
+                  "raf-penetration"),
     ]
 
 
@@ -528,6 +536,15 @@ class Captain:
                 else PREVIEW_KINDS.get(self.flavor, set()))
         return [(h, k) for h, k in zip(items, SECTION_KINDS[self.flavor])
                 if k not in held and k not in self.skip_kinds]
+
+    def boxes_shown(self, today: Optional[dt.date] = None) -> List["BoxSource"]:
+        """The boxes whose 'box:<slot>' section actually runs (on `today`, or
+        on any day when None). A box held in PREVIEW_KINDS or skip_kinds is
+        neither rendered nor waited for — readiness must not hold the whole
+        draft for a tab nobody sees yet."""
+        kinds = {k for _, k in (self.sections_on(today) if today
+                                else self.sections)}
+        return [b for b in (self.boxes or []) if f"box:{b.slot}" in kinds]
 
     def sections_on(self, today: dt.date) -> List[Tuple[str, str]]:
         """The sections that actually RUN on `today` — `sections` minus any

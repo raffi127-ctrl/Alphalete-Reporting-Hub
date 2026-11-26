@@ -460,27 +460,6 @@ def _capture_one(captain: config.Captain, today: dt.date, render_dir: Path,
         cancel_tableau, teamstats_tableau = _tableau_shots(
             captain, today, render_dir, logfn=logfn, errors=errors)
 
-    # Penetration Report (Raf's Loom 11/26): Tableau Market Expectations for
-    # the captain's owners minus the captain. Never fatal — a failure is the
-    # section's pending note, never the unfiltered national board.
-    penetration = None
-    if "penetration" in kinds_today and not skip_tableau:
-        try:
-            from automations.captainship_drafts import (penetration_shot,
-                                                        sheet_render)
-            # Same trap as _tableau_shots: §1's renderer holds a live sync
-            # playwright in this thread; a second one dies with "Sync API
-            # inside the asyncio loop" (first sample, 11/26).
-            sheet_render.close_renderer()
-            penetration = penetration_shot.captain_penetration_shot(
-                captain.key, today, render_dir, logfn=logfn)
-        except Exception as e:  # noqa: BLE001
-            logfn(f"  ⚠ penetration shot failed for {captain.key}: "
-                  f"{type(e).__name__}: {e}")
-            errors["penetration"] = f"{type(e).__name__}: {e}"
-    elif "penetration" in kinds_today:
-        errors["penetration"] = "skipped by --skip-tableau"
-
     bundle = {
         "product_summary": ps,
         "units": units,
@@ -490,7 +469,6 @@ def _capture_one(captain: config.Captain, today: dt.date, render_dir: Path,
         # captain's team. None → email_build shows a per-section 'pending' note.
         "cancel_tableau": cancel_tableau,
         "teamstats_tableau": teamstats_tableau,
-        "penetration": penetration,
         "boxes": boxes,
         # (owner, png|None) per captainship owner — same (title, path) list
         # shape the churn/units keys ride, so the bundle plumbing (and
@@ -531,8 +509,7 @@ def _capture_one(captain: config.Captain, today: dt.date, render_dir: Path,
                   len([1 for _o, _p in knock_dispo if _p]),
                   len([1 for _o, _p in daily_knocks if _p]),
                   cancel_tableau is not None, teamstats_tableau is not None,
-                  bundle["fiber_activation"] is not None,
-                  penetration is not None])
+                  bundle["fiber_activation"] is not None])
     if not n_imgs:
         logfn(f"  ⚠ no images at all for {captain.key} — skipping")
         return None

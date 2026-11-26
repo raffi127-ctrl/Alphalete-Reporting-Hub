@@ -291,11 +291,6 @@ def _section_html(captain: Captain, heading: str, kind: str, n: int,
         body += (imgs.img(fa, slot="fiber-activations") if fa
                  else _pending("Fiber Activations PNG",
                                err.get("fiber_activation", "")))
-    elif kind == "penetration":
-        pn = bundle.get("penetration")
-        body += (imgs.img(pn, slot="penetration") if pn
-                 else _pending("Penetration Report (Tableau)",
-                               err.get("penetration", "")))
     elif kind == "cancel_tableau":
         ct = bundle.get("cancel_tableau")
         body += (imgs.img(ct, slot="cancel-rates") if ct
