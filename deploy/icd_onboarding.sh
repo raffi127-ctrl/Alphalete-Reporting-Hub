@@ -88,6 +88,13 @@ _OUTAGE_FILE="output/logs/.icd-onboarding-outage-$_DAY"
 _publish() {   # $1 = success|failed
     "$VENV_PY" -c "from automations.day_orchestrator import hub_publish; hub_publish.publish_done('icd_onboarding','ICD Onboarding Board','$1')" >> "$LOG_FILE" 2>&1
 }
+# A tick --if-due turned away did no work: it must not count as a clean pass.
+# 2026-11-26: failure-icd_onboarding stayed open on "ran clean, but nothing can
+# confirm it DELIVERED" -- an off-band no-op exited 0, published the recovery
+# success, and had written no manifest (only a real --write pass does).
+if [ "$ST" -eq 0 ] && grep -q "^not due yet" "$LOG_FILE" 2>/dev/null; then
+    exit 0
+fi
 case " $* " in
   *" --dry-run "*) : ;;
   *)
