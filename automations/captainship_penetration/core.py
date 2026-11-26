@@ -6,17 +6,16 @@ the view's default). One row per zip; per-OWNER columns repeat on every row:
 
   Account_Owner_Name__c                 owner (Tableau spelling)
   Account Captain Email                 the owner's captain (SmartCircle 11/26)
-  ICD Workable Fiber Lead Count (copy)  owner's workable leads
-  Fiber Sales (Fixed) (copy)            owner's fiber sales since assignment
-  Office Lead Penetration (Fixed)       owner's penetration, 1 decimal
+  Office Lead Penetration (Fixed)       owner's penetration, 1 decimal (USED AS IS)
+  Total Sales / Lead Count              per ZIP row (summed for the avg)
 
 The number is ONGOING (cumulative since the zips were assigned) and Tableau
 recalculates it every day — so each day's column is that day's snapshot of the
 running rate, exactly like the churn / activation boxes.
 
-Penetration = sales / workable leads, computed here to 2 decimals (Tableau
-prints 1). Captainship Avg = the WEIGHTED rate of the owners shown: sum of
-sales / sum of leads. The captain's own office is left out (Raf's Loom 11/26:
+Owner % = Tableau's own number. Captainship Avg = sum of the owners' zip
+sales / sum of their zip leads (2 decimals) — the weighted rate, the way
+Tableau's Program Overview totals it. The captain's own office is left out (Raf's Loom 11/26:
 captains get more leads - road trips, big cities - and look off next to the
 rest).
 """
@@ -29,9 +28,9 @@ from typing import Dict, List, Optional
 
 T_OWNER = "Account_Owner_Name__c"
 T_CAPTAIN = "Account Captain Email"
-T_LEADS = "ICD Workable Fiber Lead Count (copy)"
-T_SALES = "Fiber Sales (Fixed) (copy)"
 T_PCT = "Office Lead Penetration (Fixed)"
+T_ZIP_SALES = "Total Sales"           # per zip row
+T_ZIP_LEADS = "Lead Count"            # per zip row
 
 MIN_OWNERS = 20       # fewer in the crosstab = a stuck Tableau filter
 
@@ -63,7 +62,15 @@ def _int(s: str) -> Optional[int]:
 
 
 def parse_owners(text: str) -> Dict[str, dict]:
-    """{owner: {"email", "leads", "sales", "tableau_pct"}} — one per owner."""
+    """{owner: {"email", "pct", "zip_sales", "zip_leads"}} — one per owner.
+
+    pct = Tableau's own 'Office Lead Penetration (Fixed)' for the owner, as
+    Tableau prints it (1 decimal) — the number Raf and the captains see. Our
+    first fill (11/26) divided the '(copy)' sales/leads columns instead and
+    got 30 owners wrong (Kash Rai 11600%, Jarred Hill 0.16% vs Tableau 0.3%):
+    those columns are not the inputs of Tableau's %. zip_sales / zip_leads are
+    the owner's summed 'Total Sales' / 'Lead Count' over his zip rows — what
+    Tableau's own Program Overview adds up — and feed the Captainship Avg."""
     first = text.splitlines()[0] if text else ""
     delim = "\t" if first.count("\t") >= first.count(",") else ","
     rows = list(csv.reader(io.StringIO(text), delimiter=delim))
@@ -77,27 +84,23 @@ def parse_owners(text: str) -> Dict[str, dict]:
         except ValueError:
             raise KeyError(f"crosstab has no {name!r} column: {rows[0]}") from None
 
-    i_o, i_c, i_l, i_s, i_p = (col(T_OWNER), col(T_CAPTAIN), col(T_LEADS),
-                               col(T_SALES), col(T_PCT))
+    i_o, i_c, i_p, i_zs, i_zl = (col(T_OWNER), col(T_CAPTAIN), col(T_PCT),
+                                 col(T_ZIP_SALES), col(T_ZIP_LEADS))
     out: Dict[str, dict] = {}
     for r in rows[1:]:
-        if len(r) <= max(i_o, i_c, i_l, i_s, i_p):
+        if len(r) <= max(i_o, i_c, i_p, i_zs, i_zl):
             continue
         owner = r[i_o].strip()
-        if not owner or owner.lower() in ("total", "grand total") or owner in out:
+        if not owner or owner.lower() in ("total", "grand total"):
             continue
-        d = {"email": r[i_c].strip(), "leads": _int(r[i_l]),
-             "sales": _int(r[i_s]), "tableau_pct": r[i_p].strip(), "raw": None}
-        d["pct"] = pct(d["sales"], d["leads"])
-        tab = _pct_num(d["tableau_pct"])
-        mine = _pct_num(d["pct"])
-        # Tableau prints 1 decimal; ours must round to it. If not, the
-        # sales/leads cells are not what we think (11/26 first fill: 11600%
-        # for Kash Rai) — show Tableau's own number and say why.
-        if tab is not None and mine is not None and abs(mine - tab) > 0.051:
-            d["raw"] = {"leads": r[i_l], "sales": r[i_s], "pct": r[i_p]}
-            d["pct"] = f"{tab:.2f}%"
-        out[owner] = d
+        d = out.get(owner)
+        if d is None:
+            v = _pct_num(r[i_p])
+            d = out[owner] = {"email": r[i_c].strip(),
+                              "pct": "" if v is None else f"{v:.1f}%",
+                              "zip_sales": 0, "zip_leads": 0}
+        d["zip_sales"] += _int(r[i_zs]) or 0
+        d["zip_leads"] += _int(r[i_zl]) or 0
     return out
 
 
@@ -166,10 +169,6 @@ def captainship(key: str, owners: Dict[str, dict]) -> dict:
     own = CAPTAIN_OWNER[key].lower()
     shown = [o for o in grp[email] if o.lower() != own]
     vals = {o: owners[o]["pct"] for o in shown}
-    if any(owners[o]["raw"] for o in shown):
-        avg = ""        # can't weight by leads we don't trust — blank, not wrong
-    else:
-        s = sum(owners[o]["sales"] or 0 for o in shown if owners[o]["leads"])
-        l = sum(owners[o]["leads"] or 0 for o in shown)
-        avg = pct(s, l)
-    return {"email": email, "owners": vals, "avg": avg}
+    s_ = sum(owners[o]["zip_sales"] for o in shown)
+    l_ = sum(owners[o]["zip_leads"] for o in shown)
+    return {"email": email, "owners": vals, "avg": pct(s_, l_)}

@@ -74,10 +74,6 @@ def main(argv=None) -> int:
         print(f"  crosstab saved: {keep}")
     owners = core.parse_owners(text)
     print(f"  crosstab: {len(owners)} owners")
-    for o, d in owners.items():
-        if d.get("raw"):
-            print(f"  ⚠ {o}: computed {core.pct(d['sales'], d['leads'])} vs "
-                  f"Tableau {d['tableau_pct']} — raw {d['raw']}")
     if len(owners) < core.MIN_OWNERS:
         print(f"  !! only {len(owners)} owner(s) — a Tableau filter is stuck; "
               f"nothing written")
@@ -94,6 +90,8 @@ def main(argv=None) -> int:
                 print(f"  (dry-run) owners: {data['owners']}")
                 continue
             fill.write_day(ws, today, data, dry_run=args.dry_run)
+            if not args.dry_run:
+                fill.style(ws, k)
         except Exception as e:  # noqa: BLE001 — one captain must not stop the rest
             failed.append(k)
             print(f"  ✗ {k}: {type(e).__name__}: {e}")

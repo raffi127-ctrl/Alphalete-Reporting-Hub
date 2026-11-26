@@ -5,18 +5,19 @@ import unittest
 from automations.captainship_penetration import core, fill
 
 HEAD = "\t".join(["Office Lead Penetration (Fixed)", "Account_Owner_Name__c",
-                  "Account Captain Email", "ICD Workable Fiber Lead Count (copy)",
-                  "Fiber Sales (Fixed) (copy)", "Customer Zip"])
+                  "Account Captain Email", "Customer Zip", "Lead Count",
+                  "Total Sales"])
 ROWS = [
-    ("Grand Total", "Total", "Total", "Total", "Total", "Total"),
-    ("1.0%", "Rafael Hidalgo", "Raffi127@gmail.com", "300,000", "3,000", "1"),
-    ("1.0%", "Rafael Hidalgo", "Raffi127@gmail.com", "300,000", "3,000", "2"),
-    ("2.3%", "Kash Rai", "raffi127@gmail.com", "155,214", "3,536", "3"),
-    ("0.5%", "Trang Canavan", "Raffi127@gmail.com", "100,000", "500", "4"),
-    ("1.1%", "Wayne Rude", "wayne.rude@gmail.com", "10,000", "110", "5"),
-    ("1.2%", "Bill Fischer", "wayne.rude@gmail.com", "10,000", "120", "6"),
-    ("0.0%", "No Leads", "wayne.rude@gmail.com", "0", "0", "7"),
-    ("1.0%", "Loose Owner", "", "10", "1", "8"),
+    ("Grand Total", "Total", "Total", "Total", "999", "9"),
+    ("1.0%", "Rafael Hidalgo", "Raffi127@gmail.com", "1", "1,000", "10"),
+    ("1.0%", "Rafael Hidalgo", "Raffi127@gmail.com", "2", "1,000", "10"),
+    ("2.3%", "Kash Rai", "raffi127@gmail.com", "3", "1,000", "20"),
+    ("2.3%", "Kash Rai", "raffi127@gmail.com", "4", "1,000", "25"),
+    ("0.5%", "Trang Canavan", "Raffi127@gmail.com", "5", "2,000", "10"),
+    ("1.1%", "Wayne Rude", "wayne.rude@gmail.com", "6", "100", "1"),
+    ("1.2%", "Bill Fischer", "wayne.rude@gmail.com", "7", "100", "1"),
+    ("", "No Pct", "wayne.rude@gmail.com", "8", "0", "0"),
+    ("1.0%", "Loose Owner", "", "9", "10", "1"),
 ]
 TEXT = "\n".join([HEAD] + ["\t".join(r) for r in ROWS])
 
@@ -25,27 +26,29 @@ class Core(unittest.TestCase):
     def setUp(self):
         self.o = core.parse_owners(TEXT)
 
-    def test_one_entry_per_owner_total_skipped(self):
+    def test_one_entry_per_owner_zips_summed(self):
         self.assertEqual(len(self.o), 7)
         self.assertNotIn("Total", self.o)
-        self.assertEqual(self.o["Kash Rai"]["leads"], 155214)
+        self.assertEqual(self.o["Kash Rai"]["zip_sales"], 45)
+        self.assertEqual(self.o["Kash Rai"]["zip_leads"], 2000)
+
+    def test_owner_pct_is_tableaus_own_number(self):
+        d = core.captainship("rafael", self.o)
+        self.assertEqual(d["owners"], {"Kash Rai": "2.3%", "Trang Canavan": "0.5%"})
 
     def test_nickname_email_found_by_own_office_case_folded(self):
         d = core.captainship("rafael", self.o)
         self.assertEqual(d["email"], "Raffi127@gmail.com")
-        self.assertEqual(sorted(d["owners"]), ["Kash Rai", "Trang Canavan"])
         self.assertNotIn("Rafael Hidalgo", d["owners"])
 
-    def test_pct_two_decimals_and_weighted_avg(self):
+    def test_avg_is_weighted_zip_total_without_captain(self):
         d = core.captainship("rafael", self.o)
-        self.assertEqual(d["owners"]["Kash Rai"], "2.28%")
-        self.assertEqual(d["owners"]["Trang Canavan"], "0.50%")
-        self.assertEqual(d["avg"], f"{4036 / 255214 * 100:.2f}%")
+        self.assertEqual(d["avg"], "1.38%")          # (45+10) / (2000+2000)
 
-    def test_no_leads_is_blank_not_zero(self):
+    def test_missing_pct_is_blank(self):
         d = core.captainship("wayne", self.o)
-        self.assertEqual(d["owners"]["No Leads"], "")
-        self.assertEqual(d["avg"], "1.20%")   # Wayne himself left out
+        self.assertEqual(d["owners"]["No Pct"], "")
+        self.assertEqual(d["avg"], "1.00%")          # Wayne himself left out
 
     def test_unknown_captain_raises(self):
         with self.assertRaises(ValueError):
@@ -98,12 +101,20 @@ if __name__ == "__main__":
     unittest.main()
 
 
-class Mismatch(unittest.TestCase):
-    def test_bad_cells_fall_back_to_tableau_pct_and_blank_avg(self):
-        rows = [r for r in ROWS]
-        rows[3] = ("1.1%", "Kash Rai", "raffi127@gmail.com", "12", "1,392", "3")
-        text = "\n".join([HEAD] + ["\t".join(r) for r in rows])
-        o = core.parse_owners(text)
-        self.assertEqual(o["Kash Rai"]["pct"], "1.10%")
-        self.assertIsNotNone(o["Kash Rai"]["raw"])
-        self.assertEqual(core.captainship("rafael", o)["avg"], "")
+class Style(unittest.TestCase):
+    def test_style_uses_captain_color_and_borders(self):
+        b = fill.find_boxes_in(Sheet.COL_A)["penetration"]
+        reqs = fill.style_requests(7, b, 8, "#E69138")
+        kinds = [next(iter(r)) for r in reqs]
+        self.assertIn("mergeCells", kinds)
+        self.assertIn("updateBorders", kinds)
+        title = next(r for r in reqs if "repeatCell" in r)["repeatCell"]
+        bg = title["cell"]["userEnteredFormat"]["backgroundColor"]
+        self.assertAlmostEqual(bg["red"], 0xE6 / 255)
+        border = next(r for r in reqs if "updateBorders" in r)["updateBorders"]
+        self.assertEqual(border["range"]["endRowIndex"], 6)   # last owner row
+
+    def test_every_captain_has_a_color(self):
+        from automations.captainship_penetration import core
+        for k in core.CAPTAIN_OWNER:
+            self.assertTrue(fill.captain_color(k).startswith("#"))

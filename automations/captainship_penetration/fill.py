@@ -30,6 +30,7 @@ from typing import Dict, List
 from automations.new_internet_churn import fill as _shared
 
 BOX = "penetration"
+MIN_COLS = 9          # A-I: owner + 8 days (Eve 11/26)
 HEADER = "PENETRATION RATE (ONGOING)"
 AVG = "Captainship Avg"
 OWNER_HDR = "Owner"
@@ -105,7 +106,8 @@ def ensure_tab(slug: str, title: str, *, dry_run=False, logfn=print):
     if dry_run:
         logfn(f"  (dry-run) would CREATE tab {tab!r}")
         return None, True
-    ws = sh.add_worksheet(title=tab, rows=60, cols=40)
+    # A-I only (Eve 11/26: owner + 8 days, grows one column a day after that)
+    ws = sh.add_worksheet(title=tab, rows=60, cols=MIN_COLS)
     ws.update(range_name="A1:B4", values=[
         [title, ""], [HEADER, ""], [AVG, ""], [OWNER_HDR, "%"]],
         value_input_option="USER_ENTERED")
@@ -152,6 +154,133 @@ def ensure_tab(slug: str, title: str, *, dry_run=False, logfn=print):
     sh.batch_update({"requests": reqs})
     logfn(f"  created tab {tab!r}")
     return ws, True
+
+
+def _rgb(hex_: str, mix_white: float = 0.0) -> dict:
+    """'#E69138' -> Sheets color, optionally blended toward white."""
+    h = hex_.lstrip("#")
+    r, g, b = (int(h[i:i + 2], 16) / 255 for i in (0, 2, 4))
+    return {k: v + (1 - v) * mix_white
+            for k, v in (("red", r), ("green", g), ("blue", b))}
+
+
+def _dark(c: dict) -> bool:
+    return 0.299 * c["red"] + 0.587 * c["green"] + 0.114 * c["blue"] < 0.6
+
+
+def captain_color(slug: str) -> str:
+    """The captainship's brand color — the same title bar the email uses."""
+    from automations.captainship_drafts.config import BY_KEY
+    return BY_KEY[slug].title_bg
+
+
+def style_requests(sheet_id: int, box: dict, n_cols: int, color_hex: str) -> list:
+    """Pure: the formatting for the whole box (Eve 11/26: "more life, borders,
+    less cramped, keep each captainship's color"). Re-applied every run, so new
+    days and new owners pick it up. Values and the color RULES are untouched;
+    only backgrounds of the title/header/avg rows, fonts, borders and sizes."""
+    title_row = box["header_row"] - 1          # row above the box header
+    last_row = max([box["rep_header_row"], *box["rep_rows"].values()])
+    brand = _rgb(color_hex)
+    light = _rgb(color_hex, 0.72)
+    white = {"red": 1, "green": 1, "blue": 1}
+    black = {"red": 0.13, "green": 0.13, "blue": 0.13}
+    grey = {"red": 0.93, "green": 0.93, "blue": 0.93}
+    dark_grey = {"red": 0.26, "green": 0.26, "blue": 0.26}
+    thin = {"style": "SOLID", "color": {"red": 0.6, "green": 0.6, "blue": 0.6}}
+    thick = {"style": "SOLID_MEDIUM", "color": brand}
+
+    def rng(r0, r1, c0=0, c1=n_cols):          # 1-indexed rows, inclusive
+        return {"sheetId": sheet_id, "startRowIndex": r0 - 1, "endRowIndex": r1,
+                "startColumnIndex": c0, "endColumnIndex": c1}
+
+    def fmt(r, cell, fields):
+        return {"repeatCell": {"range": r, "cell": {"userEnteredFormat": cell},
+                               "fields": f"userEnteredFormat({fields})"}}
+
+    reqs = []
+    if title_row >= 1:
+        reqs += [
+            {"unmergeCells": {"range": rng(title_row, title_row)}},
+            {"mergeCells": {"range": rng(title_row, title_row),
+                            "mergeType": "MERGE_ALL"}},
+            fmt(rng(title_row, title_row),
+                {"backgroundColor": brand, "horizontalAlignment": "CENTER",
+                 "verticalAlignment": "MIDDLE",
+                 "textFormat": {"bold": True, "fontSize": 14,
+                                "foregroundColor": white if _dark(brand) else black}},
+                "backgroundColor,horizontalAlignment,verticalAlignment,textFormat"),
+            {"updateDimensionProperties": {
+                "range": {"sheetId": sheet_id, "dimension": "ROWS",
+                          "startIndex": title_row - 1, "endIndex": title_row},
+                "properties": {"pixelSize": 40}, "fields": "pixelSize"}},
+        ]
+    reqs += [
+        # whole box: font, alignment, row height
+        fmt(rng(box["header_row"], last_row),
+            {"verticalAlignment": "MIDDLE",
+             "textFormat": {"fontSize": 11, "foregroundColor": black}},
+            "verticalAlignment,textFormat"),
+        fmt(rng(box["header_row"], last_row, 1),
+            {"horizontalAlignment": "CENTER"}, "horizontalAlignment"),
+        fmt(rng(box["header_row"] + 1, last_row, 0, 1),
+            {"padding": {"left": 8}}, "padding"),
+        {"updateDimensionProperties": {
+            "range": {"sheetId": sheet_id, "dimension": "ROWS",
+                      "startIndex": box["header_row"] - 1, "endIndex": last_row},
+            "properties": {"pixelSize": 28}, "fields": "pixelSize"}},
+        # date header: light captain color, bold
+        fmt(rng(box["header_row"], box["header_row"]),
+            {"backgroundColor": light,
+             "textFormat": {"bold": True, "fontSize": 11, "foregroundColor": black}},
+            "backgroundColor,textFormat"),
+        # number formats: owners as Tableau prints them (1 decimal), the
+        # captainship avg with 2 (it's our weighted total, not Tableau's cell)
+        fmt(rng(box["rep_header_row"] + 1, last_row, 1),
+            {"numberFormat": {"type": "PERCENT", "pattern": "0.0%"}}, "numberFormat"),
+        fmt(rng(box["office_avg_row"], box["office_avg_row"], 1),
+            {"numberFormat": {"type": "PERCENT", "pattern": "0.00%"}}, "numberFormat"),
+        # Captainship Avg: bold on grey (the % cells keep their rule colors)
+        fmt(rng(box["office_avg_row"], box["office_avg_row"], 0, 1),
+            {"backgroundColor": grey,
+             "textFormat": {"bold": True, "fontSize": 11, "foregroundColor": black}},
+            "backgroundColor,textFormat"),
+        fmt(rng(box["office_avg_row"], box["office_avg_row"], 1),
+            {"textFormat": {"bold": True, "fontSize": 11, "foregroundColor": black}},
+            "textFormat"),
+        # Owner / % header: dark grey, white
+        fmt(rng(box["rep_header_row"], box["rep_header_row"]),
+            {"backgroundColor": dark_grey,
+             "textFormat": {"bold": True, "fontSize": 11, "foregroundColor": white}},
+            "backgroundColor,textFormat"),
+        # borders: thin grid inside, captain-colored frame outside
+        {"updateBorders": {"range": rng(box["header_row"], last_row),
+                           "top": thick, "bottom": thick, "left": thick,
+                           "right": thick, "innerHorizontal": thin,
+                           "innerVertical": thin}},
+        {"updateBorders": {"range": rng(box["rep_header_row"], box["rep_header_row"]),
+                           "bottom": thick}},
+        {"updateDimensionProperties": {
+            "range": {"sheetId": sheet_id, "dimension": "COLUMNS",
+                      "startIndex": 0, "endIndex": 1},
+            "properties": {"pixelSize": 230}, "fields": "pixelSize"}},
+        {"updateDimensionProperties": {
+            "range": {"sheetId": sheet_id, "dimension": "COLUMNS",
+                      "startIndex": 1, "endIndex": n_cols},
+            "properties": {"pixelSize": 105}, "fields": "pixelSize"}},
+    ]
+    return reqs
+
+
+def style(ws, slug: str, *, logfn=print) -> None:
+    """Apply style_requests over the days actually filled (min 7 columns)."""
+    box = find_boxes(ws)[BOX]
+    grid = _shared._retry(ws.get_all_values)
+    hdr = grid[box["header_row"] - 1] if len(grid) >= box["header_row"] else []
+    days = sum(1 for v in hdr[1:] if (v or "").strip())
+    n_cols = max(MIN_COLS, 1 + days)
+    ws.spreadsheet.batch_update({"requests": style_requests(
+        ws.id, box, n_cols, captain_color(slug))})
 
 
 def plan(grid: List[List[str]], box: dict, today: dt.date,
@@ -207,8 +336,8 @@ def write_day(ws, today: dt.date, data: dict, *, dry_run=False,
         time.sleep(1)
         box = find_boxes(ws)[BOX]
     if p["insert_col"]:
-        if ws.col_count - max((len(r) for r in grid), default=0) < 2:
-            ws.add_cols(12)
+        if ws.col_count - max((len(r) for r in grid), default=0) < 1:
+            ws.add_cols(1)
         top = box["header_row"] - 1
         rng = {"sheetId": ws.id, "startRowIndex": top,
                "endRowIndex": ws.row_count}
