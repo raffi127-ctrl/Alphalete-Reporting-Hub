@@ -96,3 +96,14 @@ class Drafts(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Mismatch(unittest.TestCase):
+    def test_bad_cells_fall_back_to_tableau_pct_and_blank_avg(self):
+        rows = [r for r in ROWS]
+        rows[3] = ("1.1%", "Kash Rai", "raffi127@gmail.com", "12", "1,392", "3")
+        text = "\n".join([HEAD] + ["\t".join(r) for r in rows])
+        o = core.parse_owners(text)
+        self.assertEqual(o["Kash Rai"]["pct"], "1.10%")
+        self.assertIsNotNone(o["Kash Rai"]["raw"])
+        self.assertEqual(core.captainship("rafael", o)["avg"], "")

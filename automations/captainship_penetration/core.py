@@ -86,9 +86,27 @@ def parse_owners(text: str) -> Dict[str, dict]:
         owner = r[i_o].strip()
         if not owner or owner.lower() in ("total", "grand total") or owner in out:
             continue
-        out[owner] = {"email": r[i_c].strip(), "leads": _int(r[i_l]),
-                      "sales": _int(r[i_s]), "tableau_pct": r[i_p].strip()}
+        d = {"email": r[i_c].strip(), "leads": _int(r[i_l]),
+             "sales": _int(r[i_s]), "tableau_pct": r[i_p].strip(), "raw": None}
+        d["pct"] = pct(d["sales"], d["leads"])
+        tab = _pct_num(d["tableau_pct"])
+        mine = _pct_num(d["pct"])
+        # Tableau prints 1 decimal; ours must round to it. If not, the
+        # sales/leads cells are not what we think (11/26 first fill: 11600%
+        # for Kash Rai) — show Tableau's own number and say why.
+        if tab is not None and mine is not None and abs(mine - tab) > 0.051:
+            d["raw"] = {"leads": r[i_l], "sales": r[i_s], "pct": r[i_p]}
+            d["pct"] = f"{tab:.2f}%"
+        out[owner] = d
     return out
+
+
+def _pct_num(s: str) -> Optional[float]:
+    s = (s or "").replace(",", "").strip().rstrip("%").strip()
+    try:
+        return float(s)
+    except ValueError:
+        return None
 
 
 def groups(owners: Dict[str, dict]) -> Dict[str, List[str]]:
@@ -147,7 +165,11 @@ def captainship(key: str, owners: Dict[str, dict]) -> dict:
     email = captain_email(key, grp)
     own = CAPTAIN_OWNER[key].lower()
     shown = [o for o in grp[email] if o.lower() != own]
-    vals = {o: pct(owners[o]["sales"], owners[o]["leads"]) for o in shown}
-    s = sum(owners[o]["sales"] or 0 for o in shown if owners[o]["leads"])
-    l = sum(owners[o]["leads"] or 0 for o in shown)
-    return {"email": email, "owners": vals, "avg": pct(s, l)}
+    vals = {o: owners[o]["pct"] for o in shown}
+    if any(owners[o]["raw"] for o in shown):
+        avg = ""        # can't weight by leads we don't trust — blank, not wrong
+    else:
+        s = sum(owners[o]["sales"] or 0 for o in shown if owners[o]["leads"])
+        l = sum(owners[o]["leads"] or 0 for o in shown)
+        avg = pct(s, l)
+    return {"email": email, "owners": vals, "avg": avg}

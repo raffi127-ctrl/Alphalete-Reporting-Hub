@@ -67,8 +67,17 @@ def main(argv=None) -> int:
 
     text = (core.decode(Path(args.csv).read_bytes()) if args.csv
             else _download())
+    if not args.csv:
+        keep = Path("output") / "captainship_penetration" / f"crosstab_{today}.csv"
+        keep.parent.mkdir(parents=True, exist_ok=True)
+        keep.write_text(text, encoding="utf-8")
+        print(f"  crosstab saved: {keep}")
     owners = core.parse_owners(text)
     print(f"  crosstab: {len(owners)} owners")
+    for o, d in owners.items():
+        if d.get("raw"):
+            print(f"  ⚠ {o}: computed {core.pct(d['sales'], d['leads'])} vs "
+                  f"Tableau {d['tableau_pct']} — raw {d['raw']}")
     if len(owners) < core.MIN_OWNERS:
         print(f"  !! only {len(owners)} owner(s) — a Tableau filter is stuck; "
               f"nothing written")
