@@ -161,6 +161,11 @@ day in the 5am hour from the agent's 2-minute tick; profile map in
 off switch `OAT_OCTO_LOOKUP=0`; by hand on any computer with Octo:
 `python -m automations.oat_processing.octo_lookup --office 11580 [--dry|--wanted]`.
 
+Need it to run right now, not at 5am or 1pm? Ask Claude: it ships a small
+"run now" note with the code (`octo_kick.json`) and the office computer runs
+the whole thing once within a few minutes (added 11/25 after Octo sat on an
+update for two days).
+
 ## Common sights, decoded
 
 | You see | It means |
