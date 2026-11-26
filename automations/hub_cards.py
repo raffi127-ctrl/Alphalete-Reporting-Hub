@@ -4223,6 +4223,67 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "captainship-penetration",
+        "name": "Captainship Penetration (per-captain)",
+        "creator": "Eve",
+        "emoji": "📍",
+        "color": "#F59E0B",
+        "category": "📊 Metrics",
+        "description": "Daily ONGOING fiber lead penetration per owner on each fiber captainship's Penetration tab (captain's own office left out) — Wayne / Starr / Chan / Tony / Sahil / Pat / Jess + Rafael. Feeds the 'Penetration Report' box of the captainship emails.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "Adds one dated column per day to each captainship's "
+            "Penetration tab — the Captainship Avg plus a row per ICD "
+            "owner. The CAPTAIN'S OWN OFFICE IS LEFT OUT (Raf: captains "
+            "get more leads from road trips and big cities, so their row "
+            "reads off next to the rest).\n\n"
+            "TABS FILLED\n"
+            "• '<Captain>'s Captainship Penetration' in the Fiber "
+            "Activations workbook (one per fiber captain)\n"
+            "• Rafael: 'Captainship Penetration' in his own activations "
+            "workbook, beside 'Captainship Activations'\n"
+            "Created by the run the first time; never deleted.\n\n"
+            "WHERE THE NUMBERS COME FROM\n"
+            "Tableau → ATT Tracker 2.1 - D2D → Fiber Lead Performance "
+            "(Office Level) → crosstab 'Office New Fiber Lead Penetration "
+            "By Zip'.\n"
+            "• Who is in each captainship → column 'Account Captain Email'\n"
+            "• Owner % → 'Fiber Sales (Fixed) (copy)' ÷ 'ICD Workable Fiber "
+            "Lead Count (copy)', 2 decimals\n"
+            "• Captainship Avg → total sales ÷ total workable leads of the "
+            "owners shown (weighted, not an average of the %s)\n"
+            "The number is cumulative since the zips were assigned; Tableau "
+            "recalculates it every day.\n\n"
+            "COLORS (Raf's penetration legend, not the churn cuts)\n"
+            "Red under 1% · Yellow 1%–1.49% · Green 1.5%+\n\n"
+            "WHEN IT RUNS\n"
+            "Daily on Lucy 3, before the captainship email build."
+        ),
+        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
+                      "13-9f_aPDlPa6L6_Wash4ws7959mn822J__vB5OYmcB8/edit"),
+        "assignees": ["Lucy 3"],
+        "schedule": {
+            "frequency": "daily",
+            "time": "6:00 AM",
+            "estimated_minutes": 5,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ Captainship Penetration done — today's column added on every captainship's Penetration tab.",
+            "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
+        },
+        "actions": [
+            {
+                "label": "Run Captainship Penetration",
+                "icon": "▶",
+                "primary": True,
+                "help": "One Tableau by-zip crosstab, split by Account Captain Email, then today's column on every captainship tab (a re-run the same day overwrites today's column).",
+                "module": "automations.captainship_penetration.run",
+                "args_fn": lambda: [],
+            },
+        ],
+    },
+    {
         "id": "captainship-raf-metrics",
         "name": "Captainship Metrics - Rafael",
         "creator": "Eve",

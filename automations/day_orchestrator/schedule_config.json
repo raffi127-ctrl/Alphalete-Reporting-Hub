@@ -6890,6 +6890,39 @@
     "report_id": "captainship-activation-rate"
    }
   },
+  "captainship_penetration": {
+   "order": 1.05,
+   "_order_note": "Lucy 3, between captainship_knocks (1) and captainship_drafts (1.1): the drafts' 'Penetration Report' box reads these tabs, so today's column has to be in before the 06:45 build.",
+   "machine": "Lucy 3",
+   "on_scheduler": true,
+   "_note": "ADDED 2026-11-26 (Raf's Loom 'Penetration Rate per Fiber Owner' + Eve). One Tableau by-zip crosstab (Fiber Lead Performance, Office Level) -> each fiber captain's owners via the new 'Account Captain Email' column (SmartCircle 11/26), captain's own office left out -> today's ONGOING penetration (sales / workable leads) as a new column on '<Captain>'s Captainship Penetration' in the Fiber Activations workbook (Raf: 'Captainship Penetration' in his own activations workbook). Tabs are created by the run the first time. The email box stays held in captainship_drafts PREVIEW_KINDS until Eve rolls it out; this fill runs daily anyway so the box has its 7 days of history by then.",
+   "display_name": "Captainship Penetration (per-captain)",
+   "source_type": "tableau",
+   "data_sources": [],
+   "command": [
+    "automations.captainship_penetration.run"
+   ],
+   "base_args": [],
+   "timeout_minutes": 30,
+   "cadence": {
+    "not_before": "05:30",
+    "weekdays": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ]
+   },
+   "priority": "P2",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": {
+    "type": "not_configured"
+   }
+  },
   "captainship_abp_6days": {
    "order": 22,
    "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days",
