@@ -190,6 +190,27 @@ JOBS: Dict[str, dict] = {
     # drifted away three weeks ago is still onboarding, and the drug-test list
     # built from it orders tests for people who have gone. Silence is the
     # failure mode, so a heartbeat is the only thing that can see it.
+    # THE WATCHER THAT EXISTS BECAUSE NOTHING WAS WATCHING (2026-11-25). A
+    # background check or drug test that failed at an office machine used to
+    # sit as "at office computer" until somebody opened the Office Admin page
+    # -- and nobody sits on that page. This resolves them and DMs the office.
+    # Its own silence is the failure mode twice over: if IT stops, nothing is
+    # watching again and the admin is back to reloading a row.
+    "office_send_watch": {
+        "name": "Send watch — BGC/drug verdicts (:10/:25/:35/:55, 7am-9pm)",
+        "machine": "Lucy 3",
+        "first_by": "08:10",       # the 07:10 pass + 60 min grace
+        "max_gap_min": 90,         # four an hour; 90 min of silence is a stop
+        "active_until": "21:55",
+        "weekdays": None,
+        "watch_from": "2026-11-25",
+        "means": ("a send that failed at an office machine tells nobody. The "
+                  "admin believes the tests went out, nobody was invited, and "
+                  "the first anybody hears of it is a start date with no "
+                  "result."),
+        "fix": ("lucy rerun install_office_send_watch_agent "
+                "--machine \"Lucy 3\""),
+    },
     "icd_onboarding_not_completed": {
         "name": "OBCL week-3 'not completed' mark (Mondays 07:40)",
         "machine": "Lucy 3",

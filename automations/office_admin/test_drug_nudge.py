@@ -148,8 +148,8 @@ class APressIsEvidenceAboutTheCohortItNamed(unittest.TestCase):
 
     def test_a_handpicked_send_in_the_same_week_does_not_count(self):
         rows = [_row("send_drug", "raf",
-                     [{"first_name": "Jade", "last_name": "Starkes"},
-                      {"first_name": "Mason", "last_name": "Odonnell"}],
+                     [{"first_name": "Rae", "last_name": "Linwood"},
+                      {"first_name": "Cal", "last_name": "Bramley"}],
                      at="2026-11-25 12:34:00")]
         self.assertFalse(DN.already_sent("raf", self.WEEK, rows))
 
