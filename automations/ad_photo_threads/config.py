@@ -198,6 +198,15 @@ NO_AD_ANSWERS = {
     "2026-11-09|mary garcia": "Entry Level Sales Assistant (Immediate Hire) ? Doral FL",
     "2026-11-10|enza morrone": "Entry Level Sales Assistant (Immediate Hire) ? Doral FL",
     "2026-11-19|ashley sanchez": "AT&T Sales Associate ? Miami FL",
+    # Jacob Dover, Eve 11/26: "*1st Round Thread 11/23*" (Montana Taylor)
+    # types names by ear, so no lookup matched. Call List tab (applicant
+    # tracker), owner Jacob Dover, same ad for all four: Danyia Mayhue,
+    # Kennedi Brownlee and Kim Waggoner (all 11/22 9:35 AM), Winnie Marchel
+    # (11/23 8:28 AM). Grace Kurowski / Sandra Crawford: no match -> Camila.
+    "2026-11-23|danyia maybe": "AT&T Retail Sales Associate, Bartlett, TN",
+    "2026-11-23|kennedi brownie": "AT&T Retail Sales Associate, Bartlett, TN",
+    "2026-11-23|kimberly wagner": "AT&T Retail Sales Associate, Bartlett, TN",
+    "2026-11-23|winnie matches": "AT&T Retail Sales Associate, Bartlett, TN",
 }
 # Eve 11/5: a person said this row is someone already on an ad thread under
 # another name: it only comes off the no-ad list, never posted twice.
