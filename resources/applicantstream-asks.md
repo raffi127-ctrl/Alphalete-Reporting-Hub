@@ -48,6 +48,36 @@ Aptel requests live separately (`resources/aptel/`).
    (`extension/office-admin/`) already reads each calendar row's show
    status, so it could draw this column on the page itself.
 
+5. **2nd Interviews calendar: new columns, pop-up reasons, cleanup** (2026-11-27)
+   Megan's ask. Picking an answer pops up the next dropdown in the same
+   cell, the way "Offer Position?" appears under Show Up today.
+   - **Column order:** Time, First Name, Last Name, Phone, Email,
+     Vetted By, Job Board, Rating, 1st Booked By, Who Conducted the First
+     Round, Invite to 2nd Interview?, Answered Invite to 2nd?, Show Up,
+     Who Conducted the 2nd Round, Follow Up Status, Follow Up Time,
+     icons, Notes, Action, Remove. Every column title centered.
+   - **Removed:** Follow Up By, First By Phone, Cell Phone.
+   - **Renamed:** Booked By -> **1st Booked By**; Done By -> **Who
+     Conducted the 2nd Round**.
+   - **Who Conducted the First Round** (new): interviewer dropdown, same
+     list as the 2nd round one, filled in from the 1st round's Done By.
+   - **Invite to 2nd Interview?** (new): Yes / No. No pops up **Why?**
+     (Disqualified / Declined), then **Due to?**.
+   - **Answered Invite to 2nd?** (new): Yes / No (LM). Yes pops up
+     Booked for 2nd / Declined 2nd. Blank when Invite = No.
+   - **Show Up:** keeps Yes / No; Yes pops up "Offer Position?" below.
+   - **Follow Up Status options:** Called, BOB - Booked, Left Message,
+     Cancelled, Invite to next, Disqualify, Applicant Declined.
+     Disqualify and Applicant Declined pop up **Due to?**.
+   - **Action:** adds "Disqualify | Decline" links; each pops up
+     **Due to?**.
+   - **Reason lists:** Disqualify = Camila's ARS reasons (Communication
+     Skills, Commute, Pay, Schedule, Hopped Off). Decline = the
+     account's Remove Applicant reasons (needs adding to AppStream).
+   Mock-up: `output/appstream-2nd-round-columns/` -- `mockup.html`
+   (clickable), `how-it-pops-up.gif` (the pop-ups, animated),
+   `mockup.png` (proposed page), `today.png` (the page now).
+
 ## For Blue Ink (not ApplicantStream)
 
 **The I-9's date-of-birth field keeps the current year.** Measured
