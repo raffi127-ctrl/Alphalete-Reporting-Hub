@@ -196,8 +196,49 @@ def _find_post(wk: str, channel: Optional[str] = None) -> Optional[dict]:
     return posts[0] if posts else None
 
 
+def handtab_note(verbose: bool = True) -> str:
+    """Heads-up for the review post: does this bulletin match EVE's hand tab?
+
+    Eve 2026-11-27: Raf's weekly special for 10.11 / 10.18 was adjusted, she
+    re-typed it on her tab, and the bot never knew — the backtrack had already
+    stopped re-reading those weeks, so the 2026 total quietly sat $390 high.
+    `compare` already measured exactly that, but only when someone ran it by
+    hand. Now every review post says it, so the gap is seen BEFORE the ✅.
+
+    Shown, never blocking (same as gaps). Any failure -> "" : a check that
+    can't run must not stop the post."""
+    try:
+        from automations.override_bulletin import compare as C
+        res = C.compare(verbose=False)
+    except Exception as e:  # noqa: BLE001
+        if verbose:
+            print(f"  (hand-tab compare skipped: {type(e).__name__})", flush=True)
+        return ""
+    yd = [d for d in (res.get("year_diffs") or [])
+          if "2026" in d["col"]]
+    tot = next((d for d in yd if d["label"].strip().lower() == "total"), None)
+    cells = [d for d in res.get("diffs") or []
+             if d["label"].strip().lower() != "total"]
+    if not tot and not cells:
+        return ""
+    lines = []
+    if tot:
+        lines.append(f"2026 total: your tab ${tot['eve']:,.2f} vs this bulletin "
+                     f"${tot['bot']:,.2f} ({tot['delta']:+,.2f})")
+    for d in sorted(cells, key=lambda x: -abs(x["delta"]))[:6]:
+        lines.append(f"{d['week']} {d['label']}: yours ${d['eve'] or 0:,.2f} vs "
+                     f"bulletin ${d['bot'] or 0:,.2f}")
+    if tot and not cells:
+        lines.append("the last 5 weeks match — the difference is in an OLDER "
+                     "week (run `lucy rerun override_compare --weeks 52`)")
+    bullets = "\n".join(f"• {l}" for l in lines)
+    return (f"\n\n:warning: *Doesn't match your hand tab* — check before "
+            f"approving:\n{bullets}")
+
+
 def post_review(link: str, wk: str, gaps=None, channel: Optional[str] = None,
-                repost: bool = False, verbose: bool = True) -> str:
+                repost: bool = False, verbose: bool = True,
+                extra: str = "") -> str:
     """Post this week's link with Eve's mention. Returns the message ts.
 
     RUN THIS ON THE MINI — the Slack user token there is Lucy's, and that is the
@@ -224,7 +265,7 @@ def post_review(link: str, wk: str, gaps=None, channel: Optional[str] = None,
             f"{link}\n\n"
             f"{RG._mentions()} — please review and react with "
             f":white_check_mark: to send it. Nothing goes out until then."
-            f"{heads}")
+            f"{heads}{extra}")
 
     cli = RG._client()
     olds = _all_posts(wk, channel)
@@ -601,7 +642,8 @@ def main(argv=None) -> int:
                   f"column.", flush=True)
             return 0
         post_review(upload_pdf(build_pdf(html_path, wk)), wk, gaps=gaps,
-                    channel=args.channel, repost=args.repost)
+                    channel=args.channel, repost=args.repost,
+                    extra=handtab_note())
         return 0
     if args.remind:
         return 0 if remind(week_label(tab=args.tab), args.after_hours,
