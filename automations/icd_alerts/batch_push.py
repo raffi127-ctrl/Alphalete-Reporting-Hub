@@ -423,6 +423,10 @@ def run(page, office: str, profile_dir, live_allowed: bool, net=None,
             out["skipped"] = "Process in Batches not reached"
             out["steps"] = list(LAST_STEPS)[-8:]
             return out
+        out["steps"] = list(LAST_STEPS)[-8:]
+        for st_ in LAST_STEPS:
+            if st_.startswith("page:"):
+                _log("[batch] %s" % st_[:400])
         out.update(table_counts(bpage))
         out["office"] = office_on_page(bpage, office)
         _log("[batch] %s: %s rows, %s ready for extraction; office shown: %s %s"
