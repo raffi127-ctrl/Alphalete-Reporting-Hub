@@ -143,6 +143,64 @@ def _has_explore(page) -> bool:
         return False
 
 
+BATCH_PAGE = "616"     # Megan 2026-11-27, from Lucy's Chrome: index.cfm?rqst=<session>&p=616
+
+
+def _session_token(page) -> str:
+    import urllib.parse as _up
+    try:
+        q = _up.parse_qs(_up.urlparse(page.url or "").query)
+        return (q.get("rqst") or [""])[0]
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def open_batches_direct(page, signin=None):
+    """PROCESS IN BATCHES IS p=616 OF THE CLASSIC CONSOLE, inside the session
+    the walk is already in (Megan 2026-11-27 pasted the page's address from
+    Lucy's Chrome: index.cfm?rqst=<session>&p=616). The walk's own page URL
+    carries that session token, so go straight there -- no "Explore Appstream
+    AI" button (not on the walk's pages: 11/27 test run), no bare console
+    load (lands on Login). Returns the page, or None."""
+    LAST_STEPS.clear()
+    _step(page, "start")
+    tok = _session_token(page)
+    if not tok and signin is not None:
+        ok = False
+        try:
+            ok = bool(signin(page))
+        except Exception as e:  # noqa: BLE001
+            _log("[batch] sign-in raised %s" % type(e).__name__)
+        LAST_STEPS.append("signed in again" if ok else "sign-in failed")
+        tok = _session_token(page) if ok else ""
+    if not tok:
+        _step(page, "no session token in the page address")
+        return None
+    url = "https://applicantstream.com/index.cfm?rqst=%s&p=%s" % (tok, BATCH_PAGE)
+    try:
+        page.goto(url, wait_until="domcontentloaded", timeout=45000)
+    except Exception as e:  # noqa: BLE001
+        _log("[batch] could not open p=%s: %s" % (BATCH_PAGE, type(e).__name__))
+    for _ in range(20):
+        try:
+            if page.locator(TABLE).count() > 0:
+                _step(page, "batch table")
+                return page
+        except Exception:  # noqa: BLE001
+            pass
+        page.wait_for_timeout(1000)
+    _step(page, "p=%s opened, no batch table" % BATCH_PAGE)
+    # Keep the page if the Resume Helper robot is on it: the table id is the
+    # v2 one and the classic page may name it differently.
+    try:
+        if _robot_center(page) is not None:
+            LAST_STEPS.append("robot present")
+            return page
+    except Exception:  # noqa: BLE001
+        pass
+    return None
+
+
 def open_batches(page, signin=None):
     """Console -> 'Explore Appstream AI' (v2) -> Applicants > Process Emails >
     Process in Batches. Returns the page the table is on, or None."""
@@ -352,7 +410,8 @@ def run(page, office: str, profile_dir, live_allowed: bool, net=None,
     pages_before = list(ctx.pages)
     bpage = None
     try:
-        bpage = open_batches(page, signin=signin)
+        bpage = (open_batches_direct(page, signin=signin)
+                 or open_batches(page, signin=signin))
         if bpage is None:
             out["skipped"] = "Process in Batches not reached"
             out["steps"] = list(LAST_STEPS)[-6:]
