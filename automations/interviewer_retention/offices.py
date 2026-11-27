@@ -56,9 +56,82 @@ def owner_of(office: str) -> str:
     raise LookupError(f"office {office} is not on the org roster")
 
 
-def main() -> int:
+NOT_OWNER_TABS = ("ad groups", "template", "copy of")      # tabs in the ARS files that aren't an office
+ROSTER_FILE = __import__("pathlib").Path(__file__).with_name("ars_offices.json")
+
+
+def _known_ids() -> Dict[str, Tuple[str, str]]:
+    """{normalised name: (office id, where it came from)} from every office-id
+    list the Hub already keeps. First one wins, in the order below."""
+    import json
+    from pathlib import Path
+    from automations.interviewer_retention.from_calendar import _key
+    rr = Path(__file__).resolve().parents[1] / "recruiting_report"
+    out: Dict[str, Tuple[str, str]] = {}
+
+    def add(name, oid, src):
+        k = _key(name or "")
+        if k and oid and k not in out:
+            out[k] = (str(oid), src)
+
+    for name, oid in org_offices():
+        add(name, oid, "org roster")
+    for r in json.loads((rr / "office-mapping.json").read_text())["confirmed"]:
+        add(r.get("as_owner"), r.get("office_id"), "focus office mapping")
+        add(r.get("sheet_tab"), r.get("office_id"), "focus office mapping")
+    for name, oid in json.loads((rr / "icd_office_mappings.json").read_text()).items():
+        add(name, oid, "icd office mappings")
+    from automations.daily_eod_appstream.run import EXTRA_OFFICES
+    for name, oid in EXTRA_OFFICES.items():
+        add(name, oid, "daily eod appstream")
+    from automations.raf_daily_update.offices import OFFICES as DU
+    for o in DU.values():
+        add(o.owner, o.office_id, "daily update offices")
+    import re
+    for o in json.loads((rr / "all-offices.json").read_text())["offices"]:
+        m = re.match(r"(\d{4,6})\n([^\n]+)\n", o.get("raw", ""))
+        if m:
+            add(m.group(2), m.group(1), "appstream office list (saved)")
+    return out
+
+
+def ars_offices(logfn=print) -> List[Dict]:
+    """Card step 4.7.5: every owner tab on Camila's six ARS files, with its
+    AppStream office id where a list proves it. Megan 11/27: only ICDs on those
+    sheets get this; nobody else is added."""
     from automations.first_to_second_below_mark import ars_reports as ar
-    from automations.focus_office_att import aliases as al
+    import re
+    from automations.interviewer_retention.from_calendar import _key
+    ids = _known_ids()
+    rows = []
+    for (wb, tab) in sorted(set(ar.build_index(logfn=lambda *a: None).values())):
+        name = tab.strip()
+        if any(x in name.lower() for x in NOT_OWNER_TABS):
+            continue
+        k = _key(name)
+        hit = ids.get(k)
+        if not hit and not re.search(r"\d|funnel|test", k):   # 'Drew Tepper New' -> 'Drew Tepper'
+            words = k.split()               # ('Raf Hidalgo 2nd funnel' is its own office: no loose match)
+            cands = [v for n, v in ids.items()
+                     if n.split()[:1] == words[:1] and (set(n.split()) <= set(words) or set(words) <= set(n.split()))]
+            hit = cands[0] if len({c[0] for c in cands}) == 1 else None
+        rows.append({"workbook": wb, "tab": tab, "office_id": hit[0] if hit else "",
+                     "source": hit[1] if hit else ""})
+    return rows
+
+
+def main() -> int:
+    import json
+    from automations.first_to_second_below_mark import ars_reports as ar
+    if "--ars" in sys.argv:
+        rows = ars_offices()
+        ROSTER_FILE.write_text(json.dumps(rows, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
+        have = [r for r in rows if r["office_id"]]
+        print(f"{len(rows)} owner tabs on the six ARS files: {len(have)} with an AppStream office id "
+              f"-> {ROSTER_FILE.name}")
+        for r in rows:
+            print(f"  {r['office_id'] or '  ?   ':6} {r['tab'].strip()[:28]:28} {r['workbook'][:22]:22} {r['source']}")
+        return 0
     index = ar._index(logfn=lambda *a: None)
     rows = [(o, oid, ars_tab(o, index)) for o, oid in org_offices()]
     have = [r for r in rows if r[2]]

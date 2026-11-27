@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key><string>com.alphalete.interviewer-retention-test</string>
+    <!-- PATHS ARE MEGAN'S LAPTOP and are rewritten at install time by
+         `lucy rerun install_interviewer_retention_test_agent`. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/megan/1st Claude Folder/deploy/interviewer_retention_test.sh</string>
+        <string>--office</string>
+        <string>11280</string>
+        <string>--due</string>
+        <string>--dm</string>
+    </array>
+    <key>WorkingDirectory</key><string>/Users/megan/1st Claude Folder</string>
+    <key>EnvironmentVariables</key><dict><key>PYTHONPATH</key><string>/Users/megan/1st Claude Folder</string></dict>
+    <!-- Every 30 min; the 7:00 PM Central Mon-Sat gate is in parallel.py (--due), not here. -->
+    <key>StartInterval</key><integer>1800</integer>
+    <key>StandardOutPath</key><string>/tmp/com.alphalete.interviewer-retention-test.out</string>
+    <key>StandardErrorPath</key><string>/tmp/com.alphalete.interviewer-retention-test.err</string>
+    <key>RunAtLoad</key><false/>
+</dict>
+</plist>

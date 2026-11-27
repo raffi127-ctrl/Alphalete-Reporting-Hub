@@ -1024,6 +1024,52 @@
    "timeout_minutes": 15,
    "machine": "Lucy 2"
   },
+  "interviewer_retention_test": {
+   "on_scheduler": false,
+   "hand_run_only": true,
+   "_note": "Interviewer Retention TEST WEEK (card step 4.2; Megan 11/27 'run it for the next week and make sure it matches', 'Lucy first'). Fills the TEST COPY of Raf's ARS tab from AppStream (never the real tab), compares the week so far with what the interviewers typed, DMs Megan only. The real clock is deploy/interviewer_retention_test.sh (LaunchAgent com.alphalete.interviewer-retention-test on Lucy 3, every 30 min, runs once after 7:00 PM CT Mon-Sat). This entry is the hand-run handle (prints, no DM). READ-ONLY on AppStream.",
+   "display_name": "Interviewer Retention — test week (Raf, test copy)",
+   "source_type": "appstream",
+   "data_sources": [],
+   "command": [
+    "automations.interviewer_retention.parallel"
+   ],
+   "base_args": [
+    "--office",
+    "11280"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 30,
+   "machine": "Lucy 3"
+  },
+  "install_interviewer_retention_test_agent": {
+   "on_scheduler": false,
+   "_note": "One-shot installer for com.alphalete.interviewer-retention-test (Lucy 3) — see interviewer_retention_test. Run `lucy rerun install_interviewer_retention_test_agent` after `lucy update`; `--remove` stops it when the test week is over.",
+   "display_name": "Install Interviewer Retention test-week agent (every 30 min, runs after 7 PM CT)",
+   "source_type": "none",
+   "data_sources": [],
+   "command": [
+    "automations.day_orchestrator.install_agent"
+   ],
+   "base_args": [
+    "interviewer-retention-test"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 15,
+   "machine": "Lucy 3"
+  },
   "sms_log": {
    "hand_run_only": true,
    "on_scheduler": false,
