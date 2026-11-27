@@ -304,3 +304,46 @@ class ProbeAnyStatus(unittest.TestCase):
         self.assertEqual(A.stale_orders(hdr, rows, today=dt.date(2026, 11, 20)), [])
         got = A.stale_orders(hdr, rows, today=dt.date(2026, 11, 20), any_status=True)
         self.assertEqual([(o["order"], len(o["lines"])) for o in got], [("99-7", 2)])
+
+
+class UntilDelivered(unittest.TestCase):
+    """11/27, Carlos: "lets check the status of all orders until they're
+    marked delivered. On column Z you need to mark that column with one of
+    these Status" -- every line not Delivered yet, whatever its Line Status."""
+
+    def test_open_lines_are_looked_up_until_delivered(self):
+        for st in ("Shipped", "Pending Shipment", "Backordered", "BYOD", "Port Approved", ""):
+            got = A.stale_orders(HDR, [row(**{"Line Status": st})], today=TODAY, until_delivered=True)
+            self.assertEqual(len(got), 1, st)
+
+    def test_active_delivered_cancelled_disconnected_need_no_check(self):
+        # "once its active the shipping status doesnt matter ... Cancelled or
+        # disconnected same thing"
+        for st in ("Active", "Delivered", "Cancelled", "Disconnected", "Returned"):
+            self.assertEqual(A.stale_orders(HDR, [row(**{"Line Status": st})], today=TODAY,
+                                            until_delivered=True), [], st)
+
+    def test_delivered_status_or_date_stops_the_checks(self):
+        self.assertEqual(A.stale_orders(HDR, [row(**{"Shipping Status": "Delivered Nov 9 (as of 11/12)"})],
+                                        today=TODAY, until_delivered=True), [])
+        self.assertEqual(A.stale_orders(HDR, [row(Delivered="11/09/2026")], today=TODAY, until_delivered=True), [])
+
+    def test_oldest_check_first(self):
+        rows = [row(**{"Wireless Order #": "99-B", "Customer": "Pat Newer",
+                       "Shipping Notes": "11/10: Shipped Nov 1, on the way"}),
+                row(**{"Wireless Order #": "99-C", "Customer": "Pat Older",
+                       "Shipping Notes": "11/03: Shipped Nov 1, on the way"}),
+                row(**{"Wireless Order #": "99-D", "Customer": "Pat Never", "Line Status": "Pending Shipment"})]
+        got = A.stale_orders(HDR, rows, today=TODAY, until_delivered=True)
+        self.assertEqual([o["order"] for o in got], ["99-D", "99-C", "99-B"])
+
+    def test_delivered_column_fills_the_status_without_a_lookup(self):
+        rows = [row(Delivered="11/25/2026"),
+                row(Delivered="11/25/2026", **{"Shipping Status": "Delivered Nov 24"}),
+                row()]
+        self.assertEqual(A.delivered_from_column(HDR, rows), [{"row": 2, "status": "Delivered Nov 25"}])
+
+    def test_checked_on_reads_the_notes_date(self):
+        self.assertEqual(A._checked_on("11/03: Shipped", TODAY), dt.date(2026, 11, 3))
+        self.assertEqual(A._checked_on("12/30: Shipped", TODAY), dt.date(2025, 12, 30))
+        self.assertEqual(A._checked_on("", TODAY), dt.date.min)

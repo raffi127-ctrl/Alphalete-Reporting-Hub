@@ -35,6 +35,7 @@ import argparse
 import datetime as dt
 import re
 import sys
+import time
 from typing import Dict, List, Optional, Sequence
 
 from automations.nds_metrics.run import OUT_DIR, REPO_ROOT
@@ -112,8 +113,33 @@ def _cell(row: Sequence[str], cols: Dict[str, int], name: str) -> str:
     return _norm(row[i]) if i is not None and i < len(row) else ""
 
 
+# 11/27, Carlos: "lets check the status of all orders until they're marked
+# delivered. On column Z you need to mark that column with one of these
+# Status" -- then: "once its active the shipping status doesnt matter so if
+# its marked delivered or active on tableau then it doesnt need to keep
+# checking. Cancelled or disconnected same thing". So every line whose Line
+# Status is still open (Shipped, Pending, Backordered, BYOD, Port..., blank)
+# and whose Shipping Status is not Delivered; the one checked longest ago first.
+DONE_LINE_STATUS = ("active", "delivered", "cancelled", "canceled", "disconnected", "returned")
+RUN_MINUTES = 60                 # stop starting new orders after this; the rest go first tomorrow
+
+
+def _checked_on(notes: str, today: dt.date) -> dt.date:
+    """The day the Shipping Notes cell was last written ('11/20: ...'),
+    date.min when never."""
+    m = re.match(r"\s*(\d{1,2})/(\d{1,2})\b", notes or "")
+    if not m:
+        return dt.date.min
+    try:
+        d = dt.date(today.year, int(m.group(1)), int(m.group(2)))
+    except ValueError:
+        return dt.date.min
+    return d if d <= today else d.replace(year=d.year - 1)
+
+
 def stale_orders(header: Sequence[str], rows: Sequence[Sequence[str]], *, today: dt.date,
-                 days: int = STALE_DAYS, any_status: bool = False) -> List[Dict]:
+                 days: int = STALE_DAYS, any_status: bool = False,
+                 until_delivered: bool = False) -> List[Dict]:
     """One entry per order with a line Shipped `days`+ days ago and no
     Delivered date: {order, zip, email, customer, rep, lines: [{row, line,
     ship_date, notes}]}. Orders without a ZIP or an e-mail are listed too,
@@ -128,7 +154,13 @@ def stale_orders(header: Sequence[str], rows: Sequence[Sequence[str]], *, today:
     by_order: Dict[str, Dict] = {}
     for n, r in enumerate(rows, start=2):           # sheet row numbers, header is 1
         sd = _parse_date(_cell(r, cols, "Ship Date"))
-        if not any_status:
+        if until_delivered and not any_status:
+            if _cell(r, cols, "Line Status").strip().lower() in DONE_LINE_STATUS:
+                continue
+            if _cell(r, cols, COL_STATUS).lower().startswith("delivered") \
+                    or _parse_date(_cell(r, cols, "Delivered")):
+                continue
+        elif not any_status:
             if _cell(r, cols, "Line Status").lower() != "shipped":
                 continue
             if _parse_date(_cell(r, cols, "Delivered")):
@@ -143,7 +175,9 @@ def stale_orders(header: Sequence[str], rows: Sequence[Sequence[str]], *, today:
         o = by_order.setdefault(order, {
             "order": order, "zip": _cell(r, cols, "Zip").lstrip("'"),
             "email": _cell(r, cols, "Email"), "customer": _cell(r, cols, "Customer"),
-            "rep": _cell(r, cols, "Rep"), "lines": [], "why": ""})
+            "rep": _cell(r, cols, "Rep"), "lines": [], "why": "",
+            "checked": dt.date.max})
+        o["checked"] = min(o["checked"], _checked_on(_cell(r, cols, COL_OUT), today))
         o["lines"].append({"row": n, "line": _cell(r, cols, "Line"), "ship_date": _fmt(sd),
                            "notes": _cell(r, cols, COL_OUT), "status": _cell(r, cols, COL_STATUS),
                            "phone": _cell(r, cols, "Phone #")})
@@ -152,7 +186,26 @@ def stale_orders(header: Sequence[str], rows: Sequence[Sequence[str]], *, today:
         missing = [k for k in ("zip", "email") if not o[k]]
         o["why"] = ("no %s on the tab" % " / ".join(missing)) if missing else ""
         out.append(o)
-    out.sort(key=lambda o: (o["why"] != "", o["customer"]))
+    if until_delivered:
+        out.sort(key=lambda o: (o["why"] != "", o["checked"], o["customer"]))
+    else:
+        out.sort(key=lambda o: (o["why"] != "", o["customer"]))
+    return out
+
+
+def delivered_from_column(header: Sequence[str], rows: Sequence[Sequence[str]]) -> List[Dict[str, object]]:
+    """Lines the order log already dates in its Delivered column but whose
+    Shipping Status does not say so yet: 'Delivered Nov 25', no lookup."""
+    cols = _hdr(header)
+    if "delivered" not in cols or COL_STATUS.lower() not in cols:
+        return []
+    names = {v: k for k, v in MONTHS.items()}
+    out = []
+    for n, r in enumerate(rows, start=2):
+        d = _parse_date(_cell(r, cols, "Delivered"))
+        cur = _cell(r, cols, COL_STATUS)
+        if d and not cur.lower().startswith("delivered"):
+            out.append({"row": n, "status": "Delivered %s %d" % (names[d.month], d.day)})
     return out
 
 
@@ -775,7 +828,8 @@ def status_sync(header: Sequence[str], rows: Sequence[Sequence[str]]) -> List[Di
 
 def run(today: Optional[dt.date] = None, *, live: bool = False, limit: Optional[int] = None,
         only: Sequence[str] = (), days: int = STALE_DAYS, headless: bool = True,
-        status_only: bool = False, probe: bool = False, log=print) -> int:
+        status_only: bool = False, probe: bool = False, shipped_only: bool = False,
+        minutes: Optional[float] = RUN_MINUTES, log=print) -> int:
     from patchright.sync_api import sync_playwright
     from automations.nds_metrics import order_log_tab as T
     from automations.recruiting_report.fill import open_by_key, _retry
@@ -799,6 +853,11 @@ def run(today: Optional[dt.date] = None, *, live: bool = False, limit: Optional[
             log("[att] --probe needs --order")
             return 1
     fixes = [] if probe else status_sync(header, rows[1:])
+    if not probe and not shipped_only:
+        by_col = delivered_from_column(header, rows[1:])
+        done_rows = {f["row"] for f in by_col}
+        fixes = by_col + [f for f in fixes if f["row"] not in done_rows]
+        log("[att] %d line(s) already dated in the Delivered column" % len(by_col))
     log("[att] status from notes: %d line(s) to set" % len(fixes))
     if fixes and live:
         import gspread
@@ -809,15 +868,26 @@ def run(today: Optional[dt.date] = None, *, live: bool = False, limit: Optional[
         if not live:
             log("[att] dry run -- nothing written (pass --live)")
         return 0
-    orders = stale_orders(header, rows[1:], today=today, days=days, any_status=probe)
+    until = not shipped_only
+    orders = stale_orders(header, rows[1:], today=today, days=days, any_status=probe,
+                          until_delivered=until)
     if only:
         keep = {_norm(x) for x in only}
         orders = [o for o in orders if o["order"] in keep]
-    log("[att] %d order(s) with a line in Shipped and no Delivered date%s"
-        % (len(orders), (" (shipped %d+ days ago)" % days) if days else ""))
+    log("[att] %d order(s) %s%s"
+        % (len(orders), "not marked Delivered yet" if until else "with a line in Shipped and no Delivered date",
+           (" (shipped %d+ days ago)" % days) if days and not until else ""))
     blocked = [o for o in orders if o["why"]]
     for o in blocked:
         log("  – %-26s %s  %s" % (o["customer"][:26], o["order"], o["why"]))
+    # 11/27: column Z is never left blank -- a line we cannot look up says so
+    unchecked = [ln["row"] for o in blocked for ln in o["lines"] if not ln["status"].strip()]
+    if until and unchecked and live and not probe:
+        import gspread
+        i_z = _hdr(header)[COL_STATUS.lower()]
+        _retry(lambda: ws.update_cells([gspread.cell.Cell(n, i_z + 1, "Not checked") for n in unchecked],
+                                       value_input_option="RAW"))
+        log("[att] %d line(s) with no ZIP / e-mail marked Not checked" % len(unchecked))
     todo = [o for o in orders if not o["why"]]
     if limit:
         todo = todo[:limit]
@@ -844,8 +914,13 @@ def run(today: Optional[dt.date] = None, *, live: bool = False, limit: Optional[
             return c, (c.pages[0] if c.pages else c.new_page())
         ctx, page = _open()
         reopened = 0
+        t0 = time.monotonic()
         try:
-            for o in todo:
+            for k, o in enumerate(todo):
+                if minutes and time.monotonic() - t0 > minutes * 60:
+                    log("[att] %d-minute budget used -- %d order(s) left for the next run (checked first then)"
+                        % (minutes, len(todo) - k))
+                    break
                 log("• %s  %s  zip %s  %s" % (o["customer"], o["order"], o["zip"], o["email"]))
                 s = lookup(page, o["order"], o["zip"], o["email"], log=log)
                 if s["error"]:
@@ -952,7 +1027,7 @@ def run(today: Optional[dt.date] = None, *, live: bool = False, limit: Optional[
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="nds_att_order_status",
-                                 description="AT&T order status for stale Shipped lines -> NDS Order Log Notes")
+                                 description="AT&T + FedEx status for every order not marked Delivered yet -> NDS Order Log Shipping Status / Notes")
     ap.add_argument("--live", action="store_true", help="write the notes (default: dry run)")
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--order", action="append", default=[], help="only this Wireless Order # (repeatable)")
@@ -964,11 +1039,15 @@ def main(argv=None) -> int:
                          "AT&T and FedEx say, write nothing (beats --live)")
     ap.add_argument("--status-only", action="store_true",
                     help="only set Shipping Status from the Shipping Notes already on the tab (no lookups)")
+    ap.add_argument("--shipped-only", action="store_true",
+                    help="the old rule: only lines in Shipped with no Delivered date")
+    ap.add_argument("--minutes", type=float, default=RUN_MINUTES,
+                    help="stop starting new orders after this many minutes (0: no limit)")
     ap.add_argument("--today", default=None, help="YYYY-MM-DD (default: today)")
     a = ap.parse_args(argv)
     today = dt.datetime.strptime(a.today, "%Y-%m-%d").date() if a.today else dt.date.today()
     rc = run(today, live=a.live, limit=a.limit, only=a.order, days=a.days, headless=not a.headed, probe=a.probe,
-             status_only=a.status_only)
+             status_only=a.status_only, shipped_only=a.shipped_only, minutes=a.minutes)
     print("=== done ===", flush=True)
     return rc
 
