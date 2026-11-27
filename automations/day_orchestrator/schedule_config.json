@@ -17929,6 +17929,28 @@
    "timeout_minutes": 15,
    "machine": "Lucy 2"
   },
+  "install_owner_tables_dm_agent": {
+   "on_scheduler": false,
+   "_note": "One-shot installer for com.alphalete.owner-tables-dm on LUCY 1: deploy/owner_tables_dm.sh -> nds_metrics.probe --owner-churn + --owner-weeks --summary-only for Carlos/Khalil/Colten/Jairo/Raf, DM'd to Carlos at 9:00 every day. Carlos 2026-11-27: 'send me the churn and activation report everyday'. Lucy 1 because its Tableau login sees every NDS owner. Log: `logtail owner-tables-dm-<YYYY-MM-DD>`. Run `lucy rerun install_owner_tables_dm_agent` (Mini Control tab) after `update`.",
+   "display_name": "Install owner churn + activation DM agent (9am daily)",
+   "source_type": "none",
+   "data_sources": [],
+   "command": [
+    "automations.day_orchestrator.install_agent"
+   ],
+   "base_args": [
+    "owner-tables-dm"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 15,
+   "machine": "Lucy 1"
+  },
   "install_nds_rep_dms_agent": {
    "on_scheduler": false,
    "_note": "One-shot installer for com.alphalete.nds-rep-dms on Lucy 2: deploy/nds_rep_dms.sh -> automations.nds_metrics.run --rep-shot active --dm sheet --dm-reps sheet --daily, 9:00 + 9:20 retry EVERY day local. Carlos 2026-11-23: 'every morning send the reps the updated order log at 9am. send sebastian and i alll of them' -- each active NDS rep gets ONLY their own order-log picture; the ALL rows (Carlos, Sebastian) get every picture. Who gets what = the control sheet's 'NDS Rep Slack IDs' tab (kept off this public repo); a new rep = one new row. Once a day per person per picture (state ~/.config/recruiting-report/nds_rep_dm_state.json). Log: `logtail nds-rep-dms-<YYYY-MM-DD>`. Run `lucy rerun install_nds_rep_dms_agent` after `lucy update`.",
