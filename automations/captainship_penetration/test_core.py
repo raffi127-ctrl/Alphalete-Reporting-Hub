@@ -93,8 +93,9 @@ class Drafts(unittest.TestCase):
         from automations.captainship_drafts import config
         for k in ("rafael", "wayne"):
             c = config.BY_KEY[k]
+            self.assertNotIn("penetration", [k for _, k in c.sections])
+            # the daily tab's box is declared but never shown in the email
             self.assertNotIn("penetration", [b.slot for b in c.boxes_shown()])
-            self.assertIn("penetration", [b.slot for b in c.boxes])
 
 
 if __name__ == "__main__":

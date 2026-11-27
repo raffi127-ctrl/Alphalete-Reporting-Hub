@@ -72,8 +72,10 @@ _INTRO = {
         "30-60 Day Ongoing Activation Rate 🚀",
         "Ongoing 6+ Days Sales Rate 🤝🏻",
         # Raf's Loom 11/26 ("Penetration Rate per Fiber Owner"): item 10 of
-        # the body. Eve 11/26: a daily ONGOING box like the activation ones
-        # (captainship_penetration fills it), captain's own office left out.
+        # the body: Raf's screenshot of Tableau Market Expectations for the
+        # captain's owners, captain left out (penetration_shot.py). The daily
+        # captainship_penetration tabs keep filling; their box:penetration is
+        # declared on the BoxSources but not shown in the email.
         "Penetration Report 📍",
         # 2026-08-23 evening (Raf's Slack: "add the daily knocks to everyones
         # captainship emails … and have Chan's comparison in there"): the
@@ -105,8 +107,10 @@ _INTRO = {
         "30-60 Day Ongoing Activation Rate 🚀",
         "Ongoing 6+ Days Sales Rate 🤝🏻",
         # Raf's Loom 11/26 ("Penetration Rate per Fiber Owner"): item 10 of
-        # the body. Eve 11/26: a daily ONGOING box like the activation ones
-        # (captainship_penetration fills it), captain's own office left out.
+        # the body: Raf's screenshot of Tableau Market Expectations for the
+        # captain's owners, captain left out (penetration_shot.py). The daily
+        # captainship_penetration tabs keep filling; their box:penetration is
+        # declared on the BoxSources but not shown in the email.
         "Penetration Report 📍",
         # LOS DOS BLOQUES DE KNOCKS VOLVIERON AL FLAVOR FIBER (Eve 2026-08-25),
         # ahora con COBERTURA PARCIAL explícita. Historia corta: entraron el
@@ -202,7 +206,7 @@ SECTION_KINDS = {
                "box:cancel-0-30", "box:cancel-30-60",
                "churn_ni", "churn_wireless",
                "box:abp", "box:activation-0-30", "box:activation-30-60",
-               "box:six-days", "box:penetration",
+               "box:six-days", "penetration",
                "daily_knocks", "knock_dispo"],
     # daily_knocks + knock_dispo joined fiber 2026-08-23 (Megan: Raf's
     # captains ARE the fiber flavor). NOT b2b/nds: their offices knock other
@@ -216,7 +220,7 @@ SECTION_KINDS = {
                "box:cancel-0-30", "box:cancel-30-60",
                "churn_ni", "churn_wireless",
                "box:abp", "box:activation-0-30", "box:activation-30-60",
-               "box:six-days", "box:penetration",
+               "box:six-days", "penetration",
                "daily_knocks", "knock_dispo"],
     # churn_WIRELESS since 2026-08-19: the four B2B tabs are filled from the
     # wireless slice now, so render_captain labels their buckets "Wireless
@@ -300,8 +304,8 @@ ATTACHMENT_ONLY_KINDS = {"knock_dispo", "daily_knocks"}
 # var below. Rolling out = deleting the flavor's entry here.
 PREVIEW_KINDS: Dict[str, set] = {
     # Penetration Report (Raf 11/26): samples to Raf first, then roll out.
-    "rafael": {"box:penetration"},
-    "fiber": {"box:penetration"},
+    "rafael": {"penetration"},
+    "fiber": {"penetration"},
     "b2b": {"daily_knocks", "knock_dispo"},     # 2026-09-28
 }
 PREVIEW_ENV = "CAPTAINSHIP_PREVIEW_KINDS"
