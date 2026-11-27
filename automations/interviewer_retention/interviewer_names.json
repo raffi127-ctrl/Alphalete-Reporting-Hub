@@ -1,0 +1,16 @@
+{
+ "_note": "AppStream 'Done By' name -> the ARS tab's own interviewer dropdown name, per AppStream office id. 11280 confirmed 2026-11-27: 62 of 62 showed-up applicants on 11/24 matched by applicant name. 'None' = the owner ran it. Add a name only once a real row proves it; never guess.",
+ "11280": {
+  "None": "Owner",
+  "Victoria Bustillo": "Victoria",
+  "Valentina Rusconi": "Valentina R",
+  "Ludmila Alvarellos": "Ludmila",
+  "Natalia Tolosa": "Natalia T",
+  "Luciana Garcia": "Luciana",
+  "Maria Victoria Ferrero": "Mavi",
+  "Gabriela Muñoz Toro": "Gabriela MT",
+  "Daniela Colorado": "Daniela C.",
+  "Aldana Florencia Canosa": "Aldana",
+  "Sara Montenegro Mejia": "Sara"
+ }
+}
