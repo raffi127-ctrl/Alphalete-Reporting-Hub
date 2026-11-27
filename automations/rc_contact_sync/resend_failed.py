@@ -41,6 +41,13 @@ from automations.rc_contact_sync import ringcentral as RC
 REPORT_ID = "rc_resend_failed"
 TAB = "Resend Preview"
 FAILED = ("SendingFailed", "DeliveryFailed")
+# Only SendingFailed is RingCentral refusing to send (the billing / out-of-
+# credits stop, from 2026-11-25 15:27). DeliveryFailed is the CARRIER refusing
+# the number (a line not active yet, a landline) -- 85 of the 92 failures
+# 11/11-11/25, mostly the Line 2+ texts; resending those fails again and
+# spends credits, so they are listed, never resent.
+RESEND_STATUS = ("SendingFailed",)
+MIN_TEXT = 3                       # "ff" is a test, not a message
 SAME_TEXT = 0.85
 SENT_PATH = C.CONFIG_DIR / "rc-resent-failed.json"
 
@@ -74,7 +81,13 @@ def _pictures(m: dict) -> List[dict]:
             if str(a.get("contentType") or "").lower().startswith("image/")]
 
 
-def plan(msgs: Sequence[dict], own: str, already: Sequence[str] = ()) -> List[Dict]:
+def _people(chain: Sequence[str], names: Dict[str, str]) -> set:
+    """The distinct customers in a thread (their "- Line N" contacts fold in)."""
+    return {names[n].split(" - Line")[0].strip().lower() for n in chain if names.get(n)}
+
+
+def plan(msgs: Sequence[dict], own: str, already: Sequence[str] = (),
+         names: Optional[Dict[str, str]] = None) -> List[Dict]:
     """[{msg, chain, text, action, why}] for every failed outbound text,
     oldest first. action: 'resend' | 'skip'."""
     msgs = sorted(msgs, key=lambda x: x.get("creationTime") or "")
@@ -89,8 +102,12 @@ def plan(msgs: Sequence[dict], own: str, already: Sequence[str] = ()) -> List[Di
             row.update(action="skip", why="no recipient on the message")
         elif str(m.get("id")) in already:
             row.update(action="skip", why="already resent by this tool")
-        elif not text and not row["pics"]:
-            row.update(action="skip", why="empty message")
+        elif m.get("messageStatus") not in RESEND_STATUS:
+            row.update(action="skip", why="carrier refused the number (not the billing stop)")
+        elif not row["pics"] and len(text) < MIN_TEXT:
+            row.update(action="skip", why="empty or a test text")
+        elif len(_people(chain, names or {})) > 1:
+            row.update(action="skip", why="thread holds more than one customer -- looks like a mistake, not resent")
         else:
             redo = next((x for x in msgs[i + 1:]
                          if x.get("direction") == "Outbound"
@@ -163,7 +180,7 @@ def run(since: dt.date, *, live: bool = False, limit: Optional[int] = None, log=
     if ok:
         lines.append("last text that went through: %s" % _when(ok[-1]))
     sent = _load_sent()
-    rows = plan(msgs, own, already=list(sent))
+    rows = plan(msgs, own, already=list(sent), names=names)
     todo = [r for r in rows if r["action"] == "resend"]
     lines.append("%d to resend, %d skipped" % (len(todo), len(rows) - len(todo)))
 

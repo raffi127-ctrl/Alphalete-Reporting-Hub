@@ -46,6 +46,15 @@ class Plan(unittest.TestCase):
         self.assertEqual(self.acts(ms), [("1", "resend"), ("2", "skip")])
         self.assertEqual(self.acts(ms[:1], already=["1"]), [("1", "skip")])
 
+    def test_carrier_refusal_is_not_resent(self):
+        self.assertEqual(self.acts([msg(1, "10:00", [CUST], "Hi Pat", "DeliveryFailed")]), [("1", "skip")])
+
+    def test_test_text_and_two_customer_thread_not_resent(self):
+        self.assertEqual(self.acts([msg(1, "10:00", [CUST], "ff", "SendingFailed")]), [("1", "skip")])
+        names = {CUST: "Pat Example", OTHER: "Sam Sample - Line 2"}
+        p = R.plan([msg(1, "10:00", [CUST, OTHER], "call 833-555-0100", "SendingFailed")], OWN, names=names)
+        self.assertEqual(p[0]["action"], "skip")
+
     def test_inbound_and_delivered_ignored(self):
         self.assertEqual(self.acts([msg(1, "10:00", [CUST], "Hi"), msg(2, "10:01", [OWN], "hey", direction="Inbound")]), [])
 
