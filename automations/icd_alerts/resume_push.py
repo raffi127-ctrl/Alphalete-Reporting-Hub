@@ -1348,6 +1348,7 @@ def _walk(page, live: bool, record: dict) -> dict:
         from automations.icd_alerts import batch_push as BP
         if BP.mode_for(seen):
             BP.set_logger(_log)
+            BP.TRY_APPSTREAM_EXTRACT = bool(_TEST_ONLY)
             # A requested test run presses Start too: the batch only fills in
             # phone numbers (no send), so it is safe to try outside push hours.
             batch = BP.run(page, seen, PROFILE_DIR, live_allowed=live or _TEST_ONLY,

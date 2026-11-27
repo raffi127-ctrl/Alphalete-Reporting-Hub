@@ -35,6 +35,9 @@ from typing import Callable, Optional
 # office -> "dry" | "live". Live only after a dry run has been read.
 BATCH_OFFICES = {"24065": "live"}   # back on 2026-11-25 (Megan: "yes turn it back on"); Thanksgiving pause covers it via quiet_window
 BATCH_LIMIT = 10
+# Set by resume_push for a requested TEST run only: also press AppStream's own
+# "Auto Extract Information from Resume" + "Fill Phones" and record the result.
+TRY_APPSTREAM_EXTRACT = False
 EXTRACT_CAP_S = 240
 OFF_AFTER_BLOCKS = 2
 EXT_ID = "goofbdglmeckblcbcoffnkdnmpehhhmo"     # Resume Helper
@@ -417,6 +420,39 @@ def _send_first(page, limit: int) -> Optional[int]:
     return int(m.group(1).replace(",", "")) if m else None
 
 
+def _page_text(page) -> str:
+    try:
+        return " ".join((page.evaluate("() => document.body.innerText || ''") or "").split())
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def try_appstream_extract(page) -> dict:
+    """APPSTREAM'S OWN EXTRACTOR, no Indeed in our browser (Megan 2026-11-27:
+    "we need to make this as hands off as we can get it"). p=616 carries
+    "Auto Extract Information from Resume" and "Fill Phones". Press each once,
+    record what AppStream says back. Writes phone fields at most; sends
+    nobody. A test-run step until we know what it does."""
+    out = {}
+    try:
+        page.on("dialog", lambda d: (out.setdefault("dialogs", []).append(
+            (d.message or "")[:200]), d.accept()))
+    except Exception:  # noqa: BLE001
+        pass
+    for label, key in (("Auto Extract Information from Resume", "auto_extract"),
+                       ("Fill Phones", "fill_phones")):
+        before = _page_text(page)
+        ok = _click_if_present(page, [label], timeout=10000)
+        page.wait_for_timeout(15000)
+        after = _page_text(page)
+        new = after.replace(before, "") if before and before in after else after[:300]
+        out[key] = {"clicked": ok, "page_after": after[:300], "changed": before != after,
+                    "new_text": new[:300]}
+        _log("[batch] %s: clicked=%s changed=%s :: %s"
+             % (label, ok, before != after, after[:200]))
+    return out
+
+
 def run(page, office: str, profile_dir, live_allowed: bool, net=None,
         signin=None) -> dict:
     """One trial pass for `office`. Never raises. Leaves `page` alone; any v2
@@ -453,6 +489,8 @@ def run(page, office: str, profile_dir, live_allowed: bool, net=None,
         _log("[batch] %s: %s rows, %s ready for extraction; office shown: %s %s"
              % (office, out.get("rows"), out.get("ready"),
                 out["office"]["ours_shown"], out["office"]["numbers"]))
+        if TRY_APPSTREAM_EXTRACT and live_allowed and out["office"]["ours_shown"]:
+            out["appstream_extract"] = try_appstream_extract(bpage)
         if mode != "live" or not live_allowed:
             _log("[batch] DRY RUN -- no Start, no Send")
             return out
