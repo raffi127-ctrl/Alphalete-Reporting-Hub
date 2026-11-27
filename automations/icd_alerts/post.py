@@ -51,7 +51,13 @@ FAULTS_TAB = "ICD Faults"
 # in 5 min" means nobody is there, not that something broke (Eve 2026-11-26,
 # Thanksgiving: "podemos pausar estos avisos hoy?"). The row is still marked
 # handled on the ICD Faults tab, so nothing piles up for the next day.
-APEX_SETUP_QUIET_DAYS = frozenset({dt.date(2026, 11, 26)})
+# Fri 11/27 - Sun 11/29 too (Eve 2026-11-27: "reactivemos estos avisos el
+# lunes recien, hoy estoy off y el fin de semana tambien y no quiero
+# spammear a megan"). Back on by themselves Monday 11/30.
+APEX_SETUP_QUIET_DAYS = frozenset({
+    dt.date(2026, 11, 26), dt.date(2026, 11, 27),
+    dt.date(2026, 11, 28), dt.date(2026, 11, 29),
+})
 # The fault row, written by the laptop except for the last column, which
 # is ours and is what stops one problem being announced twice.
 F_OFFICE, F_DAY, F_STAGE, F_SUMMARY, F_DETAIL = 0, 1, 2, 3, 4
