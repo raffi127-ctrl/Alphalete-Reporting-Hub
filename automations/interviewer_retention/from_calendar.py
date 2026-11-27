@@ -20,7 +20,10 @@ the interviewers typed in his ARS tab the same day:
     Declined Next Round         -> Answered, Not Booked    (6 of 6)
     Invite to next - SMS sent   -> No Answer               (5 of 6)
     Invite to next - NA         -> No Answer               (none that day)
-    anything else / nothing     -> NOT DECIDED YET (card step 3.5): UNSET
+    anything else / nothing     -> left blank, as the interviewers do
+  Megan 2026-11-27: "copy what is already being entered on the sheet". Over
+  10/12-11/22 (1,361 qualified rows) they typed only Answered+Booked 1,169,
+  Answered+Not Booked 98, No Answer 92, blank 2 -- never "Not Contacted".
 
   2nd ROUND, Showed Up to 2nd Round (37 of 37):
     Show Up shows the offer dropdown (Yes OR No) -> Showed
@@ -40,7 +43,7 @@ from typing import Dict, Optional, Tuple
 from automations.interviewer_retention import boxes as bx
 
 NAMES_FILE = Path(__file__).with_name("interviewer_names.json")
-UNSET = None        # Answer Call for a qualified person with no invite status: step 3.5
+UNSET = ""          # Answer Call for a qualified person with no invite status: blank
 
 
 class UnknownInterviewer(KeyError):

@@ -40,8 +40,8 @@ class FirstRound(unittest.TestCase):
         self.assertEqual(fc.first_round("radio1", "Schedule 2nd", "Invite to next – SMS sent"),
                          (bx.QUALIFY, bx.NO_ANSWER, ""))
 
-    def test_no_invite_status_waits_on_step_3_5(self):
-        self.assertEqual(fc.first_round("radio1", "Schedule 2nd", ""), (bx.QUALIFY, fc.UNSET, ""))
+    def test_no_invite_status_is_left_blank_like_the_sheet(self):
+        self.assertEqual(fc.first_round("radio1", "Schedule 2nd", ""), (bx.QUALIFY, "", ""))
 
 
 class SecondRound(unittest.TestCase):
