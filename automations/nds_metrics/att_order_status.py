@@ -122,6 +122,7 @@ def _cell(row: Sequence[str], cols: Dict[str, int], name: str) -> str:
 # and whose Shipping Status is not Delivered; the one checked longest ago first.
 DONE_LINE_STATUS = ("active", "delivered", "cancelled", "canceled", "disconnected", "returned")
 RUN_MINUTES = 60                 # stop starting new orders after this; the rest go first tomorrow
+RETRY_MINUTES = 12               # ... then up to this long re-asking FedEx about its "can't find" numbers
 
 
 def _checked_on(notes: str, today: dt.date) -> dt.date:
@@ -916,12 +917,44 @@ def run(today: Optional[dt.date] = None, *, live: bool = False, limit: Optional[
         reopened = 0
         t0 = time.monotonic()
         try:
-            for k, o in enumerate(todo):
-                if minutes and time.monotonic() - t0 > minutes * 60:
+            # 11/27, Carlos: "theres some that show no record but when i look
+            # them up they show delivered" -- FedEx answers "can't find" when it
+            # throttles a long pass (one package read "not scanned" on
+            # 11/26, delivered 11/25). An order with a no-record FedEx number
+            # goes to the back of the line once and is read again at the end,
+            # in a fresh browser session after a pause.
+            queue = [(o, False) for o in todo]
+            fresh_for_retries = False
+            k = 0
+            while k < len(queue):
+                o, is_retry = queue[k]
+                elapsed = time.monotonic() - t0
+                if not is_retry and minutes and elapsed > minutes * 60:
+                    left = sum(1 for _, r in queue[k:] if not r)
                     log("[att] %d-minute budget used -- %d order(s) left for the next run (checked first then)"
-                        % (minutes, len(todo) - k))
+                        % (minutes, left))
+                    queue = queue[:k] + [q for q in queue[k:] if q[1]]
+                    continue
+                if is_retry and minutes and elapsed > (minutes + RETRY_MINUTES) * 60:
+                    log("[att] no time left to re-ask FedEx for %d order(s)" % (len(queue) - k))
                     break
-                log("• %s  %s  zip %s  %s" % (o["customer"], o["order"], o["zip"], o["email"]))
+                k += 1
+                if is_retry:
+                    if not fresh_for_retries:
+                        log("[att] re-asking FedEx for %d order(s) it said it had no record of"
+                            % sum(1 for _, r in queue if r))
+                        try:
+                            ctx.close()
+                        except Exception:  # noqa: BLE001
+                            pass
+                        ctx, page = _open()
+                        page.wait_for_timeout(60_000)
+                        fresh_for_retries = True
+                    for n in o.get("_no_record", ()):
+                        fedex_seen.pop(n, None)
+                    fedex_blank = 0
+                log("• %s%s  %s  zip %s  %s" % ("(again) " if is_retry else "", o["customer"], o["order"],
+                                               o["zip"], o["email"]))
                 s = lookup(page, o["order"], o["zip"], o["email"], log=log)
                 if s["error"]:
                     try:
@@ -967,6 +1000,11 @@ def run(today: Optional[dt.date] = None, *, live: bool = False, limit: Optional[
                             fedex_blank = 0 if fedex_seen[n] else fedex_blank + 1
                     if fedex_seen[n]:
                         carrier.append(fedex_seen[n])
+                no_record = [n for n in (s.get("trackings") or [])[:3]
+                             if "no record at fedex" in (fedex_seen.get(n) or "").lower()]
+                if no_record and not is_retry:
+                    o["_no_record"] = no_record
+                    queue.append((o, True))
                 packages = package_lines(s.get("text", ""), today, carrier)
                 body = short_text(s.get("text", ""), today, carrier) or note_text(s, today, carrier)
                 body = keep_fedex_from(body, o["lines"][0]["notes"] if o["lines"] else "")
