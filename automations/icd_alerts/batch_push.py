@@ -506,7 +506,20 @@ def run(page, office: str, profile_dir, live_allowed: bool, net=None,
         blocked = bool(net and (net.get("indeed_403") or net.get("turnstile")))
         # "empty" (nothing to extract) is NOT a block -- the 11/27 3:19 test
         # waited 4 min on an empty batch and called it Indeed's check.
-        blocked = blocked or res == "cap"     # never finished: Indeed's check
+        # A BLOCK IS AN INDEED PAGE LEFT WAITING, not just a long run: the
+        # 11/27 tests on an EMPTY batch (popup: "no resumes to process")
+        # timed out and were called blocks.
+        indeed_up = False
+        for p_ in ctx.pages:
+            try:
+                if p_ not in pages_before and "indeed.com" in (p_.url or ""):
+                    indeed_up = True
+            except Exception:  # noqa: BLE001
+                pass
+        out["indeed_tab"] = indeed_up
+        if res == "cap" and not indeed_up:
+            res = "empty"
+        blocked = blocked or (res == "cap" and indeed_up)
         out["extract"] = res
         out["blocked"] = blocked
         out["sent"] = 0
