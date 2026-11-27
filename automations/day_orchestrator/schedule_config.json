@@ -6046,6 +6046,29 @@
    "timeout_minutes": 10,
    "machine": "Lucy 2"
   },
+  "rc_resend_failed": {
+   "hand_run_only": true,
+   "close_on": "exit_zero",
+   "_close_on_note": "Exits non-zero only when a resend failed.",
+   "on_scheduler": false,
+   "_off_scheduler_note": "MANUAL-ONLY (Carlos 2026-11-27, after RingCentral ran out of text credits): 'go through every text send failure and just copy and paste and resend the message ... unless you already see that I already did it for that text chain'. Resends every failed outbound text on Taylor's line since --since to the same thread, skipping ones already resent by hand. DRY RUN unless --live: `lucy rerun rc_resend_failed --since 2026-11-20` previews to the control sheet's 'Resend Preview' tab; add --live to send.",
+   "display_name": "RC resend failed texts (Taylor's line)",
+   "source_type": "api",
+   "data_sources": [],
+   "command": [
+    "automations.rc_contact_sync.resend_failed"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 20,
+   "machine": "Lucy 2"
+  },
   "rc_checkin_text": {
    "hand_run_only": true,
    "close_on": "exit_zero",

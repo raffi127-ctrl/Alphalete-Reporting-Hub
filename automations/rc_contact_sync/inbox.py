@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from automations.rc_contact_sync import config as C
 from automations.rc_contact_sync import ringcentral as RC
@@ -559,8 +559,11 @@ def number_roles(names: Dict[str, str], custs: List[Dict]) -> Dict[str, str]:
     return roles
 
 
-def lines_texts_report(msgs: List[dict], roles: Dict[str, str], own: str) -> List[str]:
+def lines_texts_report(msgs: List[dict], roles: Dict[str, str], own: str,
+                       names: Optional[Dict[str, str]] = None) -> List[str]:
     """Texts to and from the customers' MAIN numbers vs their OTHER lines."""
+    names = names or {}
+    auto_to_lines: List[str] = []
     def bucket(role: str) -> str:
         return "main" if role == "main" else "other line"
 
@@ -593,6 +596,12 @@ def lines_texts_report(msgs: List[dict], roles: Dict[str, str], own: str) -> Lis
             out_n[b] += 1
             if auto:
                 out_auto[b] += 1
+        if auto:
+            hit = [n for n in to if n in roles and roles[n] != "main"]
+            if hit:
+                auto_to_lines.append("%s  %s  %s  -> %s" % (
+                    _when(m), template_of(m.get("subject") or ""), m.get("messageStatus") or "",
+                    "; ".join("%s %s (…%s)" % (names.get(n, "?"), roles[n], n[-4:]) for n in hit)))
     L = ["=== TEXTS: MAIN NUMBER vs OTHER LINES ===",
          "  outbound from Taylor's line (all):        %d" % total_out,
          "  outbound that included a MAIN number:     %d  (%d of them Lucy's automatic texts)"
@@ -605,6 +614,9 @@ def lines_texts_report(msgs: List[dict], roles: Dict[str, str], own: str) -> Lis
          % (in_n.get("other line", 0), len(in_from["other line"]))]
     for k in sorted(in_by_line):
         L.append("      %-8s %d text(s)" % (k, in_by_line[k]))
+    if auto_to_lines:
+        L.append("  --- every AUTOMATIC text that went to an other line ---")
+        L.extend("    " + a for a in auto_to_lines)
     if other_bodies:
         L.append("  --- every text from an other line ---")
         L.extend("    " + b for b in other_bodies)
@@ -683,7 +695,7 @@ def run_lines(since: dt.date, log=print) -> int:
     out = ["since %s: %d message(s) on the line, %d main / %d other-line numbers known"
            % (since, len(msgs), sum(1 for r in roles.values() if r == "main"),
               sum(1 for r in roles.values() if r != "main")), ""]
-    out += lines_texts_report(msgs, roles, own) + [""] + port_report(custs)
+    out += lines_texts_report(msgs, roles, own, names) + [""] + port_report(custs)
     for r in out:
         log(r)
     try:
