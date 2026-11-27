@@ -601,6 +601,25 @@ def open_target(sh, sandbox: bool, dry_run: bool, log=print):
                               new_sheet_name=SANDBOX_TITLE)
 
 
+def wrap_div_errors(ws, log=print) -> int:
+    """Maud 2026-11-27: on this tab a division never shows #DIV/0! -- every formula
+    that divides (or currently errors) is wrapped as =IFERROR(...,0). Idempotent."""
+    vals = ws.get_all_values()
+    forms = ws.get_all_values(value_render_option="FORMULA")
+    data = []
+    for i, row in enumerate(forms):
+        for j, x in enumerate(row):
+            if not (isinstance(x, str) and x.startswith("=")) or x.upper().startswith("=IFERROR("):
+                continue
+            v = vals[i][j] if i < len(vals) and j < len(vals[i]) else ""
+            if v == "#DIV/0!" or "/" in re.sub(r"'[^']*'|\"[^\"]*\"", "", x):
+                data.append({"range": f"{a1col(j + 1)}{i + 1}", "values": [[f"=IFERROR({x[1:]},0)"]]})
+    for k in range(0, len(data), 2000):
+        ws.batch_update(data[k:k + 2000], value_input_option="USER_ENTERED")
+    log(f"  IFERROR-wrapped {len(data)} division formula(s)")
+    return len(data)
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--sandbox", action="store_true",
@@ -766,6 +785,7 @@ def main(argv=None) -> int:
         sh.batch_update({"requests": style_requests(ws.id, r, last_col)})
         fix_conditional_formats(ws, log)
         fill_missing_borders(ws, last_col, log)
+    wrap_div_errors(ws, log)
     log(f"Done: {len(updates)} cells written to {ws.title!r}")
     return 0
 
