@@ -72,13 +72,18 @@ DAYS_KEPT: Optional[int] = None       # None = keep every line
 # export carries no pay-period field (probed 11/11), so it is computed.
 # Everything after Week Ending moved one column right (Delivered Message Sent
 # is X, was W); every reader resolves by header.
-HEADERS = ("Week Ending", "Pay Period", "Order Date", "Last Updated",
+HEADERS = ("Week Ending", "Pay Period", "Order Date",
+           "Last Updated", "Ship Date", "Delivered", "Activation Date", "Disconnect Date",  # DATE_GROUP_COLS, folded after Order Date
            "Rep", "Line", "Line Status", "Customer", "Device",
            "Email", "Zip", "DSI #", "Wireless Order #", "BAN", "Phone #",     # GROUP_COLS, folded beside Customer
            "Type", "Plan",                                                    # ... these two too (11/17 pm)
-           "Ship Date", "Delivered", "Activation Date", "Disconnect Date",
            "Taylor's Notes", "Notes", "Being worked on", "Delivered Message Sent",
            "Shipping Status", "Shipping Notes", "Churn Bucket", "Port Status")
+# 2026-11-27, Carlos, by the letters then live (D Last Updated, R Ship Date,
+# S Delivered, T Activation Date, U Disconnect Date): "lets move column D, R,
+# S, T, & T to be grouped in column c. So there should be + above column D that
+# opens all those up" -- the five dates sit right after Order Date as a second
+# folded group (DATE_GROUP_COLS), its +/- at the Order Date edge.
 # 2026-11-19, Carlos: "move the order date and last updated column to the left
 # of column C" (C = Rep) -- both dates now sit right after Pay Period.
 # 2026-11-17 evening, Carlos, by the letters of the layout then live (M = Device,
@@ -116,6 +121,10 @@ HEADERS = ("Week Ending", "Pay Period", "Order Date", "Last Updated",
 #    carries no date for it.
 GROUP_COLS = ("Email", "Zip", "DSI #", "Wireless Order #", "BAN", "Phone #", "Type", "Plan")
 GROUP_AFTER = "Device"      # the last always-visible column before the fold; the +/- sits above it
+DATE_GROUP_COLS = ("Last Updated", "Ship Date", "Delivered", "Activation Date", "Disconnect Date")
+DATE_GROUP_AFTER = "Order Date"
+# every folded group: (the always-visible column before it, its columns)
+GROUPS = ((DATE_GROUP_AFTER, DATE_GROUP_COLS), (GROUP_AFTER, GROUP_COLS))
 # "Shipping Status" left of Shipping Notes since 2026-11-12 pm, Carlos: "to the
 # left of shipping notes a shipping status and this status is only based off
 # of what we get from the tracking number" -- one short word per LINE off the
@@ -642,27 +651,36 @@ def status_rules() -> List[tuple]:
     ]
 
 
-def group_span() -> tuple:
-    """(start, end) column indexes of the customer-detail group -- GROUP_COLS
-    must sit together, right after GROUP_AFTER (Customer, then Device)."""
-    idx = sorted(_COL[c] for c in GROUP_COLS)
-    if idx != list(range(idx[0], idx[0] + len(idx))) or idx[0] != _COL[GROUP_AFTER] + 1:
-        raise RuntimeError("GROUP_COLS must be contiguous and start right after %s" % GROUP_AFTER)
+def _span(after: str, cols: Sequence[str]) -> tuple:
+    idx = sorted(_COL[c] for c in cols)
+    if idx != list(range(idx[0], idx[0] + len(idx))) or idx[0] != _COL[after] + 1:
+        raise RuntimeError("%r must be contiguous and start right after %s" % (cols, after))
     return idx[0], idx[-1] + 1
 
 
+def group_span() -> tuple:
+    """(start, end) column indexes of the customer-detail group -- GROUP_COLS
+    must sit together, right after GROUP_AFTER (Customer, then Device)."""
+    return _span(GROUP_AFTER, GROUP_COLS)
+
+
+def group_spans() -> List[tuple]:
+    """(start, end) of every folded group, left to right."""
+    return sorted(_span(after, cols) for after, cols in GROUPS)
+
+
 def group_requests(sheet_id: int, existing_groups: Sequence[dict]) -> List[dict]:
-    """The one column group, with its +/- above GROUP_AFTER. A group already on
-    exactly that span is left alone, so whether Carlos had it open or folded
-    survives the rewrite; anything else (an older span, a stray group) is
-    removed and the group is added folded."""
-    start, end = group_span()
+    """The column groups, each +/- at the edge of the column before it. Groups
+    already on exactly those spans are left alone, so whether Carlos had them
+    open or folded survives the rewrite; anything else (an older span, a stray
+    group) is removed and the groups are added folded."""
+    spans = group_spans()
     reqs = [{"updateSheetProperties": {
         "properties": {"sheetId": sheet_id, "gridProperties": {"columnGroupControlAfter": False}},
         "fields": "gridProperties.columnGroupControlAfter"}}]
-    have = [(g.get("range", {}).get("startIndex", 0), g.get("range", {}).get("endIndex", 0))
-            for g in existing_groups or ()]
-    if have == [(start, end)]:
+    have = sorted((g.get("range", {}).get("startIndex", 0), g.get("range", {}).get("endIndex", 0))
+                  for g in existing_groups or ())
+    if have == spans:
         return reqs
     # deepest first, so an outer group is never removed from under an inner one
     for g in sorted(existing_groups or (), key=lambda g: -int(g.get("depth", 1))):
@@ -670,10 +688,11 @@ def group_requests(sheet_id: int, existing_groups: Sequence[dict]) -> List[dict]
         reqs.append({"deleteDimensionGroup": {"range": {
             "sheetId": sheet_id, "dimension": "COLUMNS",
             "startIndex": r.get("startIndex", 0), "endIndex": r.get("endIndex", 0)}}})
-    rng = {"sheetId": sheet_id, "dimension": "COLUMNS", "startIndex": start, "endIndex": end}
-    reqs.append({"addDimensionGroup": {"range": rng}})
-    reqs.append({"updateDimensionGroup": {"dimensionGroup": {"range": rng, "depth": 1, "collapsed": True},
-                                          "fields": "collapsed"}})
+    for start, end in spans:
+        rng = {"sheetId": sheet_id, "dimension": "COLUMNS", "startIndex": start, "endIndex": end}
+        reqs.append({"addDimensionGroup": {"range": rng}})
+        reqs.append({"updateDimensionGroup": {"dimensionGroup": {"range": rng, "depth": 1, "collapsed": True},
+                                              "fields": "collapsed"}})
     return reqs
 
 

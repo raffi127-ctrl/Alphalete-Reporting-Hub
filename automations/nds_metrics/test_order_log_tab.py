@@ -27,7 +27,7 @@ class Rows(unittest.TestCase):
         self.assertEqual(r[T._COL["Being worked on"]], "")
         self.assertEqual(r[T._COL["Delivered Message Sent"]], "")
         self.assertEqual(T.HEADERS[T._COL["Notes"] - 1], "Taylor's Notes")        # 11/17 pm: to the LEFT of Notes
-        self.assertEqual(T.HEADERS[T._COL["Order Date"] + 1], "Last Updated")    # 11/17 pm: right after Order Date
+        self.assertEqual(T.HEADERS[T._COL["Order Date"] + 1], "Last Updated")    # 11/17 pm: right after Order Date (11/27: first of the date fold)
         self.assertEqual(T.HEADERS[T._COL["Being worked on"] + 1], "Delivered Message Sent")
         self.assertEqual(T.HEADERS[T._COL["Delivered Message Sent"] + 1], "Shipping Status")  # 11/12 pm: carrier word, left of the notes
         self.assertEqual(T.HEADERS[T._COL["Shipping Status"] + 1], "Shipping Notes")
@@ -46,9 +46,11 @@ class Rows(unittest.TestCase):
         self.assertEqual(T.HEADERS[c - 2:c + 2], ("Line", "Line Status", "Customer", "Device"))
         self.assertEqual(T.HEADERS[c + 2:c + 10], ("Email", "Zip", "DSI #", "Wireless Order #", "BAN", "Phone #",
                                                    "Type", "Plan"))
-        self.assertEqual(T.HEADERS[c + 10], "Ship Date")
-        # 11/19: Order Date and Last Updated sit left of Rep, right after Pay Period
-        self.assertEqual(T.HEADERS[:5], ("Week Ending", "Pay Period", "Order Date", "Last Updated", "Rep"))
+        self.assertEqual(T.HEADERS[c + 10], "Taylor's Notes")                  # 11/27: the dates moved left
+        # 11/19: Order Date and Last Updated sit left of Rep, right after Pay Period;
+        # 11/27: the other four dates join Last Updated there, folded
+        self.assertEqual(T.HEADERS[:4], ("Week Ending", "Pay Period", "Order Date", "Last Updated"))
+        self.assertEqual(T.HEADERS[8], "Rep")
         self.assertEqual(T.HEADERS[-1], "Port Status")                           # 11/17 pm: moved to the very end
         self.assertEqual(T.HEADERS[T._COL["Activation Date"] + 1], "Disconnect Date")
         self.assertEqual(r[T._COL["Disconnect Date"]], "")
@@ -579,19 +581,19 @@ class Nov17Columns(unittest.TestCase):
         reqs = T.group_requests(7, [])
         self.assertFalse(reqs[0]["updateSheetProperties"]["properties"]["gridProperties"]["columnGroupControlAfter"])
         add = [r["addDimensionGroup"]["range"] for r in reqs if "addDimensionGroup" in r]
-        self.assertEqual((add[0]["startIndex"], add[0]["endIndex"], add[0]["dimension"]), (start, end, "COLUMNS"))
+        self.assertIn((start, end, "COLUMNS"), [(a["startIndex"], a["endIndex"], a["dimension"]) for a in add])
         upd = [r["updateDimensionGroup"] for r in reqs if "updateDimensionGroup" in r]
-        self.assertTrue(upd[0]["dimensionGroup"]["collapsed"])
+        self.assertTrue(all(u["dimensionGroup"]["collapsed"] for u in upd))
 
     def test_an_existing_group_on_the_same_span_is_left_as_carlos_has_it(self):
         start, end = T.group_span()
-        same = [{"range": {"startIndex": start, "endIndex": end}, "depth": 1}]          # open: no 'collapsed'
+        same = [{"range": {"startIndex": a, "endIndex": b}, "depth": 1} for a, b in T.group_spans()]  # open: no 'collapsed'
         reqs = T.group_requests(7, same)
         self.assertEqual([list(r)[0] for r in reqs], ["updateSheetProperties"])
-        stale = [{"range": {"startIndex": 4, "endIndex": 6}, "depth": 1}]
+        stale = [{"range": {"startIndex": start, "endIndex": end}, "depth": 1}]       # yesterday: only the customer fold
         kinds = [list(r)[0] for r in T.group_requests(7, stale)]
-        self.assertEqual(kinds, ["updateSheetProperties", "deleteDimensionGroup", "addDimensionGroup",
-                                 "updateDimensionGroup"])
+        self.assertEqual(kinds, ["updateSheetProperties", "deleteDimensionGroup"]
+                         + ["addDimensionGroup", "updateDimensionGroup"] * 2)
         # the full rewrite carries them
         self.assertIn("addDimensionGroup", [list(r)[0] for r in T._format_requests(7, 10, 0)])
 
@@ -705,3 +707,22 @@ class StrayLines(unittest.TestCase):
         self.assertEqual(len(out["rows"]), 2)
         self.assertEqual(out["strays_removed"], [])
         self.assertEqual(len(out["strays_held"]), 1)
+
+
+class Nov27DateFold(unittest.TestCase):
+    """11/27, Carlos: "lets move column D, R, S, T, & T to be grouped in column
+    c. So there should be + above column D that opens all those up"."""
+
+    def test_the_five_dates_fold_right_after_order_date(self):
+        self.assertEqual(T.HEADERS[:3], ("Week Ending", "Pay Period", "Order Date"))
+        self.assertEqual(T.HEADERS[3:8], ("Last Updated", "Ship Date", "Delivered", "Activation Date",
+                                          "Disconnect Date"))
+        self.assertEqual(T.group_spans(), [(3, 8), T.group_span()])
+        reqs = T.group_requests(7, [])
+        add = [(r["addDimensionGroup"]["range"]["startIndex"], r["addDimensionGroup"]["range"]["endIndex"])
+               for r in reqs if "addDimensionGroup" in r]
+        self.assertEqual(add, T.group_spans())
+
+    def test_customer_fold_still_right_after_device(self):
+        start, _ = T.group_span()
+        self.assertEqual(start, T._COL["Device"] + 1)
