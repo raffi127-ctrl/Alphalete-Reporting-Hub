@@ -114,6 +114,45 @@ def plan_week(grid, formulas, anchor: dt.date, computed: Dict[str, List[Dict]]) 
     return data
 
 
+def plan_add_box(grid, formulas, sheet_id: int, anchor: dt.date) -> Tuple[List[Dict], int]:
+    """Card step 3.11: the tab has no box for `anchor` yet. Copy last week's
+    three boxes (our blocks only -- the tab's other blocks are left alone)
+    the same distance further down, cells and colors included, then set the
+    new date labels. Returns (batch_update requests, new label row). The
+    numbers in the copy are overwritten by plan_week right after, so a
+    copied formula never survives. Refuses if the rows below aren't empty."""
+    cols, labels, nxt = ck.layout(grid)
+    prev = anchor - dt.timedelta(days=7)
+    k = next((r for r in labels if ck._date(grid[r][cols[0]]) == prev), None)
+    if k is None:
+        raise LookupError(f"no {prev:%m/%d} box to copy the {anchor:%m/%d} box from")
+    before = [r for r in labels if r < k]
+    step = k - before[-1] if before else 16
+    new = k + step
+    last = max(max(_slots(formulas, k, c, nxt[c] or len(grid[k])) or [k + 1]) for c in cols)
+    span = last - k
+    reqs = []
+    for c in cols:
+        c_end = nxt[c] or len(grid[k])
+        for r in range(new, new + span + 1):
+            row = grid[r] if r < len(grid) else []
+            if any(ck._txt(row[j]).strip() for j in range(c, min(c_end, len(row)))):
+                raise ValueError(f"rows {new + 1}-{new + span + 1} aren't empty under the "
+                                 f"{grid[0][c]} block: not adding the {anchor:%m/%d} box")
+        reqs.append({"copyPaste": {
+            "source": {"sheetId": sheet_id, "startRowIndex": k, "endRowIndex": last + 1,
+                       "startColumnIndex": c, "endColumnIndex": c_end},
+            "destination": {"sheetId": sheet_id, "startRowIndex": new, "endRowIndex": new + span + 1,
+                            "startColumnIndex": c, "endColumnIndex": c_end},
+            "pasteType": "PASTE_NORMAL"}})
+        reqs.append({"updateCells": {
+            "range": {"sheetId": sheet_id, "startRowIndex": new, "endRowIndex": new + 1,
+                      "startColumnIndex": c, "endColumnIndex": c + 1},
+            "rows": [{"values": [{"userEnteredValue": {"numberValue": (anchor - ck.EPOCH).days}}]}],
+            "fields": "userEnteredValue"}})
+    return reqs, new
+
+
 def plan_total_move(grid, formulas, sheet_id: int, anchor: dt.date, temp_col: int) -> List[Dict]:
     """Card step 3.4 (Raf 11/24: "Move total week to be next to recruiter
     name"): batch_update requests that put each box's TOTAL group right after

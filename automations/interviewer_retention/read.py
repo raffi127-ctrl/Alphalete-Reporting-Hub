@@ -130,8 +130,43 @@ def build(days: Dict[dt.date, List[List[str]]], names: Dict[str, str]
     return rows, unknown, orphans
 
 
-def read_days(office: str, days: List[dt.date], headless: bool = True) -> Dict[dt.date, List[List[str]]]:
+SELECT_ALL = "Meta+a" if sys.platform == "darwin" else "Control+a"     # Mac AND Windows
+
+
+def day_view(page, tok: str, day: dt.date) -> List[List[str]]:
+    """Open the Calendar day view (p=102) on `day` the way a person does --
+    click the date box, select all, type, Enter (the picker ignores a value set
+    by script) -- and return late_join_audit's row dump. Same as its _day_view,
+    except select-all works on Windows too (it pressed Meta+a only). Hidden:
+    runs in the headless session, nothing on screen."""
     from automations.late_join_audit import probe as lj
+    ds = day.strftime("%m-%d-%Y")
+    page.goto(f"https://applicantstream.com/index.cfm?rqst={tok}&p=102",
+              wait_until="domcontentloaded", timeout=45000)
+    page.wait_for_timeout(5000)
+    for _ in range(3):
+        try:
+            box = page.locator("input[name='calDate']").first
+            box.click(timeout=8000)
+            page.wait_for_timeout(1000)
+            box.press(SELECT_ALL)
+            box.press_sequentially(ds, delay=60)
+            try:
+                with page.expect_navigation(timeout=20000, wait_until="domcontentloaded"):
+                    box.press("Enter")
+            except Exception:  # noqa: BLE001
+                pass
+            page.wait_for_timeout(4000)
+        except Exception:  # noqa: BLE001
+            page.wait_for_timeout(2000)
+        banner = page.evaluate("() => { const m=(document.body.innerText||'').match("
+                               "/Calendars for [0-9-]+/); return m ? m[0] : ''; }")
+        if ds in banner:
+            return page.evaluate(lj._DAY_JS)
+    raise RuntimeError(f"the calendar never showed {ds}")
+
+
+def read_days(office: str, days: List[dt.date], headless: bool = True) -> Dict[dt.date, List[List[str]]]:
     from automations.shared.tableau_patchright import appstream_direct_session
     from automations.sms_thread_dump import run as dump
     out = {}
@@ -143,7 +178,7 @@ def read_days(office: str, days: List[dt.date], headless: bool = True) -> Dict[d
         page.wait_for_load_state("networkidle")
         time.sleep(1.0)
         for d in days:
-            out[d] = lj._day_view(page, tok, d)
+            out[d] = day_view(page, tok, d)
             n = sum(1 for r in out[d] if r[0] == "ROW")
             print(f"  {office} {d:%a %m/%d}: {n} rows", flush=True)
     return out
