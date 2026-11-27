@@ -147,6 +147,10 @@ def carlos_rent(lo: dt.date, hi: dt.date) -> list | None:
     return out
 
 
+NICO_FEE = 5000   # Nico's weekly management fee from WE 12.6 on (Maud 2026-11-27; was 1,500)
+NICO_LEDGER_FROM = dt.date(2026, 11, 23)   # Nico security transfers from this date on = his fee, not an outside deal
+
+
 def carlos_red_rows(week: dt.date) -> tuple[dict, list]:
     """Carlos rows 30-36 for the column AFTER `week`, from that week in his month tab ('September 2026', …).
     Same math as output/carlos_pnl/finances.py: Investment = -(Carlos-only weekly - travel - indeed - 850 - rent).
@@ -194,6 +198,20 @@ def carlos_red_rows(week: dt.date) -> tuple[dict, list]:
                   and lo <= EPOCH + dt.timedelta(days=int(r[2])) <= week)
         if rent:
             notes.append(f"Carlos Rent/Utilities: {rent:,.2f} paid to the landlord in {want}")
+        # Nico's fee also comes as a 'Security Transfer FROM Nicolas Murrugarra' (ledger) from the week of 11/23 on —
+        # that's his management fee, not an outside deal (Maud 2026-11-27; the 11/18 $5,000 one stays an outside deal).
+        # Credit rows only: the expense list shows it negative; the income list higher up has it positive.
+        sec = [(EPOCH + dt.timedelta(days=int(r[2])), r[3]) for r in v if isinstance(r[2], (int, float)) and r[2] > 40000
+               and not str(r[4]).strip() and isinstance(r[3], (int, float)) and r[3] < 0 and "security transfer" in _n(r[1])
+               and re.search(r"nicolas|murrugarra", _n(r[1])) and max(lo, NICO_LEDGER_FROM) <= EPOCH + dt.timedelta(days=int(r[2])) <= week]
+        for d, a in sec:
+            outside -= a
+            fee += a
+            notes.append(f"Carlos: Nico ledger transfer {-a:,.2f} on {d:%m/%d} -> Nico's Management Fee (out of Outside Deals)"
+                         f" — also fix the month tab's typed Outside Deal - Weekly for {want}")
+        if week >= NICO_LEDGER_FROM + dt.timedelta(days=6) and round(-fee, 2) != NICO_FEE:
+            notes.append(f"Carlos Nico's Management Fee {hdr(week + dt.timedelta(days=7))}: {-fee:,.2f}, expected {NICO_FEE:,}"
+                         f" — the regular transfer may be labelled differently; check the month tab for {want}")
         out = {"Indeed Charges": round(indeed, 2), "Outside Deals": -round(outside, 2), "ARS - interviewers": -850,
                "Rent/Utilities": -round(rent, 2) if rent else 0, "Food/Team Nights": round(food, 2), "Travel/Entertainment": round(travel, 2),
                "Nico's Management Fee": round(-fee, 2),
@@ -470,6 +488,10 @@ def pull(we: dt.date) -> Path:
     for wk, amt in ps.items():
         if wk != we:
             data["prior"]["raf"].setdefault(hdr(wk), {})[PROFIT_SHARE] = amt
+    try:   # Aptel - Call Center = what was actually paid to Aptel the week prior (Maud 2026-11-27), not a flat 1,800
+        r["Aptel - Call Center"] = raf_aptel_paid(we)[0]
+    except Exception as e:  # noqa: BLE001
+        notes.append(f"raf Aptel: couldn't read Tiller ({str(e)[:80]}) — kept last week's")
     r["NC over rides"] = 0
     r["ATT Program over ride"] = 0
     # a Bas override lands every 4 weeks (8.2, 8.30, 9.27, 10.25 …): leave that week blank for Maud, else 0
@@ -628,6 +650,76 @@ def fill(who: str, we: dt.date, tab: str | None, values: dict, prior: dict, dry:
     print("  CHECK (kept from last week):")
     for k, why in CHECK[who].items():
         print(f"    - {k} — {why}")
+    if who == "raf" and not dry:
+        print("  RAF CHECKS (Maud's Loom 2026-11-27):")
+        for line in raf_checks(s, p, tab, we):
+            print(f"    {line}")
+
+
+def raf_aptel_paid(we: dt.date, s=None) -> tuple[float, float, dt.date, dt.date]:
+    """Everything Raf's Tiller shows paid to Aptel in the week ending the Sunday before the WE (main weekly payment
+    + small fees), as a negative total; also the main payment(s) alone. Maud 2026-11-27: Aptel row = full amount."""
+    s = s or bank.sheets()
+    hi = we - dt.timedelta(days=7)
+    lo = hi - dt.timedelta(days=6)
+    tx = s.values().get(spreadsheetId=bank.PEOPLE["raf"]["tiller"], range="Transactions!A1:T40000",
+                        valueRenderOption="UNFORMATTED_VALUE").execute().get("values", [])
+    h = tx[0]
+    d_, de, am = h.index("Date"), h.index("Description"), h.index("Amount")
+    paid = [r[am] for r in (x + [""] * len(h) for x in tx[1:]) if isinstance(r[d_], (int, float))
+            and "aptel" in str(r[de]).lower() and isinstance(r[am], (int, float))
+            and lo <= EPOCH + dt.timedelta(days=int(r[d_])) <= hi]
+    return round(sum(paid), 2), round(sum(a for a in paid if a <= -1000), 2), lo, hi
+
+
+RAF_SALARY, RAF_OWNER_DRAW = 3270, 5000   # Apex (Admins account), payroll submitted the week prior
+
+
+def raf_checks(s, p: dict, tab: str, we: dt.date) -> list[str]:
+    """Friday checks on Raf's new column (Loom 2026-11-27). Reports only — never changes the sheet.
+      1. Personal Pay = −(salary 3,270 × 1.12 + owner's draw 5,000) = −8,662.40; extras in Apex don't count.
+      2. Aptel - Call Center = what was actually paid to Aptel the week prior (Raf's Tiller), not a flat 1,800.
+      3. Interviewer #1–#5 = Raf's number in ARS 'Check Payments' (row Raf Hidalgo, same WE) − Aisha's pay."""
+    v, first, last, col = _block(s, p, tab)
+    rows = {_n(r[0]): r for i, r in enumerate(v, 1) if first < i <= last and r and str(r[0]).strip()}
+    def cell(label):
+        r = rows.get(_n(label)) or next((x for k, x in rows.items() if k.startswith(_n(label))), None)
+        return _num((r + [""] * (col + 1))[col]) if r else None
+    out = []
+    # 1. Personal Pay
+    want = -round(RAF_SALARY * 1.12 + RAF_OWNER_DRAW, 2)
+    pp = cell("Personal Pay")
+    out.append(f"{'OK ' if pp == want else 'FLAG'} Personal Pay {pp:,.2f} (expected {want:,.2f} = 3,270×1.12 + 5,000) — "
+               "confirm in Apex (Admins), last week's payroll: salary 3,270 + owner's draw 5,000")
+    # 2. Aptel — Raf's Tiller, week ending the Sunday before the WE
+    try:
+        actual, main, lo, hi = raf_aptel_paid(we, s)
+        ap = cell("Aptel")
+        ok = ap is not None and abs(ap - actual) < 0.01
+        out.append(f"{'OK ' if ok else 'FLAG'} Aptel {ap:,.2f} vs paid {lo:%m/%d}–{hi:%m/%d}: {actual:,.2f} "
+                   f"(main payment {main:,.2f} + fees {actual - main:,.2f}) — if changed, also update Recruiter Spend "
+                   "on RAF PNL 2026 (NEW)")
+    except Exception as e:  # noqa: BLE001
+        out.append(f"FLAG Aptel: couldn't read Raf's Tiller ({str(e)[:80]})")
+    # 3. Interviewers vs ARS Check Payments
+    try:
+        cp = s.values().get(spreadsheetId=ARS, range="'Check Payments'!A1:CZ120",
+                            valueRenderOption="UNFORMATTED_VALUE").execute().get("values", [])
+        key = f"{we.month}.{we.day}"
+        j = next(j for j, c in enumerate(cp[0]) if re.sub(r"^we\s*", "", _n(c)).split(" ")[0] == key)
+        raf_row = next(r for r in cp if r and _n(r[0]) == "raf hidalgo")
+        sent = _num((raf_row + [""] * (j + 1))[j])
+        aisha = abs(cell("Aisha") or 0)
+        ints = sum(abs(cell(f"Interviewer #{k}") or 0) for k in range(1, 6))
+        if sent is None:
+            out.append(f"FLAG Interviewers: no number for {key} in ARS Check Payments (Raf Hidalgo row)")
+        else:
+            ok = abs(ints - (sent - aisha)) < 0.01
+            out.append(f"{'OK ' if ok else 'FLAG'} Interviewers #1–#5 {ints:,.2f} vs Check Payments {sent:,.2f} − Aisha "
+                       f"{aisha:,.2f} = {sent - aisha:,.2f}")
+    except Exception as e:  # noqa: BLE001
+        out.append(f"FLAG Interviewers: couldn't match ARS Check Payments ({str(e)[:80]})")
+    return out
 
 
 TURQUOISE = {"red": 0.50, "green": 0.86, "blue": 0.90}   # light blue-turquoise

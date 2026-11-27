@@ -26,7 +26,7 @@ Re-running fill for a week that already has its column refreshes it in place (no
 | Money in the Bank | Alphalete Marketing + Personal + Personal Savings (Tiller) |
 | Money in Security | Tableau SFDC Total Balance |
 | Personal Pay, NPA - Owner's Draw, Nico's / Sebastian's / Cinthya's Bonus | Apex, via the Thursday `carlos_payroll_pull` → Carlos Business & Personal P&L (`1ngQt…`) tab **Apex Net Pay Detail**, pay period ending one week before the WE: Personal Pay = −(owner gross × 1.12), NPA = −(owner net-pay additions), bonus = −(Nicolas Murrugarra / Sebastian Avellaneda / Cinthya Reyes net-pay addition). No Apex login (Apex forces a 2FA setup screen). Maud's Bonus kept. |
-| Nico's Management Fee | Carlos's month tab, the week one back: Carlos-only rows from High Value Acquisitions with "management fee"/"mngmt" (credits). Shown positive; taken back out of Investment so it isn't counted twice. Started 11/3/2026 (WE 11.15 = 2,900, WE 11.22 = 1,500) |
+| Nico's Management Fee | Carlos's month tab, the week one back: Carlos-only rows from High Value Acquisitions with "management fee"/"mngmt" (credits), plus any unmarked "Security Transfer FROM Nicolas Murrugarra" (ledger) dated 11/23/2026 or later (taken out of Outside Deals). Shown positive; x-marked ones are taken back out of Investment. Fee is **5,000/week** from the week of 11/23 (that week via ledger, then regular transfer); the run flags any other amount. The 11/18 $5,000 ledger transfer is an OUTSIDE DEAL (WE 11.29), not the fee. History: WE 11.8 1,400 · 11.15 1,500 · 11.22 1,500 · 11.29 3,000 |
 | Indeed Charges, Outside Deals, ARS (−850), Rent, Food, Travel, Investment into local office | Carlos's month tab (e.g. "September 2026"), the week one back: Indeed/Food/Travel from the summary block, Outside Deal + CARLOS ONLY Weekly from the bottom table; Investment = −(Carlos-only − travel − indeed − 850 − rent); Rent/Utilities = every payment to the landlord (CCINorthHwy360LP) that week, read from his Tiller — catches split payments (Nov 2026: 2 × $2,161.25) even before they're in the month tab; Investment only backs out the rent that's in his Carlos-only total. If that week isn't finished in the month tab, last week's placeholders stay + a NOTE |
 
 | Raf row | Source |
@@ -47,6 +47,12 @@ Re-running fill for a week that already has its column refreshes it in place (no
 | Money in the Bank | Chase total minus ARS = Local Office + LTD + Personal + Personal Savings + STR Carrollton |
 | Money in Security | Tableau SFDC Total Balance |
 | Kia / Lambo | Raf sheet → Running TOTALS 2026 → loan tables, last "Money Owed left" |
+
+## Raf Friday checks (Maud's Loom 2026-11-27) — printed after `fill --who raf`, never auto-changed
+- **Personal Pay** = −(salary 3,270 × 1.12 + owner's draw 5,000) = −8,662.40. Source: Apex **Admins** account, the payroll submitted that week (period one back). Only salary + owner's draw count — extra net-pay additions don't.
+- **Aptel - Call Center** = what Raf's Tiller shows paid to Aptel the week prior (week ending the Sunday before the WE), not a flat 1,800. Changing it also changes Recruiter Spend on RAF PNL 2026 (NEW) → update that too.
+- **Interviewer #1–#5** total = ARS sheet → Check Payments → row "Raf Hidalgo", same WE column − Aisha's pay (1,120). E.g. 3,245 − 1,120 = 2,125.
+- Parents, Megan's Budget, Personal Trainer, Maud stay the same week to week.
 
 ## Slack
 - Raf's PNG → **Maud first** to double-check; Maud sends to Raf + Megan.
