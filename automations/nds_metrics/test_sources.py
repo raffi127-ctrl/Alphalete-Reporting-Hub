@@ -9,6 +9,7 @@ import unittest
 from automations.nds_metrics import run as R
 
 ACTIVATION = {"activation_overview", "activation_revenue",
+              "activation_combined",          # 5+6 as one picture, 2026-11-27
               "activation_by_rep", "activation_by_week",
               "activation_by_week_tableau",
               # Carlos 2026-11-14: the three churn boards carry one too

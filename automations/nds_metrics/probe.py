@@ -510,6 +510,11 @@ def _entry(argv=None):
         # offices, DM'd only with --dm (owner_weeks.py)
         from automations.nds_metrics import owner_weeks
         return owner_weeks.entry(args)
+    if "--tracker-copy-dry" in args:
+        # 2026-11-27: find + download today's highlighted NDS Tracker and say
+        # what the NDS thread copy would do. Posts nothing (tracker_copy.py).
+        from automations.nds_metrics import tracker_copy
+        return tracker_copy.dry_check()
     if "--dd-join" in args:
         return dd_join()
     if "--soh-dump" in args:

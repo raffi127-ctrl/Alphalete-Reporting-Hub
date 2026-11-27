@@ -67,6 +67,8 @@ DEAD = ("canceled", "cancelled", "disconnected")
 SOURCES: Dict[str, str] = {
     "activation_overview": "Sara",
     "activation_revenue": "Sara",
+    # Carlos 2026-11-27: the two above as one picture, both Sara.
+    "activation_combined": "Sara",
     "activation_by_rep": "Tableau",
     "activation_by_week": "Sara",
     "activation_by_week_tableau": "Tableau",
@@ -1916,6 +1918,62 @@ def build_activation_revenue(cols, crew, today, log=print) -> Path:
                               log=log,
                               tableau=(cols, getattr(cols, "owner_lines", None) or crew))
 
+
+def stack_pictures(paths, out: Path, gap: int = 24) -> Path:
+    """The pictures one under the other on white, each centred, `gap` px
+    apart. A transparent edge is flattened onto white, never black."""
+    from PIL import Image
+    parts = []
+    for p in paths:
+        im = Image.open(p)
+        if im.mode in ("RGBA", "LA", "P"):
+            im = im.convert("RGBA")
+            flat = Image.new("RGB", im.size, (255, 255, 255))
+            flat.paste(im, mask=im.split()[-1])
+            im = flat
+        parts.append(im.convert("RGB"))
+    w = max(im.width for im in parts)
+    h = sum(im.height for im in parts) + gap * (len(parts) - 1)
+    canvas = Image.new("RGB", (w, h), (255, 255, 255))
+    y = 0
+    for im in parts:
+        canvas.paste(im, ((w - im.width) // 2, y))
+        y += im.height + gap
+    canvas.save(out)
+    return out
+
+
+def build_activation_combined(cols, crew, today, log=print) -> Path:
+    """#5 + #6 as ONE picture (Carlos 2026-11-27: "can 5 & 6 be one
+    screenshot?"): the Activation Report Overview on top, the Activation
+    Revenue Overview under it. Each is still drawn by its own builder, and
+    both are SaraPlus, so the post keeps 'Source: Sara'. If one fails, the
+    other posts alone; if both fail, the section is skipped."""
+    pics, errs = [], []
+    for name, fn in (("overview", build_activation_overview),
+                     ("revenue", build_activation_revenue)):
+        try:
+            pics.append(fn(cols, crew, today, log=log))
+        except Exception as e:  # noqa: BLE001 -- the other half still posts
+            errs.append(f"{name}: {type(e).__name__}: {e}")
+            log(f"[nds] activation {name} FAILED, the combined picture goes "
+                f"without it: {type(e).__name__}: {e}")
+    if not pics:
+        raise RuntimeError("; ".join(errs))
+    out = stack_pictures(pics, OUT_DIR / "nds_activation_combined.png")
+    log(f"[nds] activation combined: {len(pics)} picture(s) -> {out.name}")
+    return out
+
+
+def build_nds_tracker(cols, crew, today, log=print) -> Path:
+    """`--only nds_tracker` (previews, by-hand posts): today's highlighted
+    NDS Tracker downloaded from the Country Trackers thread. The morning run
+    never calls this: post_thread copies the tracker at its slot
+    (AT_POST_TIME, tracker_copy)."""
+    from automations.nds_metrics import tracker_copy
+    return tracker_copy.fetch(today, log=log)
+
+
 def build_activation_by_week(cols, crew, today, log=print) -> Path:
     """Activation rate by Mon-Sun week ending, the last 5 weeks since NDS
     started (Carlos 2026-11-06) -- activation_by_week.py."""
@@ -2055,12 +2113,25 @@ POST_GAP_SECONDS = 2.5          # between thread uploads, so they land in order
 # one-off preview (`--only order_log --dm U...`); never the thread. The
 # 'NDS Order Log' TAB on the Vantura board is a different thing and still
 # refreshes every morning (order_log_tab.refresh).
-RETIRED = {"order_log"}
+# Carlos 2026-11-27: "11 lets stop sending on this thread and stop sending via
+# text" (churn_rates: out of the thread AND off TEXT_SECTIONS) and "15 stop
+# sending" (pending_orders). Same day: "can 5 & 6 be one screenshot?" -- the
+# two activation overviews now post as ONE picture (activation_combined), so
+# their separate sections retire. Every builder stays for a one-off preview
+# (`--only churn_rates --dm U...`); a RETIRED section can never post.
+RETIRED = {"order_log", "churn_rates", "pending_orders",
+           "activation_overview", "activation_revenue"}
 # Sent when Carlos asks, not every morning: built only when named by --only,
 # and then `--post` puts it in today's thread (and on the text chains when it
 # is in TEXT_SECTIONS) like any other board. `rerun nds_metrics --only
 # teams_board --post`. Take a sid out of here to make it a daily section.
 ON_REQUEST = {"teams_board", "teams_last_week"}
+# Sections that are not BUILT with the others: post_thread fetches them at
+# their own slot. nds_tracker (Carlos 2026-11-27) is the highlighted NDS
+# Tracker copied out of the Country Trackers thread (tracker_copy), which can
+# land hours after the morning build. `--only nds_tracker` builds it like any
+# other section (for --dm previews).
+AT_POST_TIME = {"nds_tracker"}
 
 
 def thread_sections():
@@ -2076,8 +2147,9 @@ def postable_sections():
 
 # Posting order = this order (Carlos 2026-11-14: "Lets move 16 and 17 to be
 # after 12, number 3 can be last, number 6 can be 2nd to last"): boards,
-# activation reports, the three churn boards together, rankings, pending,
-# then the Team Tree and the Knocks Board close the thread.
+# activation reports, the churn boards together, rankings, then the Team Tree
+# and the Knocks Board close the thread. 2026-11-27: 5+6 one picture, Churn
+# Rates and Pending Orders out, the NDS Tracker in after the Top 50.
 SECTIONS = [
     ("day_board", "\U0001F3C6", "NDS Sales Board — Yesterday",
      build_day_board),
@@ -2100,10 +2172,10 @@ SECTIONS = [
      build_teams_last_week),
     # sales_metrics: REMOVED (Carlos 2026-10-21: "remove the sales metrics")
     # — the old shot was the D2D Metrics view filtered to RAF's office.
-    ("activation_overview", "\U0001F4B5", "NDS Activation Report Overview",
-     build_activation_overview),
-    ("activation_revenue", "\U0001F4B0", "NDS Activation Revenue Overview",
-     build_activation_revenue),
+    # Carlos 2026-11-27 ("can 5 & 6 be one screenshot?"): the Activation
+    # Report Overview with the Activation Revenue Overview under it.
+    ("activation_combined", "\U0001F4B5",
+     "NDS Activation Report + Revenue Overview", build_activation_combined),
     ("activation_by_rep", "\U0001F4C8", "NDS Activation Rate by Rep",
      build_activation_png),
     # Carlos 2026-11-06: activation rate per Mon-Sun WEEK ENDING, the last 5
@@ -2117,8 +2189,6 @@ SECTIONS = [
     # since 2026-11-10. The other two churn boards follow it (11/14).
     ("customer_churn", "\U0001F43A", "NDS Customer Churn",
      build_customer_churn),
-    ("churn_rates", "\U0001F4C9", "NDS Churn Rates",
-     build_churn_rates_png),
     ("churn_by_rep", "\U0001F4C9", "NDS Churn by Rep",
      build_churn_by_rep_png),
     # Carlos 2026-11-07: the Tableau "Order Tiered Bonus - Rep Ranking" view
@@ -2127,7 +2197,9 @@ SECTIONS = [
     ("rep_tiers", "\U0001F3C5", "NDS Rep Tiered Ranking (this week)",
      build_rep_tiers_shot),
     ("top_reps", "\U0001F3C6", "NDS Top 50 Reps", build_top_reps_shot),
-    ("pending_orders", "⏳", "NDS Pending Orders", build_pending_png),
+    # Carlos 2026-11-27: the highlighted NDS Tracker from the Country Trackers
+    # thread (AT_POST_TIME; a late one lands at the end, tracker_copy).
+    ("nds_tracker", "\U0001F4E1", "NDS Tracker", build_nds_tracker),
     ("team_tree", "\U0001F333", "NDS Team Tree",
      build_team_tree),
     ("knocks_final", "\U0001F6AA", "NDS Knocks Board — Day Prior",
@@ -2136,6 +2208,14 @@ SECTIONS = [
     ("override_board", "\U0001FA9C", "NDS Leader Overrides",
      build_override_board),
     ("order_log", "\U0001F4C4", "NDS Order Log", build_order_log),
+    # Retired 2026-11-27, builders kept for --only/--dm previews:
+    ("activation_overview", "\U0001F4B5", "NDS Activation Report Overview",
+     build_activation_overview),
+    ("activation_revenue", "\U0001F4B0", "NDS Activation Revenue Overview",
+     build_activation_revenue),
+    ("churn_rates", "\U0001F4C9", "NDS Churn Rates",
+     build_churn_rates_png),
+    ("pending_orders", "⏳", "NDS Pending Orders", build_pending_png),
 ]
 
 
@@ -2156,7 +2236,9 @@ def _state_path(today: dt.date) -> Path:
 # this new revenue board on the text chains and slack moving forward").
 # + teams_board (Carlos 2026-11-19: "and as text message to the Aplayer and
 # leaders chat") -- ON_REQUEST, so it only texts when he asks for the board.
-TEXT_SECTIONS = {"customer_churn", "churn_rates", "churn_by_rep", "revenue_board",
+# - churn_rates (Carlos 2026-11-27: "stop sending on this thread and stop
+# sending via text"; its route is gone from TEXT_ROUTES too).
+TEXT_SECTIONS = {"customer_churn", "churn_by_rep", "revenue_board",
                  "teams_board"}
 TEXT_CAMPAIGN = "NDS METRICS"
 
@@ -2202,7 +2284,30 @@ def text_sections(artifacts, today, state, log=print, force: bool = False) -> No
             texted.append(sid)
 
 
-def post_thread(artifacts, today, log=print, force: bool = False) -> None:
+def _post_at_slot(sid, client, today, sp: Path, state: dict, log=print,
+                  force: bool = False) -> dict:
+    """An AT_POST_TIME section, fetched now (nds_tracker: copied out of the
+    Country Trackers thread if it has posted, tracker_copy). The state file is
+    written first, because the copier reads and updates it under its lock,
+    and read back after. A failure never sinks the thread."""
+    sp.write_text(json.dumps(state))
+    try:
+        from automations.nds_metrics import tracker_copy
+        res = tracker_copy.copy_to_thread(today, client=client, log=log,
+                                          force=force)
+        log(f"[nds] {sid}: {res}")
+        if res == "posted":
+            time.sleep(POST_GAP_SECONDS)
+    except Exception as e:  # noqa: BLE001
+        log(f"[nds] {sid} FAILED (thread unaffected): {type(e).__name__}: {e}")
+    return json.loads(sp.read_text()) if sp.exists() else state
+
+
+def post_thread(artifacts, today, log=print, force: bool = False,
+                slot=()) -> None:
+    """Open (once a day) or extend today's thread. `slot` = the AT_POST_TIME
+    sections this run fetches at their slot: all of them on the morning run,
+    only the named ones on an --only run."""
     from automations.shared.slack_metrics_post import _client
     client = _client()
     sp = _state_path(today)
@@ -2216,10 +2321,18 @@ def post_thread(artifacts, today, log=print, force: bool = False) -> None:
         client.chat_postMessage(channel=CHANNEL[1], thread_ts=ts,
                                 text="In this thread:\n" + contents)
         state = {"ts": ts, "posted": []}
+        # Saved now, not after the first upload: a `text_tracker nds` row
+        # (tracker_copy, another process) finds the thread through this file.
+        sp.write_text(json.dumps(state))
         log(f"[nds] opened thread {ts} in {CHANNEL[0]}")
         from automations.shared.slack_metrics_post import pin_message
         pin_message(client, CHANNEL[1], ts, log=log)
     for (sid, emoji, title, _fn) in postable_sections():
+        if sid in AT_POST_TIME:
+            if sid in slot:
+                state = _post_at_slot(sid, client, today, sp, state, log=log,
+                                      force=force)
+            continue
         path = artifacts.get(sid)
         if not path or (sid in state["posted"] and not force):
             continue
@@ -2498,10 +2611,13 @@ def main(argv=None) -> int:
             continue
         if sid in RETIRED | ON_REQUEST and not only:
             continue                      # cancelled / on request: built only when named by --only
+        if sid in AT_POST_TIME and not only:
+            continue                      # fetched at its slot by post_thread
         try:
             artifacts[sid] = fn(cols, crew, today)
         except Exception as e:  # noqa: BLE001 — one board never sinks the rest
             print(f"[nds] {sid} FAILED: {type(e).__name__}: {e}")
+    slot = {sid for sid in AT_POST_TIME if not only or sid in only}
     print(f"[nds] built: {sorted(artifacts)}")
     for sid in sorted(artifacts):
         if source_for(sid):
@@ -2512,7 +2628,7 @@ def main(argv=None) -> int:
     if a.dm:
         dm_previews(artifacts, a.dm)
     if a.post:
-        post_thread(artifacts, today, force=a.force)
+        post_thread(artifacts, today, force=a.force, slot=slot)
     if a.post or a.tab:
         # Every morning after the thread (Carlos 2026-10-29): the same lines the
         # order-log workbook carries, merged into the "NDS Order Log" tab on the

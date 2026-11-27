@@ -180,9 +180,34 @@ def main(argv=None) -> int:
                            headless=args.headless, force=args.force)
     except Exception as e:  # noqa: BLE001
         print("  FAILED: %s: %s" % (type(e).__name__, str(e)[:240]), flush=True)
+        _nds_thread_copy(args.tracker, day, dry)
         return 1
     print(_describe(res), flush=True)
+    _nds_thread_copy(args.tracker, day, dry)
     return 0 if res.get("ok") else 1
+
+
+def _nds_thread_copy(tracker_id: str, day: dt.date, dry: bool) -> None:
+    """The NDS Tracker also goes in the NDS Metrics thread (Carlos 2026-11-27:
+    "lets add in the NDS tracker to this post ... you can still post on the
+    tracker thread as well"). This row is queued the moment the board posts in
+    #alphalete-gp-sales, so it is the trigger for a tracker that lands after
+    the ~7am thread opened. The copy is the highlighted picture from that
+    thread, not this run's capture, and it is skipped if already there
+    (nds_metrics.tracker_copy). It runs whether the text went out or not,
+    and it never fails the text row."""
+    if tracker_id != "nds":
+        return
+    if dry:
+        print("  NDS Metrics thread: dry-run, not copied", flush=True)
+        return
+    try:
+        from automations.nds_metrics import tracker_copy
+        print("  NDS Metrics thread: %s" % tracker_copy.copy_to_thread(day),
+              flush=True)
+    except Exception as e:  # noqa: BLE001 -- the text is this row's job
+        print("  NDS Metrics thread copy failed (text unaffected): %s: %s"
+              % (type(e).__name__, str(e)[:200]), flush=True)
 
 
 if __name__ == "__main__":

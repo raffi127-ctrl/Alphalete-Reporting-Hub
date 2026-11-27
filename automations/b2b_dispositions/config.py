@@ -201,7 +201,8 @@ TEXT_ROUTES = {
     # Metrics thread posts it (nds_metrics.TEXT_SECTIONS). Carlos 2026-11-14:
     # "B2B leaders text chain and the A-players text chain".
     ("NDS METRICS", "nds_customer_churn"): [TEXT_GROUP_ATT, TEXT_GROUP_ALL],
-    ("NDS METRICS", "nds_churn_rates"): [TEXT_GROUP_ATT, TEXT_GROUP_ALL],
+    # nds_churn_rates: STOPPED 2026-11-27 (Carlos: "stop sending on this
+    # thread and stop sending via text"). No route = never texted.
     ("NDS METRICS", "nds_churn_by_rep"): [TEXT_GROUP_ATT, TEXT_GROUP_ALL],
     # NDS Revenue Board with the tier-bonus columns (Carlos 2026-11-14:
     # "send this new revenue board on the text chains and slack moving forward").

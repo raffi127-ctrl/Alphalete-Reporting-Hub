@@ -12,12 +12,12 @@ class TextSections(unittest.TestCase):
         calls = []
         state = {"ts": "1", "posted": ["customer_churn"]}
         with mock.patch.object(R, "_text_section", lambda sid, title, paths, today, log=print: calls.append((sid, title, paths)) or True):
-            R.text_sections({"customer_churn": "/x/churn.png", "churn_rates": "/x/r.png",
+            R.text_sections({"customer_churn": "/x/churn.png", "churn_by_rep": "/x/r.png",
                              "pct_on_board": "/x/p.png"}, self.D, state)
-            R.text_sections({"customer_churn": "/x/churn.png", "churn_rates": "/x/r.png"}, self.D, state)
-        self.assertEqual(calls, [("churn_rates", "NDS Churn Rates", ["/x/r.png"]),
+            R.text_sections({"customer_churn": "/x/churn.png", "churn_by_rep": "/x/r.png"}, self.D, state)
+        self.assertEqual(calls, [("churn_by_rep", "NDS Churn by Rep", ["/x/r.png"]),
                                  ("customer_churn", "NDS Customer Churn", ["/x/churn.png"])])
-        self.assertEqual(state["texted"], ["churn_rates", "customer_churn"])
+        self.assertEqual(state["texted"], ["churn_by_rep", "customer_churn"])
 
     def test_force_retexts(self):
         calls = []
@@ -34,10 +34,24 @@ class TextSections(unittest.TestCase):
 
     def test_route_goes_to_both_chains(self):
         from automations.b2b_dispositions import config as B
-        for sid in ("customer_churn", "churn_rates", "churn_by_rep"):
+        for sid in ("customer_churn", "churn_by_rep"):
             self.assertIn(sid, R.TEXT_SECTIONS)
             self.assertEqual(B.TEXT_ROUTES[("NDS METRICS", "nds_" + sid)],
                              [B.TEXT_GROUP_ATT, B.TEXT_GROUP_ALL])
+
+    def test_churn_rates_stopped_everywhere(self):
+        """Carlos 2026-11-27: "11 lets stop sending on this thread and stop
+        sending via text" -- off the thread, off the texts, no route left,
+        and even an --only run cannot text or post it."""
+        from automations.b2b_dispositions import config as B
+        self.assertNotIn("churn_rates", R.TEXT_SECTIONS)
+        self.assertNotIn(("NDS METRICS", "nds_churn_rates"), B.TEXT_ROUTES)
+        self.assertNotIn("churn_rates", [s[0] for s in R.thread_sections()])
+        self.assertNotIn("churn_rates", [s[0] for s in R.postable_sections()])
+        calls = []
+        with mock.patch.object(R, "_text_section", lambda *a, **k: calls.append(a[0]) or True):
+            R.text_sections({"churn_rates": "/x/r.png"}, self.D, {})
+        self.assertEqual(calls, [])
 
     def test_teams_board_goes_to_leaders_only(self):
         """Carlos 2026-11-20: the Teams board texts the B2B leaders chain."""
@@ -116,3 +130,31 @@ class TeamsBoxRows(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MorningOrder(unittest.TestCase):
+    """2026-11-27: 5+6 one picture, Churn Rates and Pending Orders stopped,
+    the highlighted NDS Tracker added after the Top 50."""
+
+    def test_the_morning_list(self):
+        self.assertEqual([s[0] for s in R.thread_sections()], [
+            "day_board", "week_board", "revenue_board", "pct_on_board",
+            "activation_combined", "activation_by_rep", "activation_by_week",
+            "activation_by_week_tableau", "customer_churn", "churn_by_rep",
+            "rep_tiers", "top_reps", "nds_tracker", "team_tree", "knocks_final"])
+
+    def test_the_stopped_ones_never_post(self):
+        postable = [s[0] for s in R.postable_sections()]
+        for sid in ("pending_orders", "churn_rates", "activation_overview",
+                    "activation_revenue"):
+            self.assertIn(sid, R.RETIRED)
+            self.assertNotIn(sid, postable)
+            self.assertIn(sid, [s[0] for s in R.SECTIONS])   # still previewable
+
+    def test_combined_title_and_source(self):
+        titles = {s[0]: s[2] for s in R.SECTIONS}
+        self.assertEqual(titles["activation_combined"],
+                         "NDS Activation Report + Revenue Overview")
+        self.assertEqual(R.source_for("activation_combined"), "Sara")
+        self.assertEqual(titles["nds_tracker"], "NDS Tracker")
+        self.assertIsNone(R.source_for("nds_tracker"))
