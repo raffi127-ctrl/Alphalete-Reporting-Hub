@@ -134,42 +134,49 @@ def _robot_center(page):
 
 
 # --- navigation ------------------------------------------------------------------
+def _has_explore(page) -> bool:
+    try:
+        return page.locator(
+            "xpath=//*[contains(normalize-space(.),'Explore Appstream AI') or "
+            "contains(normalize-space(.),'Explore AppStream AI')]").count() > 0
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def open_batches(page, signin=None):
     """Console -> 'Explore Appstream AI' (v2) -> Applicants > Process Emails >
     Process in Batches. Returns the page the table is on, or None."""
     ctx = page.context
     LAST_STEPS.clear()
-    # FROM THE CONSOLE. The walk leaves the page on One App at a time, which
-    # has no "Explore Appstream AI" button (Raf 24065, 11:43 on 11/25:
-    # "Process in Batches not reached").
-    try:
-        page.goto(CONSOLE_URL, wait_until="domcontentloaded", timeout=45000)
-        page.wait_for_timeout(2500)
-    except Exception as e:  # noqa: BLE001
-        _log("[batch] could not open the console: %s" % type(e).__name__)
-    # A FRESH LOAD OF THE CONSOLE URL LANDS ON LOGIN (Raf 24065, 11/25 3:17pm:
-    # "console @ Login | .../index.cfm"): the session lives in the walk's own
-    # navigation, not in a bare URL. That bare load is also the AppStream
-    # sign-in box Megan saw on Raf's computer. So sign in the same way every
-    # push does (resume_push.sign_in, the saved login) before going on.
-    try:
-        on_login = "login" in (page.title() or "").lower()
-    except Exception:  # noqa: BLE001
-        on_login = False
-    if on_login and signin is not None:
-        ok = False
-        try:
-            ok = bool(signin(page))
-        except Exception as e:  # noqa: BLE001
-            _log("[batch] sign-in raised %s" % type(e).__name__)
-        LAST_STEPS.append("signed in again" if ok else "sign-in failed")
-        if not ok:
-            return None
+    # THE WAY A PERSON GETS THERE (Megan by hand on Raf's MacBook, 11/27: the
+    # AppStream tab -> Explore Appstream AI -> Process in Batches -> robot ->
+    # Start; one Indeed tick, 10 of 10 resumes read). Never a bare load of the
+    # console URL first: that lands on Login and drops the session (11/25 and
+    # 11/27 runs: "console @ Login"), and loading it again after signing in
+    # dropped it again. Order: the button on the page we are on; if it is not
+    # there, the console URL; if that is Login, the saved sign-in, and stay
+    # on the page the sign-in leaves us on.
+    _step(page, "start")
+    if not _has_explore(page):
         try:
             page.goto(CONSOLE_URL, wait_until="domcontentloaded", timeout=45000)
             page.wait_for_timeout(2500)
+        except Exception as e:  # noqa: BLE001
+            _log("[batch] could not open the console: %s" % type(e).__name__)
+        try:
+            on_login = "login" in (page.title() or "").lower()
         except Exception:  # noqa: BLE001
-            pass
+            on_login = False
+        if on_login and signin is not None:
+            ok = False
+            try:
+                ok = bool(signin(page))
+            except Exception as e:  # noqa: BLE001
+                _log("[batch] sign-in raised %s" % type(e).__name__)
+            LAST_STEPS.append("signed in again" if ok else "sign-in failed")
+            if not ok:
+                return None
+            page.wait_for_timeout(2500)
     _step(page, "console")
     before = len(ctx.pages)
     if _click_if_present(page, ["Explore Appstream AI", "Explore AppStream AI"],
