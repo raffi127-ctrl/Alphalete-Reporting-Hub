@@ -416,6 +416,7 @@ def run(page, office: str, profile_dir, live_allowed: bool, net=None,
     ctx = page.context
     pages_before = list(ctx.pages)
     bpage = None
+    keep_tabs = False
     try:
         bpage = (open_batches_direct(page, signin=signin)
                  or open_batches(page, signin=signin))
@@ -439,29 +440,29 @@ def run(page, office: str, profile_dir, live_allowed: bool, net=None,
             _log("[batch] the batch page does not show office %s -- NOT sending" % office)
             out["skipped"] = "office not shown on the batch page"
             return out
+        # EXTRACT ONLY (Megan 2026-11-27: "they just are left to then process
+        # since the info is there"). Resume Helper fills the phone numbers in
+        # on the records; the one-at-a-time walk sends anyone with a number
+        # on its next pass, without opening Indeed for them. No Send here.
         res = _extract(bpage)
-        try:
-            bpage.reload(wait_until="domcontentloaded")
-            bpage.wait_for_timeout(3000)
-        except Exception:  # noqa: BLE001
-            pass
-        after = table_counts(bpage)
         blocked = bool(net and (net.get("indeed_403") or net.get("turnstile")))
-        blocked = blocked or (res == "cap" and (after.get("ready") or 0)
-                              >= (out.get("ready") or 0) > 0)
+        blocked = blocked or res == "cap"     # never finished: Indeed's check
         out["extract"] = res
-        out["ready_after"] = after.get("ready")
         out["blocked"] = blocked
+        out["sent"] = 0
         _note_block(office, blocked)
-        out["sent"] = _send_first(bpage, BATCH_LIMIT) or 0
-        _log("[batch] LIVE: %s sent to AI from the batch" % out["sent"])
+        if blocked:
+            keep_tabs = True   # leave Indeed's check up for the person the DM asks
+        _log("[batch] LIVE: Resume Helper %s%s" % (
+            "finished" if res == "reset" else "stopped (" + (res or "no start") + ")",
+            " -- Indeed's check is up" if blocked else ""))
         return out
     except Exception as e:  # noqa: BLE001 -- the trial never costs the walk
         _log("[batch] trial pass failed: %s: %s" % (type(e).__name__, str(e)[:160]))
         out["error"] = type(e).__name__
         return out
     finally:
-        for p in list(ctx.pages):
+        for p in ([] if keep_tabs else list(ctx.pages)):
             if p not in pages_before:
                 try:
                     p.close()
