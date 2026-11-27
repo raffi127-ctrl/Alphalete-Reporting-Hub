@@ -62,7 +62,6 @@ MANUAL = {
 # Rows kept as copied from last week but worth a look.
 CHECK = {
     "carlos": {
-        "Maud's Bonus": "not in Apex — kept",
         "Indeed Charges … Investment into local office": "from his month tab one week back — see NOTES if it wasn't finished",
     },
     "raf": {
@@ -125,9 +124,10 @@ def vantura(week: dt.date) -> dict:
 
 
 LANDLORD = "ccinorthhwy360lp"   # Carlos's office rent payee (Online ACH Payment to CCINorthHwy360LP)
+MAUD_PAYEE = "alphaletemarketinggroup"   # Online ACH Payment to Alphaletemarketinggroupinc = Maud's Bonus (Maud 2026-11-27)
 
 
-def carlos_rent(lo: dt.date, hi: dt.date) -> list | None:
+def carlos_rent(lo: dt.date, hi: dt.date, payee: str = LANDLORD) -> list | None:
     """Payments [(date, amount)] to the landlord between lo..hi in Carlos's Tiller; None if Tiller can't be read.
     CCINorthHwy360LP is ALWAYS rent (Maud 2026-11-20), whatever the month tab labels it."""
     try:
@@ -141,7 +141,7 @@ def carlos_rent(lo: dt.date, hi: dt.date) -> list | None:
     out = []
     for r in tx[1:]:
         r = r + [""] * len(h)
-        if isinstance(r[d_], (int, float)) and LANDLORD in str(r[de]).lower().replace(" ", "") \
+        if isinstance(r[d_], (int, float)) and payee in str(r[de]).lower().replace(" ", "") \
                 and isinstance(r[am], (int, float)) and r[am] < 0 and lo <= EPOCH + dt.timedelta(days=int(r[d_])) <= hi:
             out.append((EPOCH + dt.timedelta(days=int(r[d_])), round(-r[am], 2)))
     return out
@@ -181,10 +181,19 @@ def carlos_red_rows(week: dt.date) -> tuple[dict, list]:
         # rent that's in his Carlos-only total (marked x) comes back out of Investment — matched by the
         # landlord's name OR by a Tiller landlord payment's date + amount (the month-tab label can be wrong)
         left = list(pays or [])
+        # Maud's Bonus = payments to Alphalete Marketing Group (the month tab calls them "Maudy's Bonus" — but so
+        # are the rent payments, so match the Tiller payee, not the label); also backed out of Investment
+        maud = carlos_rent(lo, week, MAUD_PAYEE) or []
+        mleft, in_maud = list(maud), 0.0
         for r in v:
             if isinstance(r[2], (int, float)) and r[2] > 40000 and str(r[4]).strip().lower() == "x" \
                     and isinstance(r[3], (int, float)) and lo <= EPOCH + dt.timedelta(days=int(r[2])) <= week:
                 d, amt = EPOCH + dt.timedelta(days=int(r[2])), round(r[3], 2)
+                mh = next((p for p in mleft if p == (d, amt)), None)
+                if mh:
+                    in_maud += r[3]
+                    mleft.remove(mh)
+                    continue
                 hit = next((p for p in left if p == (d, amt)), None)
                 if hit or LANDLORD in _n(r[1]).replace(" ", ""):
                     in_tab += r[3]
@@ -214,8 +223,8 @@ def carlos_red_rows(week: dt.date) -> tuple[dict, list]:
                          f" — the regular transfer may be labelled differently; check the month tab for {want}")
         out = {"Indeed Charges": round(indeed, 2), "Outside Deals": -round(outside, 2), "ARS - interviewers": -850,
                "Rent/Utilities": -round(rent, 2) if rent else 0, "Food/Team Nights": round(food, 2), "Travel/Entertainment": round(travel, 2),
-               "Nico's Management Fee": round(-fee, 2),
-               "Investment into local office": round(-(co - fee + travel + indeed - 850 - in_tab), 2)}
+               "Nico's Management Fee": round(-fee, 2), "Maud's Bonus": -round(sum(a for _, a in maud), 2),
+               "Investment into local office": round(-(co - fee + travel + indeed - 850 - in_tab - in_maud), 2)}
         print(f"  {tab} {want} -> red rows {out}")
         return out, notes
     notes.append(f"Carlos red rows: no month tab has {want} yet — kept last week's placeholders")
