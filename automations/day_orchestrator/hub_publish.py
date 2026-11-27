@@ -305,6 +305,7 @@ _HUB_CARD = {
     "miguel_metrics": "office-metrics",    # 2026-11-06, Miguel Zaragoza, same card
     "emiliano_metrics": "office-metrics",  # 2026-11-10, Emiliano (Milly) Villagrana, same card
     "natalia_metrics": "office-metrics",   # 2026-11-10, Natalia Gwarda, same card
+    "hasan_metrics": "office-metrics",     # 2026-11-27, Hasan Salame, same card
     "zaid_metrics": "office-metrics",  # 2026-11-09, Zaid Arabiyat, same card
     "juan_metrics": "office-metrics",  # 2026-11-09, Juan Lucio, same card
     "starr_metrics": "office-metrics",     # 2026-11-04, Starr Rodenhurst, same card

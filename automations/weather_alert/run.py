@@ -74,6 +74,7 @@ CITIES = {
     "southfield": ("Southfield / Detroit, MI", 42.4734, -83.2219, "America/Detroit"),
     "corpus_christi": ("Corpus Christi, TX", 27.8006, -97.3964, "America/Chicago"),
     "austin": ("Austin, TX", 30.2672, -97.7431, "America/Chicago"),
+    "waco": ("Waco, TX", 31.5493, -97.1467, "America/Chicago"),
     "denver": ("Denver, CO", 39.7392, -104.9903, "America/Denver"),
     "abilene": ("Abilene, TX", 32.4487, -99.7331, "America/Chicago"),
     # sahil / M Coast: Raleigh NC (captainship_night_knocks.zones), 2026-11-04.
@@ -162,6 +163,7 @@ METRICS_CITY = {
     "miguel": "sacramento",     # Nobilis Marketing Group (ATT Fiber 24145): order-log zips 95841/95826/95827 + Marysville/Yuba City (2026-11-06); Pacific; channel from ECO sign-up
     "emiliano": "sacramento",   # Vincere Marketing (ATT Fiber 22001), Emiliano "Milly" Villagrana: Gold River CA = Sacramento (captainship zones.py); Pacific; channel from ECO sign-up
     "natalia": "san_leandro",   # Zora Industries (ATT Fiber 23431), Natalia Gwarda: San Leandro CA (captainship zones.py); Pacific; channel from ECO sign-up
+    "hasan": "waco",            # Ascend Elite Marketing (ATT Fiber 24337), Hasan Salame: Waco TX (captainship zones.py); Central; channel from ECO sign-up
     "juan": "corpus_christi",   # Juan Lucio / Lucio Marketing (NDS): customer zips 784xx Corpus Christi (NDS order log 2026-11-09; OV address says McAllen); Central; #juan-lucio-metrics
     "zaid": "boston",           # Zaid Arabiyat / Aces Acquisitions (NDS): zips 02124 Boston, 03103 Manchester NH, 03060 Nashua, 01841 Lawrence (NDS order log 2026-11-09); EASTERN; #zaid-arabiyat-metrics
     "sahil": "raleigh",         # M Coast, Raleigh NC; Eastern; channel from ECO sign-up

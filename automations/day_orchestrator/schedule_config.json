@@ -20594,6 +20594,45 @@
    "_onboarded": true,
    "_note": "Office metrics for natalia. wired by hand 2026-11-10 (Megan: 'Natalia Gwarda is enrolling - let's do her dry run'). Zora Industries, Inc., OwnerVille/AppStream 23431 (office-mapping.json; a second office 23624 'Zora Industries, Inc. 2nd' also exists under her name), AT&T Fiber on Starr's captainship (captainship_night_knocks/owners.py). Eleven fiber boards like tre on Lucy 4. No Slack room yet: held on Megan's DM until her ECO sign-up names it. Sheet 'Natalia Gwarda - Lucy Metrics' 13v5Ckq_HDa_Bh_Ro6zLztBsiMVSuvW2Sm8WFsUNx2GE (Master Metrics Templates copy, writer alphaletereporting@). San Leandro CA (captainship zones.py) = Pacific; her Slack profile says Eastern, so confirm with the order-log zips. Scheduler OFF until the dry run is read."
   },
+  "hasan_metrics": {
+   "order": 36.997,
+   "machine": "Lucy 4",
+   "on_scheduler": false,
+   "display_name": "Hasan's Daily Metrics (channel from ECO sign-up)",
+   "source_type": "tableau",
+   "data_sources": [
+    "tableau:order_log"
+   ],
+   "command": [
+    "automations.office_metrics.runner"
+   ],
+   "base_args": [
+    "--office",
+    "hasan",
+    "--live"
+   ],
+   "cadence": {
+    "weekdays": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ]
+   },
+   "priority": "P1",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 60,
+   "verify": {
+    "type": "manifest",
+    "report_id": "hasan_metrics"
+   },
+   "_onboarded": true,
+   "_note": "Office metrics for hasan. wired by hand 2026-11-27 (Megan: 'Hasan Salame is enrolling in Eco- let's do the dry run'). Ascend Elite Marketing, Inc., OwnerVille/AppStream 24337 (office-mapping.json; he also recruits under Raf's funnel office 24279), AT&T Fiber, promoted out of Haytham Nagi's office. Waco TX, Central (captainship_night_knocks/zones.py). Eleven fiber boards like natalia on Lucy 4. No Slack channel yet: held on Megan's DM until his ECO sign-up names it. Sheet 'Hasan Salame - Lucy Metrics' 1x-hQ3-ksKIpECJzGOQqlWZzDZFXnwNeb18YxMknLsU0 (Master Metrics Templates copy, writer alphaletereporting@). Scheduler OFF until the dry run is read. NOT Hasani Lynch (key `hasani`, Covenant)."
+  },
   "juan_metrics": {
    "order": 36.98,
    "machine": "Lucy 4",
