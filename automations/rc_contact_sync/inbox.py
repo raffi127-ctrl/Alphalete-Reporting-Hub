@@ -530,6 +530,171 @@ def run(words: List[str], since: dt.date, until: dt.date, *,
     return 0
 
 
+def _last4(n: str) -> str:
+    return "…" + n[-4:] if n else "(none)"
+
+
+def number_roles(names: Dict[str, str], custs: List[Dict]) -> Dict[str, str]:
+    """{number: 'main' | 'Line N'} for every customer number we know.
+
+    'main' = the order's contact phone (feed) or a book contact that is not
+    one of the sync's "<Name> - Line N" contacts; 'Line N' = an order line
+    whose number is NOT the contact phone. main wins when a number is both."""
+    from automations.rc_contact_sync import guest
+    roles: Dict[str, str] = {}
+    for n, nm in names.items():
+        if " - Line" in nm:
+            roles.setdefault(n, "Line " + nm.split(" - Line", 1)[1].strip())
+    for cu in custs:
+        main = RC.norm_phone(cu.get("phone") or "")
+        for x in guest.extra_line_contacts(cu):
+            p = RC.norm_phone(x["phone"])
+            if p:
+                roles.setdefault(p, "Line %s" % x["line"])
+        if main:
+            roles[main] = "main"
+    for n, nm in names.items():
+        if " - Line" not in nm:
+            roles[n] = "main"
+    return roles
+
+
+def lines_texts_report(msgs: List[dict], roles: Dict[str, str], own: str) -> List[str]:
+    """Texts to and from the customers' MAIN numbers vs their OTHER lines."""
+    def bucket(role: str) -> str:
+        return "main" if role == "main" else "other line"
+
+    out_n = {"main": 0, "other line": 0}
+    out_auto = {"main": 0, "other line": 0}
+    in_n: Dict[str, int] = {}
+    in_from: Dict[str, set] = {"main": set(), "other line": set()}
+    in_by_line: Dict[str, int] = {}
+    other_bodies: List[str] = []
+    total_out = 0
+    for m in msgs:
+        if m.get("direction") == "Inbound":
+            snd = _sender(m)
+            role = roles.get(snd)
+            if not role:
+                continue
+            b = bucket(role)
+            in_n[b] = in_n.get(b, 0) + 1
+            in_from[b].add(snd)
+            if b == "other line":
+                in_by_line[role] = in_by_line.get(role, 0) + 1
+                other_bodies.append("%s  %s  \"%s\"" % (
+                    _when(m), role, " ".join(str(m.get("subject") or "").split())[:90]
+                    or "(picture / blank)"))
+            continue
+        total_out += 1
+        to = {n for n in _recipients(m) if n and n != own}
+        auto = template_of(m.get("subject") or "") != "typed by a person (not a template)"
+        for b in {bucket(roles[n]) for n in to if n in roles}:
+            out_n[b] += 1
+            if auto:
+                out_auto[b] += 1
+    L = ["=== TEXTS: MAIN NUMBER vs OTHER LINES ===",
+         "  outbound from Taylor's line (all):        %d" % total_out,
+         "  outbound that included a MAIN number:     %d  (%d of them Lucy's automatic texts)"
+         % (out_n["main"], out_auto["main"]),
+         "  outbound that included an OTHER line:     %d  (%d of them Lucy's automatic texts)"
+         % (out_n["other line"], out_auto["other line"]),
+         "  replies FROM a main number:               %d text(s) from %d number(s)"
+         % (in_n.get("main", 0), len(in_from["main"])),
+         "  replies FROM an other line:               %d text(s) from %d number(s)"
+         % (in_n.get("other line", 0), len(in_from["other line"]))]
+    for k in sorted(in_by_line):
+        L.append("      %-8s %d text(s)" % (k, in_by_line[k]))
+    if other_bodies:
+        L.append("  --- every text from an other line ---")
+        L.extend("    " + b for b in other_bodies)
+    return L
+
+
+def port_report(custs: List[Dict]) -> List[str]:
+    """Carlos 2026-11-27: how often is the order's contact phone NOT the
+    number being ported over?"""
+    from collections import Counter
+    from automations.rc_contact_sync import guest
+    kinds: Counter = Counter()
+    examples: Dict[str, List[str]] = {}
+    port_orders = 0
+    for cu in custs:
+        main = RC.norm_phone(cu.get("phone") or "")
+        ls = cu.get("lines") or []
+        port = {RC.norm_phone(l.get("phone") or "") for l in ls
+                if (l.get("type") or "").lower().startswith("port")} - {""}
+        anyline = {RC.norm_phone(l.get("phone") or "") for l in ls} - {""}
+        has_port = any((l.get("type") or "").lower().startswith("port") for l in ls)
+        if not has_port:
+            k = ("no port line: contact phone is one of the lines" if main in anyline
+                 else "no port line: contact phone is a different number" if main
+                 else "no port line: no contact phone")
+        else:
+            port_orders += 1
+            if not main:
+                k = "PORT order: no contact phone"
+            elif main in port:
+                k = "PORT order: contact phone IS a ported number"
+            elif main in anyline:
+                k = "PORT order: contact phone is a non-port line"
+            elif not port:
+                k = "PORT order: ported numbers missing from the feed"
+            else:
+                k = "PORT order: contact phone is NOT any ported number"
+        kinds[k] += 1
+        examples.setdefault(k, []).append(
+            "%s %s (%d line%s; contact %s; ported %s)" % (
+                cu.get("day"), cu.get("customer_name") or cu.get("order_id"),
+                len(ls), "" if len(ls) == 1 else "s", _last4(main),
+                ", ".join(_last4(p) for p in sorted(port)) or "-"))
+    multi = sum(1 for cu in custs if len(cu.get("lines") or []) > 1)
+    L = ["=== SARAPLUS ORDERS: CONTACT PHONE vs PORTED NUMBER ===",
+         "  %d crew order(s) in the feed, %d with a port line, %d with 2+ lines"
+         % (len(custs), port_orders, multi)]
+    for k, n in sorted(kinds.items()):
+        L.append("  %-58s %d" % (k, n))
+    for k in sorted(examples):
+        if k.startswith("PORT order: contact phone is NOT") or "non-port" in k:
+            L.append("  --- %s ---" % k)
+            L.extend("    " + e for e in examples[k])
+    return L
+
+
+def run_lines(since: dt.date, log=print) -> int:
+    """Carlos 2026-11-27 (out of text credits): do the 2nd/3rd/4th lines
+    ever answer, and how often is the order's contact phone not the ported
+    number? READ-ONLY; result to the 'RC Inbox' tab."""
+    from automations.rc_contact_sync import guest
+    creds = C.rc_creds()
+    info = RC.token_info(creds)
+    token = info["access_token"]
+    RC.assert_identity(RC.identity(info), creds.get("expected_owner_id") or C.RC_OWNER_ID)
+    watch_token = RC.token(creds, jwt=creds["watch_jwt"]) if creds.get("watch_jwt") else token
+    names = name_map(RC.address_book(token, str(creds["contacts_extension_id"])))
+    try:
+        own = RC.norm_phone(RC.sender_number(token))
+    except Exception:  # noqa: BLE001
+        own = RC.norm_phone("945-337-2199")
+    custs = guest.guest_customers(since, dt.date.today(), log=log)
+    roles = number_roles(names, custs)
+    msgs = sorted(_messages_since(watch_token, str(creds["watch_extension_id"]), since),
+                  key=lambda x: x.get("creationTime") or "")
+    out = ["since %s: %d message(s) on the line, %d main / %d other-line numbers known"
+           % (since, len(msgs), sum(1 for r in roles.values() if r == "main"),
+              sum(1 for r in roles.values() if r != "main")), ""]
+    out += lines_texts_report(msgs, roles, own) + [""] + port_report(custs)
+    for r in out:
+        log(r)
+    try:
+        from automations.rc_contact_sync.status_probe import _upload_bytes
+        _upload_bytes("\n".join(out).encode(), TAB, log=log)
+    except Exception as e:  # noqa: BLE001
+        log("  (tab upload failed: %s: %s)" % (type(e).__name__, str(e)[:120]))
+    print("=== done ===", flush=True)
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(
         prog="rc_inbox",
@@ -554,7 +719,13 @@ def main(argv=None) -> int:
                          "we texted or called them back")
     ap.add_argument("--new-after", default=None, metavar="YYYY-MM-DD HH:MM",
                     help="with --replies-after: mark customers whose latest text is after this NEW")
+    ap.add_argument("--lines", action="store_true",
+                    help="texts to/from main numbers vs the order's other lines, "
+                         "+ how often the contact phone is not the ported number")
     args = ap.parse_args(argv)
+    if args.lines:
+        return run_lines(dt.date.fromisoformat(args.since) if args.since
+                         else dt.date(2026, 10, 19))
     if args.replies_after:
         return run_replies(args.replies_after, args.new_after or "")
     since = (dt.date.fromisoformat(args.since) if args.since
