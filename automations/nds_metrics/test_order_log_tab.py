@@ -744,3 +744,52 @@ class Nov27DeviceDropdown(unittest.TestCase):
         self.assertEqual(len(dv), 1)
         self.assertFalse(dv[0]["rule"]["strict"])
         self.assertTrue(dv[0]["rule"]["showCustomUi"])
+
+
+class Nov27AccountPhoneNote(unittest.TestCase):
+    """Carlos 2026-11-27: the account's phone is not one of the ported
+    numbers -> say so in Notes, on every line of the order."""
+
+    def port(self, **kw):
+        base = dict(line_type="Port", phone="(214) 555-0100")
+        base.update(kw)
+        return line(**base)
+
+    def notes(self, result):
+        return {r[T._COL["Line"]]: r[T._COL["Notes"]] for r in result["rows"]}
+
+    def test_contact_not_ported_noted_on_every_line(self):
+        r = T.merge([], [self.port(device="214-555-0001"),
+                         self.port(line_no="2", device="214-555-0002")], today=TODAY)
+        n = self.notes(r)
+        self.assertEqual(set(n), {"1", "2"})
+        for v in n.values():
+            self.assertEqual(v, "Account phone (214) 555-0100 is NOT one of the ported numbers")
+
+    def test_contact_is_a_ported_number_no_note(self):
+        r = T.merge([], [self.port(device="214-555-0100"),
+                         self.port(line_no="2", device="214-555-0002")], today=TODAY)
+        self.assertEqual(set(self.notes(r).values()), {""})
+
+    def test_no_port_line_no_note(self):
+        r = T.merge([], [line(phone="(214) 555-0100")], today=TODAY)
+        self.assertEqual(self.notes(r)["1"], "")
+
+    def test_typed_note_kept_and_not_duplicated(self):
+        first = T.merge([], [self.port(device="214-555-0001")], today=TODAY)
+        rows = [list(x) for x in first["rows"]]
+        rows[0][T._COL["Notes"]] += " | called 11/27"
+        again = T.merge(rows, [self.port(device="214-555-0001")], today=TODAY)
+        self.assertEqual(self.notes(again)["1"],
+                         "called 11/27 | Account phone (214) 555-0100 is NOT one of the ported numbers")
+        # the order stops qualifying (feed fixed) -> only the typed note stays
+        fixed = T.merge(again["rows"], [self.port(device="214-555-0100")], today=TODAY)
+        self.assertEqual(self.notes(fixed)["1"], "called 11/27")
+
+    def test_imei_is_not_a_phone(self):
+        self.assertEqual(T._digits10("356762114987121"), "")
+        self.assertEqual(T._digits10("+1 (214) 555-0100"), "2145550100")
+
+    def test_auto_note_alone_does_not_hold_a_stray(self):
+        self.assertEqual(T.strip_contact_note(
+            "Account phone (214) 555-0100 is NOT one of the ported numbers"), "")

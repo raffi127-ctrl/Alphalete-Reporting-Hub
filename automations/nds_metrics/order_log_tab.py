@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import collections
 import datetime as dt
+import re
 from typing import Dict, List, Optional, Sequence
 
 VANTURA_SHEET_ID = "1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY"
@@ -556,6 +557,13 @@ def merge(existing: Sequence[Sequence[str]], lines: Sequence[dict], *,
     removed, held = strays(merged, lines, fresh_keys)
     for k in removed:
         del merged[k]
+    # the account-phone note, on every line of an order in today's feed
+    # (an order the feed has forgotten keeps whatever its rows say)
+    cnotes = contact_notes(lines)
+    for row in merged.values():
+        oid = _order_id(row[_COL["Wireless Order #"]], row[_COL["DSI #"]])
+        if oid in cnotes:
+            row[_COL["Notes"]] = with_contact_note(row[_COL["Notes"]], cnotes[oid])
     kept, aged = [], 0
     for row in merged.values():
         od = _parse_date(row[_COL["Order Date"]])
@@ -575,6 +583,77 @@ def merge(existing: Sequence[Sequence[str]], lines: Sequence[dict], *,
         r[_COL["Line"]].zfill(3) if r[_COL["Line"]].isdigit() else r[_COL["Line"]]))
     return {"rows": kept, "added": added, "changed": changed, "aged_out": aged,
             "strays_removed": [removed[k] for k in removed], "strays_held": held}
+
+
+# Carlos 2026-11-27: "when pulling the orders ... if the number on the account
+# is not one of the numbers being ported over add it in the notes section".
+# 29 of 157 port orders (10/15-11/27) had a contact phone that is none of the
+# ported numbers -- the number our texts go to is then not the customer's
+# AT&T phone. The note is ONE " | "-separated piece of Notes starting with
+# CONTACT_NOTE_PREFIX: rewritten every refresh, never touching what a person
+# typed around it, and dropped again if the order stops qualifying.
+CONTACT_NOTE_PREFIX = "Account phone "
+_NOTE_SEP = " | "
+
+
+def _digits10(v) -> str:
+    d = re.sub(r"\D", "", str(v or ""))
+    if len(d) == 11 and d.startswith("1"):
+        d = d[1:]
+    return d if len(d) == 10 else ""          # an IMEI / order number is not a phone
+
+
+def _pretty_phone(d: str) -> str:
+    return "(%s) %s-%s" % (d[:3], d[3:6], d[6:]) if len(d) == 10 else d
+
+
+def _order_id(wo, dsi) -> str:
+    wo, dsi = _norm(wo), _norm(dsi)
+    return ("wo", wo) if wo else (("dsi", dsi) if dsi else None)
+
+
+def contact_notes(lines: Sequence[dict]) -> Dict[tuple, str]:
+    """{order id: note} for EVERY order in today's feed: the note when the
+    order has a Port line and its account (contact) phone is none of the
+    ported numbers, '' otherwise (so a stale note is cleared). An order with
+    no contact phone or no readable ported numbers gets '' too."""
+    contact: Dict[tuple, str] = {}
+    ported: Dict[tuple, set] = collections.defaultdict(set)
+    has_port: Dict[tuple, bool] = {}
+    for l in lines:
+        oid = _order_id(l.get("wireless_order"), l.get("dsi"))
+        if oid is None:
+            continue
+        contact.setdefault(oid, _digits10(l.get("phone")))
+        is_port = str(l.get("line_type") or "").strip().lower().startswith("port")
+        has_port[oid] = has_port.get(oid, False) or is_port
+        # the line's own number: "device" (see device_model), but take the first
+        # phone-shaped cell as rc_contact_sync.guest.line_phone does
+        num = next((d for d in (_digits10(l.get(k)) for k in ("device", "line_number")) if d), "")
+        if is_port and num:
+            ported[oid].add(num)
+    out: Dict[tuple, str] = {}
+    for oid, c in contact.items():
+        if has_port.get(oid) and c and ported[oid] and c not in ported[oid]:
+            out[oid] = ("%s%s is NOT one of the ported numbers"
+                        % (CONTACT_NOTE_PREFIX, _pretty_phone(c)))
+        else:
+            out[oid] = ""
+    return out
+
+
+def strip_contact_note(notes: str) -> str:
+    """Notes without the code's own account-phone piece (what a person typed)."""
+    parts = [p for p in str(notes or "").split(_NOTE_SEP)
+             if not p.strip().startswith(CONTACT_NOTE_PREFIX)]
+    return _NOTE_SEP.join(p for p in parts if p.strip()).strip()
+
+
+def with_contact_note(notes: str, note: str) -> str:
+    typed = strip_contact_note(notes)
+    if not note:
+        return typed
+    return (typed + _NOTE_SEP + note) if typed else note
 
 
 # Columns a person types in. A stray row holding any of these is never removed
@@ -623,7 +702,7 @@ def strays(merged, lines: Sequence[dict], fresh_keys) -> tuple:
             continue
         what = "%s L%s %s %s" % (row[_COL["Customer"]], row[_COL["Line"]], row[_COL["Phone #"]],
                                  row[_COL["Line Status"]] or "(no status)")
-        if any(str(row[_COL[c]]).strip() for c in _TYPED):
+        if any(strip_contact_note(row[_COL[c]]) for c in _TYPED):
             held.append(what)
         else:
             removed[key] = what
