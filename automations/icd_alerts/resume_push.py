@@ -448,6 +448,43 @@ def _heartbeat(log=print, now: Optional[dt.datetime] = None) -> bool:
         return False
 
 
+KICK_PATH = Path(__file__).resolve().parent / "batch_kick.json"
+
+
+def _maybe_test_kick(log=print) -> bool:
+    """A one-time DRY test run asked for in batch_kick.json (it ships with the
+    code, so a release is how it is sent). Only for the office named in it,
+    once per id, never while a push holds the lock. Sends nobody."""
+    try:
+        kick = json.loads(KICK_PATH.read_text())
+    except Exception:  # noqa: BLE001
+        return False
+    kid = str(kick.get("id") or "")
+    rec = push_record()
+    if (not kid or str(rec.get("office_key") or "") != kick.get("office_key")
+            or str(kick.get("office")) not in office_ids(rec)):
+        return False
+    st = _state()
+    if st.get("test_kick_done") == kid or _lock_held():
+        return False
+    st["test_kick_done"] = kid
+    _save_state(st)
+    root = Path(__file__).resolve().parents[2]
+    kw = {"cwd": str(root), "stdin": subprocess.DEVNULL}
+    if IS_WINDOWS:
+        kw["creationflags"] = (getattr(subprocess, "DETACHED_PROCESS", 0x8)
+                               | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x200))
+    else:
+        kw["start_new_session"] = True
+    C.APP_DIR.mkdir(parents=True, exist_ok=True)
+    out = open(LOG_PATH, "a")
+    subprocess.Popen([sys.executable, "-m", "automations.icd_alerts.resume_push",
+                      "--scheduled", "--test-office", str(kick["office"])],
+                     stdout=out, stderr=subprocess.STDOUT, **kw)
+    log("resume push TEST RUN started for office %s (%s)" % (kick["office"], kid))
+    return True
+
+
 def maybe_kick(log=print) -> bool:
     """Called from every agent tick. Starts a push in its OWN process when one
     is due, and returns at once -- a push can take many minutes and must never
@@ -455,6 +492,11 @@ def maybe_kick(log=print) -> bool:
     try:
         _heartbeat(log=log)
     except Exception:  # noqa: BLE001 -- the telling, never the work
+        pass
+    try:
+        if _maybe_test_kick(log):
+            return True
+    except Exception:  # noqa: BLE001 -- a test request never costs a push
         pass
     if not enabled() or not due():
         return False
@@ -1725,7 +1767,8 @@ def _file_todo(out: dict, live: bool) -> None:
         _log("could not relay the to-do list: %s" % type(e).__name__)
 
 
-def push(live: bool, scheduled: bool = False) -> int:
+def push(live: bool, scheduled: bool = False,
+         force_office: Optional[str] = None) -> int:
     """One push. 0 = done (or nothing to do), 1 = failed."""
     if not C.appstream_creds():
         _log("no AppStream login saved -- nothing to push with")
@@ -1742,7 +1785,11 @@ def push(live: bool, scheduled: bool = False) -> int:
     global _CURRENT_OFFICE
     ids = office_ids(record)
     multi = len(ids) > 1
-    if multi:
+    if force_office and force_office in ids:
+        live = False                 # a requested test run sends nobody
+        _CURRENT_OFFICE = force_office
+        _log("TEST RUN (dry) for office %s" % force_office)
+    elif multi:
         pick = pick_office(record=record)
         if pick is None and not scheduled:
             pick = ids[0]            # a hand run always does something
@@ -1898,6 +1945,8 @@ def main(argv=None) -> int:
                          "instructions do not error)")
     ap.add_argument("--check-login", action="store_true",
                     help="sign in to AppStream and stop")
+    ap.add_argument("--test-office", default="",
+                    help="a DRY test run of this office (batch_kick.json)")
     args = ap.parse_args(argv)
     if args.setup:
         _log("nothing to set up: the push no longer uses Resume Helper")
@@ -1907,6 +1956,9 @@ def main(argv=None) -> int:
         if rc == NO_CHROME:
             _log("could not open Lucy's Chrome, so the login was not tried")
         return rc
+    if args.test_office:
+        return push(live=False, scheduled=args.scheduled,
+                    force_office=args.test_office)
     return push(live=args.live, scheduled=args.scheduled)
 
 

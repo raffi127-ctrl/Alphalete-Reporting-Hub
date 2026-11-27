@@ -100,6 +100,7 @@ AGENT_FILES = [
     "automations/icd_alerts/as_signin.py",
     "automations/icd_alerts/resume_push.py",
     "automations/icd_alerts/batch_push.py",
+    "automations/icd_alerts/batch_kick.json",
     # THE WALK ITSELF, shipped whole rather than copied (2026-10-20): the
     # office machine runs the same One App at a time walk as Lucy 2 and
     # Lucy 4, so a walk fix reaches every office on its next self-update.
