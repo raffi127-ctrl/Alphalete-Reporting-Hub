@@ -28,9 +28,11 @@ class Rows(unittest.TestCase):
         self.assertEqual(r[T._COL["Delivered Message Sent"]], "")
         self.assertEqual(T.HEADERS[T._COL["Notes"] - 1], "Taylor's Notes")        # 11/17 pm: to the LEFT of Notes
         self.assertEqual(T.HEADERS[T._COL["Order Date"] + 1], "Last Updated")    # 11/17 pm: right after Order Date (11/27: first of the date fold)
-        self.assertEqual(T.HEADERS[T._COL["Being worked on"] + 1], "Shipping Status")  # 11/27: Delivered Message Sent moved right
+        self.assertEqual(T.HEADERS[T._COL["Being worked on"] + 1], "Shipping Notes")   # 11/27: Delivered Message Sent moved right
+        self.assertEqual(T.HEADERS[T._COL["Taylor's Notes"] - 1], "Shipping Status")  # 11/27: left of Taylor's Notes
+        self.assertEqual(T.HEADERS[T._COL["Plan"] + 1], "Shipping Status")            # right after the customer fold
         self.assertEqual(T.HEADERS[T._COL["Churn Bucket"] + 1], "Delivered Message Sent")  # 11/27: right of Churn Bucket
-        self.assertEqual(T.HEADERS[T._COL["Shipping Status"] + 1], "Shipping Notes")
+        self.assertEqual(T.HEADERS[T._COL["Shipping Status"] + 1], "Taylor's Notes")   # 11/27: Shipping Notes stays at the right
         self.assertEqual(T.HEADERS[T._COL["Ship Date"] + 1], "Delivered")
         self.assertEqual(T.HEADERS[1], "Pay Period")                  # 11/11 pm: column B
         self.assertEqual(r[T._COL["Pay Period"]], "Pending")          # Shipped, no activation date -> Pending
@@ -46,7 +48,7 @@ class Rows(unittest.TestCase):
         self.assertEqual(T.HEADERS[c - 2:c + 2], ("Line", "Line Status", "Customer", "Device"))
         self.assertEqual(T.HEADERS[c + 2:c + 10], ("Email", "Zip", "DSI #", "Wireless Order #", "BAN", "Phone #",
                                                    "Type", "Plan"))
-        self.assertEqual(T.HEADERS[c + 10], "Taylor's Notes")                  # 11/27: the dates moved left
+        self.assertEqual(T.HEADERS[c + 10], "Shipping Status")                 # 11/27: dates moved left, Shipping Status after the fold
         # 11/19: Order Date and Last Updated sit left of Rep, right after Pay Period;
         # 11/27: the other four dates join Last Updated there, folded
         self.assertEqual(T.HEADERS[:4], ("Week Ending", "Pay Period", "Order Date", "Last Updated"))
@@ -726,3 +728,19 @@ class Nov27DateFold(unittest.TestCase):
     def test_customer_fold_still_right_after_device(self):
         start, _ = T.group_span()
         self.assertEqual(start, T._COL["Device"] + 1)
+
+
+class Nov27DeviceDropdown(unittest.TestCase):
+    def test_device_dropdown_lists_every_device_once(self):
+        rows = [[""] * len(T.HEADERS) for _ in range(3)]
+        rows[0][T._COL["Device"]] = "iPhone 18 - 256GB"
+        rows[1][T._COL["Device"]] = "Galaxy A17 5G - 128GB - Black"
+        rows[2][T._COL["Device"]] = "iPhone 18 - 256GB"
+        self.assertEqual(T.device_options(rows), ["Galaxy A17 5G - 128GB - Black", "iPhone 18 - 256GB"])
+        reqs = T._format_requests(7, 3, 0, devices=T.device_options(rows))
+        c = T._COL["Device"]
+        dv = [r["setDataValidation"] for r in reqs if "setDataValidation" in r and "rule" in r["setDataValidation"]
+              and r["setDataValidation"]["range"]["startColumnIndex"] == c]
+        self.assertEqual(len(dv), 1)
+        self.assertFalse(dv[0]["rule"]["strict"])
+        self.assertTrue(dv[0]["rule"]["showCustomUi"])

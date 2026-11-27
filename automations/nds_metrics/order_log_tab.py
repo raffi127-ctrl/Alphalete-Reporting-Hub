@@ -77,8 +77,15 @@ HEADERS = ("Week Ending", "Pay Period", "Order Date",
            "Rep", "Line", "Line Status", "Customer", "Device",
            "Email", "Zip", "DSI #", "Wireless Order #", "BAN", "Phone #",     # GROUP_COLS, folded beside Customer
            "Type", "Plan",                                                    # ... these two too (11/17 pm)
+           "Shipping Status",
            "Taylor's Notes", "Notes", "Being worked on",
-           "Shipping Status", "Shipping Notes", "Churn Bucket", "Delivered Message Sent", "Port Status")
+           "Shipping Notes", "Churn Bucket", "Delivered Message Sent", "Port Status")
+# 2026-11-27, Carlos: "the shipping status column lets move it to the left of
+# column V" (V = Taylor's Notes then) -- right after the folded customer group,
+# so it is in view beside Device; Shipping Notes stays at the right.
+# Same message: "lets turn the device column into a drop down so its always
+# easier to read" -- Device gets a dropdown (chips) of every device on the tab,
+# not strict, so a new phone from the feed is never flagged.
 # 2026-11-27, Carlos: "if we need it lets move it to the right of the AB column"
 # (AB = Churn Bucket then) -- Delivered Message Sent sits after Churn Bucket,
 # Port Status still last. Shipping Status / Notes each move one left.
@@ -154,7 +161,7 @@ GROUPS = ((DATE_GROUP_AFTER, DATE_GROUP_COLS), (GROUP_AFTER, GROUP_COLS))
 # carried by line key through every rewrite. "Delivered Message Sent" was on the live
 # tab by hand before the code knew it (2026-10-29) -- a rewrite without it here would
 # have dropped the column.
-CARRIED = ("Taylor's Notes", "Notes", "Being worked on", "Shipping Status",
+CARRIED = ("Shipping Status", "Taylor's Notes", "Notes", "Being worked on",
            "Shipping Notes", "Delivered Message Sent")   # in HEADERS order
 # The typed columns' dropdown choices. "Not saveable" on Being worked on since
 # 2026-11-14, Carlos: "under the being worked on column/drop down lets add a
@@ -699,8 +706,14 @@ def group_requests(sheet_id: int, existing_groups: Sequence[dict]) -> List[dict]
     return reqs
 
 
+def device_options(rows: Sequence[Sequence[str]]) -> List[str]:
+    """Every Device on the tab, once, sorted -- the Device dropdown's list."""
+    c = _COL["Device"]
+    return sorted({str(r[c]).strip() for r in rows if c < len(r) and str(r[c]).strip()})
+
+
 def _format_requests(sheet_id: int, n_rows: int, existing_rules: int,
-                     existing_groups: Sequence[dict] = ()) -> List[dict]:
+                     existing_groups: Sequence[dict] = (), devices: Sequence[str] = ()) -> List[dict]:
     n_cols = len(HEADERS)
 
     def rng(r0, r1, c0, c1):
@@ -756,6 +769,11 @@ def _format_requests(sheet_id: int, n_rows: int, existing_rules: int,
         c_w = _COL[name]
         reqs.append({"setDataValidation": {"range": rng(1, 1000, c_w, c_w + 1), "rule": {
             "condition": {"type": "ONE_OF_LIST", "values": [{"userEnteredValue": o} for o in options]},
+            "showCustomUi": True, "strict": False}}})
+    if devices:
+        c_d = _COL["Device"]
+        reqs.append({"setDataValidation": {"range": rng(1, 1000, c_d, c_d + 1), "rule": {
+            "condition": {"type": "ONE_OF_LIST", "values": [{"userEnteredValue": o} for o in list(devices)[:500]]},
             "showCustomUi": True, "strict": False}}})
     # columns wide enough for full names (auto-fit, then a floor for the typed columns)
     reqs.append({"autoResizeDimensions": {"dimensions": {"sheetId": sheet_id, "dimension": "COLUMNS",
@@ -815,7 +833,8 @@ def push(lines: Sequence[dict], *, today: Optional[dt.date] = None,
         if s["properties"]["sheetId"] == ws.id:
             n_rules = len(s.get("conditionalFormats", []))
             groups = s.get("columnGroups", [])
-    _retry(lambda: sh.batch_update({"requests": _format_requests(ws.id, len(rows), n_rules, groups)}))
+    _retry(lambda: sh.batch_update({"requests": _format_requests(ws.id, len(rows), n_rules, groups,
+                                                                 devices=device_options(rows))}))
     log("[nds] NDS Order Log tab: %d line(s) on the tab (+%d new, %d changed, %d aged out)"
         % (len(rows), result["added"], result["changed"], result["aged_out"]))
     for what in result.get("strays_removed") or ():
