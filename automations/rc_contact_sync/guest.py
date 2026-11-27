@@ -272,10 +272,18 @@ def extra_line_contacts(cust: Dict) -> List[Dict[str, str]]:
     return out
 
 
+def first_day(day: dt.date) -> dt.date:
+    """The first sale day a run FOR `day` covers. There is no Sunday run, so
+    Monday's (day = Sunday) also takes Saturday: until 2026-11-25 every
+    Saturday's customers fell between the two and got no contact (Carlos
+    asked after 11/21's six were missing)."""
+    return day - dt.timedelta(days=1) if day.weekday() == 6 else day
+
+
 def for_day(day: dt.date, log=print) -> Tuple[List[Dict[str, str]], Optional[str]]:
     """The daily run's fail-open wrapper: ([customers], error or None)."""
     try:
-        return guest_customers(day, day, log=log), None
+        return guest_customers(first_day(day), day, log=log), None
     except Exception as e:  # noqa: BLE001
         msg = "%s: %s" % (type(e).__name__, str(e)[:200])
         log("guest rows: FAILED (%s) — today's run covers Carlos's own "

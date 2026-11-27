@@ -185,6 +185,17 @@ def post_missing(day: dt.date, missing: List[Dict[str, str]], total: int,
     return failed
 
 
+def _source_errors(own_err: Optional[str], guest_err: Optional[str]) -> List[str]:
+    """A source that could not be read never sinks the others, but always
+    turns the run red -- a short morning must not read as a clean one."""
+    out = []
+    if own_err:
+        out.append("own dealer: " + own_err)
+    if guest_err:
+        out.append("guest rows: " + guest_err)
+    return out
+
+
 # --- the run ------------------------------------------------------------------
 
 def run(day: Optional[dt.date] = None, *, dry_run: bool = True,
@@ -203,21 +214,32 @@ def run(day: Optional[dt.date] = None, *, dry_run: bool = True,
     log("B2B Customer Contacts — %s%s" % (day, "  (DRY RUN)" if dry_run else ""))
 
     guest_err: Optional[str] = None
+    own_err: Optional[str] = None
     if customers is None:
-        # 1. SaraPlus. Carlos's login for his dealer…
-        customers = sara.scrape(day, headless=headless, limit=limit, log=log)
+        # 1. SaraPlus. Carlos's login for his dealer… FAIL-OPEN like the guest
+        # rows: 2026-11-25 that login landed on ResetPassword.aspx and the
+        # run died before the NDS customers (which need no login here) got
+        # their contacts. The dealer itself had 0 orders. Still flags the run.
+        try:
+            customers = sara.scrape(day, headless=headless, limit=limit, log=log)
+        except Exception as e:  # noqa: BLE001
+            own_err = "%s: %s" % (type(e).__name__, str(e)[:200])
+            log("own dealer: FAILED (%s) -- carrying on with the NDS "
+                "customers" % own_err)
+            customers = []
         # …plus his reps' sales under RAF's code, off the Lucy 1 handoff
         # (no second login; fail-open so a lost pull can't sink the rest,
         # but it DOES flag the run — a quietly guest-less morning would
         # read as "all texted" to the team).
         from automations.rc_contact_sync import guest
         g, guest_err = guest.for_day(day, log=log)
+        sms_from = sms_from or guest.first_day(day)
         customers = customers + g
     if not customers:
         log("No orders on %s — nothing to add, nothing to chase." % day)
-        _manifest(["guest rows: " + guest_err] if guest_err else [],
-                  dry_run=dry_run, note="no orders on %s" % day)
-        return 1 if guest_err else 0
+        errs = _source_errors(own_err, guest_err)
+        _manifest(errs, dry_run=dry_run, note="no orders on %s" % day)
+        return 1 if errs else 0
 
     # 2. RingCentral: who am I, and is it the right person? A wrong-but-valid
     #    token writes into the wrong address book and reads the wrong inbox,
@@ -361,8 +383,7 @@ def run(day: Optional[dt.date] = None, *, dry_run: bool = True,
                                     dry_run=dry_run, prefix=prefix, log=log)
 
     failed = failed_rows + slack_failed
-    if guest_err:
-        failed = failed + ["guest rows: " + guest_err]
+    failed = failed + _source_errors(own_err, guest_err)
     _manifest(failed, dry_run=dry_run,
               note="%d customers, %d contacts added, %d never messaged"
                    % (len(customers), len(added), len(missing)))
