@@ -123,6 +123,23 @@ def _shadow_find(page, text: str):
         " Math.round(b.top+b.height/2)]; } } return null; }", text)
 
 
+_NOTHING_TO_DO = ("no resumes to process", "no resume to process",
+                  "nothing to process", "no resumes found")
+
+
+def _helper_says_nothing(page) -> bool:
+    """Resume Helper's popup says there is nothing to extract (Megan on Raf's
+    MacBook, 11/27: "there's no resumes to process for missing info")."""
+    try:
+        text = page.evaluate(
+            "() => { const out=[]; function walk(r){ for (const e of r.querySelectorAll('*')){"
+            " if (e.shadowRoot) { out.push(e.shadowRoot.textContent||''); walk(e.shadowRoot); } } }"
+            " walk(document); return (out.join(' ') + ' ' + (document.body.innerText||'')).toLowerCase(); }")
+    except Exception:  # noqa: BLE001
+        return False
+    return any(k in (text or "") for k in _NOTHING_TO_DO)
+
+
 def _robot_center(page):
     return page.evaluate(r"""() => {
       const cs=[...document.querySelectorAll('div,img,button,a')].filter(e=>{
@@ -355,6 +372,9 @@ def _extract(page) -> str:
     t0 = time.time()
     page.wait_for_timeout(5000)
     while time.time() - t0 < EXTRACT_CAP_S:
+        if _helper_says_nothing(page):
+            _log("[batch] Resume Helper: nothing missing info to extract")
+            return "empty"
         if _shadow_find(page, "Reset") is not None:
             _log("[batch] extraction finished in %ds" % int(time.time() - t0))
             return "reset"
@@ -446,6 +466,8 @@ def run(page, office: str, profile_dir, live_allowed: bool, net=None,
         # on its next pass, without opening Indeed for them. No Send here.
         res = _extract(bpage)
         blocked = bool(net and (net.get("indeed_403") or net.get("turnstile")))
+        # "empty" (nothing to extract) is NOT a block -- the 11/27 3:19 test
+        # waited 4 min on an empty batch and called it Indeed's check.
         blocked = blocked or res == "cap"     # never finished: Indeed's check
         out["extract"] = res
         out["blocked"] = blocked

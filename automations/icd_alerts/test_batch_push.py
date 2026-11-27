@@ -40,5 +40,14 @@ class BatchTrial(unittest.TestCase):
             self.assertTrue(BP.switched_off_today("24065"))
 
 
+class NothingToDo(unittest.TestCase):
+    def test_helper_empty_message_is_recognised(self):
+        page = mock.MagicMock()
+        page.evaluate.return_value = "resume helper  there's no resumes to process for missing info"
+        self.assertTrue(BP._helper_says_nothing(page))
+        page.evaluate.return_value = "total resume 3 / 10"
+        self.assertFalse(BP._helper_says_nothing(page))
+
+
 if __name__ == "__main__":
     unittest.main()
