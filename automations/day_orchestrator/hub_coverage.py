@@ -235,6 +235,15 @@ _RETIRED: frozenset = frozenset({
     # to write'. att_order_log.run._pull stays — b2b_metrics uses it for
     # Eveliz. Revive = delete these lines + on_scheduler true + weekdays.
     "att_order_log", "att-order-log",
+    # Vantura Order-Log Sales fill (Carlos). Megan 2026-11-27: "if there's no
+    # data there then we can turn them off". Its BOX half was switched off
+    # 10/30 (vantura_boards.OFF_BOARDS) and its B2B half reads 'Lucy At&t
+    # Data', which only att_order_log (retired just above) wrote -- so all
+    # nine morning passes had nothing to read, and the 6:45 re-pull of the
+    # retired order log is what opened drop-att_order_log every morning.
+    # Agent stashed via disable_vantura_orderlog_sales_agent. Revive = delete
+    # these lines + install_vantura_orderlog_sales_agent on Lucy 2.
+    "vantura_orderlog_sales", "vantura-orderlog-sales",
     # Daily Update Fill. Carlos 2026-11-03: "good to be discontinued! i dont
     # need it anymore". The 8:45 PM on its card never had a timer behind it, so
     # the 11 owner boards stopped at 8/21-22. Module stays on disk: raf_daily_update
