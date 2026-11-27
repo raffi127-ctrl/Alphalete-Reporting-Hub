@@ -666,11 +666,13 @@ def main(argv=None) -> int:
         if not sr or not dr:
             continue
         for wk, dc in weeks.items():
-            if wk > closed or wk not in a_weeks or cur(dr, dc):
+            # a 0 counts as empty (Maud 2026-11-27: WE 11/22 Total Applies stuck at 0
+            # after an early copy) -- replaced once the ATT tab has a real number
+            if wk > closed or wk not in a_weeks or cur(dr, dc) not in ("", "0"):
                 continue
             row = av[sr - 1]
             v = row[a_weeks[wk] - 1] if a_weeks[wk] - 1 < len(row) else ""
-            if v == "" or v is None:
+            if v == "" or v is None or (v == 0 and cur(dr, dc) == "0"):
                 continue
             updates.append((dr, dc, v))
             top_filled += 1
