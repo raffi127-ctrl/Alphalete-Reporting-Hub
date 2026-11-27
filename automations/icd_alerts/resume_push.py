@@ -449,6 +449,7 @@ def _heartbeat(log=print, now: Optional[dt.datetime] = None) -> bool:
 
 
 KICK_PATH = Path(__file__).resolve().parent / "batch_kick.json"
+_TEST_ONLY = False
 
 
 def _maybe_test_kick(log=print) -> bool:
@@ -1318,7 +1319,9 @@ def _walk(page, live: bool, record: dict) -> dict:
                              >= WALL_RUNS - 1)
     except Exception:  # noqa: BLE001
         OAT.KEEP_WALL_TAB = False
-    rc = OAT.run_walk(page, live=live)
+    # A REQUESTED TEST RUN SKIPS THE WALK (Megan 2026-11-27: "why can't it be
+    # done now?") -- it is there to try the batch, which runs right after.
+    rc = 0 if _TEST_ONLY else OAT.run_walk(page, live=live)
     if OAT.wall_tab_kept():
         OAT.show_wall_tab()
         _log("left Indeed's 'Verify you are human' page open in Lucy's Chrome")
@@ -1786,6 +1789,8 @@ def push(live: bool, scheduled: bool = False,
     ids = office_ids(record)
     multi = len(ids) > 1
     if force_office and force_office in ids:
+        global _TEST_ONLY
+        _TEST_ONLY = True
         live = False                 # a requested test run sends nobody
         _CURRENT_OFFICE = force_office
         _log("TEST RUN (dry) for office %s" % force_office)

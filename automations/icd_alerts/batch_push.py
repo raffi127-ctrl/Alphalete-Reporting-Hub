@@ -190,6 +190,13 @@ def open_batches_direct(page, signin=None):
             pass
         page.wait_for_timeout(1000)
     _step(page, "p=%s opened, no batch table" % BATCH_PAGE)
+    # WHAT IS ON THE PAGE (11/27: the classic p=616 never renders the v2
+    # '#table-batch-resume'), so the next build can name the real table.
+    try:
+        LAST_STEPS.append("page: " + json.dumps(page.evaluate(
+            "() => ({ tables: [...document.querySelectorAll('table')].slice(0,6).map(t => (t.id||'') + '.' + String(t.className||'').slice(0,40) + ':' + t.querySelectorAll('tbody tr').length), checks: document.querySelectorAll('input[type=checkbox]').length, buttons: [...document.querySelectorAll('button,input[type=button],input[type=submit],a.btn')].map(e => (e.innerText||e.value||'').trim()).filter(Boolean).slice(0,15), ready: (document.body.innerText.match(/Ready For Extraction/gi)||[]).length })"))[:900])
+    except Exception as e:  # noqa: BLE001
+        LAST_STEPS.append("page read failed: %s" % type(e).__name__)
     # Keep the page if the Resume Helper robot is on it: the table id is the
     # v2 one and the classic page may name it differently.
     try:
@@ -414,7 +421,7 @@ def run(page, office: str, profile_dir, live_allowed: bool, net=None,
                  or open_batches(page, signin=signin))
         if bpage is None:
             out["skipped"] = "Process in Batches not reached"
-            out["steps"] = list(LAST_STEPS)[-6:]
+            out["steps"] = list(LAST_STEPS)[-8:]
             return out
         out.update(table_counts(bpage))
         out["office"] = office_on_page(bpage, office)
