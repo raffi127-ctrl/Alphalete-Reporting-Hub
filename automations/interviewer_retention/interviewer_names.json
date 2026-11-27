@@ -1,7 +1,6 @@
 {
- "_note": "AppStream 'Done By' name -> the ARS tab's own interviewer dropdown name, per AppStream office id. 11280 confirmed 2026-11-27: 62 of 62 showed-up applicants on 11/24 matched by applicant name. 'None' = the owner ran it. Add a name only once a real row proves it; never guess.",
+ "_note": "AppStream 'Done By' name -> the ARS tab's own interviewer dropdown name, per AppStream office id. A name is added only once real rows prove it (applicant matched by name to the typed ARS row). 11280: 2026-11-27, 8 weeks 9/28-11/21. A BLANK Done By is never mapped (not even to Owner): it goes on a 'Not marked in AppStream' row and is flagged. One-off names (1-2 rows that disagree, dropdown misclicks) are left out on purpose.",
  "11280": {
-  "None": "Owner",
   "Victoria Bustillo": "Victoria",
   "Valentina Rusconi": "Valentina R",
   "Ludmila Alvarellos": "Ludmila",
@@ -11,6 +10,11 @@
   "Gabriela Muñoz Toro": "Gabriela MT",
   "Daniela Colorado": "Daniela C.",
   "Aldana Florencia Canosa": "Aldana",
-  "Sara Montenegro Mejia": "Sara"
+  "Sara Montenegro Mejia": "Sara",
+  "Valeria Nicolle Escalante": "Valeria",
+  "Alexa Flores": "Alexa",
+  "Candela Bloin": "Candela",
+  "Maria Eugenia Soler": "Maru",
+  "Rafaela Ali": "Rafaela"
  }
 }

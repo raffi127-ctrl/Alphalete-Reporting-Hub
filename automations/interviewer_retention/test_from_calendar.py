@@ -16,9 +16,9 @@ class Names(unittest.TestCase):
         self.assertEqual(fc.interviewer("Gabriela Munoz Toro", self.names), "Gabriela MT")
         self.assertEqual(fc.interviewer("maria victoria ferrero", self.names), "Mavi")
 
-    def test_none_is_the_owner(self):
-        self.assertEqual(fc.interviewer("None", self.names), "Owner")
-        self.assertEqual(fc.interviewer("", self.names), "Owner")
+    def test_blank_done_by_is_flagged_not_guessed(self):
+        self.assertEqual(fc.interviewer("None", self.names), fc.NOT_MARKED)
+        self.assertEqual(fc.interviewer("", self.names), fc.NOT_MARKED)
 
     def test_unknown_name_is_flagged_never_guessed(self):
         with self.assertRaises(fc.UnknownInterviewer):
@@ -39,6 +39,9 @@ class FirstRound(unittest.TestCase):
                          (bx.QUALIFY, bx.ANSWERED, "Not Booked"))
         self.assertEqual(fc.first_round("radio1", "Schedule 2nd", "Invite to next – SMS sent"),
                          (bx.QUALIFY, bx.NO_ANSWER, ""))
+
+    def test_show_up_not_marked_yet_is_not_counted(self):
+        self.assertIsNone(fc.first_round("", "Schedule 2nd | Disqualify", "Invite to next – Booked"))
 
     def test_no_invite_status_is_left_blank_like_the_sheet(self):
         self.assertEqual(fc.first_round("radio1", "Schedule 2nd", ""), (bx.QUALIFY, "", ""))

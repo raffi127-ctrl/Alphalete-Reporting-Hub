@@ -6,7 +6,10 @@ the interviewers typed in his ARS tab the same day:
 
   INTERVIEWER: the row's "Done By" dropdown (who ran it; NOT the login that
     clicked). 62 of 62 showed-up applicants map one-to-one onto the ARS
-    dropdown names via interviewer_names.json. "None" = the owner ran it.
+    dropdown names via interviewer_names.json. A blank Done By ("None") is
+    NOT the owner: over 9/28-11/21 it hid real interviewers (blank on 86-96% of
+    rows in early October, 14% by the week of 11/16), so it goes on a
+    NOT_MARKED row and is flagged.
     A name missing from the map is never guessed: UnknownInterviewer.
 
   1st ROUND, Qualify (60 of 62 agree; AppStream is truth on the 2):
@@ -61,8 +64,13 @@ def load_names(office: str, path: Path = NAMES_FILE) -> Dict[str, str]:
     return {_key(k): v for k, v in data.get(office, {}).items() if not k.startswith("_")}
 
 
+NOT_MARKED = "Not marked in AppStream"     # Done By left blank: flagged, never guessed
+
+
 def interviewer(done_by: str, names: Dict[str, str]) -> str:
-    k = _key(done_by) or "none"
+    k = _key(done_by)
+    if k in ("", "none"):
+        return NOT_MARKED
     if k not in names:
         raise UnknownInterviewer(done_by)
     return names[k]
@@ -75,8 +83,11 @@ def first_round(show_up: str, action: str, follow_up: str) -> Optional[Tuple[str
         return bx.DISQUALIFY, "", ""
     if act.startswith("declined"):
         return bx.DECLINED, "", ""
-    if (show_up or "").strip().lower() in ("radio2", "no show"):
+    su = (show_up or "").strip().lower()
+    if su in ("radio2", "no show"):
         return None
+    if not (su == "radio1" or su.startswith("2nd on") or "first day" in su):
+        return None                       # nobody marked Show Up yet: not counted
     fus = _key(follow_up)
     if fus == "invite to next booked":
         return bx.QUALIFY, bx.ANSWERED, bx.BOOKED
