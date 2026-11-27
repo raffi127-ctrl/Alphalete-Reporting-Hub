@@ -81,6 +81,11 @@ def _pictures(m: dict) -> List[dict]:
             if str(a.get("contentType") or "").lower().startswith("image/")]
 
 
+def _is_template(text: str) -> bool:
+    from automations.rc_contact_sync import inbox
+    return inbox.template_of(text) != "typed by a person (not a template)"
+
+
 def _people(chain: Sequence[str], names: Dict[str, str]) -> set:
     """The distinct customers in a thread (their "- Line N" contacts fold in)."""
     return {names[n].split(" - Line")[0].strip().lower() for n in chain if names.get(n)}
@@ -106,7 +111,9 @@ def plan(msgs: Sequence[dict], own: str, already: Sequence[str] = (),
             row.update(action="skip", why="carrier refused the number (not the billing stop)")
         elif not row["pics"] and len(text) < MIN_TEXT:
             row.update(action="skip", why="empty or a test text")
-        elif len(_people(chain, names or {})) > 1:
+        elif len(_people(chain, names or {})) > 1 and not _is_template(text):
+            # Lucy's own templates are always one customer + the rep, even
+            # when the rep's number is also saved as someone's "Line N"
             row.update(action="skip", why="thread holds more than one customer -- looks like a mistake, not resent")
         else:
             redo = next((x for x in msgs[i + 1:]

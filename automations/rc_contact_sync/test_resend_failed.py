@@ -54,6 +54,9 @@ class Plan(unittest.TestCase):
         names = {CUST: "Pat Example", OTHER: "Sam Sample - Line 2"}
         p = R.plan([msg(1, "10:00", [CUST, OTHER], "call 833-555-0100", "SendingFailed")], OWN, names=names)
         self.assertEqual(p[0]["action"], "skip")
+        p = R.plan([msg(1, "10:00", [CUST, OTHER], "Hello! I see that your device(s) have been delivered!",
+                        "SendingFailed")], OWN, names=names)
+        self.assertEqual(p[0]["action"], "resend")
 
     def test_inbound_and_delivered_ignored(self):
         self.assertEqual(self.acts([msg(1, "10:00", [CUST], "Hi"), msg(2, "10:01", [OWN], "hey", direction="Inbound")]), [])
