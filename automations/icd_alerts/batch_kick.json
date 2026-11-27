@@ -1,6 +1,6 @@
 {
-  "_about": "A one-time TEST RUN the office computer does when this id is new to it (Megan 2026-11-27: 'run it now just to test out'). Dry: walks the office's queue sending nobody, then the Resume Helper batch goes to Process in Batches and counts -- no Start, no Send. Change the id to ask again.",
-  "id": "2026-11-27-batch-p616-dom2",
+  "_about": "A one-time TEST RUN the office computer does when this id is new to it (Megan 2026-11-27: 'run it now just to test out'). Dry: walks the office's queue sending nobody, then the Resume Helper batch goes to Process in Batches and counts -- presses Resume Helper's Start (fills phone numbers; sends nobody). Change the id to ask again.",
+  "id": "2026-11-27-batch-extract-live",
   "office_key": "raf",
   "office": "24065"
 }

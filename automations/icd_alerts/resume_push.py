@@ -1348,7 +1348,9 @@ def _walk(page, live: bool, record: dict) -> dict:
         from automations.icd_alerts import batch_push as BP
         if BP.mode_for(seen):
             BP.set_logger(_log)
-            batch = BP.run(page, seen, PROFILE_DIR, live_allowed=live,
+            # A requested test run presses Start too: the batch only fills in
+            # phone numbers (no send), so it is safe to try outside push hours.
+            batch = BP.run(page, seen, PROFILE_DIR, live_allowed=live or _TEST_ONLY,
                            signin=lambda pg: sign_in(pg, pg.context))
             sent += int(batch.get("sent") or 0)
     except Exception as e:  # noqa: BLE001 -- the trial never costs the walk
