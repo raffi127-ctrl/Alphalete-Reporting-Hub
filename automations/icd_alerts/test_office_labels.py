@@ -63,16 +63,33 @@ class CasingOnlyWhereTheTypingSaysNothing(unittest.TestCase):
 
 class CollidingLabelsNameTheirCampaign(unittest.TestCase):
     def test_two_offices_one_owner_are_told_apart(self):
+        # Was Carlos's pair until 2026-11-27; he is NDS only now and his Box
+        # key is paused, so an invented two-campaign owner carries the case.
+        got = O._disambiguate({
+            "jay": _off("jay", "Jay Turnage", "Jay's Local Office",
+                        campaign="b2b_box"),
+            "jay-b2batt": _off("jay-b2batt", "Jay Turnage",
+                               "Jay's Local Office", campaign="b2b_att"),
+        })
+        self.assertEqual(got["jay"].label,
+                         "Jay's Local Office (B2B — Box Energy)")
+        self.assertEqual(got["jay-b2batt"].label,
+                         "Jay's Local Office (B2B — AT&T)")
+
+    def test_a_paused_twin_does_not_tag_the_live_one(self):
+        # 11/27: Carlos's paused Box key put "(B2B — Box Energy)" on his
+        # Indeed billing alert after he had moved to NDS altogether.
         got = O._disambiguate({
             "carlos": _off("carlos", "Carlos Hidalgo", "Carlos's Local Office",
-                           campaign="b2b_box"),
+                           campaign="nds"),
             "carlos-b2batt": _off("carlos-b2batt", "Carlos Hidalgo",
-                                  "Carlos's Local Office", campaign="b2b_att"),
+                                  "Carlos's Local Office", campaign="nds"),
         })
+        # The working office reads plain; the paused key (still able to raise
+        # an alert) keeps a label of its own, and neither says B2B.
+        self.assertEqual(got["carlos-b2batt"].label, "Carlos's Local Office")
         self.assertEqual(got["carlos"].label,
-                         "Carlos's Local Office (B2B — Box Energy)")
-        self.assertEqual(got["carlos-b2batt"].label,
-                         "Carlos's Local Office (B2B — AT&T)")
+                         "Carlos's Local Office (NDS — Wireless)")
 
     def test_an_owner_with_one_office_is_left_plain(self):
         got = O._disambiguate({

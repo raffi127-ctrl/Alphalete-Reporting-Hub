@@ -3435,15 +3435,15 @@ AUTOMATED_REPORTS = [
         # (hub_schedule_status matches '-'/'_' variants), so the card's pill
         # and its calendar tiles read THIS report's runs and not nothing.
         "id": "rc-contact-sync",
-        "name": "B2B Customer Contacts (RingCentral)",
+        "name": "NDS Customer Contacts (RingCentral)",
         "creator": "Carlos",
         "emoji": "📇",
         "color": "#4A90D9",
         "category": "📊 Metrics",
-        "description": "Takes yesterday's B2B sales out of SaraPlus and adds each customer to Taylor's RingCentral contacts — business name, phone, and the rep's name in the notes — then posts a 'Customers who didn't receive wrap up text' header in #a-players-b2b and #alphalete-gp-sales with the customers nobody ever messaged listed in its thread.",
+        "description": "Takes yesterday's sales out of SaraPlus and adds each customer to Taylor's RingCentral contacts — business name, phone, and the rep's name in the notes — then posts a 'Customers who didn't receive wrap up text' header in #a-players-b2b and #alphalete-gp-sales with the customers nobody ever messaged listed in its thread.",
         "breakdown": (
             "WHY IT MATTERS\n"
-            "A B2B customer who was sold yesterday and never texted is a "
+            "A customer who was sold yesterday and never texted is a "
             "customer nobody is following up with. Carlos was adding these "
             "contacts by hand, one form at a time, and the only way to notice "
             "a missed follow-up was to remember it.\n\n"
@@ -3544,10 +3544,10 @@ AUTOMATED_REPORTS = [
         "emoji": "📞",
         "color": "#60A5FA",
         "category": "📊 Metrics",
-        "description": "For every sale under Raf's SaraPlus code yesterday (all reps), checks whether the customer was ever texted on Dylan's RingCentral line, and posts the ones who weren't — grouped by rep — to #alphalete-sales. The B2B Customer Contacts report, mirrored for Raf's office.",
+        "description": "For every sale under Raf's SaraPlus code yesterday (all reps), checks whether the customer was ever texted on Dylan's RingCentral line, and posts the ones who weren't — grouped by rep — to #alphalete-sales. The NDS Customer Contacts report, mirrored for Raf's office.",
         "breakdown": (
             "WHAT IT DOES\n"
-            "The twin of B2B Customer Contacts, for RAF's office. For each of "
+            "The twin of NDS Customer Contacts, for RAF's office. For each of "
             "yesterday's sales under Raf's SaraPlus code (ALL reps), it asks "
             "whether the customer was EVER messaged on **Dylan's** RingCentral "
             "line — the same account rc_autoread uses — matched by phone, and "

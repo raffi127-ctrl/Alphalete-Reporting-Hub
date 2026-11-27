@@ -679,6 +679,16 @@ def _campaign_tag(campaign: str) -> str:
         return key
 
 
+def _paused_keys() -> frozenset:
+    """config.PAUSED_KEYS, or nothing if config will not import. A label must
+    never break the roster, so a failed import just means no key is skipped."""
+    try:
+        from automations.icd_alerts.config import PAUSED_KEYS
+        return frozenset(k.strip().lower() for k in PAUSED_KEYS)
+    except Exception:  # noqa: BLE001
+        return frozenset()
+
+
 def _disambiguate(merged: Dict[str, AlertOffice]) -> Dict[str, AlertOffice]:
     """Name the campaign on any label two offices would otherwise share.
 
@@ -710,15 +720,50 @@ def _disambiguate(merged: Dict[str, AlertOffice]) -> Dict[str, AlertOffice]:
     `nds`, so the campaign alone would hand back two identical labels again --
     noise, and still ambiguous. When that happens the key goes on instead; it
     is unique by construction, which is the one thing that cannot collide.
+
+    A PAUSED KEY IS NOT A LIVE TWIN EITHER (2026-11-27). `carlos` (his Box
+    key) has sat in PAUSED_KEYS since 10/22 -- he stopped selling Box, then
+    moved to NDS altogether -- and it still tagged his one working office
+    "Carlos's Local Office (B2B — Box Energy)" on the 11/27 Indeed billing
+    alert. Megan: "Carlos is now NDS -- nothing of his should say B2B
+    anymore." So the live offices are settled first, among themselves, and a
+    paused twin that still collides is the one that takes the tag. It can
+    still raise an alert (that billing alert came through `carlos`), so it
+    keeps a label of its own -- it just no longer renames the working office.
     """
-    live = [o for o in merged.values() if o.active]
+    paused = _paused_keys()
+    live = [o for o in merged.values() if o.active and o.key not in paused]
+    out = _tag_collisions(merged, live)
+
+    # Paused twins: tagged only where they still collide with a settled label.
+    taken = {(o.label or "").strip().lower()
+             for k, o in out.items() if o.active and k not in paused}
+    for key, o in merged.items():
+        if not o.active or key not in paused:
+            continue
+        lbl = (o.label or "").strip()
+        if lbl.lower() not in taken:
+            taken.add(lbl.lower())
+            continue
+        tag = _campaign_tag(o.campaign)
+        cand = "%s (%s)" % (lbl, tag) if tag else ""
+        if not cand or cand.lower() in taken:
+            cand = "%s (%s)" % (lbl, o.key)
+        out[key] = o._replace(label=cand)
+        taken.add(cand.lower())
+    return out
+
+
+def _tag_collisions(merged: Dict[str, AlertOffice],
+                    live: List[AlertOffice]) -> Dict[str, AlertOffice]:
+    """Campaign-tag (or key-tag) every label two `live` offices share."""
     seen: Dict[str, int] = {}
     for o in live:
         lbl = (o.label or "").strip().lower()
         seen[lbl] = seen.get(lbl, 0) + 1
     dupes = {lbl for lbl, n in seen.items() if n > 1 and lbl}
     if not dupes:
-        return merged
+        return dict(merged)
 
     # Would the campaign tag be enough, for each colliding label?
     tagged: Dict[str, int] = {}
@@ -728,9 +773,11 @@ def _disambiguate(merged: Dict[str, AlertOffice]) -> Dict[str, AlertOffice]:
         cand = "%s (%s)" % (o.label, _campaign_tag(o.campaign))
         tagged[cand.lower()] = tagged.get(cand.lower(), 0) + 1
 
+    live_keys = {o.key for o in live}
     out = dict(merged)
     for key, o in merged.items():
-        if not o.active or (o.label or "").strip().lower() not in dupes:
+        if (o.key not in live_keys
+                or (o.label or "").strip().lower() not in dupes):
             continue
         tag = _campaign_tag(o.campaign)
         cand = "%s (%s)" % (o.label, tag) if tag else ""

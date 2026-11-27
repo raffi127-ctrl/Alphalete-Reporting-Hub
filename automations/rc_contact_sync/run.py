@@ -1,4 +1,4 @@
-"""B2B Customer Contacts — SaraPlus -> RingCentral, + the un-texted alert.
+"""NDS Customer Contacts — SaraPlus -> RingCentral, + the un-texted alert.
 
 Usage (Lucy 2):
   python -m automations.rc_contact_sync.run --probe      # read-only: what's there
@@ -211,7 +211,7 @@ def run(day: Optional[dt.date] = None, *, dry_run: bool = True,
     `sms_from` widens the texted() window for backfills; `prefix` leads the
     Slack reply so a backfill post says what range it covers."""
     day = day or C.yesterday()
-    log("B2B Customer Contacts — %s%s" % (day, "  (DRY RUN)" if dry_run else ""))
+    log("NDS Customer Contacts — %s%s" % (day, "  (DRY RUN)" if dry_run else ""))
 
     guest_err: Optional[str] = None
     own_err: Optional[str] = None
