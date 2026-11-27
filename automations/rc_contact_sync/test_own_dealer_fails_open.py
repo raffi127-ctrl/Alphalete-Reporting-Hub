@@ -1,5 +1,5 @@
-"""A dead SaraPlus login must not stop the NDS customers' contacts
-(2026-11-25: it landed on ResetPassword.aspx and nobody was added)."""
+"""The daily run uses NO SaraPlus B2B login (Carlos 2026-11-27: "we don't do
+b2b"); a dead one had stopped the NDS customers' contacts on 11/26 and 11/27."""
 import datetime as dt
 import unittest
 from unittest import mock
@@ -40,20 +40,16 @@ class OwnDealerFailsOpen(unittest.TestCase):
     def dead(*a, **k):
         raise RuntimeError("landed on ResetPassword.aspx")
 
-    def test_nds_customers_still_added_and_run_is_red(self):
-        rc, made, manifest = self.go(self.dead, ([dict(CUST)], None))
-        self.assertEqual(made, ["214-555-0101"])
-        self.assertEqual(rc, 1)
-        self.assertIn("own dealer: RuntimeError", manifest[-1][0])
-
-    def test_no_orders_and_a_dead_login_is_still_red(self):
-        rc, made, manifest = self.go(self.dead, ([], None))
-        self.assertEqual((rc, made), (1, []))
-        self.assertTrue(manifest[-1])
-
-    def test_clean_run_stays_green(self):
-        rc, made, manifest = self.go(lambda *a, **k: [], ([dict(CUST)], None))
+    def test_no_b2b_saraplus_login_at_all(self):
+        # Carlos 2026-11-27: "we don't do b2b so we shouldnt be using b2b logins"
+        calls = []
+        rc, made, manifest = self.go(lambda *a, **k: calls.append(1) or [], ([dict(CUST)], None))
+        self.assertEqual(calls, [])
         self.assertEqual((rc, made, manifest[-1]), (0, ["214-555-0101"], []))
+
+    def test_no_orders_is_green(self):
+        rc, made, manifest = self.go(self.dead, ([], None))
+        self.assertEqual((rc, made), (0, []))
 
     def test_mondays_run_also_covers_saturday(self):
         from automations.rc_contact_sync import guest

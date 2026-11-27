@@ -216,18 +216,14 @@ def run(day: Optional[dt.date] = None, *, dry_run: bool = True,
     guest_err: Optional[str] = None
     own_err: Optional[str] = None
     if customers is None:
-        # 1. SaraPlus. Carlos's login for his dealer… FAIL-OPEN like the guest
-        # rows: 2026-11-25 that login landed on ResetPassword.aspx and the
-        # run died before the NDS customers (which need no login here) got
-        # their contacts. The dealer itself had 0 orders. Still flags the run.
-        try:
-            customers = sara.scrape(day, headless=headless, limit=limit, log=log)
-        except Exception as e:  # noqa: BLE001
-            own_err = "%s: %s" % (type(e).__name__, str(e)[:200])
-            log("own dealer: FAILED (%s) -- carrying on with the NDS "
-                "customers" % own_err)
-            customers = []
-        # …plus his reps' sales under RAF's code, off the Lucy 1 handoff
+        # 1. NO SaraPlus B2B login any more. Carlos 2026-11-27: "we don't do
+        # b2b so we shouldnt be using b2b logins". That login (his own B2B
+        # dealer) had 0 orders for weeks and, from 2026-11-25, landed on
+        # ResetPassword.aspx every morning -- 11/26 and 11/27 died on it
+        # before any NDS customer got a contact. The customers are the NDS
+        # orders below, which need no login on this machine.
+        customers = []
+        # His reps' sales under RAF's code, off the Lucy 1 handoff
         # (no second login; fail-open so a lost pull can't sink the rest,
         # but it DOES flag the run — a quietly guest-less morning would
         # read as "all texted" to the team).
