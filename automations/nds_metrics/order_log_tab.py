@@ -77,8 +77,11 @@ HEADERS = ("Week Ending", "Pay Period", "Order Date",
            "Rep", "Line", "Line Status", "Customer", "Device",
            "Email", "Zip", "DSI #", "Wireless Order #", "BAN", "Phone #",     # GROUP_COLS, folded beside Customer
            "Type", "Plan",                                                    # ... these two too (11/17 pm)
-           "Taylor's Notes", "Notes", "Being worked on", "Delivered Message Sent",
-           "Shipping Status", "Shipping Notes", "Churn Bucket", "Port Status")
+           "Taylor's Notes", "Notes", "Being worked on",
+           "Shipping Status", "Shipping Notes", "Churn Bucket", "Delivered Message Sent", "Port Status")
+# 2026-11-27, Carlos: "if we need it lets move it to the right of the AB column"
+# (AB = Churn Bucket then) -- Delivered Message Sent sits after Churn Bucket,
+# Port Status still last. Shipping Status / Notes each move one left.
 # 2026-11-27, Carlos, by the letters then live (D Last Updated, R Ship Date,
 # S Delivered, T Activation Date, U Disconnect Date): "lets move column D, R,
 # S, T, & T to be grouped in column c. So there should be + above column D that
@@ -151,8 +154,8 @@ GROUPS = ((DATE_GROUP_AFTER, DATE_GROUP_COLS), (GROUP_AFTER, GROUP_COLS))
 # carried by line key through every rewrite. "Delivered Message Sent" was on the live
 # tab by hand before the code knew it (2026-10-29) -- a rewrite without it here would
 # have dropped the column.
-CARRIED = ("Taylor's Notes", "Notes", "Being worked on", "Delivered Message Sent", "Shipping Status",
-           "Shipping Notes")   # in HEADERS order
+CARRIED = ("Taylor's Notes", "Notes", "Being worked on", "Shipping Status",
+           "Shipping Notes", "Delivered Message Sent")   # in HEADERS order
 # The typed columns' dropdown choices. "Not saveable" on Being worked on since
 # 2026-11-14, Carlos: "under the being worked on column/drop down lets add a
 # not saveable option" -- a customer nobody can win back, so the line stops

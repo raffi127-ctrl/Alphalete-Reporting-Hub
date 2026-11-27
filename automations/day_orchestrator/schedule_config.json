@@ -5798,9 +5798,11 @@
    "priority": "P2",
    "freshness_target": null,
    "depends_on": [],
+   "_after_tracking_note": "Carlos 2026-11-27: the text also goes when the tracking number shows Delivered (Shipping Status), so it runs after nds_att_order_status.",
    "after": [
     "rc_contact_sync",
-    "rc_wrapup"
+    "rc_wrapup",
+    "nds_att_order_status"
    ],
    "timeout_minutes": 20,
    "verify": {

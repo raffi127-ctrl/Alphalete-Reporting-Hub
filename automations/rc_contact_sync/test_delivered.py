@@ -140,5 +140,37 @@ class Text(unittest.TestCase):
         self.assertTrue(D.TEXT.endswith("please let me know!"))
 
 
+
+class ByTracking(unittest.TestCase):
+    """11/27, Carlos: "lets send it once the tracking number shows delivered or
+    once tableau shows delivered. Of course if its already listed as active,
+    cancel, or disconencted then they don't need the text"."""
+    H = HDR + ["Shipping Status"]
+
+    def r(self, ship, **kw):
+        return row(**kw) + [ship]
+
+    def test_tracking_delivered_triggers_before_the_status_catches_up(self):
+        rows = [self.r("Delivered Nov 25 (as of 11/27)", **{"Line Status": "Shipped", "Delivered": ""})]
+        t = D.pick_targets(self.H, rows, {}, today=TODAY)
+        self.assertEqual(len(t), 1)
+        self.assertEqual(t[0]["lines"][0]["why"], "tracking")
+
+    def test_no_text_once_active_cancelled_or_disconnected(self):
+        for st in ("Active", "Cancelled", "Canceled", "Disconnected"):
+            rows = [self.r("Delivered Nov 25", **{"Line Status": st, "Delivered": ""})]
+            self.assertEqual(D.pick_targets(self.H, rows, {}, today=TODAY), [], st)
+
+    def test_tracking_not_delivered_waits(self):
+        for ship in ("No record yet", "In transit (as of 11/27)", ""):
+            rows = [self.r(ship, **{"Line Status": "Shipped", "Delivered": ""})]
+            self.assertEqual(D.pick_targets(self.H, rows, {}, today=TODAY), [], ship)
+
+    def test_already_texted_is_never_texted_again(self):
+        rows = [self.r("Delivered Nov 25", **{"Line Status": "Shipped", "Delivered": "",
+                                              "Delivered Message Sent": "Yes"})]
+        self.assertEqual(D.pick_targets(self.H, rows, {}, today=TODAY), [])
+
+
 if __name__ == "__main__":
     unittest.main()

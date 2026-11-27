@@ -84,7 +84,13 @@ DELIVERED = "delivered"                  # the Line Status word that triggers
 # statuses where a Delivered DATE must NOT trigger: the phone is in use, gone,
 # or never shipped. Anything else with a plausible date is "delivered, not yet
 # active" and gets the text.
-DONE_STATES = ("active", "disconnected", "cancelled", "byod")
+DONE_STATES = ("active", "disconnected", "cancelled", "canceled", "byod")
+# 11/27, Carlos: "lets send it once the tracking number shows delivered or once
+# tableau shows delivered. Of course if its already listed as active, cancel,
+# or disconencted then they don't need the text" -- the Shipping Status column
+# (the carrier's word, nds_metrics.att_order_status, runs right before this)
+# saying Delivered triggers too, ahead of the Line Status catching up.
+COL_TRACKING = "Shipping Status"
 # how far back a Delivered line still gets the text (a line delivered weeks ago
 # and never activated is a different conversation, not this one)
 MAX_ORDER_AGE_DAYS = 31
@@ -154,6 +160,14 @@ def delivered_by_date(row: Sequence[str], cols: Dict[str, int], *, today: dt.dat
     return dd is not None and dd <= today
 
 
+def delivered_by_tracking(row: Sequence[str], cols: Dict[str, int]) -> bool:
+    """The tracking number says Delivered ('Delivered Nov 25 (as of 11/27)')
+    on a line that is not active / gone / BYOD."""
+    if _cell(row, cols, "Line Status").lower() in DONE_STATES:
+        return False
+    return _cell(row, cols, COL_TRACKING).lower().startswith("delivered")
+
+
 def pick_targets(header: Sequence[str], rows: Sequence[Sequence[str]],
                  sent_state: Dict[str, dict], *, today: dt.date) -> List[Dict]:
     """One target per ORDER with at least one line that is delivered (Line
@@ -175,7 +189,8 @@ def pick_targets(header: Sequence[str], rows: Sequence[Sequence[str]],
     targets: "Dict[str, Dict]" = {}
     for i, row in enumerate(rows):
         status = _cell(row, cols, "Line Status").lower()
-        if status != DELIVERED and not delivered_by_date(row, cols, today=today):
+        by_tracking = delivered_by_tracking(row, cols)
+        if status != DELIVERED and not delivered_by_date(row, cols, today=today) and not by_tracking:
             continue
         if _cell(row, cols, COL_SENT).lower() == "yes":
             continue
@@ -198,7 +213,8 @@ def pick_targets(header: Sequence[str], rows: Sequence[Sequence[str]],
         t["lines"].append({"sheet_row": i + 2,          # +1 header, +1 one-based
                            "line": ln,
                            "device": _cell(row, cols, "Device"),
-                           "why": "status" if status == DELIVERED else "date"})
+                           "why": ("status" if status == DELIVERED
+                                   else "date" if delivered_by_date(row, cols, today=today) else "tracking")})
     return list(targets.values())
 
 
@@ -399,7 +415,8 @@ def run(*, live: bool = False, limit: Optional[int] = None,
         to = [phone, rep_phone]
         text = text_for(t["customer"])
         lang = "es" if text is TEXT_ES else "en"
-        why = "by date" if all(l["why"] == "date" for l in t["lines"]) else "status"
+        why = ("status" if any(l["why"] == "status" for l in t["lines"])
+               else "by date" if any(l["why"] == "date" for l in t["lines"]) else "by tracking")
         if not live:
             log("  [dry-run] %s — %s (%s, %s) — group: %s (customer) + %s (%s)"
                 % (who, lines_txt, why, lang, RC.e164(phone), RC.e164(rep_phone),

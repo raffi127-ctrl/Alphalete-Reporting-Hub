@@ -28,8 +28,8 @@ class Rows(unittest.TestCase):
         self.assertEqual(r[T._COL["Delivered Message Sent"]], "")
         self.assertEqual(T.HEADERS[T._COL["Notes"] - 1], "Taylor's Notes")        # 11/17 pm: to the LEFT of Notes
         self.assertEqual(T.HEADERS[T._COL["Order Date"] + 1], "Last Updated")    # 11/17 pm: right after Order Date (11/27: first of the date fold)
-        self.assertEqual(T.HEADERS[T._COL["Being worked on"] + 1], "Delivered Message Sent")
-        self.assertEqual(T.HEADERS[T._COL["Delivered Message Sent"] + 1], "Shipping Status")  # 11/12 pm: carrier word, left of the notes
+        self.assertEqual(T.HEADERS[T._COL["Being worked on"] + 1], "Shipping Status")  # 11/27: Delivered Message Sent moved right
+        self.assertEqual(T.HEADERS[T._COL["Churn Bucket"] + 1], "Delivered Message Sent")  # 11/27: right of Churn Bucket
         self.assertEqual(T.HEADERS[T._COL["Shipping Status"] + 1], "Shipping Notes")
         self.assertEqual(T.HEADERS[T._COL["Ship Date"] + 1], "Delivered")
         self.assertEqual(T.HEADERS[1], "Pay Period")                  # 11/11 pm: column B
@@ -483,8 +483,8 @@ class ChurnBucketTests(unittest.TestCase):
     Date -- the cancelled workbook's rule, now ageing on the tab."""
 
     def test_last_column_and_fresh_rows(self):
-        self.assertEqual(T.HEADERS[-2], "Churn Bucket")                 # Port Status sits after it since 11/18
-        self.assertEqual(T.HEADERS[_COLX("Delivered Message Sent") + 3], "Churn Bucket")   # Shipping Status + Notes sit between (11/12)
+        self.assertEqual(T.HEADERS[-3], "Churn Bucket")                 # Port Status last since 11/18; Delivered Message Sent between (11/27)
+        self.assertEqual(T.HEADERS[_COLX("Shipping Notes") + 1], "Churn Bucket")
         r = T.line_row(line(line_status="Active"), "11/09/2026", active_of=lambda l: "11/3/2026")
         self.assertEqual(r[T._COL["Churn Bucket"]], "0-30 Day")
         self.assertEqual(len(r), len(T.HEADERS))
