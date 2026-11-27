@@ -17331,6 +17331,50 @@
    "timeout_minutes": 5,
    "verify": null
   },
+  "install_office_send_watch_agent": {
+   "on_scheduler": false,
+   "machine": "Lucy 3",
+   "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_office_send_watch_agent --machine \"Lucy 3\"` can install/refresh the STANDALONE com.alphalete.office-send-watch LaunchAgent (:10/:25/:35/:55, 7am-9pm, deploy/office_send_watch.sh, MODE=dry until the chain goes live). silent_job_watch has watched office_send_watch on Lucy 3 since 2026-11-25 and names this command as the fix, but the entry was never added, so the agent was never installed and the watcher posted 'didn't run today' (11/26, 11/27). install_agent is read-only w.r.t. any Sheet data; it only loads the plist.",
+   "display_name": "Install Send watch — BGC/drug verdicts (:10/:25/:35/:55, 7am-9pm)",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.day_orchestrator.install_agent"
+   ],
+   "base_args": [
+    "office-send-watch"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 5,
+   "verify": null
+  },
+  "install_icd_onboarding_not_completed_agent": {
+   "on_scheduler": false,
+   "machine": "Lucy 3",
+   "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_icd_onboarding_not_completed_agent --machine \"Lucy 3\"` can install/refresh the STANDALONE com.alphalete.icd-onboarding-not-completed LaunchAgent (Mondays 07:40, deploy/icd_onboarding_not_completed.sh, MODE=dry until EVERYTHING is built). silent_job_watch expects it on Lucy 3 every Monday by 08:40 since 2026-11-25, but only a laptop test run ever beat (2026-11-25 17:50, MacBook-Pro-3), so without this it posts 'didn't run' on 11/30. install_agent is read-only w.r.t. any Sheet data; it only loads the plist.",
+   "display_name": "Install OBCL week-3 'not completed' mark (Mondays 7:40am)",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.day_orchestrator.install_agent"
+   ],
+   "base_args": [
+    "icd-onboarding-not-completed"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 5,
+   "verify": null
+  },
   "install_icd_onboarding_agent": {
    "on_scheduler": false,
    "machine": "Lucy 3",
