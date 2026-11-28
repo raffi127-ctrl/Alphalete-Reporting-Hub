@@ -167,7 +167,9 @@ class Nov27Kinds(unittest.TestCase):
     def test_do_not_text_note_holds_the_customer(self):
         rows = [row2("Pat Example", "Active", act="11/20/2026", notes="DO NOT TEXT -- wants to cancel"),
                 row2("Sam Sample", "Active", act="11/20/2026", wo="W2", taylor="don't text him, angry"),
-                row2("Ok Example", "Active", act="11/20/2026", wo="W3", notes="called 11/21")]
+                row2("Ok Example", "Active", act="11/20/2026", wo="W3", notes="called 11/21"),
+                row2("Waiting Example", "Active", act="11/20/2026", wo="W4",
+                     notes="HOLD TEXTS -- unanswered question")]
         self.assertEqual(set(self.pick(rows, "active7")), {"Ok Example"})
         held = self.pick(rows, "active7", held=True)
         self.assertIn("do not text", held["Pat Example"]["held"])

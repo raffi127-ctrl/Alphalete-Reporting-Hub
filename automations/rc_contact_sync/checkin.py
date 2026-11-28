@@ -115,7 +115,8 @@ DEFAULT_KINDS = ("help_activate", "active7", "active21")
 # A line whose Notes / Taylor's Notes say any of these keeps the WHOLE customer
 # off every text here. Claude writes "DO NOT TEXT -- <why>" after reading a
 # chain that says the customer is not activating / asked us to stop.
-DO_NOT_TEXT = ("do not text", "don't text", "dont text", "no more texts", "stop texting")
+DO_NOT_TEXT = ("do not text", "don't text", "dont text", "no more texts", "stop texting",
+               "hold texts")   # HOLD TEXTS = answer their open question first
 NOTE_COLS = ("Taylor's Notes", "Notes", "Being worked on", "Shipping Notes")
 _CLOSED = ("active", "disconnected", "cancelled", "canceled", "byod", "returned")
 
@@ -276,7 +277,8 @@ def _save_sent(kind: str, state: Dict[str, dict]) -> None:
 
 
 def run(*, live: bool = False, limit: Optional[int] = None, kinds: Sequence[str] = DEFAULT_KINDS,
-        today: Optional[dt.date] = None, skip: Sequence[str] = (), log=print) -> int:
+        today: Optional[dt.date] = None, skip: Sequence[str] = (),
+        not_texted_since: Optional[dt.date] = None, log=print) -> int:
     from automations.nds_metrics.order_log_tab import TAB, VANTURA_SHEET_ID
     from automations.rc_contact_sync import delivered, wrapup
     from automations.recruiting_report.fill import _retry, open_by_key
@@ -321,6 +323,17 @@ def run(*, live: bool = False, limit: Optional[int] = None, kinds: Sequence[str]
     except RC.RCError:
         from_number = wrapup.TAYLOR_SMS_NUMBER
     log("sending from %s (Taylor's line), one-to-one, no rep" % from_number)
+    recent = set()
+    if not_texted_since:
+        # 11/27: most active customers got a check-in on 11/21 -- a near-same
+        # text 6 days later is noise (and credits). Anyone our line texted
+        # since this date (a text that went through) is skipped this run.
+        from automations.rc_contact_sync import inbox
+        watch_token = RC.token(creds, jwt=creds["watch_jwt"]) if creds.get("watch_jwt") else token
+        for m in inbox._messages_since(watch_token, str(creds["watch_extension_id"]), not_texted_since):
+            if m.get("direction") == "Outbound" and "Failed" not in str(m.get("messageStatus")):
+                recent.update(inbox._recipients(m))
+        log("texted since %s: %d number(s) -- skipped this run" % (not_texted_since, len(recent)))
 
     sent = skipped = failed = 0
     seen_numbers = set()
@@ -331,6 +344,10 @@ def run(*, live: bool = False, limit: Optional[int] = None, kinds: Sequence[str]
             phone = main_number(t, feed, book)
             if not phone:
                 log("  - [%s] %s (%d days): no main number -- SKIPPED" % (kind, who, t["days"]))
+                skipped += 1
+                continue
+            if phone in recent:
+                log("  - [%s] %s: texted since %s -- SKIPPED" % (kind, who, not_texted_since))
                 skipped += 1
                 continue
             if phone in seen_numbers:
@@ -496,6 +513,8 @@ def main(argv=None) -> int:
     ap.add_argument("--date", default=None, metavar="YYYY-MM-DD", help="'today' for the window")
     ap.add_argument("--skip", action="append", default=[], metavar="CUSTOMER",
                     help="hold this customer this run (repeatable; exact name as on the tab)")
+    ap.add_argument("--not-texted-since", default=None, metavar="YYYY-MM-DD",
+                    help="skip anyone Taylor's line texted on/after this date")
     ap.add_argument("--review", action="store_true",
                     help="read-only: notes + whole text chain of every candidate -> 'Checkin Review' tab")
     a = ap.parse_args(argv)
@@ -503,7 +522,8 @@ def main(argv=None) -> int:
     if a.review:
         return review(today=today)
     return run(live=bool(a.live and not a.dry_run), limit=a.limit, today=today,
-               kinds=(a.kind,) if a.kind else DEFAULT_KINDS, skip=a.skip)
+               kinds=(a.kind,) if a.kind else DEFAULT_KINDS, skip=a.skip,
+               not_texted_since=dt.date.fromisoformat(a.not_texted_since) if a.not_texted_since else None)
 
 
 if __name__ == "__main__":
