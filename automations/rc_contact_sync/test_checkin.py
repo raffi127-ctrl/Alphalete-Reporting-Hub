@@ -148,7 +148,7 @@ class Nov27Kinds(unittest.TestCase):
     def test_help_activate_delivered_over_7_days_nothing_active(self):
         got = self.pick([row2("Pat Example", "Delivered", deliv="11/19/2026"),     # 8 days
                          row2("Too Soon", "Delivered", deliv="11/20/2026", wo="W2"),  # 7 days
-                         row2("Tracked Example", "Shipped", ship="Delivered Nov 18", wo="W3"),
+                         row2("Tracked Example", "Shipped", ship="Delivered Nov 18 (as of 11/26)", wo="W3"),
                          row2("Has Active", "Delivered", deliv="11/01/2026", wo="W4"),
                          row2("Has Active", "Active", act="11/02/2026", wo="W4", line="2"),
                          row2("All Gone", "Disconnected", deliv="11/01/2026", wo="W5"),
@@ -176,3 +176,11 @@ class Nov27Kinds(unittest.TestCase):
         self.assertEqual(K.text_for("Pat Example", "help_activate"),
                          "Hey there, do you need any help activating?")
         self.assertTrue(K.text_for("Pat Example", "active21").startswith("Hey there, just checking in."))
+
+
+class LanguageNote(unittest.TestCase):
+    def test_note_beats_the_name_guess(self):
+        self.assertEqual(K.lang_from_notes(["x | TEXTS IN ENGLISH -- asked twice"]), "en")
+        self.assertEqual(K.text_for("Pat Gonzalez", "help_activate", "en"),
+                         "Hey there, do you need any help activating?")
+        self.assertEqual(K.lang_from_notes(["called 11/21"]), "")

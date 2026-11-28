@@ -125,9 +125,20 @@ def first_name(customer: str) -> str:
     return titlecase_name(w[0]) if w else ""
 
 
-def text_for(customer: str, kind: str = "checkin") -> str:
+def text_for(customer: str, kind: str = "checkin", lang: str = "") -> str:
     from automations.rc_contact_sync import spanish
-    return KINDS[kind][spanish.language(customer)].format(first=first_name(customer))
+    return KINDS[kind][lang or spanish.language(customer)].format(first=first_name(customer))
+
+
+def lang_from_notes(notes: Sequence[str]) -> str:
+    """A customer who asked for a language (the name guess got it wrong) gets
+    a note: 'TEXTS IN ENGLISH' / 'TEXTS IN SPANISH'. '' = guess by name."""
+    low = " ".join(notes).lower()
+    if "texts in english" in low:
+        return "en"
+    if "texts in spanish" in low:
+        return "es"
+    return ""
 
 
 def _who(name: str) -> str:
@@ -139,7 +150,8 @@ def _shipping_delivered(v: str, today: dt.date) -> Optional[dt.date]:
     v = str(v or "").strip()
     if not v.lower().startswith("delivered"):
         return None
-    rest = v[len("delivered"):].strip(" :-")
+    import re
+    rest = re.sub(r"\(.*?\)", "", v[len("delivered"):]).strip(" :-")   # "Delivered Nov 20 (as of 11/26)"
     for fmt in ("%b %d", "%B %d", "%m/%d"):
         try:
             d = dt.datetime.strptime(rest, fmt).date().replace(year=today.year)
@@ -327,7 +339,7 @@ def run(*, live: bool = False, limit: Optional[int] = None, kinds: Sequence[str]
                 skipped += 1
                 continue
             seen_numbers.add(phone)
-            text = text_for(t["customer"], kind)
+            text = text_for(t["customer"], kind, lang_from_notes(t.get("notes") or []))
             lang = "es" if text.startswith("Hola") else "en"
             since = t["delivered"] if KINDS[kind].get("basis") == "delivered" else t["first_active"]
             line = "[%s] %s | rep %s | %s %s (%d days) | %s | %s" % (
