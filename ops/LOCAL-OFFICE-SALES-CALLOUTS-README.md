@@ -175,6 +175,20 @@ Lucy 2") → verify by `logtail`. See `~/alphalete-readmes/LUCY2-OPERATIONS-READ
 
 ## 7. Change log
 
+- 11-27 **NDS Metrics thread: 5+6 one picture, Churn Rates + Pending Orders stopped, NDS Tracker added** (main `dfecec5f`). Carlos asked four things: "can 5 & 6 be one screenshot?", "11 lets stop sending on this thread and stop sending via text", "15 stop sending", and "lets add in the NDS tracker to this post. the one that has our name and the org highlighted. you can still post on the tracker thread as well".
+  - **5 + 6 = one picture:** 💵 *NDS Activation Report + Revenue Overview* (`activation_combined`). The Activation Report Overview sits on top and the Activation Revenue Overview under it (Source: Sara). If one half fails, the other posts alone.
+  - **Stopped:** 📉 Churn Rates (thread AND texts; its `TEXT_ROUTES` entry is gone) and ⏳ Pending Orders. Both are in `RETIRED`. The builders stay for `--only X --dm` previews, but a RETIRED section can never post.
+  - **📡 NDS Tracker, new, after the Top 50:** `nds_metrics/tracker_copy.py` downloads the highlighted copy (Carlos + Nico yellow, the org blue) from today's "Tableau Country Trackers" thread in the same channel and uploads it into the NDS thread. The tracker thread keeps its own copy.
+    - **Two triggers, both on Lucy 2:** (1) the ~7am thread, at the tracker's slot, if the tracker is already up; (2) the `text_tracker nds` row that Lucy 3 queues when the board posts. A late tracker lands at the END of the thread (11/27 it came at 10:29).
+    - **One copy a day:** a lock file plus a look at the thread's own replies. No tracker all day = no post.
+  - **Check without posting:** `rerun nds_metrics_probe --tracker-copy-dry` on Lucy 2.
+  - **Re-post by hand:** `rerun nds_metrics --only nds_tracker`. This posts, because base_args carry --post.
+  - **What breaks the copy:**
+    - Changing the tracker's caption format `*NDS Tracker - Nov 27*` and its file name `NDS Tracker.png` together. A title change in `tableau_screenshots/pages.py` is read live and is fine.
+    - Deleting `nds` from `tracker_texts/config.ROUTES`, which removes the late trigger.
+    - A per-org tracker re-post (`--orgs carlos_gp`) never queues `text_tracker`, so it can't trigger a late copy.
+  - **Why the two Sales Board pictures were missing 11/27:** Thanksgiving's column on the NDS Sales Board was all X/F/T with no numbers. `board_shots.render` raised "no numeric Thursday cells", and the Week to Date shot is made in the same step, so it went too. A day nobody works skips BOTH pictures. Not changed (Carlos didn't ask).
+
 - 11-23 **Wireless churn by owner, ICD totals** (Carlos: "do the same table for wireless churn. Include airs and BYODs. Just the table that shows ICD totals 0-30 day 31 day 60 day 90 day Churn What tableau churn reports look at"). New `automations/nds_metrics/owner_churn.py` (main `633a800a` → `b2cf20ea`). It makes ONE picture, a row per owner, with Tableau's buckets by activation date: 0-30 / 30 (31-60) / 60 (61-90) / 90 (91-120).
   - **Phones (BYODs in):** Tableau's own ICD totals. NDS owners come off Smart Circle's CHURNRATES ChurnALlExp sliced to the owner. Rafael comes off his WirelessLocalOffice D2D view.
   - **Air:** added from the order log, because no view carries it (the NDS CHURN report's rule).
