@@ -8671,7 +8671,7 @@
   },
   "spectrum_order_log": {
    "on_scheduler": false,
-   "_off_scheduler_note": "Spectrum Order Log (Raf). Maud 2026-11-24 asked; Eve 2026-11-25: works like the AT&T Order Log, posts in #alphalete-sales inside the day's Metrics thread, SAMPLE to Eve first. Reads the Charter D2D Sales Metrics > Order Log dashboard's 'Order Log Raw' worksheet out of the page's bootstrap reply (downloads are off there). No args = dry run; `lucy rerun spectrum_order_log --sample` DMs the .xlsx to Eve; `--post` replies in the Metrics thread. NOT scheduled until Eve OKs the sample.",
+   "_off_scheduler_note": "Spectrum Order Log (Raf). Maud 2026-11-24 asked; Eve 2026-11-25: works like the AT&T Order Log, posts in #alphalete-sales inside the day's Metrics thread, SAMPLE to Eve first. Reads the Charter D2D Sales Metrics > Order Log dashboard's 'Order Log Raw' worksheet out of the page's bootstrap reply (downloads are off there). No args = dry run; `lucy rerun spectrum_order_log --sample` DMs the .xlsx to Eve; `--post` replies in the Metrics thread. Scheduled 2026-11-28 (Eve): runs every morning as a STEP of daily_metrics (`--post`, after the AT&T Order Log) — this entry stays off-scheduler so it never posts twice; it is only the manual `lucy rerun` door.",
    "display_name": "Spectrum Order Log (Raf) -> Metrics thread",
    "source_type": "tableau",
    "data_sources": [],

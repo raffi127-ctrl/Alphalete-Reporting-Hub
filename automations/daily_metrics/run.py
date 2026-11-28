@@ -6,6 +6,7 @@ they produce the 10 metrics posted to that thread every morning:
 
     🪵 Telemapper Knocks + ⏰ Time Gaps   (total_knocks)
     📋 Order Log + 🆕 Rep Activations     (uploaded.order_log)
+    📡 Spectrum Order Log                 (spectrum_order_log)
     📆 Activations Scheduled Today        (activations_today)
     📅 Sales Scheduled 6+ Days Out        (scheduled_6_days_out)
     🚫 Canceled Orders                    (canceled_orders)
@@ -64,7 +65,8 @@ PER_METRIC_TIMEOUT_S = 20 * 60
 # Activations Today also posts the Pending Orders thread (one image per rep,
 # ~60 reps for Raf) since 2026-11-12 — ~5 min of Slack calls on top of the pull.
 TIMEOUT_BY_MODULE = {"automations.uploaded.order_log": 35 * 60,
-                     "automations.activations_today.run": 30 * 60}
+                     "automations.activations_today.run": 30 * 60,
+                     "automations.spectrum_order_log.run": 30 * 60}
 
 # (slug, label, module, base_args) — order matches the Metrics thread.
 METRICS = [
@@ -72,6 +74,11 @@ METRICS = [
      "automations.total_knocks.run", []),
     ("order_log", "📋 Order Log",
      "automations.uploaded.order_log", []),
+    # Raf/Maud 2026-11-25, Eve 2026-11-28: the Spectrum (Charter) log rides
+    # with the AT&T one every morning — channel post + "Tap your name" thread
+    # (+ lvl1 mirror) and a pointer line in this Metrics thread.
+    ("spectrum_order_log", "📡 Spectrum Order Log",
+     "automations.spectrum_order_log.run", ["--post"]),
     # Raf 2026-11-10 ("Yes this is beautiful"): today's installs by rep, with
     # the customer's phone, so reps reach out the same day. Order Log source.
     ("activations_today", "📆 Activations Scheduled Today",
