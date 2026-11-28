@@ -6075,7 +6075,7 @@
    "_close_on_note": "Exits non-zero only when a send failed.",
    "on_scheduler": false,
    "_off_scheduler_note": "MANUAL-ONLY for now (Carlos 2026-11-21): 1:1 texts from Taylor's line to the customer's MAIN number (no rep, no group), by days since the customer's first activation on the NDS Order Log: 'recently activated' at 0-13 days, 'just checking in' at 14-30, nothing after 30. Spanish names get Spanish. Once ever per customer per kind. DRY RUN unless --live: `lucy rerun rc_checkin_text` previews to the control sheet's 'Checkin Preview' tab; `lucy rerun rc_checkin_text --live` sends.",
-   "display_name": "RC activation texts (recent + 2-week check-in)",
+   "display_name": "RC texts: help activating (delivered 8+ days) + check-ins at 7 and 21 days active",
    "source_type": "api",
    "data_sources": [],
    "command": [

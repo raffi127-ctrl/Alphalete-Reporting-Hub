@@ -129,3 +129,50 @@ class RepliesReport(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+H2 = ["Rep", "Line", "Line Status", "Customer", "Wireless Order #", "DSI #", "Activation Date",
+      "Delivered", "Shipping Status", "Taylor's Notes", "Notes", "Being worked on"]
+T27 = dt.date(2026, 11, 27)
+
+
+def row2(cust, status, act="", deliv="", ship="", taylor="", notes="", bwo="", wo="W1", line="1"):
+    return ["Rep One", line, status, cust, wo, "D" + wo, act, deliv, ship, taylor, notes, bwo]
+
+
+class Nov27Kinds(unittest.TestCase):
+    def pick(self, rows, kind, held=False):
+        return {t["customer"]: t for t in K.pick_targets(H2, rows, {}, today=T27, kind=kind,
+                                                          with_held=held)}
+
+    def test_help_activate_delivered_over_7_days_nothing_active(self):
+        got = self.pick([row2("Pat Example", "Delivered", deliv="11/19/2026"),     # 8 days
+                         row2("Too Soon", "Delivered", deliv="11/20/2026", wo="W2"),  # 7 days
+                         row2("Tracked Example", "Shipped", ship="Delivered Nov 18", wo="W3"),
+                         row2("Has Active", "Delivered", deliv="11/01/2026", wo="W4"),
+                         row2("Has Active", "Active", act="11/02/2026", wo="W4", line="2"),
+                         row2("All Gone", "Disconnected", deliv="11/01/2026", wo="W5"),
+                         row2("Not Shipped", "Pending", wo="W6")], "help_activate")
+        self.assertEqual(set(got), {"Pat Example", "Tracked Example"})
+        self.assertEqual(got["Tracked Example"]["days"], 9)
+
+    def test_active_7_and_21(self):
+        rows = [row2("Week Example", "Active", act="11/20/2026"),              # 7
+                row2("Six Days", "Active", act="11/21/2026", wo="W2"),         # 6
+                row2("Three Weeks", "Active", act="11/06/2026", wo="W3"),      # 21
+                row2("Twenty Days", "Active", act="11/07/2026", wo="W4")]      # 20
+        self.assertEqual(set(self.pick(rows, "active7")), {"Week Example", "Twenty Days"})
+        self.assertEqual(set(self.pick(rows, "active21")), {"Three Weeks"})
+
+    def test_do_not_text_note_holds_the_customer(self):
+        rows = [row2("Pat Example", "Active", act="11/20/2026", notes="DO NOT TEXT -- wants to cancel"),
+                row2("Sam Sample", "Active", act="11/20/2026", wo="W2", taylor="don't text him, angry"),
+                row2("Ok Example", "Active", act="11/20/2026", wo="W3", notes="called 11/21")]
+        self.assertEqual(set(self.pick(rows, "active7")), {"Ok Example"})
+        held = self.pick(rows, "active7", held=True)
+        self.assertIn("do not text", held["Pat Example"]["held"])
+
+    def test_texts(self):
+        self.assertEqual(K.text_for("Pat Example", "help_activate"),
+                         "Hey there, do you need any help activating?")
+        self.assertTrue(K.text_for("Pat Example", "active21").startswith("Hey there, just checking in."))
