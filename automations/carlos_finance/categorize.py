@@ -104,6 +104,10 @@ rule(r"WF SCILL|SMARTCIRCLE INTL|SMART CIRCLE", "Sales Deposits (SCI)")         
 # ---- other business income / below the line ----
 rule(r"DANDELION MARKET|PALACE ACQUISITI", "Profit Sharing & JV Income", None, POS)
 rule(r"DOMIN8 ACQUISITI", "Rent Reimbursement", None, POS)
+# Raf's office (Alphalete Market) sends two kinds of ACH into 0573: sender id 9200502235 = income
+# (pay for Carlos's reps' sales under Raf's code, Oct 2026+; Carlos confirmed 11/27); 9024218048 =
+# loans Laura sends on request. Big amounts stay loans either way (2025 had an $18k loan on 9200502235).
+rule(r"ALPHALETE MARKET.*9200502235", "Other Business Income", {"0573"}, lambda a: 0 < a < 10000)
 rule(r"ALPHALETE MARKET.*ACH", "Loan from Raf (received)", {"0573"}, POS)
 rule(r"IDEA 247", "Loans & Capital In (other)", None, POS)
 rule(r"IDEA 247", "Loan Payments (Idea 247)")
