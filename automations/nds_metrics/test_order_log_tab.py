@@ -46,7 +46,7 @@ class Rows(unittest.TestCase):
         # it, both in view -- the group starts after Device
         c = T._COL["Customer"]
         self.assertEqual(T.HEADERS[c - 2:c + 2], ("Line", "Line Status", "Customer", "Device"))
-        self.assertEqual(T.HEADERS[c + 2:c + 10], ("Email", "Zip", "DSI #", "Wireless Order #", "BAN", "Phone #",
+        self.assertEqual(T.HEADERS[c + 2:c + 10], ("Phone #", "Email", "Zip", "DSI #", "Wireless Order #", "BAN",
                                                    "Type", "Plan"))
         self.assertEqual(T.HEADERS[c + 10], "Shipping Status")                 # 11/27: dates moved left, Shipping Status after the fold
         # 11/19: Order Date and Last Updated sit left of Rep, right after Pay Period;
@@ -577,7 +577,7 @@ class Nov17Columns(unittest.TestCase):
 
     def test_group_is_added_folded_with_its_toggle_above_customer(self):
         start, end = T.group_span()
-        self.assertEqual((start, end), (T._COL["Email"], T._COL["Plan"] + 1))
+        self.assertEqual((start, end), (T._COL["Phone #"], T._COL["Plan"] + 1))   # 11/27 night: Phone # first
         self.assertEqual(start, T._COL["Device"] + 1)             # Device is the last column in view
         self.assertEqual(T._COL["Device"], T._COL["Customer"] + 1)
         reqs = T.group_requests(7, [])

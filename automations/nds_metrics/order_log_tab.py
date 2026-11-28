@@ -76,11 +76,14 @@ DAYS_KEPT: Optional[int] = None       # None = keep every line
 HEADERS = ("Week Ending", "Pay Period", "Order Date",
            "Last Updated", "Ship Date", "Delivered", "Activation Date", "Disconnect Date",  # DATE_GROUP_COLS, folded after Order Date
            "Rep", "Line", "Line Status", "Customer", "Device",
-           "Email", "Zip", "DSI #", "Wireless Order #", "BAN", "Phone #",     # GROUP_COLS, folded beside Customer
+           "Phone #", "Email", "Zip", "DSI #", "Wireless Order #", "BAN",     # GROUP_COLS, folded beside Customer
            "Type", "Plan",                                                    # ... these two too (11/17 pm)
            "Shipping Status",
            "Taylor's Notes", "Notes", "Being worked on",
            "Shipping Notes", "Churn Bucket", "Delivered Message Sent", "Port Status")
+# 2026-11-27 night, Carlos: "lets move column S to the left of columen N"
+# (S = Phone #, N = Email then) -- Phone # is now the first column of the
+# folded customer group, right after Device.
 # 2026-11-27, Carlos: "the shipping status column lets move it to the left of
 # column V" (V = Taylor's Notes then) -- right after the folded customer group,
 # so it is in view beside Device; Shipping Notes stays at the right.
@@ -130,7 +133,7 @@ HEADERS = ("Week Ending", "Pay Period", "Order Date",
 #    Date, off the Tableau export: Status Date of the line whose DTR Status is
 #    Disconnected, by spe.TN (ZipIndex.disconnect_date); the SaraPlus feed
 #    carries no date for it.
-GROUP_COLS = ("Email", "Zip", "DSI #", "Wireless Order #", "BAN", "Phone #", "Type", "Plan")
+GROUP_COLS = ("Phone #", "Email", "Zip", "DSI #", "Wireless Order #", "BAN", "Type", "Plan")
 GROUP_AFTER = "Device"      # the last always-visible column before the fold; the +/- sits above it
 DATE_GROUP_COLS = ("Last Updated", "Ship Date", "Delivered", "Activation Date", "Disconnect Date")
 DATE_GROUP_AFTER = "Order Date"
