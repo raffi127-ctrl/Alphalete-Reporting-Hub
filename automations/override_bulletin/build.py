@@ -367,8 +367,18 @@ def _section_table(title: str, rows: list, week_labels: list, years: list,
     Rows whose name is in `featured` (the top-10 shown as cards) are highlighted.
     Rows flagged `hidden` (quiet for the last 4 weeks) are left out of the table —
     the flag is a DISPLAY rule; the headline year total still counts them."""
+    # TOTAL row at the foot of every table (Eve 2026-11-27). Summed over ALL
+    # rows, hidden ones included, so the Combined table's Total 2026 ties out to
+    # the headline "Total 2026 Overrides" and the tab's own Total row. Hidden
+    # rows are quiet the last 4 weeks, so the weekly totals are the same either
+    # way; only the 2026 / prior-year totals pick up their (older) money.
+    all_rows = rows
     rows = [r for r in rows if not r.get("hidden")]
     weeks = week_labels[:WOW_WEEKS]
+
+    def _sum(vals):
+        vals = [v for v in vals if v is not None]
+        return round(sum(vals), 2) if vals else None
     # `lastwk` is the weekly column that BUTTS the divider. Weekly figures are
     # right-aligned, so without extra room on this side the rule sat ~7px off the
     # last week's digits and 16px off the annual ones — reading as crushed
@@ -398,6 +408,17 @@ def _section_table(title: str, rows: list, week_labels: list, years: list,
         body += (f'<tr class="{"lead" if r["name"] in featured else ""}">'
                  f'<td class="nmcell">{r["name"]}</td>'
                  f'<td class="t26">{_fmt(r["total"])}</td>{wk}{yr}</tr>')
+    tot_wk = "".join(
+        f'<td class="wk{" cur" if i == 0 else ""}'
+        f'{" lastwk" if i == _lastwk else ""}">'
+        f'{_fmt(_sum(r["series"][i] if i < len(r["series"]) else None for r in all_rows))}</td>'
+        for i in range(len(weeks)))
+    tot_yr = "".join(f'<td class="yr{" sep" if i == 0 else ""}">'
+                     f'{_fmt(_sum(r["years"].get(y) for r in all_rows))}</td>'
+                     for i, y in enumerate(years))
+    body += (f'<tr class="tot"><td class="nmcell">Total</td>'
+             f'<td class="t26">{_fmt(_sum(r["total"] for r in all_rows))}</td>'
+             f'{tot_wk}{tot_yr}</tr>')
     # Shared <colgroup> so both tables get identical column widths and line up.
     colgroup = ("<colgroup><col class=\"c-name\"><col class=\"c-t26\">"
                 + '<col class="c-wk">' * len(weeks)
@@ -563,6 +584,12 @@ def build_html(week_labels, combined, regular, captainship, program) -> str:
   .sec tr.lead td.nmcell {{ color:#f6f2e9; font-weight:bold;
     border-left:3px solid {GOLD}; padding-left:9px; }}
   .sec tr.lead td {{ background:rgba(201,162,75,0.14); }}
+  /* TOTAL row closing each table: double gold rule on top, bold, gold label. */
+  .sec tr.tot td {{ background:rgba(201,162,75,0.22); font-weight:bold;
+    color:#f6f2e9; border-top:3px double {GOLD}; border-bottom:1px solid {GOLD}; }}
+  .sec tr.tot td.nmcell {{ color:{GOLD_LT}; letter-spacing:2px;
+    text-transform:uppercase; }}
+  .sec tr.tot td.wk.cur {{ color:{GOLD_LT}; }}
   .foot {{ text-align:center; margin-top:30px; }}
   .foot .tag {{ color:{GOLD}; letter-spacing:5px; font-size:15px; font-weight:bold; }}
   .foot .dt {{ color:#6f6b60; font-size:11px; letter-spacing:1px; margin-top:8px; }}
