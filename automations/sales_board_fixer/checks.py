@@ -54,6 +54,8 @@ KIND_LABEL = {
     "dropdown_different": "desplegable con otra lista que el resto de la columna",
     "dropdown_value_off": "el texto de la celda no está en la lista del desplegable de la columna",
     "dropdown_mixed": "columna con dos listas de desplegable distintas (hay que elegir una)",
+    "dropdown_wrong_list": "desplegable con otras opciones que las que lleva esa columna",
+    "dropdown_list_changed": "la columna entera tiene otras opciones que la semana pasada (¿a propósito?): solo aviso",
     "style": "negrita / centrado distinto",
     "roll_call_blank": "X/T en Int con la Roll Call vacía",
     "cf_broken": "regla de formato condicional rota (#REF!)",
@@ -964,7 +966,8 @@ def _dropdown_choices(rule: dict) -> Optional[set]:
 
 
 def check_dropdowns(tab: str, sheet_id: int, values, rules,
-                    fill_blank: bool = False, hidden=frozenset()) -> List[Finding]:
+                    fill_blank: bool = False, hidden=frozenset(),
+                    skip_cols=frozenset()) -> List[Finding]:
     """rules[r-1][c-1] = the cell's data validation, or None. A column where the
     reps have a dropdown has it on EVERY row of the block; text pasted in is not
     a dropdown (Raf + Eve 2026-11-01: rows added for new 1st weeks came without
@@ -1000,6 +1003,8 @@ def check_dropdowns(tab: str, sheet_id: int, values, rules,
                 or (fill_blank and len(blank) <= DROPDOWN_FREE_ROWS)]
     out = []
     for c in range(lay.name_col + 1, width + 1):
+        if c in skip_cols:          # check_dropdown_lists knows its right list
+            continue
         have = {r: json.dumps(rule_at(r, c), sort_keys=True) for r in named if rule_at(r, c)}
         if len(have) < max(MIN_ROWS, DROPDOWN_VOTERS * len(named)):
             continue
@@ -1035,6 +1040,154 @@ def check_dropdowns(tab: str, sheet_id: int, values, rules,
                     "source": _cell_range(sheet_id, source, c),
                     "destination": _cell_range(sheet_id, r, c),
                     "pasteType": "PASTE_DATA_VALIDATION"}} if can_copy else None, **base))
+    return out
+
+
+# The options a dropdown column must show. Raf 2026-11-27: Direct Deposit
+# showed 'Indeed / Linkedin' -- its list was ONE rule shared with 'Add applied
+# to', 'No Base' and 'DD', so changing it on one column changed them all. A
+# majority vote can't see that (a whole column can go wrong at once), so the
+# right list comes from LAST WEEK's tab, same column (Eve 2026-11-28: "any
+# dropdown, not only Direct Deposit"). RIGHT_LISTS pins a column's list by name
+# no matter what last week had.
+DD_LIST = ("Completed", "Submitted", "Can't get DD", "Pending")
+RIGHT_LISTS = {"direct deposit": DD_LIST, "dd": DD_LIST}
+
+
+def _label(values, r: int, c: int) -> str:
+    return " ".join(_g(values, r, c).split()).lower()
+
+
+def column_keys(values) -> Dict[int, Tuple[str, str]]:
+    """{column: (row-1 label carried right, row-3 label)}. Names a column the
+    same way every week even when columns move: a day block's 'Roll Call' is
+    ('mon', 'roll call'). A key two columns share is left out."""
+    width = max((len(r) for r in values[:3]), default=0)
+    sub = layout(values).sub_row
+    group, out = "", {}
+    for c in range(layout(values).name_col + 1, width + 1):
+        group = _label(values, 1, c) or group
+        out[c] = (group, _label(values, sub, c))
+    seen = collections.Counter(out.values())
+    return {c: k for c, k in out.items() if seen[k] == 1}
+
+
+def _is_list(rule) -> bool:
+    return bool(rule) and (rule.get("condition") or {}).get("type") == "ONE_OF_LIST"
+
+
+def _rules_at(rules):
+    def rule_at(r, c):
+        row = rules[r - 1] if r - 1 < len(rules) else []
+        return row[c - 1] if c - 1 < len(row) else None
+    return rule_at
+
+
+def column_lists(values, rules) -> Dict[Tuple[str, str], Tuple[frozenset, Tuple[int, int]]]:
+    """{column key: (its options, (row, col) of a cell that has them)} for the
+    dropdown columns of a tab where DROPDOWN_SAME of the cells agree."""
+    first, last = block_rows(values)
+    rule_at = _rules_at(rules)
+    out = {}
+    for c, key in column_keys(values).items():
+        lists = {r: frozenset(_dropdown_choices(rule_at(r, c)))
+                 for r in range(first, last + 1) if _is_list(rule_at(r, c))}
+        if len(lists) < MIN_ROWS:
+            continue
+        top, hits = collections.Counter(lists.values()).most_common(1)[0]
+        if hits >= DROPDOWN_SAME * len(lists):
+            out[key] = (top, (min(r for r in lists if lists[r] == top), c))
+    return out
+
+
+def dropdown_list_cols(values, rules=None, prev=None) -> Dict[int, Tuple[frozenset, bool]]:
+    """{column: (its right options, pinned)} -- pinned = named in RIGHT_LISTS.
+    prev = (sheet id, values, rules) of last week's tab."""
+    out = {}
+    sub = layout(values).sub_row
+    width = max((len(r) for r in values[:3]), default=0)
+    for c in range(layout(values).name_col + 1, width + 1):
+        name = _label(values, sub, c) or _label(values, 1, c)
+        if name in RIGHT_LISTS:
+            out[c] = (frozenset(RIGHT_LISTS[name]), True)
+    if prev:
+        before = column_lists(prev[1], prev[2])
+        for c, key in column_keys(values).items():
+            if c not in out and key in before:
+                out[c] = (before[key][0], False)
+    return out
+
+
+def check_dropdown_lists(tab: str, sheet_id: int, values, rules, prev=None) -> List[Finding]:
+    """Every cell of a dropdown column offers that column's right options
+    (dropdown_list_cols). A cell with another list, or none, gets the right one
+    COPIED -- from this tab (same column first, then any column) or else from
+    last week's tab -- never written: a written rule loses the label colors
+    (see check_dropdowns). The text in the cell is never touched. Rows hidden by
+    the filter are fixed too: apply() lifts the filter around the paste.
+
+    A WHOLE column with another list than last week may be on purpose (someone
+    changed the options): Lucy does not put it back, she tells Eve
+    (dropdown_list_changed). A pinned column (RIGHT_LISTS) is always put back."""
+    cols = dropdown_list_cols(values, rules, prev)
+    if not cols:
+        return []
+    first, last = block_rows(values)
+    blank = [r for r in range(first, last + 1) if not name_at(values, r)]
+    rows = [r for r in range(first, last + 1)
+            if name_at(values, r) or len(blank) <= DROPDOWN_FREE_ROWS]
+    rule_at = _rules_at(rules)
+    before = column_lists(prev[1], prev[2]) if prev else {}
+    keys = column_keys(values)
+
+    def right(rule, want):
+        return _is_list(rule) and frozenset(_dropdown_choices(rule)) == want
+
+    def source(c, want):
+        for cc in [c] + sorted(cols):
+            for r in range(first, last + 1):
+                if right(rule_at(r, cc), want):
+                    return sheet_id, r, cc
+        for opts, (r, cc) in before.values():
+            if opts == want:
+                return prev[0], r, cc
+        return None
+
+    def show(opts):
+        return " / ".join(sorted(opts)) if opts else "sin desplegable"
+
+    out = []
+    for c, (want, pinned) in sorted(cols.items()):
+        wrong = [r for r in rows if not right(rule_at(r, c), want)]
+        if not wrong:
+            continue
+        col = _g(values, 1, c).strip() or header(values, c)
+        if not pinned and len(wrong) == len(rows):
+            now = collections.Counter(
+                frozenset(_dropdown_choices(rule_at(r, c))) if _is_list(rule_at(r, c))
+                else frozenset() for r in rows)
+            out.append(Finding(
+                "dropdown_list_changed", tab, col_letter(c),
+                "%s, columna %s" % (KIND_LABEL["dropdown_list_changed"], col),
+                before=show(want), after=show(now.most_common(1)[0][0]),
+                extra={"key": "|".join(keys.get(c, ("", "")))}))
+            continue
+        src = source(c, want)
+        for r in wrong:
+            cur = rule_at(r, c)
+            text = _g(values, r, c).strip()
+            out.append(Finding(
+                "dropdown_wrong_list", tab, a1(r, c), row=r, name=name_at(values, r),
+                detail="%s, columna %s%s" % (KIND_LABEL["dropdown_wrong_list"], col,
+                                             "" if src else " (no hay ninguna celda con la "
+                                             "lista buena: a mano)"),
+                before=(show(_dropdown_choices(cur)) if _is_list(cur) else "sin desplegable")
+                       + ((" · dice %r" % text) if text else ""),
+                after=show(want),
+                request={"copyPaste": {
+                    "source": _cell_range(src[0], src[1], src[2]),
+                    "destination": _cell_range(sheet_id, r, c),
+                    "pasteType": "PASTE_DATA_VALIDATION"}} if src else None))
     return out
 
 

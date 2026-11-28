@@ -151,15 +151,37 @@ def load_older(sh, title: str, ws) -> dict:
     LAST/PRIOR WEEK'S TOTALS and the history in step with them (last_week.py)."""
     today = dt.date.today()
     sun = LW.week_sunday(title, today)
-    older = []
+    older, prev = [], None
     for (other, days, dest) in zip(LW.older_titles(title, list(_tabs(sh)), today), (7, 14),
                                    (LW.WR.LAST, LW.WR.PRIOR)):
         if not other:
             continue
         o = sh.worksheet(other)
+        if days == 7:
+            prev = _prev_dropdowns(sh, o)
         older.append((other, sun - dt.timedelta(days=days), o.get_all_values(),
                       o.get_all_values(value_render_option="UNFORMATTED_VALUE"), dest))
-    return {"raw": ws.get_all_values(value_render_option="UNFORMATTED_VALUE"), "older": older}
+    return {"raw": ws.get_all_values(value_render_option="UNFORMATTED_VALUE"), "older": older,
+            "prev_dropdowns": prev}
+
+
+def _prev_dropdowns(sh, o):
+    """(sheet id, values, dropdown rules) of last week's tab: the right list of
+    each dropdown column (checks.check_dropdown_lists). None if unreadable."""
+    try:
+        values = o.get_all_values()
+        _, last = K.block_rows(values)
+        width = max((len(r) for r in values[:3]), default=1)
+        grid = sh.fetch_sheet_metadata({
+            "includeGridData": True,
+            "ranges": ["'%s'!A1:%s%d" % (o.title, K.col_letter(width), last)],
+            "fields": "sheets(data(rowData(values(dataValidation))))"})
+        rows = grid["sheets"][0]["data"][0].get("rowData", [])
+        return (o.id, values, [[(v or {}).get("dataValidation") for v in rd.get("values", [])]
+                               for rd in rows])
+    except Exception as e:  # noqa: BLE001 -- no reference = only the pinned lists
+        print("  desplegables de %r: no se pudieron leer (%s)" % (o.title, type(e).__name__))
+        return None
 
 
 def lineup_boards(sh, formulas, home: str = None) -> dict:
@@ -299,6 +321,9 @@ def audit(t: dict, tenure=None, owner: bool = False) -> list:
         found = lanes_findings(t)
         found += K.check_conditional(title, t["sheet_id"], t["rules"], t["ncols"])
     elif K.is_board(v):
+        # our board: these columns have a known right list (Raf 2026-11-27)
+        prev = None if owner else t.get("prev_dropdowns")
+        listed = {} if owner else K.dropdown_list_cols(v, t.get("dropdowns") or [], prev)
         found = (K.check_formulas(title, v, f) + _one_per_cell(
                      K.check_day_rows(title, v, f) + K.check_outside_block(title, v, f)
                      + K.check_day_stats(title, v, f) + K.check_status_words(title, v, f))
@@ -312,7 +337,11 @@ def audit(t: dict, tenure=None, owner: bool = False) -> list:
                                                 t.get("bgs") or [])
                  + K.check_checkbox_leftovers(title, v, t.get("dropdowns") or [])
                  + K.check_dropdowns(title, t["sheet_id"], v, t.get("dropdowns") or [],
-                                     fill_blank=True, hidden=t.get("hidden_rows") or ()))
+                                     fill_blank=True, hidden=t.get("hidden_rows") or (),
+                                     skip_cols=set(listed)))
+        if listed:
+            found += K.check_dropdown_lists(title, t["sheet_id"], v, t.get("dropdowns") or [],
+                                            prev)
         if not owner:
             found += K.check_borders(title, t["sheet_id"], v, t.get("borders") or [],
                                      fill_blank=True)
@@ -412,9 +441,24 @@ def apply(sh, t: dict, found: list, notes: bool = True) -> list:
     # highest index first (checks.py already sorted them)
     ups = [x.request for x in todo if x.request and "updateConditionalFormatRule" in x.request]
     dels = [x.request for x in todo if x.request and "deleteConditionalFormatRule" in x.request]
-    if fmt or ups or dels:
-        sh.batch_update({"requests": fmt + ups + dels})
+    reqs = fmt + ups + dels
+    if reqs and t.get("basic_filter") and any(
+            x.kind == "dropdown_wrong_list" and x.request for x in todo):
+        reqs = lift_filter(t["sheet_id"], t["basic_filter"], reqs)
+    if reqs:
+        sh.batch_update({"requests": reqs})
     return todo
+
+
+def lift_filter(sheet_id: int, flt: dict, reqs: list) -> list:
+    """reqs between taking the filter off and putting it back. A paste into a
+    row the filter hides lands on the next visible row (TOTALS, 2026-11-01);
+    Direct Deposit's wrong list sat on 11 hidden rows (2026-11-28). The filter
+    goes back with the same hidden values, minus its saved sort: put back with
+    it, it re-sorts the rows (see week_roll)."""
+    back = {k: v for k, v in flt.items() if k != "sortSpecs"}
+    return ([{"clearBasicFilter": {"sheetId": sheet_id}}] + reqs
+            + [{"setBasicFilter": {"filter": back}}])
 
 
 def _slug(s: str) -> str:
@@ -546,6 +590,7 @@ def _main(a) -> int:
         results["nombres de tabs"] = spaced
     _warn_spaced([("Alphalete", sh.id, x.tab) for x in spaced], a.apply)
     _warn_dates(_dated_rows("Alphalete", sh.id, results), a.apply)
+    _warn_list_changed(results, a.apply)
     print("reporte:", report(results, stamp, a.apply))
     return 0
 
@@ -1015,6 +1060,41 @@ def _warn_spaced(tabs: list, do_apply: bool) -> None:
     try:
         if _dm_eve(text):
             print("  DM a Eve: %d tabs con espacios" % len(lines))
+    except Exception as e:  # noqa: BLE001 -- a warning never stops the fixer
+        print("  DM a Eve no salió (%s)" % type(e).__name__)
+
+
+LIST_TOLD_FILE = OUT_DIR / "dropdown_lists_told.json"
+
+
+def list_changed_lines(results: dict) -> dict:
+    """{told key: DM line} for the whole dropdown columns with new options."""
+    out = {}
+    for tab, found in results.items():
+        for x in found:
+            if getattr(x, "kind", "") != "dropdown_list_changed":
+                continue
+            col = x.detail.split("columna ")[-1]
+            out["%s|%s|%s" % (tab, x.extra.get("key", x.where), x.after)] = (
+                "%s, %s (col %s): was %s, now %s" % (tab, col, x.where, x.before, x.after))
+    return out
+
+
+def _warn_list_changed(results: dict, do_apply: bool) -> None:
+    """A whole dropdown column with other options than last week: Lucy leaves it
+    (it may be on purpose) and DMs Eve once per tab + column + new list."""
+    if not do_apply:
+        return
+    seen = list_changed_lines(results)
+    fresh = ST.new_ones(LIST_TOLD_FILE, list(seen))
+    if not fresh:
+        return
+    text = ("Salesboard Fixer: these dropdown columns show different options than last "
+            "week, on every row. Lucy left them as they are (someone may have changed them on "
+            "purpose). If it's a mistake, tell Claude:\n") + "\n".join("• " + seen[k] for k in fresh)
+    try:
+        if _dm_eve(text):
+            print("  DM a Eve: %d desplegables cambiados" % len(fresh))
     except Exception as e:  # noqa: BLE001 -- a warning never stops the fixer
         print("  DM a Eve no salió (%s)" % type(e).__name__)
 
