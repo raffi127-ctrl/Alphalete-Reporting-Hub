@@ -33,9 +33,9 @@ THE % RULES (Maud 2026-11-24, "How You Get Paid" grid). First match wins:
      In Training / Entry 35%, Level 1/2/3 40%, Mastermind 70%.
      LOST LEADERSHIP PAY: a Level 1/2/3 rep who was 'Late' on the Saturday
      roll call of the DD week's board, or 'Late' 2+ times that week, gets 35%
-     (reason in E, box in F ticked). Every Level 1-3 rep has the box:
-     tick it to drop them to 35%, untick to restore their level %. Pink row
-     while ticked. Other levels have no box.
+     (reason in E, drop-down set to "Lose 5% + App Tier"). Every Level 1-3
+     rep has the drop-down: - = level %, Lose 5% + App Tier = 35%,
+     Lose 5% only = level % minus 5 (min 35%). Pink row while it's a Lose. Other levels have none.
   5  otherwise — not on the last 2 boards, or in the New Starts box with no
      level: % blank, orange.
 
@@ -127,6 +127,40 @@ LEADER_APP_TIERS = ((15, 0.55), (10, 0.50), (5, 0.45))
 #: at all. X alone all week is still paid (Maud 2026-11-24).
 OFF_MARKS = {"t", "x"}
 LOST_LEADERSHIP_PCT = 0.35
+#: Lost Leadership Pay is a drop-down on Level 1-3 rows (Maud 2026-11-27):
+#:   "-" = their level % | "Lose 5% + App Tier" = 35% (loses the leadership
+#:   5% AND the app bump) | "Lose 5% only" = level % minus 5 (not under 35%).
+#: Late on the board -> "Lose 5% + App Tier" by default (what the old tick did).
+#: Labels per Maud 2026-11-27; the first-day labels are still read (OLD_LOST).
+LOST_NO, LOST_ALL, LOST_5 = "-", "Lose 5% + App Tier", "Lose 5% only"
+LOST_CHOICES = (LOST_NO, LOST_ALL, LOST_5)          # drop-down order
+OLD_LOST = {"no": LOST_NO, "lose 5%": LOST_5, "lose 5% + apps": LOST_ALL}
+LEADERSHIP_CUT = 0.05
+
+
+def lost_val(flag):
+    """Built value for a leader's Lost Leadership cell."""
+    return LOST_ALL if flag else LOST_NO
+
+
+def lost_norm(v):
+    """Any Lost Leadership cell (old TRUE/FALSE box or drop-down) -> a choice, or None."""
+    if v is True or str(v).strip().upper() == "TRUE":
+        return LOST_ALL
+    if v is False or str(v).strip().upper() == "FALSE":
+        return LOST_NO
+    v = str(v or "").strip()
+    return v if v in LOST_CHOICES else OLD_LOST.get(v.lower())
+
+
+def is_lost(v):
+    return lost_norm(v) in (LOST_5, LOST_ALL)
+
+
+def lost_formula(cell, lvl):
+    """Commission % for a Level 1-3 row, following its drop-down."""
+    return (f'=IF({cell}="{LOST_ALL}",{LOST_LEADERSHIP_PCT},'
+            f'IF({cell}="{LOST_5}",MAX({lvl}-{LEADERSHIP_CUT},{LOST_LEADERSHIP_PCT}),{lvl}))')
 #: Maud's standing deals, every week. Matched on the name with any
 #: (nickname) dropped, so the board's 'Amjad (MJ) Malhas' matches.
 SPECIAL_PCT = {
@@ -306,7 +340,7 @@ def top_spec(rep, show, cb, extras):
             # the Level / Rule reason, not a plain "Yes" (Maud 11/24)
             lr = PL["Level / Rule"]
             why = idx.replace(f"${col}:${col}", f"${lr}:${lr}")
-            rows.append((label, f'=IFERROR(IF({idx}=TRUE,IF({why}="","Lost leadership pay",{why}),""),"")', ""))
+            rows.append((label, f'=IFERROR(IF(LEFT({idx},4)="Lose",IF({why}="",{idx},{why}&" · "&{idx}),""),"")', ""))
         else:
             rows.append((label, f'=IFERROR({idx},"")', ""))
     # NPA / Clawback are NOT in Final Pay (Maud 11/24) -> listed after it
@@ -889,7 +923,7 @@ def style_workbook(wb):
         # Lost leadership pay — auto-filled or typed in — turns the row pink.
         wr.conditional_formatting.add(
             f"A2:{get_column_letter(pcols)}{last}",
-            FormulaRule(formula=[f'AND(${PL["Lost Leadership Pay"]}2=TRUE,$A2<>"TOTAL")'],
+            FormulaRule(formula=[f'AND(LEFT(${PL["Lost Leadership Pay"]}2,4)="Lose",$A2<>"TOTAL")'],
                         fill=LOST_FILL,
                         stopIfTrue=True))
 
@@ -1002,7 +1036,7 @@ def dd_sunday(raw, ix):
 def _b_value(kind, pct, lvl, i, paid):
     """What the build puts in Commission % (B) on payout row i."""
     if paid and kind == "leader":
-        return f"=IF({PL['Lost Leadership Pay']}{i}=TRUE,{LOST_LEADERSHIP_PCT},{lvl})"
+        return lost_formula(f"{PL['Lost Leadership Pay']}{i}", lvl)
     return pct if pct is not None else ""
 
 
@@ -1032,7 +1066,7 @@ def _auto_b(was, i):
     if not was:
         return None
     if was.get("lead"):
-        return f"=IF({PL['Lost Leadership Pay']}{i}=TRUE,{LOST_LEADERSHIP_PCT},{was['pct']})"
+        return lost_formula(f"{PL['Lost Leadership Pay']}{i}", was["pct"])
     return was["pct"] if was.get("pct") is not None else ""
 
 
@@ -1245,10 +1279,8 @@ def main(src, out, use_board=True, carry_from=None, run_date=None,
         paid = pct is not None and key not in no_comm
         leader = paid and kind == "leader"
         if leader:
-            # Level 1-3: ticked box = loses leadership pay -> 35%. Untick to pay
-            # the level % again (Maud 2026-11-24).
-            p = wr.cell(i, PC["Commission %"],
-                        f'=IF({L_["Lost Leadership Pay"]}=TRUE,{lpct},{lvl})')
+            # Level 1-3: drop-down - / Lose 5% + App Tier / Lose 5% only (Maud 2026-11-27)
+            p = wr.cell(i, PC["Commission %"], lost_formula(L_["Lost Leadership Pay"], lvl))
         else:
             p = wr.cell(i, PC["Commission %"], pct)
         p.number_format = "0%"
@@ -1265,10 +1297,10 @@ def main(src, out, use_board=True, carry_from=None, run_date=None,
                     f'=IF(COUNT({hi}:{oi})=0,"",MAX(N({hi}),N({ji}))'
                     f'+N({ki})+N({li})+N({mi})+N({oi}))').number_format = MONEY
         wr.cell(i, PC["Level / Rule"], note)
-        wr.cell(i, PC["Lost Leadership Pay"], bool(lost) if leader else None)  # -> checkbox
+        wr.cell(i, PC["Lost Leadership Pay"], lost_val(lost) if leader else None)  # -> drop-down
         if name not in extras and kind != KIND_HELD:
             wr.cell(i, AUTO_COL, _auto_json(name, leader, lvl if leader else pct,
-                                            bool(lost) if leader else None))
+                                            lost_val(lost) if leader else None))
         # $0 -> empty (Maud 2026-11-24)
         sun = (f'SUMIFS({J},{A},A{i},{K},"*{SUNDAY_NOTE}*")'
                f'-SUMIFS({J},{A},A{i},{K},"*{SUNDAY_NOTE}*{SPLIT}*")')
@@ -1315,8 +1347,9 @@ def main(src, out, use_board=True, carry_from=None, run_date=None,
     wr.column_dimensions[get_column_letter(AUTO_COL)].hidden = True
     note_cell = f"{get_column_letter(AUTO_COL + 1)}1"
     wr[note_cell] = ("Yellow % can be typed over; each rep's tab follows. Level 1-3 "
-                "reps have a Lost Leadership Pay box: ticked = Entry Level 35% "
-                "(the reason is in Level / Rule), untick to pay their level %. Team = sales board. "
+                "reps have a Lost Leadership Pay drop-down: - = their level %, Lose 5% + App Tier = "
+                "Entry Level 35% (late reps start on that; the reason is in Level / Rule), "
+                "Lose 5% only = level % minus 5. Team = sales board. "
                 "Total Payout = higher of Commission or Guarantee, + Base Pay + Gas Bonus + "
                 "Customer Bonus + Training Bonus. Final Pay = Total Payout + Extra Bonus. "
                 "Bonus (from RAF PNL), NPA and Clawback are listed after Final Pay, not in it "
@@ -1469,16 +1502,20 @@ def copy_manual_entries(old_id, new_id):
         i = row_of[r[0]]
         cells = dict(zip(head_o, r))
         was = _auto_load(r[ao], r[0]) if ao is not None and len(r) > ao else {}
-        f = cells.get("Lost Leadership Pay")
+        f = lost_norm(cells.get("Lost Leadership Pay"))
         new_row = pn[i - 1] + [""] * AUTO_COL
-        has_box = isinstance(new_row[c_lost], bool)   # Level 1-3 only
-        f_typed = has_box and isinstance(f, bool) and (not was or f != was.get("f"))
-        if f_typed:                               # ticked / unticked by hand
+        has_box = lost_norm(new_row[c_lost]) is not None   # Level 1-3 only
+        f_typed = has_box and f is not None and (not was or f != lost_norm(was.get("f")))
+        if f_typed:                               # changed by hand
             data.append({"range": f"{PL['Lost Leadership Pay']}{i}", "values": [[f]]})
         b = cells.get("Commission %")
-        if isinstance(b, str) and b.startswith("=IF(") and "=TRUE," in b:
-            # old-layout formula: point it at this sheet's Lost Leadership cell
-            b = re.sub(r"^=IF\([A-Z]+\d+=TRUE,", f"=IF({PL['Lost Leadership Pay']}{i}=TRUE,", b)
+        m_old = (re.match(r"^=IF\([A-Z]+\d+=TRUE,[\d.]+,([\d.]+)\)$", b)
+                 if isinstance(b, str) else None)
+        if m_old:                                 # old tick-box formula -> drop-down one
+            b = lost_formula(f"{PL['Lost Leadership Pay']}{i}", float(m_old.group(1)))
+        elif isinstance(b, str) and b.startswith("=IF(") and '="Lose' in b:
+            # point it at this sheet's Lost Leadership cell
+            b = re.sub(r"\b[A-Z]+\d+=\"Lose", f'{PL["Lost Leadership Pay"]}{i}="Lose', b)
         blocked = (str(new_row[c_rule]).startswith("New start")
                    or "not paid" in str(new_row[c_rule]))
         if was:                                   # typed = differs from what was built
@@ -1588,16 +1625,16 @@ def add_rep(sheet_id, name, log=print):
             {"range": f"{PL['Team']}{i}", "values": [[team_for(board, name)]]},
             {"range": f"{PL['Commission %']}{i}", "values": [[b]]},
             {"range": f"{PL['Level / Rule']}{i}", "values": [[note]]},
-            {"range": f"{PL['Lost Leadership Pay']}{i}", "values": [[bool(lost) if leader else ""]]},
+            {"range": f"{PL['Lost Leadership Pay']}{i}", "values": [[lost_val(lost) if leader else ""]]},
             {"range": f"{PL['Guarantee']}{i}:{PL['Training Bonus']}{i}",
              "values": [[""] * (PC["Training Bonus"] - PC["Guarantee"] + 1)]},
             {"range": f"{PL['Extra Bonus']}{i}", "values": [[""]]},
             {"range": f"{PL['Bonus']}{i}", "values": [[""]]},
             {"range": f"{get_column_letter(AUTO_COL)}{i}",
              "values": [[_auto_json(name, leader, lvl if leader else pct,
-                                    bool(lost) if leader else None, manual=True)]]}]
+                                    lost_val(lost) if leader else None, manual=True)]]}]
     ws.batch_update(vals, value_input_option="USER_ENTERED")
-    if not leader:                                # no checkbox for non-leaders
+    if not leader:                                # no drop-down for non-leaders
         sh.batch_update({"requests": [{"setDataValidation": {"range": {
             "sheetId": sid, "startRowIndex": i - 1, "endRowIndex": i,
             "startColumnIndex": PC["Lost Leadership Pay"] - 1,
@@ -1714,22 +1751,28 @@ def group_columns(sheet_id):
 
 
 def add_checkboxes(sheet_id):
-    """Google Sheets: turn every FALSE/TRUE cell in the payout tab's Lost
-    Leadership Pay column into a checkbox (an .xlsx upload can't carry one)."""
+    """Google Sheets: put the - / Lose 5% + App Tier / Lose 5% only drop-down on every
+    Level 1-3 row of the payout tab's Lost Leadership Pay column (an .xlsx
+    upload can't carry one). Old TRUE/FALSE boxes are turned into the drop-down."""
     from automations.recruiting_report.fill import open_by_key
     sh = open_by_key(sheet_id)
     ws = _payout_ws(sh)
     lc = PL["Lost Leadership Pay"]
     col = ws.get_values(f"{lc}1:{lc}400", value_render_option="UNFORMATTED_VALUE")
-    rows = [i for i, r in enumerate(col, 1) if r and isinstance(r[0], bool)]
+    rows = [(i, lost_norm(r[0])) for i, r in enumerate(col[1:], 2)
+            if r and lost_norm(r[0]) is not None]
     reqs = [{"setDataValidation": {
         "range": {"sheetId": ws.id, "startRowIndex": r - 1, "endRowIndex": r,
                   "startColumnIndex": PC["Lost Leadership Pay"] - 1,
                   "endColumnIndex": PC["Lost Leadership Pay"]},
-        "rule": {"condition": {"type": "BOOLEAN"}, "showCustomUi": True}}}
-        for r in rows]
+        "rule": {"condition": {"type": "ONE_OF_LIST",
+                               "values": [{"userEnteredValue": c} for c in LOST_CHOICES]},
+                 "strict": True, "showCustomUi": True}}}
+        for r, _v in rows]
     if reqs:
         sh.batch_update({"requests": reqs})
+        ws.batch_update([{"range": f"{lc}{r}", "values": [[v]]} for r, v in rows],
+                        value_input_option="USER_ENTERED")
     return len(reqs)
 
 
@@ -1853,7 +1896,7 @@ def sync_from_board(sheet_id, log=print):
             note += f" · {lost}"
         leader = pct is not None and kind == "leader"
         want_b = _b_value(kind, pct, lvl, i, pct is not None)
-        want_f = bool(lost) if leader else None
+        want_f = lost_val(lost) if leader else None
         was = _auto_load(auto, name)
         upd = {}
         if e_cur != note:
@@ -1867,10 +1910,8 @@ def sync_from_board(sheet_id, log=print):
         b_auto = bool(was) and _same_cell(r[c_pct], _auto_b(was, i))   # not typed over
         if b_auto and not _same_cell(r[c_pct], want_b):
             upd[PL["Commission %"]] = want_b      # follow the board
-        fv = r[c_lost]
-        f_cur = fv if isinstance(fv, bool) else (
-            str(fv).upper() == "TRUE" if fv != "" else None)
-        f_auto = bool(was) and was.get("f") is not None and f_cur == was["f"]
+        f_cur = lost_norm(r[c_lost])
+        f_auto = bool(was) and was.get("f") is not None and f_cur == lost_norm(was["f"])
         if f_auto and want_f is not None and f_cur != want_f:
             upd[PL["Lost Leadership Pay"]] = want_f
         if e_cur.startswith(NOTE_NOT_ON) and not note.startswith(NOTE_NOT_ON):
@@ -1950,7 +1991,7 @@ def refresh_rep_tabs(sheet_id, log=print, force=False):
             continue
         v = {h: row[PC[h] - 1] for h in PAYOUT_HEADERS}
         show = {PL["Commission %"]: v["Commission %"] not in (None, "") and _nz(v["Commission"]),
-                PL["Lost Leadership Pay"]: v["Lost Leadership Pay"] is True,
+                PL["Lost Leadership Pay"]: is_lost(v["Lost Leadership Pay"]),
                 PL["Total Payout"]: True,
                 **{PL[h]: _nz(v[h]) for h in (
                     "Revenue Brought In", "Sunday Internet Revenue", "Commission",

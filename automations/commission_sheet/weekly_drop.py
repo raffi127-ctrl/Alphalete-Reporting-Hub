@@ -171,7 +171,7 @@ def run(write: bool, dd_file: Optional[Path], suffix: str) -> int:
             _log(f"3  uploaded {made['name']!r}  {made.get('webViewLink', '')}")
             try:
                 n = pct_payout.add_checkboxes(made["id"])
-                _log(f"   {n} Lost Leadership Pay checkboxes added")
+                _log(f"   {n} Lost Leadership Pay drop-downs added")
                 pct_payout.fit_columns(made["id"])
                 pct_payout.group_columns(made["id"])
                 pct_payout.refresh_rep_tabs(made["id"], log=_log)
