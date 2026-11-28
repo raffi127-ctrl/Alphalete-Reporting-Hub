@@ -93,6 +93,32 @@ class TaylorIntro(unittest.TestCase):
                   K.text_for("Pat Example", "active7")):
             self.assertNotEqual(inbox.template_of(t), "typed by a person (not a template)", t)
 
+class InConversation(unittest.TestCase):
+    """Carlos 11/27: no canned check-in to someone already talking with Taylor."""
+    T = dt.date(2026, 11, 27)
+
+    def _in(self, num, day):
+        return {"direction": "Inbound", "from": {"phoneNumber": num},
+                "creationTime": "%sT15:00:00Z" % day}
+
+    def test_recent_text_skips(self):
+        self.assertIn("still open", K.in_conversation(["2145550101"], [self._in("+12145550101", "2026-11-24")], self.T))
+
+    def test_many_texts_skip(self):
+        msgs = [self._in("+12145550101", "2026-11-0%d" % d) for d in range(1, 6)]
+        self.assertIn("already in a conversation", K.in_conversation(["2145550101"], msgs, self.T))
+
+    def test_a_line_number_counts_too(self):
+        self.assertTrue(K.in_conversation(["2145550101", "2145550102"],
+                                          [self._in("+12145550102", "2026-11-25")], self.T))
+
+    def test_quiet_customer_is_texted(self):
+        msgs = [self._in("+12145550101", "2026-11-10"),
+                {"direction": "Outbound", "to": [{"phoneNumber": "+12145550101"}],
+                 "creationTime": "2026-11-26T15:00:00Z"},
+                self._in("+12145559999", "2026-11-26")]
+        self.assertEqual(K.in_conversation(["2145550101"], msgs, self.T), "")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -122,6 +122,46 @@ DEFAULT_KINDS = ("help_activate", "active7", "active21")
 DO_NOT_TEXT = ("do not text", "don't text", "dont text", "no more texts", "stop texting",
                "hold texts")   # HOLD TEXTS = answer their open question first
 NOTE_COLS = ("Taylor's Notes", "Notes", "Being worked on", "Shipping Notes")
+
+# Carlos 2026-11-27, after the check-ins went out: "Daisy got a text message,
+# and she's someone you can see that there's been a good amount of
+# communication with. She's not someone that should have gotten that text
+# asking how everything's going" (and the same for Rene Patton). A canned
+# "just checking in" to someone already in a conversation with Taylor reads
+# like nobody read their texts. So a customer is SKIPPED when, on any of their
+# numbers (main + every line), they have
+#   * sent CHATTY_MIN or more texts in the last CHAT_LOOKBACK_DAYS, or
+#   * sent any text in the last QUIET_DAYS (the conversation is still open).
+CHATTY_MIN = 5
+CHAT_LOOKBACK_DAYS = 60
+QUIET_DAYS = 7
+
+
+def in_conversation(numbers, msgs, today: dt.date) -> str:
+    """'' when the customer is quiet, else why they are skipped."""
+    nums = {n for n in numbers if n}
+    if not nums:
+        return ""
+    got = []
+    for m in msgs:
+        if m.get("direction") != "Inbound":
+            continue
+        if RC.norm_phone((m.get("from") or {}).get("phoneNumber", "")) not in nums:
+            continue
+        try:
+            d = dt.date.fromisoformat(str(m.get("creationTime") or "")[:10])
+        except ValueError:
+            continue
+        got.append(d)
+    if not got:
+        return ""
+    last = max(got)
+    if (today - last).days < QUIET_DAYS:
+        return "texted us %s -- conversation still open" % last.strftime("%m/%d")
+    if len(got) >= CHATTY_MIN:
+        return "%d texts from them since %s -- already in a conversation" % (
+            len(got), min(got).strftime("%m/%d"))
+    return ""
 _CLOSED = ("active", "disconnected", "cancelled", "canceled", "byod", "returned")
 
 
@@ -327,13 +367,15 @@ def run(*, live: bool = False, limit: Optional[int] = None, kinds: Sequence[str]
     except RC.RCError:
         from_number = wrapup.TAYLOR_SMS_NUMBER
     log("sending from %s (Taylor's line), one-to-one, no rep" % from_number)
+    from automations.rc_contact_sync import inbox
+    watch_token = RC.token(creds, jwt=creds["watch_jwt"]) if creds.get("watch_jwt") else token
+    chat = inbox._messages_since(watch_token, str(creds["watch_extension_id"]),
+                                 today - dt.timedelta(days=CHAT_LOOKBACK_DAYS))
     recent = set()
     if not_texted_since:
         # 11/27: most active customers got a check-in on 11/21 -- a near-same
         # text 6 days later is noise (and credits). Anyone our line texted
         # since this date (a text that went through) is skipped this run.
-        from automations.rc_contact_sync import inbox
-        watch_token = RC.token(creds, jwt=creds["watch_jwt"]) if creds.get("watch_jwt") else token
         for m in inbox._messages_since(watch_token, str(creds["watch_extension_id"]), not_texted_since):
             if m.get("direction") == "Outbound" and "Failed" not in str(m.get("messageStatus")):
                 recent.update(inbox._recipients(m))
@@ -348,6 +390,11 @@ def run(*, live: bool = False, limit: Optional[int] = None, kinds: Sequence[str]
             phone = main_number(t, feed, book)
             if not phone:
                 log("  - [%s] %s (%d days): no main number -- SKIPPED" % (kind, who, t["days"]))
+                skipped += 1
+                continue
+            talking = in_conversation([phone] + list(t.get("phones") or []), chat, today)
+            if talking:
+                log("  - [%s] %s: %s -- SKIPPED" % (kind, who, talking))
                 skipped += 1
                 continue
             if phone in recent:
