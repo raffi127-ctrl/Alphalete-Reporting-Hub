@@ -286,6 +286,17 @@ def parse(data: bytes, log=print):
     return orders, lines
 
 
+def _model(l: dict) -> str:
+    """The line's device ('iPhone 17 - 256GB - Black', 'BYOD'): the cell that
+    has letters in it -- the grid shifts the model and the number between
+    neighbouring cells, so the key's name is not trusted (see line_number)."""
+    for k in ("device_type", "line_number", "device", "line_phone"):
+        v = str(l.get(k) or "").strip()
+        if re.search(r"[A-Za-z]", v):
+            return v
+    return "-"
+
+
 def line_number(l: dict) -> str:
     """The line's phone number, digits only ('' when it has none yet). The
     grid has carried it in either of two neighbouring cells, so take the one
@@ -331,7 +342,7 @@ def trace(today: dt.date, needle: str = "", log=print) -> int:
                 f"ship {l.get('ship_date','') or '-'} dlv {l.get('delivered','') or '-'} port {l.get('port_status','') or '-'}"
                 # 11/27: the device and plan price a line (phone vs BYOD, the
                 # Premium / Extra add-on) -- "how much is that sale worth?"
-                f" | dev {(l.get('device','') or '-')[:44]} | plan {(l.get('plan','') or '-')[:44]}")
+                f" | dev {_model(l)[:44]} | plan {(l.get('plan','') or '-')[:44]}")
 
     bad = [o for o in orders if str(o.get("line_count", "")).strip().isdigit()
            and int(o["line_count"]) != len(by_order[id(o)])]
