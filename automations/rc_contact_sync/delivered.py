@@ -96,12 +96,14 @@ COL_TRACKING = "Shipping Status"
 MAX_ORDER_AGE_DAYS = 31
 
 # Carlos's words, 2026-10-29, reworded by him 2026-11-09 ("on you when it activates").
-TEXT = ("Hello! I see that your device(s) have been delivered! It will "
+# Carlos 2026-11-27: "on the texts we should always say this 'this is Taylor
+# with AT&T'".
+TEXT = ("Hello! This is Taylor with AT&T. I see that your device(s) have been delivered! It will "
         "auto-activate within 24hrs. Wouldn't want it to happen that you "
         "don't have the new phone on you when it activates, so if you need "
         "help activating, please let me know!")
 # the same, in Spanish, for customers with a Spanish name (Carlos 2026-11-09)
-TEXT_ES = ("¡Hola! Veo que ya le entregaron su(s) equipo(s). Se activará "
+TEXT_ES = ("¡Hola! Soy Taylor de AT&T. Veo que ya le entregaron su(s) equipo(s). Se activará "
            "automáticamente dentro de 24 horas. No queremos que no tenga el "
            "teléfono nuevo con usted cuando se active, así que si necesita "
            "ayuda para activarlo, ¡avíseme por favor!")
@@ -499,4 +501,5 @@ def main(argv=None) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    from automations.rc_contact_sync.unread_guard import guarded
+    raise SystemExit(guarded(main))

@@ -247,4 +247,5 @@ def main(argv=None) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    from automations.rc_contact_sync.unread_guard import guarded
+    raise SystemExit(guarded(main))

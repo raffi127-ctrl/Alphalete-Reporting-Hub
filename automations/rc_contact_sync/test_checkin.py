@@ -50,9 +50,9 @@ class RecentKind(unittest.TestCase):
 
     def test_text(self):
         self.assertEqual(K.text_for("pat example", "recent"),
-                         "Hey Pat, I saw you recently activated your AT&T lines. "
+                         "Hey Pat, this is Taylor with AT&T. I saw you recently activated your AT&T lines. "
                          "If you need anything let me know \U0001F642")
-        self.assertTrue(K.text_for("Maria Example", "recent").startswith("Hola Maria, vi que"))
+        self.assertTrue(K.text_for("Maria Example", "recent").startswith("Hola Maria, soy Taylor de AT&T. Vi que"))
 
 
 class Texts(unittest.TestCase):
@@ -72,6 +72,26 @@ class MainNumber(unittest.TestCase):
                 {"firstName": "Pat", "lastName": "Example", "mobilePhone": "+12145550144"}]
         self.assertEqual(K.main_number(t, [], book), "2145550144")
         self.assertEqual(K.main_number(t, [], book[:1]), "")
+
+class TaylorIntro(unittest.TestCase):
+    """Carlos 2026-11-27: every automatic text says 'this is Taylor with AT&T'."""
+
+    def test_every_template_says_it(self):
+        from automations.rc_contact_sync import delivered as D, wrapup as W
+        texts = {"delivered": D.TEXT, "wrapup": W.TEMPLATE}
+        texts.update({"%s.en" % k: v["en"] for k, v in K.KINDS.items()})
+        for name, t in texts.items():
+            self.assertIn(K.INTRO_EN.lower(), t.lower(), name)
+        es = {"delivered": D.TEXT_ES, "wrapup": W.TEMPLATE_ES}
+        es.update({"%s.es" % k: v["es"] for k, v in K.KINDS.items()})
+        for name, t in es.items():
+            self.assertIn(K.INTRO_ES.lower(), t.lower(), name)
+
+    def test_inbox_still_recognises_the_templates(self):
+        from automations.rc_contact_sync import delivered as D, inbox
+        for t in (D.TEXT, D.TEXT_ES, K.text_for("Pat Example", "help_activate"),
+                  K.text_for("Pat Example", "active7")):
+            self.assertNotEqual(inbox.template_of(t), "typed by a person (not a template)", t)
 
 
 if __name__ == "__main__":
@@ -176,13 +196,13 @@ class Nov27Kinds(unittest.TestCase):
 
     def test_texts(self):
         self.assertEqual(K.text_for("Pat Example", "help_activate"),
-                         "Hey there, do you need any help activating?")
-        self.assertTrue(K.text_for("Pat Example", "active21").startswith("Hey there, just checking in."))
+                         "Hey there, this is Taylor with AT&T. Do you need any help activating?")
+        self.assertTrue(K.text_for("Pat Example", "active21").startswith("Hey there, this is Taylor with AT&T, just checking in."))
 
 
 class LanguageNote(unittest.TestCase):
     def test_note_beats_the_name_guess(self):
         self.assertEqual(K.lang_from_notes(["x | TEXTS IN ENGLISH -- asked twice"]), "en")
         self.assertEqual(K.text_for("Pat Gonzalez", "help_activate", "en"),
-                         "Hey there, do you need any help activating?")
+                         "Hey there, this is Taylor with AT&T. Do you need any help activating?")
         self.assertEqual(K.lang_from_notes(["called 11/21"]), "")

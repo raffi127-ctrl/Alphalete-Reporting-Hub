@@ -78,7 +78,9 @@ REP_PHONE_OVERRIDES: Dict[str, str] = {
     "Aaron De La Torre": "401-255-1487",
 }
 
-TEMPLATE = """Hi {first}, thank you for choosing AT&T! Here's your order wrap-up — your sales rep {rep} and your VIP Support Manager Taylor are both in this thread for anything you need.
+# Carlos 2026-11-27: "on the texts we should always say this 'this is Taylor
+# with AT&T'".
+TEMPLATE = """Hi {first}, this is Taylor with AT&T, your VIP Support Manager. Thank you for choosing AT&T! Here's your order wrap-up — your sales rep {rep} and I are both in this thread for anything you need.
 
 • Order # {order}
 • BAN # {ban}
@@ -95,7 +97,7 @@ ORDER_FALLBACK = "(coming — rep will confirm)"
 # The same wrap-up in Spanish, for customers with a Spanish name
 # (Carlos 2026-11-09: "if a customer has a spanish name we need to start
 # sending the texts in spanish"). spanish.language() decides.
-TEMPLATE_ES = """Hola {first}, ¡gracias por elegir AT&T! Aquí está el resumen de su pedido — su representante de ventas {rep} y su gerente de soporte VIP Taylor están en este chat para lo que necesite.
+TEMPLATE_ES = """Hola {first}, soy Taylor de AT&T, su gerente de soporte VIP. ¡Gracias por elegir AT&T! Aquí está el resumen de su pedido — su representante de ventas {rep} y yo estamos en este chat para lo que necesite.
 
 • Orden # {order}
 • BAN # {ban}
@@ -247,7 +249,7 @@ def build_text(cust: Dict) -> str:
     first = titlecase_name(RC.split_name(cust["customer_name"])[0]) or ("" if es else "there")
     tmpl = TEMPLATE_ES if es else TEMPLATE
     if es and not first:
-        tmpl = tmpl.replace("Hola {first}, ¡gracias", "Hola, ¡gracias")
+        tmpl = tmpl.replace("Hola {first}, soy", "Hola, soy")
     fallback = ORDER_FALLBACK_ES if es else ORDER_FALLBACK
     return tmpl.format(
         first=first,
@@ -504,4 +506,5 @@ def main(argv=None) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    from automations.rc_contact_sync.unread_guard import guarded
+    raise SystemExit(guarded(main))

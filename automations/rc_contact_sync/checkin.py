@@ -70,8 +70,8 @@ NOT_SAVEABLE = "not saveable"
 KINDS = {
     "recent": {
         "min": 0, "max": 13, "sent": C.CONFIG_DIR / "rc-recent-sent.json",
-        "en": "Hey {first}, I saw you recently activated your AT&T lines. If you need anything let me know \U0001F642",
-        "es": "Hola {first}, vi que activó recientemente sus líneas de AT&T. Si necesita algo, avíseme \U0001F642",
+        "en": "Hey {first}, this is Taylor with AT&T. I saw you recently activated your AT&T lines. If you need anything let me know \U0001F642",
+        "es": "Hola {first}, soy Taylor de AT&T. Vi que activó recientemente sus líneas de AT&T. Si necesita algo, avíseme \U0001F642",
     },
     "checkin": {
         "min": 14, "max": 30, "sent": C.CONFIG_DIR / "rc-checkin-sent.json",
@@ -90,16 +90,20 @@ KINDS = {
 #   "read through the notes, the text chains, and see if there's anything there
 #    that leads you to believe that we shouldn't be texting them" -- the notes
 #    rule is DO_NOT_TEXT below; the chains are read by a person (--review).
-_CHECK_EN = ("Hey there, just checking in. Has everything been good with your service? "
+# Carlos 2026-11-27, later: "on the texts we should always say this 'this is
+# Taylor with AT&T'" -- every Lucy text opens with it (INTRO_EN / INTRO_ES).
+INTRO_EN = "this is Taylor with AT&T"
+INTRO_ES = "soy Taylor de AT&T"
+_CHECK_EN = ("Hey there, this is Taylor with AT&T, just checking in. Has everything been good with your service? "
              "Do you need help with anything?")
-_CHECK_ES = ("Hola, solo quería saber cómo va todo. ¿Ha estado bien su servicio? "
+_CHECK_ES = ("Hola, soy Taylor de AT&T. Solo quería saber cómo va todo. ¿Ha estado bien su servicio? "
              "¿Necesita ayuda con algo?")
 KINDS.update({
     "help_activate": {
         "basis": "delivered", "min": 8, "max": None,
         "sent": C.CONFIG_DIR / "rc-help-activate-sent.json",
-        "en": "Hey there, do you need any help activating?",
-        "es": "Hola, ¿necesita ayuda para activar su servicio?",
+        "en": "Hey there, this is Taylor with AT&T. Do you need any help activating?",
+        "es": "Hola, soy Taylor de AT&T. ¿Necesita ayuda para activar su servicio?",
     },
     "active7": {
         "min": 7, "max": 20, "sent": C.CONFIG_DIR / "rc-active7-sent.json",
@@ -527,4 +531,5 @@ def main(argv=None) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    from automations.rc_contact_sync.unread_guard import guarded
+    raise SystemExit(guarded(main))

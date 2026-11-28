@@ -133,7 +133,7 @@ class Text(unittest.TestCase):
         self.assertIn("24 horas", D.TEXT_ES)
 
     def test_is_carlos_wording(self):
-        self.assertTrue(D.TEXT.startswith("Hello! I see that your device(s) have been delivered!"))
+        self.assertTrue(D.TEXT.startswith("Hello! This is Taylor with AT&T. I see that your device(s) have been delivered!"))
         self.assertIn("auto-activate within 24hrs", D.TEXT)
         self.assertIn("don't have the new phone on you when it activates", D.TEXT)   # Carlos 11/9
         self.assertIn("con usted cuando se active", D.TEXT_ES)

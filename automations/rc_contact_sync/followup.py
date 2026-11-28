@@ -525,4 +525,5 @@ def main(argv=None) -> int:
 
 if __name__ == "__main__":
     import sys
-    sys.exit(main())
+    from automations.rc_contact_sync.unread_guard import guarded
+    sys.exit(guarded(main))

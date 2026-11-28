@@ -29,7 +29,7 @@ class SpanishName(unittest.TestCase):
         cust = {"customer_name": "YESENIA CORDERO", "rep": "jose deleon",
                 "wireless_order": "99-1", "ban": "B1"}
         t = W.build_text(cust)
-        self.assertTrue(t.startswith("Hola Yesenia, ¡gracias por elegir AT&T!"))
+        self.assertTrue(t.startswith("Hola Yesenia, soy Taylor de AT&T, su gerente de soporte VIP. ¡Gracias por elegir AT&T!"))
         self.assertIn("Jose Deleon", t)
         self.assertIn("• Orden # 99-1", t)
         self.assertIn(W.PIN_FALLBACK_ES, t)
@@ -41,7 +41,7 @@ class SpanishName(unittest.TestCase):
             self.assertIn(link, t)
         # English customer untouched
         self.assertTrue(W.build_text({"customer_name": "Thomas Blake", "rep": "x"})
-                        .startswith("Hi Thomas, thank you for choosing AT&T!"))
+                        .startswith("Hi Thomas, this is Taylor with AT&T, your VIP Support Manager. Thank you for choosing AT&T!"))
         # no first name, Spanish surname only
         self.assertTrue(W.build_text({"customer_name": "", "rep": "x"}).startswith("Hi there"))
 

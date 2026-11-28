@@ -121,11 +121,15 @@ def _messages_since(token: str, ext_id: str, day: dt.date) -> List[dict]:
 # The texts Lucy sends on her own, by their opening words.
 TEMPLATES = (
     ("delivered text (rc_delivered_text)",
-     "hello! i see that your device(s) have been delivered"),
+     "i see that your device(s) have been delivered"),
     ("delivered text, Spanish (rc_delivered_text)",
      "veo que ya le entregaron su(s) equipo(s)"),
     ("wrap-up (rc_wrapup)", "thank you for choosing at&t! here's your order wrap-up"),
     ("wrap-up, Spanish (rc_wrapup)", "gracias por elegir at&t! aquí está el resumen de su pedido"),
+    ("help activating (rc_checkin_text)", "do you need any help activating"),
+    ("help activating, Spanish (rc_checkin_text)", "necesita ayuda para activar su servicio"),
+    ("check-in (rc_checkin_text)", "has everything been good with your service"),
+    ("check-in, Spanish (rc_checkin_text)", "ha estado bien su servicio"),
 )
 
 
@@ -754,4 +758,5 @@ def main(argv=None) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    from automations.rc_contact_sync.unread_guard import guarded
+    raise SystemExit(guarded(main))
