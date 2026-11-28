@@ -328,7 +328,10 @@ def trace(today: dt.date, needle: str = "", log=print) -> int:
             f"{o.get('wireless_order','')} | hdr lines={o.get('line_count','')} parsed={len(ls)} | {o.get('order_status','')[:30]}")
         for l in ls:
             log(f"[trace]     L{l.get('line_no','')} {l.get('line_type','')[:8]} {line_number(l) or '(no number)'} | {l.get('line_status','')} | "
-                f"ship {l.get('ship_date','') or '-'} dlv {l.get('delivered','') or '-'} port {l.get('port_status','') or '-'}")
+                f"ship {l.get('ship_date','') or '-'} dlv {l.get('delivered','') or '-'} port {l.get('port_status','') or '-'}"
+                # 11/27: the device and plan price a line (phone vs BYOD, the
+                # Premium / Extra add-on) -- "how much is that sale worth?"
+                f" | dev {(l.get('device','') or '-')[:44]} | plan {(l.get('plan','') or '-')[:44]}")
 
     bad = [o for o in orders if str(o.get("line_count", "")).strip().isdigit()
            and int(o["line_count"]) != len(by_order[id(o)])]
