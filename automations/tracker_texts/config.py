@@ -29,7 +29,9 @@ GROUP_ALL = b2b.TEXT_GROUP_ALL      # "NEW A Players"
 # Carlos 2026-10-09: "text us the NDS tracker instead of the b2b att tracker" in
 #   those same two chains -> nds replaces b2b_att_country (Box unchanged).
 ROUTES = {
-    "nds":             [GROUP_ATT, GROUP_ALL],
+    # Carlos 2026-11-27: the NDS Tracker is page 1 of the 7:30 "Morning
+    # Reports" PDF to both chains (automations.text_bundles), not its own text.
+    "nds":             ["BUNDLE:morning:tracker"],
     # Box OFF (Carlos 2026-10-29: "i saw some box stuff go out ... it was on the
     # box text chain" — this was it). Empty = the B2B Box tracker is never texted;
     # its Slack post in the Country Trackers thread is untouched.

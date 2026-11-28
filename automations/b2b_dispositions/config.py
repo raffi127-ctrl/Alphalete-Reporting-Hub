@@ -200,13 +200,16 @@ TEXT_ROUTES = {
     # NDS Customer Churn rolloff shot, every morning right after the NDS
     # Metrics thread posts it (nds_metrics.TEXT_SECTIONS). Carlos 2026-11-14:
     # "B2B leaders text chain and the A-players text chain".
-    ("NDS METRICS", "nds_customer_churn"): [TEXT_GROUP_ATT, TEXT_GROUP_ALL],
+    # Carlos 2026-11-27: customer churn + revenue board ride the 7:30 "Morning
+    # Reports" PDF (automations.text_bundles) instead of texting on their own;
+    # churn by rep: "you can stop posting" (texts only -- Slack keeps it).
+    ("NDS METRICS", "nds_customer_churn"): ["BUNDLE:morning:customer_churn"],
     # nds_churn_rates: STOPPED 2026-11-27 (Carlos: "stop sending on this
     # thread and stop sending via text"). No route = never texted.
-    ("NDS METRICS", "nds_churn_by_rep"): [TEXT_GROUP_ATT, TEXT_GROUP_ALL],
+    ("NDS METRICS", "nds_churn_by_rep"): [],
     # NDS Revenue Board with the tier-bonus columns (Carlos 2026-11-14:
     # "send this new revenue board on the text chains and slack moving forward").
-    ("NDS METRICS", "nds_revenue_board"): [TEXT_GROUP_ATT, TEXT_GROUP_ALL],
+    ("NDS METRICS", "nds_revenue_board"): ["BUNDLE:morning:revenue_board"],
     # The NDS Sales Board's Teams box, when Carlos asks for it (nds_metrics
     # ON_REQUEST). Carlos 2026-11-19: "as text message to the Aplayer and
     # leaders chat".
@@ -217,10 +220,12 @@ TEXT_ROUTES = {
     # Mon-Fri: WEEK 1 cut at today's column at 10:45, WEEK 1-4 at 11:30.
     # Carlos 2026-11-19: "it should be sent on the A Players text chain" /
     # "you'll do it both for AT&T and Verizon".
-    ("NDS WEEK 1", "nds_week_one"): [TEXT_GROUP_ALL],
-    ("VZ WEEK 1", "vz_week_one"): [TEXT_GROUP_ALL],
-    ("NDS WEEKS 1-4", "nds_weeks"): [TEXT_GROUP_ALL],
-    ("VZ WEEKS 1-4", "vz_weeks"): [TEXT_GROUP_ALL],
+    # Carlos 2026-11-27: the four week tables + the Teams box go out as ONE
+    # "Week Tables" PDF at 11:35, A Players only (automations.text_bundles).
+    ("NDS WEEK 1", "nds_week_one"): ["BUNDLE:weeks:nds_week1"],
+    ("VZ WEEK 1", "vz_week_one"): ["BUNDLE:weeks:vz_week1"],
+    ("NDS WEEKS 1-4", "nds_weeks"): ["BUNDLE:weeks:nds_weeks"],
+    ("VZ WEEKS 1-4", "vz_weeks"): ["BUNDLE:weeks:vz_weeks"],
     # ... and the boards' TERMINATED tables, on request only (Carlos 2026-11-19:
     # "Send it out as a text message on the new A players text chain").
     ("NDS TERMINATED", "nds_terminated"): [TEXT_GROUP_ALL],
@@ -234,8 +239,17 @@ TEXT_ROUTES = {
     # Mon-Sat 9:00 AM. Carlos 2026-11-20: "Send daily in the morning on the
     # Aplayers and leaders text chain" / "On the A Players you can send now.
     # Leaders you can send at 9am" -- one kind per chain so each texts once a day.
-    ("2ND ROUNDS", "second_rounds_leaders_ap"): [TEXT_GROUP_ALL],
-    ("2ND ROUNDS", "second_rounds_leaders_att"): [TEXT_GROUP_ATT],
+    # Carlos 2026-11-27: into the 7:30 Morning Reports PDF (both chains get
+    # the PDF), so the leaders-chain copy stops; the agent now runs 7:15.
+    ("2ND ROUNDS", "second_rounds_leaders_ap"): ["BUNDLE:morning:second_rounds"],
+    ("2ND ROUNDS", "second_rounds_leaders_att"): [],
+    # The bundles themselves (automations.text_bundles, Carlos 2026-11-27):
+    # one PDF per chain. A part that lands after its bundle went out is
+    # texted alone to the same chains (bundle_late_*).
+    ("TEXT BUNDLES", "bundle_morning"): [TEXT_GROUP_ALL, TEXT_GROUP_ATT],
+    ("TEXT BUNDLES", "bundle_late_morning"): [TEXT_GROUP_ALL, TEXT_GROUP_ATT],
+    ("TEXT BUNDLES", "bundle_weeks"): [TEXT_GROUP_ALL],
+    ("TEXT BUNDLES", "bundle_late_weeks"): [TEXT_GROUP_ALL],
 }
 
 # Seconds to wait after handing Messages an image. TdB proved a group image send

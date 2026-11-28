@@ -44,6 +44,16 @@ OUT = ROOT / "output" / "recruiting_day_texts"
 STATE = Path.home() / ".config" / "recruiting-report" / "recruiting_day_texts.json"
 SENDER = "Lucy 1"
 REPORT_ID = "recruiting_day_texts"
+# Carlos 2026-11-27: his office's MORNING schedule is a page of the 7:30
+# "Morning Reports" PDF (automations.text_bundles) instead of its own text.
+# The bundle lives on Lucy 2, so that one delivery runs there; the 4pm
+# new-start text and every other office are unchanged (Lucy 1).
+BUNDLED_MORNING = {"carlos": ("BUNDLE:morning:schedule", "Lucy 2")}
+
+
+def sender_for(office_key: str, mode: str) -> str:
+    hit = BUNDLED_MORNING.get(office_key) if mode == "morning" else None
+    return hit[1] if hit else SENDER
 
 
 def _log(m: str) -> None:
@@ -162,6 +172,12 @@ def deliver(payload: dict, force: bool = False) -> None:
         _log("%s: nothing to send" % o.owner)
         return
     from automations.b2b_dispositions import text_post as tp
+    bundled = BUNDLED_MORNING.get(o.key) if mode == "morning" else None
+    if bundled:
+        tp.send_to_group(bundled[0], text, images, dry_run=False)
+        _remember(k)
+        _log("%s: morning schedule added to %s" % (o.owner, bundled[0]))
+        return
     dest = dest_for(o)
     res = tp.send_to_group(dest["group"], text, images, dry_run=False, dest=dest)
     _remember(k)
@@ -178,13 +194,14 @@ def _this_machine() -> str:
 
 
 def hand_off(payload: dict) -> None:
-    if _this_machine() == SENDER:
+    sender = sender_for(payload.get("office", ""), payload.get("mode", ""))
+    if _this_machine() == sender:
         deliver(payload)
         return
     from automations.day_orchestrator import mini_control as mc
     mc.enqueue("rerun", "%s --deliver %s" % (REPORT_ID, encode(payload)),
-               by="recruiting_day_texts", machine=SENDER, auto=True)
-    _log("%s: queued on %s to send" % (payload["owner"], SENDER))
+               by="recruiting_day_texts", machine=sender, auto=True)
+    _log("%s: queued on %s to send" % (payload["owner"], sender))
 
 
 # ------------------------------------------------------------------ read ---

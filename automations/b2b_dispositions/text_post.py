@@ -344,6 +344,25 @@ def resolve_dest(dest: Dict) -> Dict:
     return hits[0]
 
 
+def _to_bundle(name: str, text: str, image_paths: Sequence,
+               dry_run: bool) -> Optional[Dict]:
+    """A route of "BUNDLE:<bundle>:<part>" is not a chat: the post joins
+    today's PDF bundle instead of texting (automations.text_bundles, Carlos
+    2026-11-27). None = a real chat name, send as usual."""
+    if not str(name or "").startswith("BUNDLE:"):
+        return None
+    result = {"group": name, "text": text, "dry_run": dry_run, "bundle": True,
+              "images": [str(p) for p in (image_paths or [])], "ok": True}
+    if dry_run:
+        from automations.text_bundles import store
+        store.parse_token(name)                 # a typo'd token fails the dry run
+        return result
+    from automations.text_bundles import store
+    result["dropped"] = store.drop(name, text, image_paths or [])
+    print("text_post: %s -> bundle %s" % (str(text or "")[:40], name))
+    return result
+
+
 def _record_delivery(group: str, text: str) -> None:
     """Note a LIVE text to a group in the delivery ledger, so a text-only
     report can prove it delivered and close its own corrections ticket
@@ -373,6 +392,9 @@ def send_to_group(name: str, text: str, image_paths: Sequence,
     board flyer, and when an office's board comes back empty the list is still
     the half somebody acts on (Megan 2026-09-02).
     """
+    bundled = _to_bundle(name, text, image_paths, dry_run)
+    if bundled is not None:
+        return bundled
     images = [Path(p) for p in (image_paths or [])]
     missing = [str(p) for p in images if not p.exists()]
     images = [p for p in images if p.exists()]
@@ -453,6 +475,9 @@ def send_text_to_group(name: str, text: str, *, dry_run: bool = True,
     """
     if not (text or "").strip():
         raise GroupTextError("refusing to send an empty text to %r" % name)
+    bundled = _to_bundle(name, text, [], dry_run)
+    if bundled is not None:
+        return bundled
 
     result = {"group": name, "text": text, "dry_run": dry_run, "ok": False}
     info = resolve_dest(dest) if dest else resolve_group(name)

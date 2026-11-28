@@ -32,12 +32,15 @@ class TextSections(unittest.TestCase):
             R.text_sections({"customer_churn": "/x/c.png"}, self.D, state)
         self.assertEqual(state["texted"], [])
 
-    def test_route_goes_to_both_chains(self):
+    def test_route_goes_to_the_morning_pdf(self):
+        # Carlos 2026-11-27: customer churn + revenue board ride the 7:30
+        # Morning Reports PDF to both chains; churn by rep stops texting.
         from automations.b2b_dispositions import config as B
-        for sid in ("customer_churn", "churn_by_rep"):
+        for sid in ("customer_churn", "revenue_board"):
             self.assertIn(sid, R.TEXT_SECTIONS)
             self.assertEqual(B.TEXT_ROUTES[("NDS METRICS", "nds_" + sid)],
-                             [B.TEXT_GROUP_ATT, B.TEXT_GROUP_ALL])
+                             ["BUNDLE:morning:" + sid])
+        self.assertEqual(B.TEXT_ROUTES[("NDS METRICS", "nds_churn_by_rep")], [])
 
     def test_churn_rates_stopped_everywhere(self):
         """Carlos 2026-11-27: "11 lets stop sending on this thread and stop

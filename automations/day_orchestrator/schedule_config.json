@@ -18088,6 +18088,48 @@
    "timeout_minutes": 15,
    "machine": "Lucy 1"
   },
+  "install_text_bundles_agent": {
+   "on_scheduler": false,
+   "_note": "One-shot installer for com.alphalete.text-bundles on Lucy 2: deploy/text_bundles.sh -> automations.text_bundles.run --due at 7:30/7:45/8:00/8:30 (Morning Reports PDF, both chains, daily) and 11:35/11:45/12:00 (Week Tables PDF, A Players, Mon-Fri). Carlos 2026-11-27: 'can all of these be posted in one pdf file? in the morning' / 'Lets post these all at once in one PDF file as well'. Parts drop in through BUNDLE:<bundle>:<part> text routes. Log: `logtail text-bundles-<YYYY-MM-DD>`. Run `lucy rerun install_text_bundles_agent` after `lucy update`.",
+   "display_name": "Install text bundles agent (morning + week-table PDFs)",
+   "source_type": "none",
+   "data_sources": [],
+   "command": [
+    "automations.day_orchestrator.install_agent"
+   ],
+   "base_args": [
+    "text-bundles"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 15,
+   "machine": "Lucy 2"
+  },
+  "text_bundles": {
+   "on_scheduler": false,
+   "_note": "Text bundles (Carlos 2026-11-27): `rerun text_bundles --bundle morning|weeks [--dm U...] [--send --final --force]`. Dry run by default. See automations/text_bundles/config.py.",
+   "display_name": "Text bundles (morning / week-table PDFs)",
+   "source_type": "none",
+   "data_sources": [],
+   "command": [
+    "automations.text_bundles.run"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 15,
+   "machine": "Lucy 2"
+  },
   "install_nds_rep_dms_agent": {
    "on_scheduler": false,
    "_note": "One-shot installer for com.alphalete.nds-rep-dms on Lucy 2: deploy/nds_rep_dms.sh -> automations.nds_metrics.run --rep-shot active --dm sheet --dm-reps sheet --daily, 9:00 + 9:20 retry EVERY day local. Carlos 2026-11-23: 'every morning send the reps the updated order log at 9am. send sebastian and i alll of them' -- each active NDS rep gets ONLY their own order-log picture; the ALL rows (Carlos, Sebastian) get every picture. Who gets what = the control sheet's 'NDS Rep Slack IDs' tab (kept off this public repo); a new rep = one new row. Once a day per person per picture (state ~/.config/recruiting-report/nds_rep_dm_state.json). Log: `logtail nds-rep-dms-<YYYY-MM-DD>`. Run `lucy rerun install_nds_rep_dms_agent` after `lucy update`.",
