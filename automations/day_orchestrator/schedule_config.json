@@ -18130,6 +18130,48 @@
    "timeout_minutes": 15,
    "machine": "Lucy 2"
   },
+  "nds_sale_revenue": {
+   "on_scheduler": false,
+   "_note": "Carlos 2026-11-28: 'Lucy post on slack when someone makes a sale. Are you able to make her post the revenue generated?' -> 'Yes build it with a sample before going live'. Reads the day's orders off NDS SaraPlus's wireless order report (one row per line: new phone vs BYOD, plan, port / new number), prices each order not posted yet the way the revenue board does (line_revenue.price_line + addon_of, out-of-footprint until Tableau says otherwise) and posts 'AT&T — :dollar: <First>'s sale = $X · N new phones · Premium' in #alphalete-gp-sales. base_args are EMPTY = a DRY run: `lucy rerun nds_sale_revenue` pulls today's orders and prints what would post; --date YYYY-MM-DD the same for another day; --sample YYYY-MM-DD prices that day off the newest cached morning feed (no SaraPlus visit). --baseline remembers the day's orders and posts nothing. Posting is the LaunchAgent's job (com.alphalete.nds-sale-revenue, every 5 min, --post). State output/nds_metrics/sale_revenue_posted.json; its own feed copy sale_revenue_feed.html (never nds_wireless_<date>.html, the board's replay).",
+   "display_name": "NDS sale revenue posts (dry unless --post)",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.nds_metrics.sale_revenue"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 15,
+   "machine": "Lucy 2"
+  },
+  "install_nds_sale_revenue_agent": {
+   "on_scheduler": false,
+   "_note": "One-shot installer for com.alphalete.nds-sale-revenue on Lucy 2: deploy/nds_sale_revenue.sh -> automations.nds_metrics.sale_revenue --post every 5 minutes (StartInterval 300), silent outside 10am-12:20am. Install ONLY after Carlos OKs the sample, and run `lucy rerun nds_sale_revenue --baseline` first on a day with orders already up. Log: `logtail nds-sale-revenue-<YYYY-MM-DD>`.",
+   "display_name": "Install NDS sale revenue agent (every 5 min)",
+   "source_type": "none",
+   "data_sources": [],
+   "command": [
+    "automations.day_orchestrator.install_agent"
+   ],
+   "base_args": [
+    "nds-sale-revenue"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 15,
+   "machine": "Lucy 2"
+  },
   "install_nds_rep_dms_agent": {
    "on_scheduler": false,
    "_note": "One-shot installer for com.alphalete.nds-rep-dms on Lucy 2: deploy/nds_rep_dms.sh -> automations.nds_metrics.run --rep-shot active --dm sheet --dm-reps sheet --daily, 9:00 + 9:20 retry EVERY day local. Carlos 2026-11-23: 'every morning send the reps the updated order log at 9am. send sebastian and i alll of them' -- each active NDS rep gets ONLY their own order-log picture; the ALL rows (Carlos, Sebastian) get every picture. Who gets what = the control sheet's 'NDS Rep Slack IDs' tab (kept off this public repo); a new rep = one new row. Once a day per person per picture (state ~/.config/recruiting-report/nds_rep_dm_state.json). Log: `logtail nds-rep-dms-<YYYY-MM-DD>`. Run `lucy rerun install_nds_rep_dms_agent` after `lucy update`.",

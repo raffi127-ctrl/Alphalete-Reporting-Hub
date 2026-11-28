@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alphalete.nds-sale-revenue</string>
+
+    <!-- Path is the laptop's; on Lucy 2, install via
+         `lucy rerun install_nds_sale_revenue_agent` (after Carlos OKs the sample). -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/megan/1st Claude Folder/deploy/nds_sale_revenue.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/megan/1st Claude Folder</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/megan/1st Claude Folder</string>
+    </dict>
+
+    <!-- Carlos 2026-11-28: the $ a sale generated, posted a few minutes after
+         the sale. Every 5 minutes; the wrapper is silent outside
+         10am-12:20am. launchd never starts a second copy while one runs. -->
+    <key>StartInterval</key>
+    <integer>300</integer>
+
+    <key>StandardOutPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/nds-sale-revenue.launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/nds-sale-revenue.launchd.err.log</string>
+</dict>
+</plist>
