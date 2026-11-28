@@ -5,7 +5,16 @@ old ARS REPORT Excel. Runs as a Google Apps Script web app bound to a Google
 Sheet; the team signs in with a username and password created in the app.
 
 Tabs: Data Entry · Qualified Retention · Answered / Booked · 2nd Rd Showed ·
-Offered / BOB · Conversion Numbers · Ad Titles · Ads × Stars · Users (Admins).
+Offered / BOB · Conversion Numbers · Interviewers Retention · Ad Titles ·
+Ads × Stars · Users (Admins).
+
+**Interviewers Retention** (Raf, 2026-11-20) is the daily 6 PM email's four
+tables, read-only. A Lucy writes them as JSON into the sheet's
+`Retention Report` tab (`automations/interviewers_retention/web_export.py`,
+run with `--web-sheet`); `getRetention` in Code.gs reads it. A **Show** menu
+switches between *Use our service* (the offices Camila's team interviews for,
+same numbers as the email) and *Our org (all offices)* (every office on the
+Hub's office lists, offices from AppStream). Nobody edits that tab by hand.
 
 ## Files
 
@@ -36,6 +45,8 @@ Google Sheet.
 - `Offices` — id, name.
 - `Interviewers` — the 1st Round Interviewer dropdown list.
 - `AdGroups` — key, label (the Excel's Ad Groups table, used to merge ad titles).
+- `Retention Report` — written by the Interviewers Retention run, not by this
+  app: column A holds one JSON document split over rows.
 - `Users` — username, name, role (`admin` / `interviewer`), active, salt, hash,
   lastLogin. Passwords are never stored, only a salted SHA-256 hash.
 

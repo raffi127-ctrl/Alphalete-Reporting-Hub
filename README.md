@@ -2,7 +2,7 @@
 
 Every operational README from Carlos's MacBook, gathered in one place so any device can read them. Synced twice a day (7:30am and 8:00pm Central) by `sync_readmes.sh`, after the 7pm README-updater tasks have run.
 
-_Last sync: 2026-11-27 20:00 CST_
+_Last sync: 2026-11-28 07:30 CST_
 
 **Read-only mirror.** Edit the source file on the MacBook (path shown per section), not this repo; the next sync overwrites everything here.
 
@@ -18,7 +18,7 @@ Source: `~/alphalete-readmes/`
 | [BOX-ORDER-LOG-README.md](ops/BOX-ORDER-LOG-README.md) | BOX Order Log — how it all works | 2026-10-29 |
 | [FOCUS-REPORT-CAMPAIGN-README.md](ops/FOCUS-REPORT-CAMPAIGN-README.md) | Focus Report Campaign Metrics — System README | 2026-09-30 |
 | [INDEED-ACCOUNTS-OCTO-SESSION-README.md](ops/INDEED-ACCOUNTS-OCTO-SESSION-README.md) | Indeed Accounts through Octo — session README (Nov 16 → Nov 25, 2026) | 2026-11-25 |
-| [LOCAL-OFFICE-SALES-CALLOUTS-README.md](ops/LOCAL-OFFICE-SALES-CALLOUTS-README.md) | Local Office Sales Call Outs — README | 2026-11-27 |
+| [LOCAL-OFFICE-SALES-CALLOUTS-README.md](ops/LOCAL-OFFICE-SALES-CALLOUTS-README.md) | Local Office Sales Call Outs — README | 2026-11-28 |
 | [LOCAL-OFFICE-SALES-CALLOUTS-SESSION-README.md](ops/LOCAL-OFFICE-SALES-CALLOUTS-SESSION-README.md) | Local Office Sales Call Outs — session README (Sep 29 → Oct 19, 2026) | 2026-10-21 |
 | [LUCY2-OPERATIONS-README.md](ops/LUCY2-OPERATIONS-README.md) | Sheets identity per machine (11/4/2026) | 2026-11-23 |
 | [ONE-ON-ONES-README.md](ops/ONE-ON-ONES-README.md) | ONE-ON-ONES README — Carlos's Monday 1:1 call | 2026-10-19 |
@@ -40,7 +40,7 @@ Source: `~/recruiting-report/`
 | [automations/ad_sales_board/README.md](recruiting-report/automations/ad_sales_board/README.md) | Ad Sales Board — day-by-day names per ad, dressed as a sales board | 2026-10-21 |
 | [automations/applicant_replies/README.md](recruiting-report/automations/applicant_replies/README.md) | Applicant replies — Lucy answering applicants in AppStream (SHADOW ONLY) | 2026-11-11 |
 | [automations/applicant_tracker/README.md](recruiting-report/automations/applicant_tracker/README.md) | Applicant Tracker (ApplicantStream → Google Sheet) | 2026-07-23 |
-| [automations/ars_interview_tracker_web/README.md](recruiting-report/automations/ars_interview_tracker_web/README.md) | ARS Interview Tracker — web app (Google Apps Script) | 2026-11-20 |
+| [automations/ars_interview_tracker_web/README.md](recruiting-report/automations/ars_interview_tracker_web/README.md) | ARS Interview Tracker — web app (Google Apps Script) | 2026-11-28 |
 | [automations/b2b_dispositions/README.md](recruiting-report/automations/b2b_dispositions/README.md) | B2B Dispositions | 2026-09-21 |
 | [automations/dd_boxes/README.md](recruiting-report/automations/dd_boxes/README.md) | DD Boxes — los cuadros de Due Diligence dentro del Focus Report | 2026-08-18 |
 | [automations/due_diligence/README.md](recruiting-report/automations/due_diligence/README.md) | Jiraiya — Due Diligence numbers on demand | 2026-08-03 |
