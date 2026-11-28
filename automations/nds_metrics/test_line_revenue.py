@@ -1,6 +1,7 @@
 """nds_metrics.line_revenue -- the per-line activation revenue core, no IO."""
 import datetime as dt
 import unittest
+from unittest import mock
 
 from automations.nds_metrics import line_revenue as LR
 
@@ -295,6 +296,49 @@ class DoubleTierMail(unittest.TestCase):
                          [dt.date(2026, 10, 31)])
         self.assertEqual(DT.parse_subject_all("Thanksgiving Week - DD Schedule WE 11/22", dt.date(2026, 11, 20)), [])
         self.assertEqual(DT.parse_subject_all("NDS - Double Tiers", dt.date(2026, 11, 20)), [])
+
+    def test_fetch_reads_every_email_from_sean(self):
+        # Gmail's IMAP SUBJECT search is whole-word: the search must not filter on it
+        from automations.nds_metrics import double_tier as DT
+        subjects = {b"1": "Double Tier Bonus  - 10/31", b"2": "NDS - Double Tiers - 11/25",
+                    b"3": "Re: NDS - Double Tiers - 11/25 & 11/27",
+                    b"4": "Thanksgiving Week - DD Schedule WE 11/22", b"5": "NDS - Double Tiers"}
+
+        class FakeIMAP:
+            searched = []
+
+            def __init__(self, host):
+                pass
+
+            def login(self, a, p):
+                pass
+
+            def select(self, box, readonly=True):
+                return "OK", [b"5"]
+
+            def search(self, charset, crit):
+                FakeIMAP.searched.append(crit)
+                return "OK", [b" ".join(sorted(subjects))]
+
+            def fetch(self, mset, parts):
+                out = []
+                for mid in mset.split(b","):
+                    raw = ("Subject: %s\r\nDate: Thu, 26 Nov 2026 22:00:00 -0500\r\n\r\n"
+                           % subjects[mid]).encode()
+                    out += [(mid + b" (BODY[HEADER.FIELDS (SUBJECT DATE)] {%d}" % len(raw), raw), b")"]
+                return "OK", out
+
+            def logout(self):
+                pass
+
+        logs = []
+        with mock.patch.object(DT, "_inbox", lambda: ("me@example.com", "pw")), \
+             mock.patch.object(DT.imaplib, "IMAP4_SSL", FakeIMAP):
+            got = DT.fetch(log=logs.append)
+        self.assertEqual(got, {"2026-10-31", "2026-11-25", "2026-11-27"})
+        self.assertNotIn("SUBJECT", FakeIMAP.searched[0])
+        self.assertIn("4 double-tier email(s) of 5", logs[0])
+        self.assertIn("no day read from 1 subject(s): NDS - Double Tiers", logs[1])
 
 
 class Protect(unittest.TestCase):

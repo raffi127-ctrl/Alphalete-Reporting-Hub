@@ -39,7 +39,6 @@ _CFG = Path.home() / ".config" / "recruiting-report"
 INBOXES = (("carloshidalgo349@gmail.com", _CFG / "gmail-app-password-carloshidalgo349"),
            ("raffi127@gmail.com", _CFG / "gmail-app-password-raffi127"))
 SENDER = "sbalderrama@thesmartcircle.com"
-SUBJECT_WORD = "Double Tier"
 SINCE = dt.date(2026, 10, 1)
 CACHE = OUT_DIR / "double_tier_days.json"
 # "Double Tier Bonus  - 10/31" (10/8-11/14), "NDS - Double Tiers - 11/25" and
@@ -95,26 +94,35 @@ def fetch(log=print) -> Set[str]:
     M.login(account, password)
     try:
         M.select('"[Gmail]/All Mail"', readonly=True)
-        _typ, data = M.search(None, '(FROM "%s" SUBJECT "%s" SINCE "%s")'
-                              % (SENDER, SUBJECT_WORD, SINCE.strftime("%d-%b-%Y")))
+        # EVERY email from Sean, subjects filtered HERE: Gmail's IMAP SUBJECT
+        # search matches whole words, so SUBJECT "Double Tier" never returned
+        # "NDS - Double Tiers - 11/25" (11/28: 6 of his 8 double-tier emails).
+        _typ, data = M.search(None, '(FROM "%s" SINCE "%s")'
+                              % (SENDER, SINCE.strftime("%d-%b-%Y")))
         ids = (data[0] or b"").split()
         out: Set[str] = set()
-        undated = []
-        for mid in ids:
-            _typ, md = M.fetch(mid, "(BODY.PEEK[HEADER.FIELDS (SUBJECT DATE)])")
-            raw = b"".join(p[1] for p in md if isinstance(p, tuple))
-            msg = email.message_from_bytes(raw)
-            subj = _decode(msg.get("Subject", ""))
-            try:
-                sent = email.utils.parsedate_to_datetime(msg.get("Date")).date()
-            except Exception:  # noqa: BLE001
-                sent = None
-            found = parse_subject_all(subj, sent)
-            out.update(d.isoformat() for d in found)
-            if not found:
-                undated.append(subj)
-        log("[nds] double tier: %d email(s) from Sean in %s since %s -> %s"
-            % (len(ids), account, SINCE, ", ".join(sorted(out)) or "none"))
+        undated, hits = [], 0
+        for i in range(0, len(ids), 100):
+            _typ, md = M.fetch(b",".join(ids[i:i + 100]),
+                               "(BODY.PEEK[HEADER.FIELDS (SUBJECT DATE)])")
+            for part in md or []:
+                if not isinstance(part, tuple):
+                    continue
+                msg = email.message_from_bytes(part[1])
+                subj = _decode(msg.get("Subject", ""))
+                if not _HEAD.search(subj or ""):
+                    continue
+                hits += 1
+                try:
+                    sent = email.utils.parsedate_to_datetime(msg.get("Date")).date()
+                except Exception:  # noqa: BLE001
+                    sent = None
+                found = parse_subject_all(subj, sent)
+                out.update(d.isoformat() for d in found)
+                if not found:
+                    undated.append(subj)
+        log("[nds] double tier: %d double-tier email(s) of %d from Sean in %s since %s -> %s"
+            % (hits, len(ids), account, SINCE, ", ".join(sorted(out)) or "none"))
         if undated:     # a subject that matched the search but gave no day: a new format?
             log("[nds] double tier: no day read from %d subject(s): %s"
                 % (len(undated), " | ".join(s[:70] for s in undated[:5])))
