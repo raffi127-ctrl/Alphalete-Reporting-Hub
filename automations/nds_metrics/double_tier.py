@@ -8,7 +8,10 @@ is pushed to Lucy 2 (push_cred_file), and Raf's inbox is the fallback on a
 box that has his file. The search: sender sbalderrama@thesmartcircle.com, subject
 "Double Tier Bonus  - 10/31" (the date in the subject IS the double day --
 the 10/30 evening email says "tomorrow, 10/31", the 10/9 morning one says
-"today, 10/9"). Known days are cached in output/nds_metrics/double_tier_days.json
+"today, 10/9"). From 11/24 his subject reads "NDS - Double Tiers - 11/25" and
+a reply adds days to it, "Re: NDS - Double Tiers - 11/25 & 11/27" -- every date
+after the words is a double day (the old "Bonus"-only pattern missed both;
+Carlos 11/28: "Wednesday and Friday were double tiers"). Known days are cached in output/nds_metrics/double_tier_days.json
 and unioned with sow_rates.json's seed list, so an inbox outage never
 forgets a day.
 
@@ -24,7 +27,7 @@ import imaplib
 import json
 import re
 from pathlib import Path
-from typing import Iterable, Optional, Set
+from typing import Iterable, List, Optional, Set
 
 from automations.fiber_owners_distro.roster import IMAP_HOST, _decode
 from automations.nds_metrics.run import OUT_DIR
@@ -39,28 +42,42 @@ SENDER = "sbalderrama@thesmartcircle.com"
 SUBJECT_WORD = "Double Tier"
 SINCE = dt.date(2026, 10, 1)
 CACHE = OUT_DIR / "double_tier_days.json"
-_RE = re.compile(r"double\s+tiers?\s+bonus\s*[-–—:]*\s*(\d{1,2})\s*/\s*(\d{1,2})"
-                 r"(?:\s*/\s*(\d{2,4}))?", re.I)
+# "Double Tier Bonus  - 10/31" (10/8-11/14), "NDS - Double Tiers - 11/25" and
+# "Re: NDS - Double Tiers - 11/25 & 11/27" (11/24 on): the words, then dates.
+_HEAD = re.compile(r"double\s+tiers?(?:\s+bonus)?", re.I)
+_DATE = re.compile(r"(?<!\d)(\d{1,2})\s*/\s*(\d{1,2})(?:\s*/\s*(\d{2,4}))?(?!\d)")
+
+
+def parse_subject_all(subject: str, sent: Optional[dt.date]) -> List[dt.date]:
+    """'Re: NDS - Double Tiers - 11/25 & 11/27' (+ the email's send date for
+    the year) -> [2026-11-25, 2026-11-27]. [] when the subject is not a
+    double-tier one or carries no date."""
+    m = _HEAD.search(subject or "")
+    if not m:
+        return []
+    out: List[dt.date] = []
+    for g in _DATE.finditer(subject[m.end():]):
+        mo, d = int(g.group(1)), int(g.group(2))
+        if g.group(3):
+            y = int(g.group(3))
+            y = y + 2000 if y < 100 else y
+        else:
+            y = (sent or dt.date.today()).year
+            if sent and mo < sent.month - 6:      # a December email about January
+                y += 1
+        try:
+            day = dt.date(y, mo, d)
+        except ValueError:
+            continue
+        if day not in out:
+            out.append(day)
+    return out
 
 
 def parse_subject(subject: str, sent: Optional[dt.date]) -> Optional[dt.date]:
-    """'Double Tier Bonus  - 10/31' (+ the email's send date for the year)
-    -> 2026-10-31. None when the subject carries no date."""
-    m = _RE.search(subject or "")
-    if not m:
-        return None
-    mo, d = int(m.group(1)), int(m.group(2))
-    if m.group(3):
-        y = int(m.group(3))
-        y = y + 2000 if y < 100 else y
-    else:
-        y = (sent or dt.date.today()).year
-        if sent and mo < sent.month - 6:      # a December email about January
-            y += 1
-    try:
-        return dt.date(y, mo, d)
-    except ValueError:
-        return None
+    """The subject's first double day (parse_subject_all); None if it has none."""
+    found = parse_subject_all(subject, sent)
+    return found[0] if found else None
 
 
 def _inbox():
@@ -82,6 +99,7 @@ def fetch(log=print) -> Set[str]:
                               % (SENDER, SUBJECT_WORD, SINCE.strftime("%d-%b-%Y")))
         ids = (data[0] or b"").split()
         out: Set[str] = set()
+        undated = []
         for mid in ids:
             _typ, md = M.fetch(mid, "(BODY.PEEK[HEADER.FIELDS (SUBJECT DATE)])")
             raw = b"".join(p[1] for p in md if isinstance(p, tuple))
@@ -91,11 +109,15 @@ def fetch(log=print) -> Set[str]:
                 sent = email.utils.parsedate_to_datetime(msg.get("Date")).date()
             except Exception:  # noqa: BLE001
                 sent = None
-            d = parse_subject(subj, sent)
-            if d:
-                out.add(d.isoformat())
+            found = parse_subject_all(subj, sent)
+            out.update(d.isoformat() for d in found)
+            if not found:
+                undated.append(subj)
         log("[nds] double tier: %d email(s) from Sean in %s since %s -> %s"
             % (len(ids), account, SINCE, ", ".join(sorted(out)) or "none"))
+        if undated:     # a subject that matched the search but gave no day: a new format?
+            log("[nds] double tier: no day read from %d subject(s): %s"
+                % (len(undated), " | ".join(s[:70] for s in undated[:5])))
         return out
     finally:
         try:

@@ -282,6 +282,20 @@ class DoubleTierMail(unittest.TestCase):
         self.assertEqual(DT.parse_subject("Double Tiers Bonus: 1/2", dt.date(2026, 12, 31)), dt.date(2027, 1, 2))
         self.assertIsNone(DT.parse_subject("Checking Historical Rep Tier Status (NDS)", sent))
 
+    def test_nds_double_tiers_subjects(self):
+        # Sean from 11/24: the plain "NDS - Double Tiers" subject, then a reply naming two days
+        from automations.nds_metrics import double_tier as DT
+        self.assertEqual(DT.parse_subject_all("NDS - Double Tiers - 11/25", dt.date(2026, 11, 24)),
+                         [dt.date(2026, 11, 25)])
+        self.assertEqual(DT.parse_subject_all("Re: NDS - Double Tiers - 11/25 & 11/27", dt.date(2026, 11, 26)),
+                         [dt.date(2026, 11, 25), dt.date(2026, 11, 27)])
+        self.assertEqual(DT.parse_subject("Re: NDS - Double Tiers - 11/25 & 11/27", dt.date(2026, 11, 26)),
+                         dt.date(2026, 11, 25))
+        self.assertEqual(DT.parse_subject_all("Double Tier Bonus  - 10/31", dt.date(2026, 10, 30)),
+                         [dt.date(2026, 10, 31)])
+        self.assertEqual(DT.parse_subject_all("Thanksgiving Week - DD Schedule WE 11/22", dt.date(2026, 11, 20)), [])
+        self.assertEqual(DT.parse_subject_all("NDS - Double Tiers", dt.date(2026, 11, 20)), [])
+
 
 class Protect(unittest.TestCase):
     def test_rate_by_plan_and_sale_date(self):

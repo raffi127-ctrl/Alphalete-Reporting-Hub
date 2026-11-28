@@ -60,9 +60,11 @@
       "2026-10-09",
       "2026-10-10",
       "2026-10-12",
-      "2026-10-31"
+      "2026-10-31",
+      "2026-11-25",
+      "2026-11-27"
     ],
-    "_double_days_note": "SEED only: nds_metrics/double_tier.py reads Sean's 'Double Tier Bonus - <date>' emails off Raf's inbox every run and caches them in output/nds_metrics/double_tier_days.json; this list is the floor for days before the reader existed."
+    "_double_days_note": "SEED only: nds_metrics/double_tier.py reads Sean's double-tier emails ('Double Tier Bonus - <date>', from 11/24 'NDS - Double Tiers - <date> & <date>') off Carlos's inbox every run and caches them in output/nds_metrics/double_tier_days.json; this list is the floor for days the reader did not see (before it existed, and 11/25 + 11/27, added 11/28 by hand -- Carlos: 'Wednesday and Friday were double tiers' -- after the new subject slipped past the old pattern)."
   },
   "protect_rates": {
     "_source": "SOW 2(c): $15 PA1 / $50 PA4 per Authorized Feature, + the $10 / $25 Wireless Protect bonus that Smart Circle's 11/3/2026 'Device Protection (PA) - Bonus Removal Effective 11/3' email removed for sales from 11/3. Paid with the order's first line activation (the deposit dated Sravanthi Solasa's $15+$10 on her line's 11/1 activation). Source on the board: the SaraPlus Sales Order History GRID columns 'Protection Plans Sold' / 'Protection Plan' / 'Plan Status' (run._grid_protect sidecar).",
